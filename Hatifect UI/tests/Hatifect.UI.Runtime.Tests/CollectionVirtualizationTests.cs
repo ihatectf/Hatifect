@@ -513,6 +513,36 @@ Items@Checked
         Assert.True(diff.RequiresRender);
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(100)]
+    [InlineData(1)]
+    public void ExternalLookupCannotRedirectAnAnchorToAnotherOrMissingItem(int returnedIndex)
+    {
+        UiSymbolId owner = RegistryTests.Id("external-corrupt");
+        var source = new CorruptLookupSource(owner, returnedIndex);
+        var fixture = ListFixture(source, "Adaptive", owner);
+        var collection = Assert.Single(Nodes(fixture.Scene.Root).OfType<UiCollectionSceneNode>());
+        Assert.Throws<InvalidOperationException>(() => collection.TryGetIndex(owner.Child("0"), -1, out _));
+    }
+
+    private sealed class CorruptLookupSource : IUiSemanticCollectionSource,
+        IUiSemanticSource<IReadOnlyList<int>>, IUiSemanticCollectionMetadata
+    {
+        private readonly UiSymbolId _owner;
+        private readonly int _index;
+        internal CorruptLookupSource(UiSymbolId owner, int index) { _owner = owner; _index = index; }
+        public int Count => 2;
+        public long Revision => 1;
+        public bool HasSupportingText => true;
+        public IReadOnlyList<int> Value => Array.Empty<int>();
+        public Type ValueType => typeof(IReadOnlyList<int>);
+        public object UntypedValue => Value;
+        public event Action? Changed { add { } remove { } }
+        public UiSemanticCollectionItem GetItem(int index) => new(_owner.Child(index.ToString()), "Item", index);
+        public bool TryGetIndex(UiSymbolId item, out int index) { index = _index; return true; }
+    }
+
     private static UiScene Scene(IEnumerable<int> values)
     {
         UiSymbolId id = RegistryTests.Id("virtualized-window");
@@ -601,7 +631,7 @@ Items
     private sealed class CountingCollectionSource :
         IUiSemanticCollectionSource,
         IUiSemanticSource<IReadOnlyList<int>>,
-        IUiCollectionRuntimeMetadata
+        IUiSemanticCollectionMetadata
     {
         private readonly UiSymbolId _owner;
 
@@ -616,8 +646,8 @@ Items
         public IReadOnlyList<int> Value => Array.Empty<int>();
         public Type ValueType => typeof(IReadOnlyList<int>);
         public object UntypedValue => Value;
-        long IUiCollectionRuntimeMetadata.Revision => 0;
-        bool IUiCollectionRuntimeMetadata.HasSupportingText => true;
+        long IUiSemanticCollectionMetadata.Revision => 0;
+        bool IUiSemanticCollectionMetadata.HasSupportingText => true;
         public event Action? Changed
         {
             add { }
@@ -635,7 +665,7 @@ Items
                 index);
         }
 
-        bool IUiCollectionRuntimeMetadata.TryGetIndex(UiSymbolId item, out int index)
+        bool IUiSemanticCollectionMetadata.TryGetIndex(UiSymbolId item, out int index)
         {
             string prefix = _owner.LocalId + "/item/";
             if (string.Equals(item.Scope, _owner.Scope, StringComparison.Ordinal) &&

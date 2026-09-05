@@ -48,6 +48,8 @@ internal sealed class UiTerminalShellSession : IDisposable
         _resolveAssets = resolveAssets ?? (_ => DefaultAssets);
     }
 
+    internal void SetTheme(UiTheme theme) { EnsureActive(); _composer.SetTheme(theme); }
+
     public UiSymbolId? ActiveSection { get; private set; }
 
     public UiTerminalFrame OpenFirstAvailable(

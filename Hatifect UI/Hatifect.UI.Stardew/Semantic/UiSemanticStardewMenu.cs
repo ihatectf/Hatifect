@@ -47,6 +47,9 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     public bool CloseOnCancel { get; set; } = true;
     public Func<bool>? CloseRequestHandler { get; set; }
+    internal event Action? Rendered;
+    internal UiSymbolId CurrentSection => (_host ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu)))
+        .CurrentInvocation.Experience.Id;
 
     internal static RuntimeRect CaptureViewport()
         => new(0, 0, Math.Max(1, Game1.uiViewport.Width), Math.Max(1, Game1.uiViewport.Height));
@@ -109,7 +112,7 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
         if (_keyboard.OwnsSubscriber) return;
         var sample = BeginAcceptanceSample();
         UiPortalDispatch dispatch = _input.KeyDown(key);
-        if (!dispatch.Consumed && key == Keys.Escape)
+        if (RequestsRootCancel(dispatch) && key == Keys.Escape)
             TryCloseFromUnhandledCancel();
         else if (!dispatch.Consumed)
             base.receiveKeyPress(key);
@@ -121,7 +124,7 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
     {
         var sample = BeginAcceptanceSample();
         UiPortalDispatch dispatch = _input.GamePad(button);
-        if (!dispatch.Consumed && button == Buttons.B)
+        if (RequestsRootCancel(dispatch) && button == Buttons.B)
             TryCloseFromUnhandledCancel();
         else if (!dispatch.Consumed)
             base.receiveGamePadButton(button);
@@ -137,6 +140,7 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
         host.Render(batch);
         drawMouse(batch);
         sample.Complete(completesFrame: true, layoutBuilds: host.Performance.LayoutBuilds);
+        Rendered?.Invoke();
     }
 
     protected override void cleanupBeforeExit()
@@ -179,6 +183,13 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
             ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu));
         return host.OpenTerminalSection(section);
     }
+
+    internal void SetTerminalTheme(Hatifect.UI.Runtime.Visual.Theming.UiTheme theme) => _host!.SetTerminalTheme(theme);
+
+    internal UiHostUpdate RecomposeTerminal(Hatifect.UI.Planning.UiPresentationProfile profile,
+        RuntimeRect viewport, string locale)
+        => (_host ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu)))
+            .RecomposeTerminal(profile, new UiHostPlacementContext(viewport), locale);
 
     internal bool EvictTerminalSection(UiSymbolId section)
     {
@@ -228,6 +239,7 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     private void CompleteInput()
     {
+        if (_cleaned) return;
         SyncTextInputOwnership();
         if (!_closeRequested || _cleaned) return;
         _closeRequested = false;
@@ -246,11 +258,14 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
     {
         var sample = BeginAcceptanceSample();
         UiPortalDispatch dispatch = _input.KeyDown(key);
-        if (!dispatch.Consumed && key == Keys.Escape)
+        if (RequestsRootCancel(dispatch) && key == Keys.Escape)
             TryCloseFromUnhandledCancel();
         CompleteInput();
         sample.Complete();
     }
+
+    private static bool RequestsRootCancel(UiPortalDispatch dispatch)
+        => dispatch.RequestsRootDismissal;
 
     private UiStardewAcceptanceRecorder.SemanticOperationSample BeginAcceptanceSample()
     {
