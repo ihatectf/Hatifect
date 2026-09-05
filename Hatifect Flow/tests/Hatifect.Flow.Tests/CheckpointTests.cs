@@ -561,9 +561,9 @@ internal sealed class CheckpointFixture
     internal FaultPort Source { get; } = new();
     internal FaultPort DestinationPort { get; } = new();
 
-    internal CheckpointFixture(bool twoLinks = false)
+    internal CheckpointFixture(bool twoLinks = false, FlowLimits? limits = null)
     {
-        Runtime = new FlowRuntime(new NetworkId(Id(100)));
+        Runtime = new FlowRuntime(new NetworkId(Id(100)), limits);
         Runtime.AddStation(Origin, Source);
         Runtime.AddStation(Destination, DestinationPort);
         if (twoLinks)

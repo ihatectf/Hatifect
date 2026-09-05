@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using Hatifect.Flow.Application.Planning;
 using Hatifect.Flow.Domain.Shipments;
 
 namespace Hatifect.Flow.Application.Dispatch;
@@ -8,7 +9,8 @@ internal sealed partial class FlowRuntime
 {
     internal int RetainedLinkCount => _network.History.Count();
 
-    internal FlowSnapshot ReadApplicationSnapshot(Guid sessionId, long revision)
+    internal FlowSnapshot ReadApplicationSnapshot(Guid sessionId, long revision,
+        FlowProviderMode providerMode = FlowProviderMode.DiagnosticFake, FlowParcelActions supported = FlowParcelActions.All)
     {
         if (_ownerThread != Environment.CurrentManagedThreadId || _mutating || _retired)
         {
@@ -22,35 +24,41 @@ internal sealed partial class FlowRuntime
             .Select(parcel =>
             {
                 Shipment shipment = _shipments[parcel.ShipmentId];
+                FlowActionAvailabilitySet availability = AvailableActions(parcel);
+                if (supported != FlowParcelActions.All) availability = availability.Restrict(supported);
                 return new FlowParcelSnapshot(parcel.Id.Value, parcel.ShipmentId.Value, parcel.CargoId.Value,
                     parcel.Manifest.ItemKey, parcel.Manifest.Quantity, shipment.Origin.Value, shipment.Destination.Value,
-                    parcel.CurrentStation.Value, parcel.State, parcel.Version, parcel.DeliveryAttempts, AvailableActions(parcel));
+                    parcel.CurrentStation.Value, parcel.State, parcel.Version, parcel.DeliveryAttempts, availability.Actions, availability);
             }).ToArray();
-        return new FlowSnapshot(sessionId, NetworkId.Value, revision, FlowApplicationState.Active, stations, links, parcels);
+        return new FlowSnapshot(sessionId, NetworkId.Value, revision, FlowApplicationState.Active, stations, links, parcels, providerMode, supported);
     }
 
-    private FlowParcelActions AvailableActions(Parcel parcel)
+    private FlowActionAvailabilitySet AvailableActions(Parcel parcel)
     {
-        FlowParcelActions actions = FlowParcelActions.None;
-        if (parcel.State == ParcelState.Created && _operations.HasRoom)
-        {
-            // Route/capacity admission is still checked by the command; reading a view does not search the graph.
-            actions |= FlowParcelActions.Reserve;
-        }
-        if (parcel.State is ParcelState.Created or ParcelState.Reserved)
-        {
-            actions |= FlowParcelActions.Cancel;
-        }
-        if (parcel.State is ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted or ParcelState.ReturnRejected or ParcelState.ReturnFaulted
-            && parcel.PendingOperation is null && parcel.DeliveryAttempts < _limits.MaxDeliveryAttempts && _operations.HasRoom)
-        {
-            actions |= FlowParcelActions.RetryDelivery;
-            if (parcel.State is ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted) actions |= FlowParcelActions.ReturnToSource;
-        }
-        if (parcel.State is ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain || parcel.State == ParcelState.ExtractionUncertain && _operations.HasRoom)
-        {
-            actions |= FlowParcelActions.ReconcileTransfer;
-        }
-        return actions;
+        FlowRejectionCode reserve = ReservationRejection(parcel, out _);
+        FlowRejectionCode cancel = parcel.State is ParcelState.Created or ParcelState.Reserved ? FlowRejectionCode.None : FlowRejectionCode.InvalidState;
+        FlowRejectionCode retry = parcel.State is not (ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted or ParcelState.ReturnRejected or ParcelState.ReturnFaulted)
+            ? FlowRejectionCode.InvalidState : parcel.PendingOperation is not null ? FlowRejectionCode.OperationPending
+            : parcel.DeliveryAttempts >= _limits.MaxDeliveryAttempts ? FlowRejectionCode.RetryLimit
+            : !_operations.HasRoom ? FlowRejectionCode.WorkLimit : FlowRejectionCode.None;
+        FlowRejectionCode returning = parcel.State is ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted ? retry : FlowRejectionCode.InvalidState;
+        FlowRejectionCode reconcile = parcel.State is ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain ? FlowRejectionCode.None
+            : parcel.State != ParcelState.ExtractionUncertain ? FlowRejectionCode.InvalidState
+            : _operations.HasRoom ? FlowRejectionCode.None : FlowRejectionCode.WorkLimit;
+        return FlowActionAvailabilitySet.FromCodes(reserve, cancel, retry, reconcile, returning);
+    }
+
+    private FlowRejectionCode ReservationRejection(Parcel parcel, out RoutePlan? plan)
+    {
+        plan = null;
+        if (parcel.State != ParcelState.Created) return FlowRejectionCode.InvalidState;
+        if (!_operations.HasRoom) return FlowRejectionCode.WorkLimit;
+        Shipment shipment = _shipments[parcel.ShipmentId];
+        plan = _planner.Plan(shipment.Origin, shipment.Destination);
+        if (plan.Status != RouteStatus.Found) return plan.Status == RouteStatus.SearchLimitExceeded
+            ? FlowRejectionCode.RouteSearchLimit : FlowRejectionCode.RouteUnavailable;
+        foreach (var link in plan.Links)
+            if (parcel.Manifest.Quantity > link.Capacity - _capacity.ReservedUnits(link.Id)) return FlowRejectionCode.CapacityUnavailable;
+        return FlowRejectionCode.None;
     }
 }

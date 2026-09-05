@@ -14,31 +14,41 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
     private readonly Action<Action<FlowRuntime>> _execute;
     private readonly Action<Exception> _reportError;
     private readonly Func<bool> _canExecute;
+    private readonly FlowProviderMode _providerMode;
+    private readonly FlowParcelActions _supportedOperations;
     private FlowSnapshot _snapshot;
     private bool _operating;
     private bool _notifying;
     private FlowApplicationState _availability = FlowApplicationState.Active;
 
     internal FlowApplication(FlowRuntime runtime, Action<Action<FlowRuntime>> execute, Action<Exception> reportError,
-        Func<bool>? canExecute = null)
+        Func<bool>? canExecute = null, FlowProviderMode providerMode = FlowProviderMode.DiagnosticFake,
+        FlowParcelActions supportedOperations = FlowParcelActions.All)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _execute = execute ?? throw new ArgumentNullException(nameof(execute));
         _reportError = reportError ?? throw new ArgumentNullException(nameof(reportError));
         _canExecute = canExecute ?? (() => true);
+        if (!Enum.IsDefined(typeof(FlowProviderMode), providerMode)) throw new ArgumentOutOfRangeException(nameof(providerMode));
+        if ((supportedOperations & ~FlowParcelActions.All) != 0) throw new ArgumentOutOfRangeException(nameof(supportedOperations));
+        _providerMode = providerMode;
+        _supportedOperations = supportedOperations;
         Guid session = Guid.NewGuid();
-        _snapshot = runtime.ReadApplicationSnapshot(session, 0);
+        _snapshot = runtime.ReadApplicationSnapshot(session, 0, _providerMode, _supportedOperations);
     }
 
     public event Action<long>? RevisionChanged;
 
-    internal FlowCommandStatus? ValidateExternalCommand(Guid session, long revision, bool recovery = false)
+    internal FlowCommandResult? ValidateExternalCommand(Guid session, long revision, bool recovery = false)
     {
         RequireIdle();
-        if (_snapshot.State is FlowApplicationState.Closed or FlowApplicationState.Faulted) return FlowCommandStatus.SessionClosed;
-        if (recovery ? _snapshot.State != FlowApplicationState.RecoveryRequired
-            : _snapshot.State != FlowApplicationState.Active || !_canExecute()) return FlowCommandStatus.Rejected;
-        return session != _snapshot.SessionId || revision != _snapshot.Revision ? FlowCommandStatus.Conflict : null;
+        if (_snapshot.State is FlowApplicationState.Closed or FlowApplicationState.Faulted)
+            return Result(FlowCommandStatus.SessionClosed, _snapshot.Code);
+        if (recovery ? _snapshot.State != FlowApplicationState.RecoveryRequired : _snapshot.State != FlowApplicationState.Active)
+            return Result(FlowCommandStatus.Rejected, _snapshot.Code);
+        if (!recovery && !_canExecute()) return Result(FlowCommandStatus.Rejected, FlowRejectionCode.ProviderUnavailable);
+        if (session != _snapshot.SessionId) return Result(FlowCommandStatus.Conflict, FlowRejectionCode.StaleSession);
+        return revision != _snapshot.Revision ? Result(FlowCommandStatus.Conflict, FlowRejectionCode.StaleRevision) : null;
     }
 
     public FlowSnapshot ReadSnapshot()
@@ -51,22 +61,14 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
     {
         RequireIdle();
         ArgumentNullException.ThrowIfNull(command);
-        if (_snapshot.State != FlowApplicationState.Active)
-        {
-            return Result(_snapshot.State is FlowApplicationState.Paused or FlowApplicationState.RecoveryRequired
-                ? FlowCommandStatus.Rejected : FlowCommandStatus.SessionClosed);
-        }
-        if (command.SessionId != _snapshot.SessionId || command.ExpectedRevision != _snapshot.Revision)
-        {
-            return Result(FlowCommandStatus.Conflict);
-        }
-        if (command.ParcelId == Guid.Empty || !Enum.IsDefined(typeof(FlowParcelAction), command.Action)
-            || !_snapshot.Parcels.Any(parcel => parcel.Id == command.ParcelId))
-        {
-            return Result(FlowCommandStatus.InvalidCommand);
-        }
+        FlowCommandResult? invalid = ValidateExternalCommand(command.SessionId, command.ExpectedRevision);
+        if (invalid is not null) return invalid;
+        if (!Enum.IsDefined(typeof(FlowParcelAction), command.Action)) return Result(FlowCommandStatus.InvalidCommand);
+        FlowParcelSnapshot? parcel = _snapshot.Parcels.FirstOrDefault(value => value.Id == command.ParcelId);
+        if (parcel is null) return Result(FlowCommandStatus.InvalidCommand, FlowRejectionCode.ParcelNotFound);
+        FlowActionAvailability availability = parcel.Availability[command.Action];
+        if (!availability.Available) return Result(FlowCommandStatus.Rejected, availability.Code);
         bool applied = false;
-        if (!_canExecute()) return Result(FlowCommandStatus.Rejected);
         _operating = true;
         try
         {
@@ -102,7 +104,9 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
             Report(error);
             return Result(FlowCommandStatus.Faulted);
         }
-        return Result(applied ? FlowCommandStatus.Applied : FlowCommandStatus.Rejected);
+        return applied ? Result(FlowCommandStatus.Applied)
+            : Result(FlowCommandStatus.Rejected, _snapshot.Parcels.FirstOrDefault(value => value.Id == command.ParcelId)?.Availability[command.Action].Code
+                ?? FlowRejectionCode.ParcelNotFound);
     }
 
     internal void Refresh(bool force = false)
@@ -116,10 +120,15 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
         _operating = true;
         try
         {
-            next = _runtime.ReadApplicationSnapshot(_snapshot.SessionId, checked(_snapshot.Revision + 1));
+            next = _runtime.ReadApplicationSnapshot(_snapshot.SessionId, checked(_snapshot.Revision + 1), _providerMode, _supportedOperations);
             if (_availability != FlowApplicationState.Active)
+            {
+                FlowActionAvailabilitySet blocked = FlowActionAvailabilitySet.Disabled(FlowReasons.State(_availability));
+                if (_supportedOperations != FlowParcelActions.All) blocked = blocked.Restrict(_supportedOperations);
                 next = new FlowSnapshot(next.SessionId, next.NetworkId, next.Revision, _availability,
-                    next.Stations.ToArray(), next.Links.ToArray(), next.Parcels.Select(parcel => parcel with { Actions = FlowParcelActions.None }).ToArray());
+                    next.Stations.ToArray(), next.Links.ToArray(), next.Parcels.Select(parcel => parcel with { Actions = FlowParcelActions.None, Availability = blocked }).ToArray(),
+                    _providerMode, _supportedOperations);
+            }
         }
         finally
         {
@@ -154,7 +163,7 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
             return;
         }
         _snapshot = new FlowSnapshot(_snapshot.SessionId, _snapshot.NetworkId, checked(_snapshot.Revision + 1), state,
-            Array.Empty<FlowStationSnapshot>(), Array.Empty<FlowLinkSnapshot>(), Array.Empty<FlowParcelSnapshot>());
+            Array.Empty<FlowStationSnapshot>(), Array.Empty<FlowLinkSnapshot>(), Array.Empty<FlowParcelSnapshot>(), _providerMode, _supportedOperations);
         Notify();
         RevisionChanged = null;
     }
@@ -184,7 +193,7 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
         catch { /* The host owns logging; the application outcome remains authoritative. */ }
     }
 
-    private FlowCommandResult Result(FlowCommandStatus status) => new(status, _snapshot.Revision);
+    private FlowCommandResult Result(FlowCommandStatus status, FlowRejectionCode code = FlowRejectionCode.None) => new(status, _snapshot.Revision, code);
     private void RequireThread()
     {
         if (Environment.CurrentManagedThreadId != _thread)

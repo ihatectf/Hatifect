@@ -241,16 +241,8 @@ internal sealed partial class FlowRuntime
         using MutationScope mutation = EnterMutation();
         Execution execution = _parcels[id];
         Parcel parcel = execution.Snapshot;
-        if (parcel.State != ParcelState.Created || !_operations.HasRoom)
-        {
-            return false;
-        }
-        Shipment shipment = _shipments[parcel.ShipmentId];
-        RoutePlan plan = _planner.Plan(shipment.Origin, shipment.Destination);
-        if (plan.Status != RouteStatus.Found)
-        {
-            return false;
-        }
+        if (ReservationRejection(parcel, out RoutePlan? candidate) != FlowRejectionCode.None) return false;
+        RoutePlan plan = candidate!;
         // Validate the entire timeline before reserving anything. Later hops use
         // these admitted snapshots, so no arithmetic failure can strand cargo.
         long departure = checked(Now + 1);

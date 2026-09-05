@@ -2,9 +2,9 @@
 
 Date: 2026-09-06. Working branch: `codex/flowline-next-ten-slices`; source baseline: `2f08a4f4db36ef0b1ba58e385fc0ab5044cae867`.
 
-The authoritative scope is [ROADMAP.md](ROADMAP.md), restored verbatim from commit `1e741ef` because this task branch predates that documentation commit. The earlier exploratory Flow multiplayer/adapters/policies list is superseded as an execution plan; no new product work outside the approved roadmap is being added. It does not replace U01–U10, R01–R04, T01–T03 or their acceptance. The Flow foundation is verified as the bounded change recorded below; the full roadmap IDs remain incomplete until all their acceptance and integration evidence are present.
+The authoritative scope is [ROADMAP.md](ROADMAP.md), restored verbatim from commit `1e741ef` because this task branch predates that documentation commit. The earlier exploratory Flow multiplayer/adapters/policies list is superseded as an execution plan; no new product work outside the approved roadmap is being added. It does not replace U01–U10, R01–R04, T01–T03 or their acceptance. The Flow foundation is committed and published in task branch as `cdf9d2e86e90f0174251243147f8a2f9480d14e8`; its integration with the verified UI SDK/editor/D01 is owned by the UI task. The full roadmap IDs remain incomplete until all their acceptance and integration evidence are present.
 
-This report preserves Flow owner evidence for foundation commit `cdf9d2e`. Relative artifact paths below belong to its original worktree `${HOME}/Developer/Hatifect`; they do not certify the later combined UI/Flow candidate. Current shared B01/B02 statuses and D01 are authoritative in [ROADMAP.md](ROADMAP.md) and [SEMANTIC_V2.md](SEMANTIC_V2.md). The table below records the Flow handoff state, before integration.
+This report preserves Flow owner evidence for foundation commit `cdf9d2e` and the subsequent F11 handoffs `e31c1ef` / `ff43d0b`. Relative artifact paths below belong to its original worktree `${HOME}/Developer/Hatifect`; they do not certify the later combined UI/Flow candidate. Current shared B01/B02 statuses and D01 are authoritative in [ROADMAP.md](ROADMAP.md) and [SEMANTIC_V2.md](SEMANTIC_V2.md). The table records Flow handoff state, including the later F11 verification; B01/B02 historical rows are superseded by the shared roadmap. Each evidence section names its own candidate and worktree.
 
 ## B01: current gaps at Flow handoff
 
@@ -17,7 +17,7 @@ This report preserves Flow owner evidence for foundation commit `cdf9d2e`. Relat
 | U03–U10 | PLANNED | Current actions are synchronous; deterministic planner/profiles, layout/input/virtualization and form validation already exist | All specified async/environment/authoring/theme/component/extension acceptance remains required |
 | R01–R04 | PLANNED | Existing single-asset Last Known Good and retryable resource teardown | Generation ownership, bundle preparation, migration and multi-host commit/rollback |
 | T01–T03 | PLANNED | Existing Tooling/Server, symbols/diagnostics and DevTools | New metadata/protocol, preview matrix, editor workflow and examples |
-| F11 | IN_PROGRESS | Immutable `FlowSnapshot`, typed commands/session/revision, observer fencing; FlowApplicationTests | Explicit unavailability reasons and read/subscribe handshake; final contract review/commit |
+| F11 | VERIFIED, integration pending | Immutable `FlowSnapshot`, typed commands/session/revision, observer fencing; provider mode, supported operations, owner-derived action availability and stable reasons; F11-a/b evidence below | Publish F11-b and integrate both commits with D01/UI baseline |
 | F12–F13 | IN_PROGRESS | ParcelExperience/ParcelSurface, typed controls and localized projections; host-free behavior tests | New semantic-v2 integration; complete fake-session in-game lifecycle/input evidence |
 | F14–F17 | IN_PROGRESS | SaveBoundCargoPort and FlowGameSession: item XML, physical custody, save barrier, fencing; production chest roundtrip recorded below | D03/D04 record, partial stacks and complete supported runtime failure matrix; current candidate rerun |
 | F18–F19 | IN_PROGRESS | NetworkExperience: stations/routes, inventory fingerprints, shipping/history, return/recovery | Ordinary player entry without console, Quick/View integration, reason codes, locale/input/scale acceptance |
@@ -45,9 +45,18 @@ This report preserves Flow owner evidence for foundation commit `cdf9d2e`. Relat
 - `python3 tools/release.py verify-package .smapi-test/isolated/Mods/Hatifect`: **PASS**, 14 runtime DLLs. Generated acceptance reports were byte-matched to preserved request artifacts before deleting only those generated files. Archive and DLL hashes: `artifacts/flowline-foundation/`.
 - Independent bounded review: UI screen/keyboard handoff fixes and peer endpoint authority/replay fixes rechecked; no remaining findings in the reviewed scopes. Multiplayer client/wiring and split-screen runtime remain unimplemented/unverified and disabled.
 
+## F11-a: revision subscription and projection lifecycle
+
+Owner: Flow semantic consumer; existing application event/snapshot contract and public UI API are unchanged. Both network and parcel views subscribe before their initial read, retain notifications raised during read/projection for the next pump, and reject nested pumps before they can consume dirty state. Failed reads remain retryable; failed construction detaches the subscription; a failed ordinary unsubscribe retires callbacks/actions immediately and retains a handle for retry.
+
+- `./tools/hatifect-test flow`: **PASS**, 646 tests (`run-seoy49ou`), including 12 new cases for both projections.
+- Final `./tools/hatifect-check`: **PASS**, 916 .NET + 297 Python tests (`run-3akheh8x`), including the final reentrant-pump guard.
+- Independent source/actual TRX review rechecked the subscribe/read and reentrant-read counterexample. Existing snapshot/session/observer tests remain intact. No new UI API, persistence format, game adapter or package boundary is introduced, so separate game/visual/package gates are NOT_APPLICABLE to this bounded F11-a change. Full F11 and later runtime acceptance remain required.
+- Limit: a provider whose event removal keeps throwing during a constructor failure cannot provide a usable cleanup handle; this does not imply unconditional cleanup against an arbitrarily broken event implementation. Production Flow application event accessors are ordinary managed events.
+
 ## Current next slice
 
-Complete and publish the verified Flow foundation. The UI task owns B02/U01–U10/R/T on codex/roadmap-implementation (ready SDK/editor commits 55ccc3b, 55b8360; baseline de766c5). This task owns F11–F20 and real-game acceptance, integrating verified UI commits. Next Flow work closes F11 subscription/unavailability gaps and F16 partial-stack acceptance, then F18 player entry through the available standalone host. Multiplayer remains disabled and its exploratory foundation is not a released capability.
+Integrate the verified F11 sequence `e31c1ef` and `ff43d0b` with the published combined UI foundation `3f11e5d`. The UI task owns B02/U01–U10/R/T and develop integration; the Flow task continues F16 partial-stack acceptance. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
 
 ## Combined UI SDK/editor and Flow foundation integration
 
@@ -80,3 +89,19 @@ The corrected candidate passed `./tools/hatifect-check --platform`: **PASS**, 1,
 - CA's actual third-party mod was absent in this isolated run and the adapter disabled itself normally. These scenarios do not claim CA visual/runtime acceptance. Q01–Q03 and the known U01 Network binding gap remain open.
 
 Next integration is the separately verified Flow F11 sequence `e31c1ef` and `ff43d0b`; then U01 preserves explicit identity/alias/label through the real Network binding/compile path and adds the complete typed graph/wire acceptance. The UI task remains the single `develop` integration owner.
+
+## F11-b: owner-derived availability and rejection reasons
+
+Owner: Flow Core/Application and Dispatch. The D01 contract supplies provider mode, supported operations and an immutable five-action availability set with stable rejection codes/reason keys. Reservation projection and execution share route, queue and capacity admission. Semantic consumers localize those reasons in EN/RU and explicitly identify the diagnostic provider. Game sessions and the disabled peer wire preserve the metadata; terminal peer projections release their previous live contents. No persistence envelope or physical inventory/custody format changes.
+
+- `./tools/hatifect-check --platform`: **PASS**, 1,076 .NET + 297 Python tests (`run-ub2txdqz`).
+- After retaining the original public constructors and deconstruction signatures, `./tools/hatifect-check`: **PASS**, 927 .NET + 297 Python tests (`run-vh75lnho`).
+- Final `./tools/hatifect-test flow --platform`: **PASS**, 657 Flow + 65 Stardew tests (`run-t2mgi20d`), including terminal peer disposal and actual parcel binding-context creation. These are the bounded code deltas after the full platform check.
+- Added 11 `FlowAvailabilityTests` cases, serializer/forged-wire coverage in `PeerProtocolTests`, and terminal cleanup coverage in `PeerHostTests`. Existing tests remain intact. Tests cover admission/rejection agreement, stale session/revision, immutable cached reads, provider fencing, EN/RU reasons, legacy constructors and STJ/Newtonsoft roundtrips.
+- Binary compatibility: an executable compiled against the foundation Core DLL successfully invoked both original constructors and both generated `Deconstruct` methods after replacing that DLL with the current build, without recompiling the consumer. Evidence: `artifacts/flowline-f11/binary-compatibility.json` and `binary-consumer.cs`.
+- Independent review identified and rechecked the constructor compatibility and terminal projection issues. Final source/diff review found no remaining issue in this bounded contract change. Separate physical runtime acceptance remains recorded against the foundation; it is not relabelled as F11 candidate evidence.
+- U01 dependency remains explicit: current UI binding regenerates identity from labels, so the full NetworkExperience binding/compilation path with multiword localized labels is still invalid. The UI owner is fixing that shared path. The new parcel availability element uses a valid existing binding label and is tested through `CreateBindingContext`. F12/F18 UI/runtime acceptance is still incomplete.
+
+## F11 combined integration checks
+
+Combined with the published UI foundation `3f11e5d` in `/private/tmp/hatifect-ui-next-ten-slices`: `./tools/hatifect-check` **PASS**, 1,014 .NET + 301 Python (`artifacts/validation/run-9ryxhfgj/summary.json`); `./tools/hatifect-check --platform` **PASS**, 1,174 .NET + 301 Python (`artifacts/validation/run-wxasxwxo/summary.json`), including 657 Flow and 65 Flow game-adapter tests. The final committed Flow source was independently inspected before integration; the old public constructor/deconstruction signatures and current SDK form behavior remain compatible. No UI package/API or persistence format changed in this F11 delta. Runtime production-session evidence for this new combined candidate will be recorded after its own deployment; previous physical runs remain attached to `803c909`.

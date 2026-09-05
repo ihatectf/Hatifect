@@ -10,6 +10,7 @@ internal sealed partial class NetworkExperience
     private const int HistoryPageSize = 12;
     private readonly UiState<string> _historyQuery = new("");
     private readonly UiState<string> _historyPage = new("");
+    private readonly UiState<string> _historyAvailability = new("");
     private readonly UiState<string> _historyDetails = new("");
     private UiSelectableCollectionState<string> _historyFilter = null!;
     private UiSelectableCollectionState<FlowParcelSnapshot> _history = null!;
@@ -40,26 +41,27 @@ internal sealed partial class NetworkExperience
             .Select(id.Child("element/history"), Text("Shipments", "Отправления"), _history)
             .Monitor(id.Child("element/history-page"), Text("Page", "Страница"), _historyPage)
             .Inspect(id.Child("element/history-detail"), Text("Selected shipment", "Выбранное отправление"), _historyDetails)
+            .Monitor(id.Child("element/history-availability"), Text("Availability", "Доступность"), _historyAvailability)
             .Actions(id.Child("element/history-navigation"), Text("History navigation", "Навигация истории"),
                 new UiActionDefinition(id.Child("action/previous-page"), Text("Previous page", "Предыдущая страница"), () => { _page--; ProjectHistory(); }, () => IsActive && _page > 0),
                 new UiActionDefinition(id.Child("action/next-page"), Text("Next page", "Следующая страница"), () => { _page++; ProjectHistory(); }, () => IsActive && (_page + 1) * HistoryPageSize < _historyCount))
             .Actions(id.Child("element/history-actions"), Text("Selected shipment actions", "Действия с отправлением"),
-                HistoryAction(id, "reserve", Text("Dispatch selected", "Отправить выбранное"), FlowParcelAction.Reserve, FlowParcelActions.Reserve),
-                HistoryAction(id, "cancel", Text("Cancel selected", "Отменить выбранное"), FlowParcelAction.Cancel, FlowParcelActions.Cancel),
-                HistoryAction(id, "retry", Text("Retry selected delivery", "Повторить выбранную доставку"), FlowParcelAction.RetryDelivery, FlowParcelActions.RetryDelivery),
-                HistoryAction(id, "return", Text("Return selected cargo to source", "Вернуть выбранный груз в источник"), FlowParcelAction.ReturnToSource, FlowParcelActions.ReturnToSource));
+                HistoryAction(id, "reserve", Text("Dispatch selected", "Отправить выбранное"), FlowParcelAction.Reserve),
+                HistoryAction(id, "cancel", Text("Cancel selected", "Отменить выбранное"), FlowParcelAction.Cancel),
+                HistoryAction(id, "retry", Text("Retry selected delivery", "Повторить выбранную доставку"), FlowParcelAction.RetryDelivery),
+                HistoryAction(id, "return", Text("Return selected cargo to source", "Вернуть выбранный груз в источник"), FlowParcelAction.ReturnToSource));
     }
 
-    private UiActionDefinition HistoryAction(UiSymbolId id, string key, string title, FlowParcelAction action, FlowParcelActions capability)
+    private UiActionDefinition HistoryAction(UiSymbolId id, string key, string title, FlowParcelAction action)
         => Action(id, "history-" + key, title, () =>
         {
             FlowParcelSnapshot? parcel = Selected(_history);
             if (parcel is null) return;
             FlowCommandResult result = _application.Execute(new FlowParcelCommand(_snapshot.Transport.SessionId, _snapshot.Transport.Revision, parcel.Id, action));
-            _result.Value = result.Status == FlowCommandStatus.Applied ? Text("Command completed", "Команда выполнена") : Text("Shipment changed or action unavailable", "Отправление изменилось или действие недоступно");
+            _result.Value = result.Status == FlowCommandStatus.Applied ? Text("Command completed", "Команда выполнена") : FlowReasonText.Describe(result.Code, result.ReasonKey, _russian);
             _dirty = true;
             Pump();
-        }, () => Selected(_history) is { } parcel && (parcel.Actions & capability) != 0);
+        }, () => Selected(_history) is { } parcel && parcel.Availability[action].Available);
 
     private void OnHistoryQuery()
     {
@@ -104,6 +106,7 @@ internal sealed partial class NetworkExperience
     private void ProjectHistoryDetails()
     {
         FlowParcelSnapshot? parcel = Selected(_history);
+        _historyAvailability.Value = parcel is null ? "" : FlowReasonText.UnavailableActions(parcel.Availability, _russian);
         _historyDetails.Value = parcel is null ? Text("Select a shipment", "Выберите отправление")
             : $"{parcel.Id} · {Describe(parcel.State)} · " + Text("attempts: ", "попыток: ") + parcel.DeliveryAttempts;
     }

@@ -67,7 +67,8 @@ internal sealed partial class FlowGameSession : IDisposable
             var journals = checkpoint.Stations.ToDictionary(station => station.Id, station => station.Port);
             _runtime.AttachSavePorts(this, station => CreatePort(station.Value, journals[station.Value]));
         }
-        Application = new FlowApplication(_runtime, Execute, report, () => CanMutate() && !_hostOperation && !_managing);
+        Application = new FlowApplication(_runtime, Execute, report, () => CanMutate() && !_hostOperation && !_managing,
+            FlowProviderMode.GameInventory);
         UpdateAvailability();
     }
 
