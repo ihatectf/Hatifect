@@ -10,8 +10,10 @@ namespace Hatifect.Flow.Stardew.Tests;
 [Trait("Category", "flow")]
 public sealed class ShipmentAuthoringTests
 {
-    [Fact]
-    public void ItemChangedWhileAcquiringMutexRejectsOldFingerprintUnderTheLease()
+    [Theory]
+    [InlineData(null)]
+    [InlineData(3)]
+    public void ItemChangedWhileAcquiringMutexRejectsOldFingerprintUnderTheLease(int? quantity)
     {
         var world = new GameSessionWorld();
         var mutex = new AdmissionMutex();
@@ -22,7 +24,7 @@ public sealed class ShipmentAuthoringTests
         FlowInventorySlot selected = Assert.Single(session.ReadInventory(link.Origin));
         mutex.Acquiring = () => world.Source.Items[0].Stack = 7;
         Assert.Equal(FlowCommandStatus.Conflict, session.Execute(new FlowSendCommand(before.SessionId, before.Revision,
-            link.Origin, link.Destination, selected.Index, selected.Fingerprint)).Status);
+            link.Origin, link.Destination, selected.Index, selected.Fingerprint) { Quantity = quantity }).Status);
         Assert.False(mutex.IsHeld);
         Assert.Empty(session.ReadSnapshot().Parcels);
         Assert.False(world.Source.Items[0].modData.ContainsKey(ChestInventoryAccess.CargoKey));

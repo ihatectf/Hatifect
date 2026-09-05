@@ -26,8 +26,12 @@ public sealed record FlowNetworkCommand(Guid SessionId, long ExpectedRevision, F
 public sealed record FlowStationDetails(Guid Id, string Name, string Location, bool Available);
 public sealed record FlowRoutePreview(bool Found, int LinkCount, long TransitTicks, int AvailableUnits);
 public sealed record FlowInventorySlot(int Index, string ItemKey, int Quantity, string Fingerprint, string Detail);
-/// <summary>Fingerprint must equal the current complete saved item representation of the selected physical slot.</summary>
-public sealed record FlowSendCommand(Guid SessionId, long ExpectedRevision, Guid Source, Guid Destination, int Slot, string Fingerprint);
+/// <summary>Fingerprint identifies the complete physical source stack. Quantity selects 1..stack units;
+/// null preserves the original whole-stack command. The source is checked again before extraction.</summary>
+public sealed record FlowSendCommand(Guid SessionId, long ExpectedRevision, Guid Source, Guid Destination, int Slot, string Fingerprint)
+{
+    public int? Quantity { get; init; }
+}
 public sealed record FlowRecoveryIssue(Guid ParcelId, string ItemKey, int Quantity, string Phase, string Receipt, bool StationAvailable, bool CanReconcile);
 /// <summary>Reconciles only a retained settled receipt. Missing receipts never authorize physical replay.</summary>
 public sealed record FlowRecoveryCommand(Guid SessionId, long ExpectedRevision, Guid ParcelId);

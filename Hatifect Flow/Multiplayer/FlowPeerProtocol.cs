@@ -44,7 +44,8 @@ internal static class FlowPeerProtocol
                 && command.Capacity is > 0 and <= 999 && command.TransitTicks is > 0 and <= 36000,
             FlowPeerOperation.Send => bodies == 1 && intent.Send is { } command && Header(command.SessionId, command.ExpectedRevision)
                 && command.Source != Guid.Empty && command.Destination != Guid.Empty && command.Source != command.Destination
-                && command.Slot is >= 0 and < 128 && Fingerprint(command.Fingerprint),
+                && command.Slot is >= 0 and < 128 && Fingerprint(command.Fingerprint)
+                && (command.Quantity is null or (> 0 and <= 999)),
             FlowPeerOperation.Recovery => bodies == 1 && intent.Recovery is { } command && Header(command.SessionId, command.ExpectedRevision)
                 && command.ParcelId != Guid.Empty,
             FlowPeerOperation.Inventory => bodies == 0 && intent.Station != Guid.Empty,

@@ -89,4 +89,21 @@ public sealed class PeerProtocolTests
         Assert.False(FlowPeerProtocol.Valid(request with { Intent = request.Intent with { Operation = FlowPeerOperation.Refresh } }));
         Assert.False(FlowPeerProtocol.Valid(request with { Intent = request.Intent with { Network = new FlowNetworkCommand(session, 3, FlowNetworkAction.AddLink) } }));
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(3)]
+    public void SendQuantityRoundtripsBothSerializersAndRejectsInvalidWireAmounts(int? quantity)
+    {
+        Guid session = Guid.NewGuid();
+        var send = new FlowSendCommand(session, 3, Guid.NewGuid(), Guid.NewGuid(), 0, new string('A', 64)) { Quantity = quantity };
+        var request = new FlowPeerRequest(1, 1, Guid.NewGuid(), session, 1, new FlowPeerIntent(FlowPeerOperation.Send, Send: send));
+        Assert.Equal(send, JsonSerializer.Deserialize<FlowPeerRequest>(JsonSerializer.Serialize(request))!.Intent.Send);
+        Assert.Equal(send, Newtonsoft.Json.JsonConvert.DeserializeObject<FlowPeerRequest>(Newtonsoft.Json.JsonConvert.SerializeObject(request))!.Intent.Send);
+        Assert.True(FlowPeerProtocol.Valid(request));
+        foreach (int invalid in new[] { -1, 0, 1000 })
+            Assert.False(FlowPeerProtocol.Valid(request with { Intent = request.Intent with { Send = send with { Quantity = invalid } } }));
+        Assert.NotNull(typeof(FlowSendCommand).GetConstructor(new[] { typeof(Guid), typeof(long), typeof(Guid), typeof(Guid), typeof(int), typeof(string) }));
+        send.Deconstruct(out _, out _, out _, out _, out _, out _);
+    }
 }

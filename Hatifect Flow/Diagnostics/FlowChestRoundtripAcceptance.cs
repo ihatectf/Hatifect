@@ -5,6 +5,7 @@ using System.Linq;
 using Microsoft.Xna.Framework;
 using Hatifect.Flow.Application;
 using Hatifect.Flow.Domain.Shipments;
+using Hatifect.Flow.Inventory;
 using Hatifect.Flow.Sessions;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
@@ -31,6 +32,8 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
     private Vector2 _sourceTile;
     private Vector2 _destinationTile;
     private Guid _parcel;
+    private Guid _partialParcel;
+    private string _remainderXml = "";
     private Guid _sessionId;
     private FlowGameSession? _retiredSession;
     private string _saveHash = "";
@@ -78,23 +81,39 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
                 wine.preservedParentSheetIndex.Value = "613";
                 wine.modData["Hatifect.Flow/Acceptance"] = _request.RunId;
                 source.GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Add(wine);
+                var partial = (StardewValley.Object)FlowItemCodec.Decode(FlowItemCodec.Encode(wine));
+                partial.Stack = 13;
+                partial.modData["Hatifect.Flow/PartialAcceptance"] = "true";
+                source.GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Add(partial);
+                Item expectedRemainder = FlowItemCodec.Decode(FlowItemCodec.Encode(partial));
+                expectedRemainder.Stack = 8;
+                _remainderXml = FlowItemCodec.Encode(expectedRemainder);
                 session.RegisterStation("accept_source", "Farm", (int)_sourceTile.X, (int)_sourceTile.Y, source);
                 session.RegisterStation("accept_destination", "Farm", (int)_destinationTile.X, (int)_destinationTile.Y, destination);
                 session.Link("accept_source", "accept_destination", transitTicks: 180);
                 _parcel = session.Send("accept_source", "accept_destination", 0);
+                FlowSnapshot snapshot = session.ReadSnapshot();
+                FlowLinkSnapshot link = snapshot.Links.Single();
+                FlowInventorySlot selected = session.ReadInventory(link.Origin).Single(slot => slot.Index == 1);
+                Require(session.Execute(new FlowSendCommand(snapshot.SessionId, snapshot.Revision, link.Origin, link.Destination,
+                    selected.Index, selected.Fingerprint) { Quantity = 5 }).Status == FlowCommandStatus.Applied,
+                    "Typed partial-stack admission failed.");
+                _partialParcel = session.ReadSnapshot().Parcels.Single(parcel => parcel.Id != _parcel).Id;
+                Require(partial.Stack == 13, "Partial admission extracted units before the scheduled effect.");
                 _passed.Add("loaded");
                 _stage = Stage.Transit;
             }
             else if (_loads == 2)
             {
-                Require(Parcel().State == ParcelState.InTransit, "In-flight parcel did not survive the actual game save.");
-                Require(Items(_sourceTile).Length == 0 && Items(_destinationTile).Length == 0, "In-flight cargo appeared in a physical chest.");
+                Require(BothAt(ParcelState.InTransit), "In-flight parcels did not survive the actual game save.");
+                VerifyRemainder();
+                Require(Items(_destinationTile).Length == 0, "In-flight cargo appeared in the destination chest.");
                 _passed.Add("reload");
                 _stage = Stage.Delivery;
             }
             else
             {
-                Require(_loads == 3 && Parcel().State == ParcelState.Delivered, "Delivered state did not survive the second actual save.");
+                Require(_loads == 3 && BothAt(ParcelState.Delivered), "Delivered states did not survive the second actual save.");
                 VerifyDelivery();
                 _stage = Stage.Verify;
             }
@@ -119,8 +138,9 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
                     SaveGame.Load(Path.GetFileName(_request.SavePath));
                     Game1.exitActiveMenu();
                     break;
-                case Stage.Transit when Parcel().State == ParcelState.InTransit:
-                    Require(Items(_sourceTile).Length == 0 && Items(_destinationTile).Length == 0, "Extraction did not move exclusive custody into the parcel.");
+                case Stage.Transit when BothAt(ParcelState.InTransit):
+                    VerifyRemainder();
+                    Require(Items(_destinationTile).Length == 0, "Extraction did not move exclusive custody into the parcels.");
                     _passed.Add("custody");
                     BeginGameSave(Stage.SavingTransit);
                     break;
@@ -131,7 +151,7 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
                     _retiredSession = Session();
                     RequestReturnToTitle();
                     break;
-                case Stage.Delivery when Parcel().State == ParcelState.Delivered:
+                case Stage.Delivery when BothAt(ParcelState.Delivered):
                     VerifyDelivery();
                     _passed.Add("delivery");
                     BeginGameSave(Stage.SavingDelivered);
@@ -142,6 +162,8 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
                     FlowSnapshot snapshot = Session().ReadSnapshot();
                     Require(Session().Execute(new FlowParcelCommand(snapshot.SessionId, snapshot.Revision, _parcel, FlowParcelAction.RetryDelivery)).Status == FlowCommandStatus.Rejected,
                         "A delivered parcel accepted another delivery.");
+                    Require(Session().Execute(new FlowParcelCommand(snapshot.SessionId, snapshot.Revision, _partialParcel, FlowParcelAction.RetryDelivery)).Status == FlowCommandStatus.Rejected,
+                        "A delivered partial parcel accepted another delivery.");
                     VerifyDelivery();
                     Require(_savings == 2 && _saves == 2 && _loads == 3, "The required real lifecycle events did not occur exactly twice.");
                     _passed.Add("no-duplication");
@@ -234,15 +256,32 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
     private static Item[] Items(Vector2 tile) => ((Chest)Game1.getFarm().Objects[tile]).GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Where(item => item is not null).ToArray();
     private FlowGameSession Session() => _current() ?? throw new InvalidOperationException("Production game session is absent.");
     private FlowParcelSnapshot Parcel() => Session().ReadSnapshot().Parcels.Single(parcel => parcel.Id == _parcel);
+    private bool BothAt(ParcelState state) => Parcel().State == state
+        && Session().ReadSnapshot().Parcels.Single(parcel => parcel.Id == _partialParcel).State == state;
+    private void VerifyRemainder()
+    {
+        Item[] remaining = Items(_sourceTile);
+        Require(remaining.Length == 1 && FlowItemCodec.Encode(remaining[0]) == _remainderXml,
+            "The partial source remainder changed quantity, metadata or cargo ownership.");
+    }
     private void VerifyDelivery()
     {
+        VerifyRemainder();
         Item[] delivered = Items(_destinationTile);
-        Require(Items(_sourceTile).Length == 0 && delivered.Length == 1 && delivered[0] is StardewValley.Object, "Delivery is missing or duplicated.");
-        var wine = (StardewValley.Object)delivered[0];
-        Require(wine.QualifiedItemId == "(O)348" && wine.Stack == 8 && wine.Quality == 4
+        Require(delivered.Length == 2, "Whole or partial delivery is missing or duplicated.");
+        VerifyWine(delivered.Single(item => !item.modData.ContainsKey("Hatifect.Flow/PartialAcceptance")), 8);
+        VerifyWine(delivered.Single(item => item.modData.ContainsKey("Hatifect.Flow/PartialAcceptance")), 5);
+        Require(Items(_sourceTile).Sum(item => item.Stack) + delivered.Sum(item => item.Stack) == 21,
+            "Whole plus partial transport did not conserve total quantity.");
+    }
+    private void VerifyWine(Item item, int quantity)
+    {
+        Require(item is StardewValley.Object, "Delivered cargo is not an ordinary object.");
+        var wine = (StardewValley.Object)item;
+        Require(wine.QualifiedItemId == "(O)348" && wine.Stack == quantity && wine.Quality == 4
             && wine.preserve.Value == StardewValley.Object.PreserveType.Wine && wine.preservedParentSheetIndex.Value == "613"
             && wine.modData.TryGetValue("Hatifect.Flow/Acceptance", out string marker) && marker == _request.RunId,
-            "Whole-stack saved item fidelity changed.");
+            "Saved item fidelity changed in whole or partial delivery.");
     }
 
     internal void Fail(Exception error)
@@ -262,10 +301,12 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
             RuntimeFingerprintAlgorithm = "sha256-flow-runtime-v1", RuntimeFingerprint = _fingerprint,
             GameVersion = Game1.GetVersionString(), SmapiVersion = Constants.ApiVersion.ToString(), Scenarios = Array.Empty<object>(),
             HostChecks = Checks.Select(id => new { Id = Scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
-                CapturedAtUtc = captured, Note = _errors.Count == 0 ? "Production session, real chests, two actual game saves and reloads." : string.Join("\n", _errors) }).ToArray()
+                CapturedAtUtc = captured, Note = _errors.Count == 0 ? "Whole and partial stacks, real chests, two actual game saves and reloads; total quantity conserved." : string.Join("\n", _errors) }).ToArray()
         });
         AtomicJson(Path.Combine(_request.Artifact, "diagnostics", "flow-chest-roundtrip.json"), new
-        { requestId = _request.RunId, scenarioId = Scenario, frames = _frames, loads = _loads, savingEvents = _savings, savedEvents = _saves, parcelId = _parcel, errors = _errors.ToArray() });
+        { requestId = _request.RunId, scenarioId = Scenario, frames = _frames, loads = _loads, savingEvents = _savings, savedEvents = _saves,
+            parcelId = _parcel, partialParcelId = _partialParcel, partialSourceQuantity = 13, partialCargoQuantity = 5, partialRemainderQuantity = 8,
+            errors = _errors.ToArray() });
     }
 
     public void Dispose()
