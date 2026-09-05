@@ -12,6 +12,56 @@ namespace Hatifect.UI.Stardew.Tests;
 
 public sealed class ScreenOwnershipTests
 {
+    [Fact]
+    public void NativeSlotSetterCanDisposeBeforeAssigningReplacementWithoutRecursiveWrites()
+    {
+        object menu = new();
+        object replacement = new();
+        object? slot = menu;
+        int writes = 0;
+        var lease = new UiSemanticMenuSlotLease(menu, () => true, () => slot,
+            () => { writes++; throw new InvalidOperationException("Dispose must not write a native setter's slot."); });
+        // Match Game1.set_activeClickableMenu: old.Dispose(), then store replacement.
+        lease.Retire();
+        Assert.False(lease.CanDispatch);
+        Assert.Same(menu, slot);
+        slot = replacement;
+        lease.PollRetirement();
+        Assert.Equal(0, writes);
+        Assert.Same(replacement, slot);
+    }
+
+    [Fact]
+    public void DeferredRetirementToleratesNativeSetterReentryAndRetainsFailedClearForRetry()
+    {
+        object menu = new();
+        object? slot = menu;
+        int writes = 0;
+        bool fail = true;
+        UiSemanticMenuSlotLease? lease = null;
+        lease = new UiSemanticMenuSlotLease(menu, () => true, () => slot, () =>
+        {
+            writes++;
+            if (writes > 2) throw new InvalidOperationException("Unexpected recursive slot write.");
+            lease!.Retire();
+            lease.PollRetirement();
+            if (fail) throw new InvalidOperationException("Native setter failed before assignment.");
+            slot = null;
+        });
+        lease.Retire();
+        Assert.Equal(0, writes);
+        Assert.Throws<InvalidOperationException>(lease.PollRetirement);
+        Assert.Equal(1, writes);
+        Assert.Same(menu, slot);
+        Assert.False(lease.CanDispatch);
+        fail = false;
+        lease.PollRetirement();
+        Assert.Equal(2, writes);
+        Assert.Null(slot);
+        lease.PollRetirement();
+        Assert.Equal(2, writes);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -8,6 +8,7 @@ internal sealed class UiSemanticMenuSlotLease
     private readonly Func<object?> _read;
     private readonly Action _clear;
     private bool _retired;
+    private bool _clearing;
 
     internal UiSemanticMenuSlotLease(object menu, Func<bool> isOwner, Func<object?> read, Action clear)
     {
@@ -22,11 +23,15 @@ internal sealed class UiSemanticMenuSlotLease
     internal void Retire()
     {
         _retired = true;
-        PollRetirement();
+        // Game1's menu setter invokes Dispose before assigning its new slot value.
+        // Never write that slot recursively from the disposal callback.
     }
 
     internal void PollRetirement()
     {
-        if (_retired && _isOwner() && ReferenceEquals(_read(), _menu)) _clear();
+        if (!_retired || _clearing || !_isOwner()) return;
+        _clearing = true;
+        try { if (ReferenceEquals(_read(), _menu)) _clear(); }
+        finally { _clearing = false; }
     }
 }
