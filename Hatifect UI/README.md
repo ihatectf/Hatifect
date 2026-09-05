@@ -9,3 +9,5 @@ Consumer описывает смысл интерфейса и действия.
 Из корня репозитория: `./tools/hatifect-test ui`, затем `./tools/hatifect-check --platform` для изменений Stardew host. Бюджеты реальных кадров находятся в `PERFORMANCE_BUDGETS.json`, требования к runtime-отчёту — в `HOST_ACCEPTANCE_REQUIREMENTS.json`. Статические тесты не заменяют измерения в игре.
 
 Общие границы: [архитектура](../ARCHITECTURE.md). Команды: [разработка](../docs/DEVELOPMENT.md).
+
+[Roadmap UI и Flowline](../docs/ROADMAP.md) описывает semantic-v2, Quick/View/Exact authoring, общие компоненты, transactional reload и editor/preview. Это план развития текущего framework; перечисленные будущие API не считаются уже опубликованными.
