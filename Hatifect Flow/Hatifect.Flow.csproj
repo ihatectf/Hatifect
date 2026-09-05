@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.Flow</AssemblyName>
+    <RootNamespace>Hatifect.Flow</RootNamespace>
+    <EnableModDeploy Condition="'$(EnableModDeploy)' == ''">false</EnableModDeploy>
+    <EnableModZip>false</EnableModZip>
+    <EnableGameDebugging>false</EnableGameDebugging>
+    <ModFolderName>Hatifect Flow</ModFolderName>
+    <HatifectInstallRelativePath>Hatifect Flow</HatifectInstallRelativePath>
+    <Version>3.0.0-rc.89</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.2" />
+    <ProjectReference Include="Hatifect.Flow.Core/Hatifect.Flow.Core.csproj" />
+    <ProjectReference Include="Hatifect.Flow.Persistence/Hatifect.Flow.Persistence.csproj" />
+  </ItemGroup>
+
+  <Target Name="CollectFlowRuntime" BeforeTargets="DeployHatifectModule">
+    <ItemGroup>
+      <HatifectRuntimeFile Include="$(TargetDir)Hatifect.Flow.Core.dll" />
+      <HatifectRuntimeFile Include="$(TargetDir)Hatifect.Flow.Persistence.dll" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <Compile Remove="Hatifect.Flow.Core/**/*.cs" />
+    <Compile Remove="Hatifect.Flow.Persistence/**/*.cs" />
+    <Compile Remove="Hatifect.Flow.UI.Semantic/**/*.cs" />
+    <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
+  <Import Project="../Hatifect.Build.targets" Condition="Exists('../Hatifect.Build.targets')" />
+</Project>

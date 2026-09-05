@@ -1,0 +1,115 @@
+using System;
+using Hatifect.Flow.Diagnostics;
+using Hatifect.Flow.Infrastructure.Persistence;
+using StardewModdingAPI;
+using StardewModdingAPI.Events;
+using StardewValley;
+
+namespace Hatifect.Flow;
+
+/// <summary>SMAPI lifecycle and update boundary for Hatifect Flow.</summary>
+public sealed class ModEntry : Mod
+{
+    private DurableFlowHost? _host;
+    private FlowHostAcceptance? _acceptance;
+    private bool _attached;
+    private bool _startupFailed;
+
+    public override void Entry(IModHelper helper)
+    {
+        if (_attached) throw new InvalidOperationException("Hatifect Flow host is already attached.");
+        _attached = true;
+        helper.Events.GameLoop.GameLaunched += OnGameLaunched;
+        helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
+        helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
+        helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
+        Monitor.Log("Hatifect Flow: Flowline host loaded. Real storage adapters are not configured.", LogLevel.Info);
+    }
+
+    private void OnGameLaunched(object? sender, GameLaunchedEventArgs e)
+    {
+        try { _acceptance = FlowHostAcceptance.TryCreate(Helper, Monitor); }
+        catch (Exception error)
+        {
+            _startupFailed = true;
+            ReportFailure(error);
+        }
+    }
+
+    private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
+    {
+        // Fake state is created only for the transport-owned isolated scenario.
+        // Ordinary saves have no configured game inventory adapter yet.
+        if (_acceptance is null) return;
+        try
+        {
+            if (!Context.IsMainPlayer || !Context.IsWorldReady)
+                throw new InvalidOperationException("Flow host startup requires the authoritative loaded world.");
+            _host ??= new DurableFlowHost();
+            bool started = _host.Start(_acceptance.SessionIdentity, _acceptance.OpenSession);
+            _acceptance.OnSaveLoaded(_host, started);
+        }
+        catch (Exception error) { ReportFailure(error); }
+    }
+
+    private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
+    {
+        if (_startupFailed)
+        {
+            // A rejected isolated harness configuration cannot produce acceptance
+            // evidence. End this requested process instead of waiting indefinitely.
+            Game1.game1.Exit();
+            return;
+        }
+        try
+        {
+            if (_host?.State == DurableFlowHostState.Active)
+                _host.Tick(!Context.IsWorldReady || !Context.IsMainPlayer || !Game1.shouldTimePass());
+            _acceptance?.Tick(_host);
+        }
+        catch (Exception error) { ReportFailure(error); }
+    }
+
+    private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
+    {
+        try
+        {
+            CloseHost();
+            _acceptance?.OnReturnedToTitle();
+        }
+        catch (Exception error) { ReportFailure(error); }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        try
+        {
+            if (!disposing) return;
+            if (_attached)
+            {
+                Helper.Events.GameLoop.GameLaunched -= OnGameLaunched;
+                Helper.Events.GameLoop.SaveLoaded -= OnSaveLoaded;
+                Helper.Events.GameLoop.UpdateTicked -= OnUpdateTicked;
+                Helper.Events.GameLoop.ReturnedToTitle -= OnReturnedToTitle;
+                _attached = false;
+            }
+            try { CloseHost(); }
+            finally { _acceptance?.Dispose(); }
+        }
+        finally { base.Dispose(disposing); }
+    }
+
+    private void CloseHost()
+    {
+        try { _host?.Dispose(); }
+        finally { _host = null; }
+    }
+
+    private void ReportFailure(Exception error)
+    {
+        try { CloseHost(); }
+        catch (Exception cleanup) { error = new AggregateException("Flow host operation and cleanup failed.", error, cleanup); }
+        Monitor.Log("Hatifect Flow host failed: " + error, LogLevel.Error);
+        _acceptance?.Fail(error);
+    }
+}

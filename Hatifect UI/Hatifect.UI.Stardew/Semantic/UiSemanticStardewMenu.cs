@@ -1,0 +1,263 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+using StardewValley;
+using StardewValley.Menus;
+using Hatifect.UI;
+using Hatifect.UI.Runtime.Hosting;
+using Hatifect.UI.Runtime.Invocation;
+using Hatifect.UI.Runtime.Platform;
+using RuntimeRect = Hatifect.UI.Runtime.Layout.UiRect;
+
+namespace Hatifect.UI.Stardew.Semantic;
+
+/// <summary>
+/// Provisional semantic IClickableMenu presenter. It owns one semantic host and normalizes Stardew
+/// lifecycle/input only; Runtime retains route, placement, layout, focus, portal, and editing policy.
+/// </summary>
+internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
+{
+    private readonly UiSemanticStardewInputAdapter _input;
+    private readonly UiSemanticKeyboardSubscriberLease _keyboard;
+    private readonly Action<RuntimeRect> _recompose;
+    private readonly Action? _onClosed;
+    private UiSemanticStardewHost? _host;
+    private bool _cleaned;
+    private bool _closeRequested;
+    private RuntimeRect _viewport;
+
+    internal UiSemanticStardewMenu(
+        UiSemanticStardewHost host,
+        RuntimeRect viewport,
+        Action<RuntimeRect> recompose,
+        Action? onClosed = null)
+    {
+        _host = host ?? throw new ArgumentNullException(nameof(host));
+        _input = host.Input;
+        _recompose = recompose ?? throw new ArgumentNullException(nameof(recompose));
+        _onClosed = onClosed;
+        _keyboard = new UiSemanticKeyboardSubscriberLease(ReceiveTextInput, ReceiveSpecialInput);
+        ApplyViewport(viewport);
+        _input.PointerMove(Game1.getMouseX(), Game1.getMouseY());
+        UiStardewAcceptanceRecorder.Shared.RegisterSemanticSurface(this, "semantic-terminal-menu");
+    }
+
+    public bool CloseOnCancel { get; set; } = true;
+    public Func<bool>? CloseRequestHandler { get; set; }
+
+    internal static RuntimeRect CaptureViewport()
+        => new(0, 0, Math.Max(1, Game1.uiViewport.Width), Math.Max(1, Game1.uiViewport.Height));
+
+    public override void update(GameTime time)
+    {
+        var sample = BeginAcceptanceSample();
+        base.update(time);
+        RuntimeRect viewport = CaptureViewport();
+        if (viewport != _viewport)
+        {
+            _recompose(viewport);
+            ApplyViewport(viewport);
+        }
+        CompleteInput();
+        sample.Complete();
+    }
+
+    public override void performHoverAction(int x, int y)
+    {
+        var sample = BeginAcceptanceSample();
+        base.performHoverAction(x, y);
+        _input.PointerMove(x, y);
+        CompleteInput();
+        sample.Complete();
+    }
+
+    public override void receiveLeftClick(int x, int y, bool playSound = true)
+    {
+        var sample = BeginAcceptanceSample();
+        _input.PointerDown(x, y);
+        CompleteInput();
+        sample.Complete();
+    }
+
+    public override void releaseLeftClick(int x, int y)
+    {
+        var sample = BeginAcceptanceSample();
+        _input.PointerUp(x, y);
+        CompleteInput();
+        sample.Complete();
+    }
+
+    public override void leftClickHeld(int x, int y)
+    {
+        var sample = BeginAcceptanceSample();
+        _input.PointerMove(x, y);
+        sample.Complete();
+    }
+
+    public override void receiveScrollWheelAction(int direction)
+    {
+        var sample = BeginAcceptanceSample();
+        _input.Wheel(Game1.getMouseX(), Game1.getMouseY(), direction);
+        sample.Complete();
+    }
+
+    public override void receiveKeyPress(Keys key)
+    {
+        if (_keyboard.OwnsSubscriber) return;
+        var sample = BeginAcceptanceSample();
+        UiPortalDispatch dispatch = _input.KeyDown(key);
+        if (!dispatch.Consumed && key == Keys.Escape)
+            TryCloseFromUnhandledCancel();
+        else if (!dispatch.Consumed)
+            base.receiveKeyPress(key);
+        CompleteInput();
+        sample.Complete();
+    }
+
+    public override void receiveGamePadButton(Buttons button)
+    {
+        var sample = BeginAcceptanceSample();
+        UiPortalDispatch dispatch = _input.GamePad(button);
+        if (!dispatch.Consumed && button == Buttons.B)
+            TryCloseFromUnhandledCancel();
+        else if (!dispatch.Consumed)
+            base.receiveGamePadButton(button);
+        CompleteInput();
+        sample.Complete();
+    }
+
+    public override void draw(SpriteBatch batch)
+    {
+        UiSemanticStardewHost host = _host
+            ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu));
+        var sample = BeginAcceptanceSample();
+        host.Render(batch);
+        drawMouse(batch);
+        sample.Complete(completesFrame: true, layoutBuilds: host.Performance.LayoutBuilds);
+    }
+
+    protected override void cleanupBeforeExit()
+    {
+        base.cleanupBeforeExit();
+        CleanupSession();
+    }
+
+    public override void emergencyShutDown()
+    {
+        CleanupSession();
+        base.emergencyShutDown();
+    }
+
+    public void Dispose() => CleanupSession();
+
+    internal (UiInvocationResult Invocation, UiHostRuntimeSession Runtime) CaptureInspectionContext()
+    {
+        UiSemanticStardewHost host = _host
+            ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu));
+        return (host.CurrentInvocation, host.Session.Root);
+    }
+
+    internal void InsertAutomationText(string text)
+    {
+        var sample = BeginAcceptanceSample();
+        _input.TextInput(text);
+        CompleteInput();
+        sample.Complete();
+    }
+
+    internal void RequestClose()
+    {
+        if (!_cleaned) _closeRequested = true;
+    }
+
+    internal UiHostUpdate OpenTerminalSection(UiSymbolId section)
+    {
+        UiSemanticStardewHost host = _host
+            ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu));
+        return host.OpenTerminalSection(section);
+    }
+
+    internal bool EvictTerminalSection(UiSymbolId section)
+    {
+        UiSemanticStardewHost host = _host
+            ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu));
+        return host.EvictTerminalSection(section);
+    }
+
+    private void CleanupSession()
+    {
+        if (_cleaned) return;
+        _cleaned = true;
+        var failures = new List<Exception>();
+        try { _keyboard.Dispose(); }
+        catch (Exception error) { failures.Add(error); }
+        try { UiStardewAcceptanceRecorder.Shared.UnregisterSemanticSurface(this); }
+        catch (Exception error) { failures.Add(error); }
+        UiSemanticStardewHost? host = Interlocked.Exchange(ref _host, null);
+        try { host?.Dispose(); }
+        catch (Exception error) { failures.Add(error); }
+        try { _onClosed?.Invoke(); }
+        catch (Exception error) { failures.Add(error); }
+        if (failures.Count > 0)
+            throw new AggregateException("Semantic Stardew menu cleanup failed.", failures);
+    }
+
+    private void ApplyViewport(RuntimeRect viewport)
+    {
+        _viewport = viewport;
+        xPositionOnScreen = (int)viewport.X;
+        yPositionOnScreen = (int)viewport.Y;
+        width = Math.Max(1, (int)viewport.Width);
+        height = Math.Max(1, (int)viewport.Height);
+    }
+
+    private void TryCloseFromUnhandledCancel()
+    {
+        if (!CloseOnCancel || CloseRequestHandler?.Invoke() == false) return;
+        exitThisMenu();
+    }
+
+    private void SyncTextInputOwnership()
+    {
+        bool needsText = ReferenceEquals(Game1.activeClickableMenu, this) && _input.IsTextEditing;
+        if (needsText) _keyboard.Acquire(); else _keyboard.Release();
+    }
+
+    private void CompleteInput()
+    {
+        SyncTextInputOwnership();
+        if (!_closeRequested || _cleaned) return;
+        _closeRequested = false;
+        exitThisMenu();
+    }
+
+    private void ReceiveTextInput(string text)
+    {
+        var sample = BeginAcceptanceSample();
+        _input.TextInput(text);
+        CompleteInput();
+        sample.Complete();
+    }
+
+    private void ReceiveSpecialInput(Keys key)
+    {
+        var sample = BeginAcceptanceSample();
+        UiPortalDispatch dispatch = _input.KeyDown(key);
+        if (!dispatch.Consumed && key == Keys.Escape)
+            TryCloseFromUnhandledCancel();
+        CompleteInput();
+        sample.Complete();
+    }
+
+    private UiStardewAcceptanceRecorder.SemanticOperationSample BeginAcceptanceSample()
+    {
+        UiStardewAcceptanceRecorder recorder = UiStardewAcceptanceRecorder.Shared;
+        UiSemanticStardewHost? host = _host;
+        return !recorder.IsCapturing || host is null
+            ? default
+            : recorder.BeginSemanticOperation(this, host.Performance.LayoutBuilds);
+    }
+}

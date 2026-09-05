@@ -1,0 +1,34 @@
+<Project>
+  <PropertyGroup>
+    <HatifectUiPackageVersion>1.0.0-alpha.29</HatifectUiPackageVersion>
+    <HatifectUiLocalFeed Condition="'$(HatifectUiLocalFeed)' == ''">$(MSBuildThisFileDirectory)artifacts/ui-packages</HatifectUiLocalFeed>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(HatifectUiPackageProducer)' == 'true'">
+    <Version>$(HatifectUiPackageVersion)</Version>
+    <PackageVersion>$(HatifectUiPackageVersion)</PackageVersion>
+    <PackageId>$(AssemblyName)</PackageId>
+    <Authors>ihatectf</Authors>
+    <Company>ihatectf</Company>
+    <Product>Hatifect UI</Product>
+    <Description>Versioned Hatifect UI assembly package for first-party semantic consumers.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/ihatectf/Hatifect</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <IsPackable>true</IsPackable>
+    <IncludeSymbols>false</IncludeSymbols>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(HatifectUiPackageProducer)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)Hatifect UI/README.md"
+          Pack="true"
+          PackagePath="/"
+          Link="README.md" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(HatifectUiPackageConsumer)' == 'true'">
+    <RestoreAdditionalProjectSources>$(HatifectUiLocalFeed);$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
+    <RestorePackagesPath Condition="'$(RestorePackagesPath)' == ''">$(MSBuildThisFileDirectory)artifacts/ui-consumer-packages</RestorePackagesPath>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Hatifect.UI.Examples</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Hatifect.UI.Experience/Hatifect.UI.Experience.csproj" />
+    <ProjectReference Include="../../Hatifect.UI.Planning/Hatifect.UI.Planning.csproj" />
+    <ProjectReference Include="../../Hatifect.UI.Runtime/Hatifect.UI.Runtime.csproj" />
+    <ProjectReference Include="../../Hatifect.UI.Semantics/Hatifect.UI.Semantics.csproj" />
+  </ItemGroup>
+</Project>

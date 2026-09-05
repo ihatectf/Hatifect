@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+
+say "=================================="
+say "       Hatifect RELEASE GATE"
+say "=================================="
+
+say "[1/7] static/build/test verification including game-linked projects"
+"$TOOLS_DIR/hatifect-check" --platform
+
+say "[2/7] isolated UI package consumer"
+"$TOOLS_DIR/hatifect-isolated-ui-ca"
+
+say "[3/7] runtime boot"
+"$TOOLS_DIR/hatifect-smoke" runtime.boot
+
+say "[4/7] runtime lifecycle"
+"$TOOLS_DIR/hatifect-smoke" runtime.return-to-title
+
+say "[5/7] Flowline route lifecycle"
+"$TOOLS_DIR/hatifect-smoke" flow.route.basic
+
+say "[6/7] Flowline save isolation"
+"$TOOLS_DIR/hatifect-smoke" flow.save.isolation
+
+say "[7/7] UI regression suite"
+"$TOOLS_DIR/hatifect-ui-test" all
+
+say "=================================="
+say "RESULT: PASS — selected static and runtime checks passed; publication is a separate action"
+say "=================================="

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.UI.Runtime</AssemblyName>
+    <RootNamespace>Hatifect.UI.Runtime</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0-alpha.29</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Hatifect.UI.Experience/Hatifect.UI.Experience.csproj" />
+    <ProjectReference Include="../Hatifect.UI.Planning/Hatifect.UI.Planning.csproj" />
+    <ProjectReference Include="../Hatifect.UI.Semantics/Hatifect.UI.Semantics.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hatifect.UI.DevTools" />
+    <InternalsVisibleTo Include="Hatifect.UI.DevTools.Tests" />
+    <InternalsVisibleTo Include="Hatifect.UI.Runtime.Tests" />
+    <InternalsVisibleTo Include="Hatifect.UI.Stardew" />
+  </ItemGroup>
+  <PropertyGroup><HatifectUiPackageProducer>true</HatifectUiPackageProducer></PropertyGroup>
+  <Import Project="../../Hatifect.UI.Packages.props" />
+</Project>

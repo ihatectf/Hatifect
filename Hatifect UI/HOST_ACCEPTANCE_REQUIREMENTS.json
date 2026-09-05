@@ -1,0 +1,98 @@
+{
+  "FormatVersion": 3,
+  "PerformanceFormatVersion": 3,
+  "HatifectVersion": "1.0.0-alpha.29",
+  "RuntimeFingerprintAlgorithm": "sha256-runtime-v2",
+  "RequiredChecks": [
+    {
+      "Id": "semantic.lifecycle.visual"
+    },
+    {
+      "Id": "semantic.lifecycle.focus"
+    },
+    {
+      "Id": "semantic.lifecycle.close-reopen"
+    },
+    {
+      "Id": "semantic.inspector.capture"
+    },
+    {
+      "Id": "semantic.inspector.reveal"
+    },
+    {
+      "Id": "semantic.inspector.close"
+    },
+    {
+      "Id": "semantic.overlay.visual"
+    },
+    {
+      "Id": "semantic.overlay.context"
+    },
+    {
+      "Id": "semantic.overlay.dismiss"
+    },
+    {
+      "Id": "semantic.input.pointer"
+    },
+    {
+      "Id": "semantic.input.keyboard"
+    },
+    {
+      "Id": "semantic.input.controller"
+    },
+    {
+      "Id": "semantic.input.text"
+    },
+    {
+      "Id": "semantic.locale.en"
+    },
+    {
+      "Id": "semantic.locale.ru"
+    },
+    {
+      "Id": "semantic.scale.75"
+    },
+    {
+      "Id": "semantic.scale.100"
+    },
+    {
+      "Id": "semantic.scale.125"
+    },
+    {
+      "Id": "semantic.scale.150"
+    },
+    {
+      "Id": "semantic.viewport.reflow"
+    },
+    {
+      "Id": "semantic.theme.matrix"
+    },
+    {
+      "Id": "semantic.chests-anywhere-overlay.open"
+    },
+    {
+      "Id": "semantic.chests-anywhere-overlay.views"
+    },
+    {
+      "Id": "semantic.chests-anywhere-overlay.handoff"
+    },
+    {
+      "Id": "semantic.chests-anywhere-overlay.restoration"
+    },
+    {
+      "Id": "semantic.chests-anywhere-overlay.lifecycle"
+    },
+    {
+      "Id": "semantic.performance.steady"
+    }
+  ],
+  "ScenarioEvidence": {
+    "semantic.performance": {
+      "RequiredSurfaceKinds": [
+        "semantic-terminal-menu"
+      ],
+      "MinThemeIds": 1,
+      "MinDisplayMetrics": 1
+    }
+  }
+}

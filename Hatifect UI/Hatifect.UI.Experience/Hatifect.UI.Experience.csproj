@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.UI.Experience</AssemblyName>
+    <RootNamespace>Hatifect.UI.Experience</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0-alpha.29</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Hatifect.UI.Semantics/Hatifect.UI.Semantics.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hatifect.UI.Runtime" />
+    <InternalsVisibleTo Include="Hatifect.UI.Runtime.Tests" />
+  </ItemGroup>
+  <PropertyGroup><HatifectUiPackageProducer>true</HatifectUiPackageProducer></PropertyGroup>
+  <Import Project="../../Hatifect.UI.Packages.props" />
+</Project>

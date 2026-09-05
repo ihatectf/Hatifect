@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>Hatifect.ChestsAnywhereOverlay.Tests</AssemblyName>
+    <EnableModDeploy>false</EnableModDeploy>
+    <EnableModZip>false</EnableModZip>
+    <HatifectUiPackageConsumer>true</HatifectUiPackageConsumer>
+  </PropertyGroup>
+  <Import Project="../../../../../Hatifect.UI.Packages.props" />
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Hatifect.UI.Experience"
+                      Version="[$(HatifectUiPackageVersion)]"
+                      IncludeAssets="compile;runtime"
+                      PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Hatifect.ChestsAnywhereOverlay.UI.Semantic/Hatifect.ChestsAnywhereOverlay.UI.Semantic.csproj" />
+    <ProjectReference Include="../../Hatifect.ChestsAnywhereOverlay.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+
+kind="${1:-}"
+scenario="${2:-}"
+result="${3:-}"
+artifact_dir="${4:-}"
+validator="$TOOLS_DIR/live-harness/validate.py"
+user_session_runtime="$TOOLS_DIR/live-harness/user_session_runtime.py"
+save_provisioner="$TOOLS_DIR/live-harness/save_provisioning.py"
+isolated_root="$(resolve_smapi_test_root)"
+deployment_marker="$isolated_root/deployment.json"
+artifact_root="$REPO_ROOT/artifacts/runtime"
+
+[[ "$kind" == "smoke" || "$kind" == "ui" ]] || die "Live runner kind must be smoke or ui."
+[[ -n "$scenario" && -n "$result" && -n "$artifact_dir" ]] || \
+  die "Usage: hatifect-live-runner <smoke|ui> <scenario> <result-json> <artifact-dir>"
+need_cmd python3
+smapi="${HATIFECT_SMAPI_PATH:-}"
+
+artifact_dir="$(python3 "$validator" assert-contained "$artifact_root" "$artifact_dir")"
+result="$(python3 "$validator" assert-contained "$artifact_dir" "$result")"
+
+if ! python3 "$validator" check-scenario "$kind" "$scenario" >/dev/null; then
+  python3 "$validator" write-result FAIL "$scenario" "$result" \
+    "Unknown or invalid live scenario." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-SCENARIO \
+    --artifact-root "$artifact_dir"
+  exit 1
+fi
+
+mkdir -p "$artifact_dir"
+if [[ -z "$smapi" || ! -x "$smapi" ]]; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "Configure executable HATIFECT_SMAPI_PATH in tools/hatifect.env." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-SMAPI \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+if [[ ! -f "$deployment_marker" || ! -f "$isolated_root/Mods/Hatifect/Hatifect UI/manifest.json" ]]; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "No prepared isolated deployment exists. Run ./tools/hatifect-live-prepare successfully first." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-DEPLOYMENT \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+if ! python3 "$validator" validate-deployment "$deployment_marker" >/dev/null; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "The isolated deployment marker is malformed. Run ./tools/hatifect-live-prepare successfully." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-DEPLOYMENT \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+required_mod_error=""
+if ! required_mod_error="$(python3 "$validator" validate-required-mods "$kind" "$scenario" "$isolated_root/Mods" 2>&1)"; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "$required_mod_error" \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-MODS \
+    --expected "Every scenario-required mod is present in the isolated deployment." \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+
+requires_save="$(python3 "$validator" check-scenario "$kind" "$scenario" --field requiresSave)"
+save_path=""
+run_id="$(basename "$artifact_dir")"
+if [[ "$scenario" == "save.bootstrap" ]]; then
+  bootstrap_preflight_result="$(python3 "$save_provisioner" bootstrap-preflight \
+    --isolated-root "$isolated_root" \
+    --smapi-path "$smapi" \
+    --run-id "$run_id" \
+    --scenario "$scenario" \
+    --artifact-directory "$artifact_dir" \
+    --result "$result")" || exit $?
+  if [[ "$bootstrap_preflight_result" == "HARNESS-SAVE-FIXTURE-EXISTS" ]]; then
+    say "HARNESS-SAVE-FIXTURE-EXISTS: compatible verified fixture reuse PASS"
+    exit 0
+  fi
+fi
+if [[ "$requires_save" == "true" ]]; then
+  save_path="$(python3 "$save_provisioner" plan \
+    --isolated-root "$isolated_root" \
+    --smapi-path "$smapi" \
+    --run-id "$run_id" \
+    --scenario "$scenario" \
+    --artifact-directory "$artifact_dir" \
+    --result "$result")" || exit $?
+fi
+
+scenario_timeout="$(python3 "$validator" check-scenario "$kind" "$scenario" --field timeoutSeconds)"
+timeout_seconds="${HATIFECT_TEST_TIMEOUT_SECONDS:-$scenario_timeout}"
+if ! [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || (( timeout_seconds > scenario_timeout )); then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "HATIFECT_TEST_TIMEOUT_SECONDS must be positive and cannot exceed the allowlisted scenario timeout." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-TIMEOUT \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+test_seed="${HATIFECT_TEST_SEED:-0}"
+if ! [[ "$test_seed" =~ ^-?[0-9]+$ ]]; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "HATIFECT_TEST_SEED must be an integer." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-SEED \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+
+python3 "$validator" check-scenario "$kind" "$scenario" > "$artifact_dir/instructions.txt"
+say "Hatifect automated live harness"
+say "Scenario: $scenario"
+say "Transport: VS Code user-session executor -> canonical owned direct process"
+say "Isolated root: $isolated_root"
+say "Artifacts: $artifact_dir"
+say "Timeout: $timeout_seconds seconds"
+
+arguments=(
+  submit
+  --repository-root "$REPO_ROOT"
+  --kind "$kind"
+  --scenario "$scenario"
+  --isolated-root "$isolated_root"
+  --artifact-directory "$artifact_dir"
+  --result "$result"
+  --timeout-seconds "$timeout_seconds"
+  --seed "$test_seed"
+)
+if [[ -n "$save_path" ]]; then
+  arguments+=(--save-path "$save_path")
+fi
+
+exec python3 "$user_session_runtime" "${arguments[@]}"

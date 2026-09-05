@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+
+command_name="${1:-}"
+[[ -n "$command_name" ]] || die "Usage: ./tools/hatifect-runtime-executor <serve|doctor|status>"
+need_cmd python3
+executor="$TOOLS_DIR/live-harness/user_session_runtime.py"
+supervisor="$TOOLS_DIR/live-harness/user_session_supervisor.py"
+
+case "$command_name" in
+  serve)
+    smapi="${HATIFECT_SMAPI_PATH:-}"
+    [[ -n "$smapi" && -x "$smapi" ]] || \
+      die "Configure executable HATIFECT_SMAPI_PATH in tools/hatifect.env."
+    exec python3 "$supervisor" \
+      --repository-root "$REPO_ROOT" \
+      --smapi-path "$smapi"
+    ;;
+  doctor)
+    smapi="${HATIFECT_SMAPI_PATH:-}"
+    [[ -n "$smapi" ]] || die "Configure HATIFECT_SMAPI_PATH in tools/hatifect.env."
+    isolated_root="$(resolve_smapi_test_root)"
+    exec python3 "$executor" doctor \
+      --repository-root "$REPO_ROOT" \
+      --smapi-path "$smapi" \
+      --isolated-root "$isolated_root"
+    ;;
+  status)
+    exec python3 "$executor" status --repository-root "$REPO_ROOT"
+    ;;
+  *)
+    die "Unknown runtime executor command: $command_name"
+    ;;
+esac

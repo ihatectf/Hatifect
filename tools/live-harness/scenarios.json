@@ -1,0 +1,297 @@
+{
+  "formatVersion": 1,
+  "scenarios": [
+    {
+      "id": "runtime.boot",
+      "kind": "smoke",
+      "requiresSave": false,
+      "timeoutSeconds": 600,
+      "checks": [
+        "runtime.boot.loaded"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "save.bootstrap",
+      "kind": "smoke",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "save.bootstrap.reload"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "runtime.return-to-title",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "runtime.return-to-title.reset"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.route.basic",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.route.basic.loaded",
+        "flow.route.basic.delivery",
+        "flow.route.basic.pause",
+        "flow.route.basic.idle",
+        "flow.route.basic.lifecycle",
+        "flow.route.basic.reload"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.save.isolation",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.save.isolation.loaded",
+        "flow.save.isolation.delivery",
+        "flow.save.isolation.pause",
+        "flow.save.isolation.idle",
+        "flow.save.isolation.lifecycle",
+        "flow.save.isolation.reload",
+        "flow.save.isolation.save-isolation"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.lifecycle",
+      "kind": "ui",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.lifecycle.visual",
+        "semantic.lifecycle.focus",
+        "semantic.lifecycle.close-reopen"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.inspector",
+      "kind": "ui",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.inspector.capture",
+        "semantic.inspector.reveal",
+        "semantic.inspector.close"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.overlay",
+      "kind": "ui",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.overlay.visual",
+        "semantic.overlay.context",
+        "semantic.overlay.dismiss"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.input",
+      "kind": "ui",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.input.pointer",
+        "semantic.input.keyboard",
+        "semantic.input.controller",
+        "semantic.input.text"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.locale-scale-theme",
+      "kind": "ui",
+      "requiresSave": true,
+      "timeoutSeconds": 3600,
+      "checks": [
+        "semantic.locale.en",
+        "semantic.locale.ru",
+        "semantic.scale.75",
+        "semantic.scale.100",
+        "semantic.scale.125",
+        "semantic.scale.150",
+        "semantic.viewport.reflow",
+        "semantic.theme.matrix"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.chests-anywhere-overlay",
+      "kind": "ui",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Pathoschild.ChestsAnywhere"
+      ],
+      "checks": [
+        "semantic.chests-anywhere-overlay.open",
+        "semantic.chests-anywhere-overlay.views",
+        "semantic.chests-anywhere-overlay.handoff",
+        "semantic.chests-anywhere-overlay.restoration",
+        "semantic.chests-anywhere-overlay.lifecycle"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.chests-anywhere-overlay.absent",
+      "kind": "ui",
+      "requiresSave": false,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.chests-anywhere-overlay.absent.fail-closed"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.chests-anywhere-overlay.incompatible",
+      "kind": "ui",
+      "requiresSave": false,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Pathoschild.ChestsAnywhere"
+      ],
+      "checks": [
+        "semantic.chests-anywhere-overlay.incompatible.fail-closed"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.chests-anywhere-overlay.capture-exception",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Pathoschild.ChestsAnywhere"
+      ],
+      "checks": [
+        "semantic.chests-anywhere-overlay.capture-exception.fail-closed"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.chests-anywhere-overlay.return-to-title",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Pathoschild.ChestsAnywhere"
+      ],
+      "checks": [
+        "semantic.chests-anywhere-overlay.return-to-title.open",
+        "semantic.chests-anywhere-overlay.return-to-title.restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.performance",
+      "kind": "ui",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.performance.steady"
+      ],
+      "performance": {
+        "scenarioId": "semantic.performance",
+        "minimumFrames": 600,
+        "surfaceKinds": [
+          "semantic-terminal-menu"
+        ],
+        "maximumP95UiThreadMs": 2.0,
+        "maximumP99UiThreadMs": 4.0,
+        "maximumAllocatedBytesPerFrame": 16384,
+        "maximumLayoutCacheMissRatio": 0.2
+      },
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "all",
+      "kind": "ui",
+      "requiresSave": true,
+      "timeoutSeconds": 7200,
+      "includes": [
+        "semantic.lifecycle",
+        "semantic.inspector",
+        "semantic.overlay",
+        "semantic.input",
+        "semantic.locale-scale-theme",
+        "semantic.chests-anywhere-overlay",
+        "semantic.performance"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    }
+  ]
+}

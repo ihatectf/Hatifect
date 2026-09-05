@@ -1,0 +1,168 @@
+using System;
+using System.Collections.Generic;
+
+namespace Hatifect.UI.Semantics;
+
+public sealed class UiSemanticCatalog
+{
+    private const string BuiltInScope = "Hatifect.UI";
+    private readonly Dictionary<(UiDefinitionKind Kind, string Name), UiPropertySymbol> _properties = new();
+    private readonly Dictionary<string, UiTokenSymbol> _tokens = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, UiPresentationSymbol> _presentations = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, UiSymbolId> _patterns = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, UiSymbolId> _regions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, UiSymbolId> _profiles = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, UiSymbolId> _states = new(StringComparer.Ordinal);
+    private readonly Dictionary<(UiSymbolId Property, string Name), UiEnumValueSymbol> _propertyValues = new();
+    private readonly Dictionary<UiSymbolId, UiEnumValueSymbol> _enumValues = new();
+
+    public static UiSemanticCatalog CreateFoundation()
+    {
+        var catalog = new UiSemanticCatalog();
+
+        catalog.AddPresentation("Gallery", "Browse", "Select");
+        catalog.AddPresentation("List", "Browse", "Select");
+        catalog.AddPresentation("TextField", "Search");
+        catalog.AddPresentation("FilterBar", "Filter");
+        catalog.AddPresentation("Value", "Select");
+        catalog.AddPresentation("Side", "Inspect");
+        catalog.AddPresentation("Sheet", "Inspect");
+        catalog.AddPresentation("Route", "Inspect", "Navigate");
+        catalog.AddPresentation("Form", "Configure");
+        catalog.AddPresentation("Status", "Monitor");
+        catalog.AddPresentation("NavigationList", "Navigate");
+        catalog.AddPresentation("ActionBar", "Actions");
+
+        foreach (string pattern in new[] { "Catalog", "MasterDetail", "Prompt", "Workspace" })
+            catalog._patterns.Add(pattern, BuiltIn($"pattern/{pattern}"));
+        foreach (string region in new[] { "Navigation", "Utility", "Primary", "Secondary", "Context", "Actions", "Footer", "Overlay" })
+            catalog._regions.Add(region, BuiltIn($"region/{region}"));
+        foreach (string profile in new[] { "Wide", "Medium", "Compact", "Controller" })
+            catalog._profiles.Add(profile, BuiltIn($"profile/{profile}"));
+        foreach (string state in new[] { "Hover", "Pressed", "Focused", "Selected", "Checked", "Disabled", "Enter", "Exit", "Congested", "Offline" })
+            catalog._states.Add(state, BuiltIn($"state/{state}"));
+
+        catalog.AddProperty(UiDefinitionKind.Presentation, "use", UiSemanticType.PresentationPattern, UiPropertyEffects.Recompose);
+        catalog.AddProperty(UiDefinitionKind.Presentation, "view", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
+        catalog.AddProperty(UiDefinitionKind.Presentation, "density", UiSemanticType.String, UiPropertyEffects.Recompose);
+        catalog.AddProperty(UiDefinitionKind.Presentation, "prefer", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
+        catalog.AddProperty(UiDefinitionKind.Presentation, "fallback", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
+        catalog.AddProperty(UiDefinitionKind.Presentation, "width", UiSemanticType.Length, UiPropertyEffects.Measure | UiPropertyEffects.Arrange);
+        UiPropertySymbol itemSizing = catalog.AddProperty(
+            UiDefinitionKind.Presentation,
+            "itemSizing",
+            UiSemanticType.EnumValue,
+            UiPropertyEffects.Measure | UiPropertyEffects.Arrange);
+        catalog.AddEnumValue(itemSizing, "Uniform");
+        catalog.AddEnumValue(itemSizing, "Adaptive");
+
+        catalog.AddProperty(UiDefinitionKind.Visual, "surface", UiSemanticType.SurfaceToken, UiPropertyEffects.Render);
+        catalog.AddProperty(UiDefinitionKind.Visual, "foreground", UiSemanticType.ColorToken, UiPropertyEffects.Render);
+        catalog.AddProperty(UiDefinitionKind.Visual, "radius", UiSemanticType.RadiusToken, UiPropertyEffects.Render);
+        catalog.AddProperty(UiDefinitionKind.Visual, "padding", UiSemanticType.SpaceToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
+        catalog.AddProperty(UiDefinitionKind.Visual, "offset.y", UiSemanticType.Length, UiPropertyEffects.Arrange | UiPropertyEffects.Render, animatable: true);
+        catalog.AddProperty(UiDefinitionKind.Visual, "motion", UiSemanticType.MotionToken, UiPropertyEffects.Render);
+        catalog.AddProperty(UiDefinitionKind.Visual, "border", UiSemanticType.Border, UiPropertyEffects.Render);
+        catalog.AddProperty(UiDefinitionKind.Visual, "typography", UiSemanticType.TypographyToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
+        catalog.AddProperty(UiDefinitionKind.Visual, "elevation", UiSemanticType.ElevationToken, UiPropertyEffects.Render);
+        catalog.AddProperty(UiDefinitionKind.Visual, "transform", UiSemanticType.TransformToken, UiPropertyEffects.Arrange | UiPropertyEffects.Render, animatable: true);
+        catalog.AddProperty(UiDefinitionKind.Visual, "opacity", UiSemanticType.Opacity, UiPropertyEffects.Render, animatable: true);
+
+        foreach (string name in new[] { "Canvas", "Raised", "Secondary", "Hover", "Pressed", "Disabled", "Popup", "Modal" })
+            catalog.AddToken($"Surface.{name}", UiSemanticType.SurfaceToken);
+        foreach (string name in new[] { "Primary", "Secondary", "Muted", "Accent", "Danger", "Success" })
+            catalog.AddToken($"Text.{name}", UiSemanticType.ColorToken);
+        catalog.AddToken("Accent", UiSemanticType.ColorToken);
+        foreach (string name in new[] { "XS", "S", "M", "L", "XL" })
+            catalog.AddToken($"Space.{name}", UiSemanticType.SpaceToken);
+        foreach (string name in new[] { "S", "M", "L", "XL" })
+            catalog.AddToken($"Radius.{name}", UiSemanticType.RadiusToken);
+        foreach (string name in new[] { "None", "Fast", "Normal", "Slow" })
+            catalog.AddToken($"Motion.{name}", UiSemanticType.MotionToken);
+        foreach (string name in new[] { "Body", "Label", "Title" })
+            catalog.AddToken($"Typography.{name}", UiSemanticType.TypographyToken);
+        foreach (string name in new[] { "Subtle", "Strong", "Focus" })
+            catalog.AddToken($"Border.{name}", UiSemanticType.Border);
+        foreach (string name in new[] { "None", "Low", "High" })
+            catalog.AddToken($"Elevation.{name}", UiSemanticType.ElevationToken);
+        foreach (string name in new[] { "None", "Raised", "Pressed" })
+            catalog.AddToken($"Transform.{name}", UiSemanticType.TransformToken);
+        foreach (string name in new[] { "Hidden", "Disabled", "Visible" })
+            catalog.AddToken($"Opacity.{name}", UiSemanticType.Opacity);
+
+        return catalog;
+    }
+
+    public bool TryGetProperty(UiDefinitionKind kind, string name, out UiPropertySymbol? property)
+        => _properties.TryGetValue((kind, name), out property);
+    public bool TryGetVisualProperty(string name, out UiPropertySymbol? property)
+        => TryGetProperty(UiDefinitionKind.Visual, name, out property);
+    public bool TryGetPresentationProperty(string name, out UiPropertySymbol? property)
+        => TryGetProperty(UiDefinitionKind.Presentation, name, out property);
+    public bool TryGetToken(string name, out UiTokenSymbol? token) => _tokens.TryGetValue(name, out token);
+    public bool TryGetPresentation(string name, out UiPresentationSymbol? presentation) => _presentations.TryGetValue(name, out presentation);
+    public bool TryGetPattern(string name, out UiSymbolId pattern) => _patterns.TryGetValue(name, out pattern);
+    public bool TryGetRegion(string name, out UiSymbolId region) => _regions.TryGetValue(name, out region);
+    public bool TryGetProfile(string name, out UiSymbolId profile) => _profiles.TryGetValue(name, out profile);
+    public bool TryGetState(string name, out UiSymbolId state) => _states.TryGetValue(name, out state);
+    public bool TryGetPropertyValue(UiPropertySymbol property, string name, out UiEnumValueSymbol? value)
+    {
+        ArgumentNullException.ThrowIfNull(property);
+        return _propertyValues.TryGetValue((property.Id, name), out value);
+    }
+    public bool HasPropertyValues(UiPropertySymbol property)
+    {
+        ArgumentNullException.ThrowIfNull(property);
+        foreach ((UiSymbolId Property, string Name) key in _propertyValues.Keys)
+            if (key.Property == property.Id) return true;
+        return false;
+    }
+    public bool TryGetEnumValue(UiSymbolId id, out UiEnumValueSymbol? value)
+        => _enumValues.TryGetValue(id, out value);
+
+    internal IEnumerable<UiPropertySymbol> Properties => _properties.Values;
+    internal IEnumerable<UiTokenSymbol> Tokens => _tokens.Values;
+    internal IEnumerable<UiPresentationSymbol> Presentations => _presentations.Values;
+    internal IEnumerable<KeyValuePair<string, UiSymbolId>> Patterns => _patterns;
+    internal IEnumerable<KeyValuePair<string, UiSymbolId>> Regions => _regions;
+    internal IEnumerable<KeyValuePair<string, UiSymbolId>> Profiles => _profiles;
+    internal IEnumerable<KeyValuePair<string, UiSymbolId>> States => _states;
+    internal IEnumerable<UiEnumValueSymbol> EnumValues => _enumValues.Values;
+
+    public UiSymbolId Capability(string name) => BuiltIn($"capability/{name}");
+
+    private void AddPresentation(string name, params string[] capabilities)
+    {
+        var supported = new HashSet<UiSymbolId>();
+        foreach (string capability in capabilities) supported.Add(Capability(capability));
+        _presentations.Add(name, new UiPresentationSymbol(BuiltIn($"presentation/{name}"), name, supported));
+    }
+
+    private UiPropertySymbol AddProperty(
+        UiDefinitionKind kind,
+        string name,
+        UiSemanticType type,
+        UiPropertyEffects effects,
+        bool animatable = false)
+    {
+        var property = new UiPropertySymbol(
+            BuiltIn($"property/{kind}/{name}"), name, kind, type, effects, animatable);
+        _properties.Add((kind, name), property);
+        return property;
+    }
+
+    private void AddEnumValue(UiPropertySymbol property, string name)
+    {
+        var value = new UiEnumValueSymbol(
+            BuiltIn($"enum/{property.DefinitionKind}/{property.Name}/{name}"),
+            name,
+            property.Id);
+        _propertyValues.Add((property.Id, name), value);
+        _enumValues.Add(value.Id, value);
+    }
+
+    private void AddToken(string name, UiSemanticType type)
+        => _tokens.Add(name, new UiTokenSymbol(BuiltIn($"token/{name}"), name, type));
+
+    private static UiSymbolId BuiltIn(string local) => new(BuiltInScope, local);
+}

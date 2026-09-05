@@ -1,0 +1,24 @@
+{
+  "FormatVersion": 1,
+  "SemanticSurface": {
+    "Assembly": "Hatifect.UI.Experience",
+    "ContractVersion": "1.0.0-alpha.29",
+    "ApiVersion": 1,
+    "Policy": "consumer-source-freeze",
+    "PublicTypes": [
+      "UiSemanticSurfaceOptions",
+      "IUiSemanticSurfaceSession",
+      "IUiSemanticSurfaceApi",
+      "UiSemanticSurfaceCancelInput",
+      "IUiAutomatedAcceptanceContext",
+      "UiAutomatedAcceptanceScenario",
+      "IUiSemanticSurfaceAutomation"
+    ],
+    "Files": [
+      {
+        "Path": "Hosting/UiSemanticSurfaceContracts.cs",
+        "Sha256": "9de29d5a7c53964ae192efb4f4f7590e1dc75a64d2fe94605f86dac3861c6335"
+      }
+    ]
+  }
+}

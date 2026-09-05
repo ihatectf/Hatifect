@@ -1,0 +1,7 @@
+{
+  "HideNativeSelectors": true,
+  "DimUnderlyingMenu": true,
+  "CloseOnOutsideClick": true,
+  "RememberLastStoragePerCategory": true,
+  "RecentLimit": 8
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "runtime-response.schema.json",
+  "title": "Hatifect direct runtime result v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "requestId",
+    "scenarioId",
+    "state",
+    "status",
+    "exitCode",
+    "failureKind",
+    "resultPath",
+    "startedAtUtc",
+    "completedAtUtc",
+    "message",
+    "artifacts"
+  ],
+  "properties": {
+    "protocolVersion": { "const": 2 },
+    "requestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "scenarioId": { "type": "string", "minLength": 1 },
+    "state": { "enum": ["Completed", "Failed", "TimedOut", "Cancelled", "Rejected"] },
+    "status": { "enum": ["PASS", "FAIL", "BLOCKED"] },
+    "exitCode": { "enum": [0, 1, 2] },
+    "failureKind": {
+      "type": ["string", "null"],
+      "enum": [null, "ScenarioFailure", "ProductRuntimeFailure", "BrokerFailure", "LaunchFailure", "Timeout", "Cancelled", "LocalInfrastructure", "RejectedRequest"]
+    },
+    "resultPath": { "type": "string", "minLength": 1 },
+    "startedAtUtc": { "type": "string", "format": "date-time" },
+    "completedAtUtc": { "type": "string", "format": "date-time" },
+    "message": { "type": "string", "maxLength": 2048 },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "path"],
+        "properties": {
+          "type": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

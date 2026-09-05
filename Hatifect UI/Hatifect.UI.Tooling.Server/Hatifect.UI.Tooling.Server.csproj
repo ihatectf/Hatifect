@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Hatifect.UI.Tooling.Server</AssemblyName>
+    <RootNamespace>Hatifect.UI.Tooling.Server</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0-alpha.1</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Hatifect.UI.Tooling/Hatifect.UI.Tooling.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hatifect.UI.Tooling.Server.Tests" />
+  </ItemGroup>
+</Project>

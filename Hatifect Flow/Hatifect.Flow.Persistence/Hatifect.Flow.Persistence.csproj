@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.Flow.Persistence</AssemblyName>
+    <RootNamespace>Hatifect.Flow.Infrastructure.Persistence</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Hatifect.Flow.Core/Hatifect.Flow.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hatifect.Flow" />
+    <InternalsVisibleTo Include="Hatifect.Flow.Tests" />
+  </ItemGroup>
+</Project>

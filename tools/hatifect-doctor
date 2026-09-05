@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+
+say "Hatifect DOCTOR"
+say "Repository: $REPO_ROOT"
+say "Working directory: $PWD"
+
+for command in bash git python3; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    say "FAIL: required local command is missing: $command" >&2
+    say "RESULT: FAIL" >&2
+    exit 1
+  fi
+  say "PASS: $command: $(command -v "$command")"
+done
+
+if ! "$TOOLS_DIR/hatifect-architecture-check"; then
+  say "FAIL: repository project graph is invalid." >&2
+  say "RESULT: FAIL" >&2
+  exit 1
+fi
+
+git_root="$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ "$git_root" != "$REPO_ROOT" ]]; then
+  say "FAIL: Git root mismatch: expected $REPO_ROOT, got ${git_root:-<none>}" >&2
+  say "RESULT: FAIL" >&2
+  exit 1
+fi
+say "PASS: Git root: $git_root"
+
+solution="$(resolve_solution)"
+say "PASS: solution: $solution"
+
+if [[ ! -f "$REPO_ROOT/global.json" ]]; then
+  say "FAIL: repository SDK authority is missing: global.json" >&2
+  say "RESULT: FAIL" >&2
+  exit 1
+fi
+set +e
+required_sdk_output="$(python3 - "$REPO_ROOT/global.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as stream:
+    document = json.load(stream)
+version = document.get("sdk", {}).get("version")
+if not isinstance(version, str) or not version:
+    raise SystemExit("global.json does not declare sdk.version")
+print(version)
+PY
+)"
+required_sdk_status=$?
+set -e
+if [[ "$required_sdk_status" -ne 0 ]]; then
+  say "FAIL: repository SDK configuration is invalid: $required_sdk_output" >&2
+  say "RESULT: FAIL" >&2
+  exit 1
+fi
+required_sdk="$required_sdk_output"
+say "Repository SDK request: $required_sdk (source: global.json)"
+
+set +e
+build_dotnet_output="$(resolve_build_dotnet 2>&1)"
+build_dotnet_status=$?
+set -e
+if [[ "$build_dotnet_status" -ne 0 ]]; then
+  say "BLOCKED: effective build SDK is unavailable: $build_dotnet_output" >&2
+  say "RESULT: BLOCKED" >&2
+  exit 2
+fi
+build_dotnet="$build_dotnet_output"
+say "PASS: build dotnet: $build_dotnet"
+effective_sdk="$("$build_dotnet" --version)"
+if ! python3 - "$required_sdk" "$effective_sdk" <<'PY'
+import sys
+
+required = sys.argv[1].split(".")
+effective = sys.argv[2].split(".")
+raise SystemExit(0 if required[:2] == effective[:2] else 1)
+PY
+then
+  say "BLOCKED: effective SDK $effective_sdk is incompatible with global.json request $required_sdk" >&2
+  say "RESULT: BLOCKED" >&2
+  exit 2
+fi
+say "PASS: effective SDK: $effective_sdk"
+
+set +e
+test_dotnet_output="$(resolve_test_dotnet 2>&1)"
+test_dotnet_status=$?
+set -e
+if [[ "$test_dotnet_status" -ne 0 ]]; then
+  say "BLOCKED: compatible testhost/game runtime is unavailable: $test_dotnet_output" >&2
+  say "RESULT: BLOCKED" >&2
+  exit 2
+fi
+test_dotnet="$test_dotnet_output"
+say "PASS: test dotnet: $test_dotnet"
+say "PASS: .NET 6 runtime available"
+
+say "NuGet sources:"
+if ! "$build_dotnet" nuget list source; then
+  say "BLOCKED: NuGet source configuration could not be inspected." >&2
+  say "RESULT: BLOCKED" >&2
+  exit 2
+fi
+say "NuGet caches:"
+if ! "$build_dotnet" nuget locals all --list; then
+  say "BLOCKED: NuGet cache configuration could not be inspected." >&2
+  say "RESULT: BLOCKED" >&2
+  exit 2
+fi
+
+if [[ -x "$TOOLS_DIR/hatifect-live-runner" && -f "$TOOLS_DIR/live-harness/scenarios.json" ]]; then
+  say "Runtime harness: EXISTING (isolated assisted .smapi-test harness)"
+else
+  say "Runtime harness: NOT_PRESENT"
+fi
+
+if [[ -x "$TOOLS_DIR/hatifect-live-runner" && -f "$TOOLS_DIR/live-harness/direct_runtime.py" ]]; then
+  say "Runtime transport: canonical typed direct process"
+else
+  say "FAIL: canonical direct runtime transport is missing." >&2
+  say "RESULT: FAIL" >&2
+  exit 1
+fi
+
+if [[ -x "$TOOLS_DIR/hatifect-runtime-executor" && \
+      -f "$TOOLS_DIR/live-harness/user_session_runtime.py" && \
+      -f "$REPO_ROOT/.vscode/tasks.json" ]]; then
+  say "Runtime executor: explicit project-local command (./tools/hatifect-runtime-executor serve)"
+else
+  say "FAIL: project-local user-session runtime executor is missing." >&2
+  say "RESULT: FAIL" >&2
+  exit 1
+fi
+
+if [[ -n "${HATIFECT_VALIDATOR:-}" ]]; then
+  if [[ ! -x "$HATIFECT_VALIDATOR" ]]; then
+    say "FAIL: configured extra validator is not executable: $HATIFECT_VALIDATOR" >&2
+    say "RESULT: FAIL" >&2
+    exit 1
+  fi
+  say "Extra validator: configured"
+else
+  say "Extra validator: not configured"
+fi
+
+say "RESULT: PASS"

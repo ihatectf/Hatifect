@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.UI.Stardew</AssemblyName>
+    <RootNamespace>Hatifect.UI.Stardew</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableModDeploy>false</EnableModDeploy>
+    <EnableModZip>false</EnableModZip>
+    <ModFolderName>Hatifect UI</ModFolderName>
+    <HatifectInstallRelativePath>Hatifect UI</HatifectInstallRelativePath>
+    <HatifectModuleContentRoot>$(MSBuildProjectDirectory)/..</HatifectModuleContentRoot>
+    <Version>1.0.0-alpha.29</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.2" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Hatifect.UI.DevTools/Hatifect.UI.DevTools.csproj" />
+    <ProjectReference Include="../Hatifect.UI.Runtime/Hatifect.UI.Runtime.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <HatifectRuntimeFile Include="$(TargetDir)Hatifect.UI.Experience.dll" />
+    <HatifectRuntimeFile Include="$(TargetDir)Hatifect.UI.Language.dll" />
+    <HatifectRuntimeFile Include="$(TargetDir)Hatifect.UI.Planning.dll" />
+    <HatifectRuntimeFile Include="$(TargetDir)Hatifect.UI.Runtime.dll" />
+    <HatifectRuntimeFile Include="$(TargetDir)Hatifect.UI.Semantics.dll" />
+    <HatifectRuntimeFile Include="$(TargetDir)Hatifect.UI.Tooling.dll" />
+    <HatifectRuntimeFile Include="$(TargetDir)Hatifect.UI.DevTools.dll" />
+  </ItemGroup>
+  <Import Project="../../Hatifect.Build.targets" Condition="Exists('../../Hatifect.Build.targets')" />
+  <PropertyGroup><HatifectUiPackageProducer>true</HatifectUiPackageProducer></PropertyGroup>
+  <Import Project="../../Hatifect.UI.Packages.props" />
+</Project>
