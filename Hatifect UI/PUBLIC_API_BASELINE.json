@@ -1,8 +1,25 @@
 {
   "FormatVersion": 1,
+  "FormAuthoring": {
+    "Assembly": "Hatifect.UI.Experience",
+    "PublicTypes": [
+      "UiSemanticFormField",
+      "UiFormState"
+    ],
+    "Files": [
+      {
+        "Path": "State/UiSemanticFormSource.cs",
+        "Sha256": "bc25dbb5518b3f93726081dd799e13cb99145cab1600c748ed34f723f041c87c"
+      },
+      {
+        "Path": "UiExperienceBuilder.cs",
+        "Sha256": "ac8c395e0c06ae975eb3d047676f004ec56978622d6fd9d87857763cf6a30cd4"
+      }
+    ]
+  },
   "SemanticSurface": {
     "Assembly": "Hatifect.UI.Experience",
-    "ContractVersion": "1.0.0-alpha.29",
+    "ContractVersion": "1.0.0-alpha.30",
     "ApiVersion": 1,
     "Policy": "consumer-source-freeze",
     "PublicTypes": [

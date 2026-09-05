@@ -306,6 +306,14 @@ internal sealed class UiSceneComposer
                 Resolve(inputRole, UiSceneNodeKind.TextInput, inputId, invocation, visual, interaction),
                 field.Label,
                 field.Value));
+            if (!string.IsNullOrWhiteSpace(field.ValidationMessage?.Value))
+            {
+                UiSymbolId errorId = field.Id.Child("scene/error");
+                UiSymbolId errorRole = Role(invocation.Experience, "Field.Error", UiSceneRoles.Text);
+                children.Add(new UiTextSceneNode(errorId, errorRole,
+                    Resolve(errorRole, UiSceneNodeKind.Text, errorId, invocation, visual, interaction),
+                    field.ValidationMessage.Value!));
+            }
         }
 
         UiSymbolId formId = element.Id.Child("scene/form");

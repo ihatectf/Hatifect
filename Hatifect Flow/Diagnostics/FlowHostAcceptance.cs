@@ -94,6 +94,15 @@ internal sealed class FlowHostAcceptance : IDisposable
         if (Environment.GetEnvironmentVariable("HATIFECT_TEST_MODE") != "1"
             || Environment.GetEnvironmentVariable("HATIFECT_TEST_AUTOMATED") != "1"
             || (scenarioId != "flow.route.basic" && scenarioId != "flow.save.isolation")) return null;
+        AcceptanceRequest request = ReadAcceptanceRequest(helper, scenarioId!);
+        return new FlowHostAcceptance(helper, monitor, request.RunId, scenarioId!, request.SavePath, request.SecondSavePath, request.Artifact, request.RuntimeId);
+    }
+
+    internal sealed record AcceptanceRequest(string RunId, string SavePath, string? SecondSavePath, string Artifact, string RuntimeId);
+
+    internal static AcceptanceRequest ReadAcceptanceRequest(IModHelper helper, string scenarioId)
+    {
+        Require(scenarioId is "flow.route.basic" or "flow.save.isolation" or "flow.chest.roundtrip", "Unknown Flow acceptance scenario.");
         Require(Required("HATIFECT_TEST_PROTOCOL_VERSION") == "1", "Unsupported harness protocol.");
         string runId = Required("HATIFECT_TEST_RUN_ID");
         Require(Guid.TryParseExact(runId, "D", out Guid parsed) && parsed.ToString("D") == runId,
@@ -104,7 +113,7 @@ internal sealed class FlowHostAcceptance : IDisposable
         Require(Full(helper.DirectoryPath) == Path.Combine(isolated, "Mods", "Hatifect", "Hatifect Flow"),
             "Flow acceptance requires the isolated Flow module directory.");
         Require(Path.GetDirectoryName(save) == Path.Combine(isolated, "config", "StardewValley", "Saves")
-            && Path.GetFileName(save) == "HatifectHarness_" + parsed.ToString("N") && Directory.Exists(save),
+            && Path.GetFileName(save) == (scenarioId == "flow.chest.roundtrip" ? "HatifectHarness" + parsed.ToString("N") + "_4242424242" : "HatifectHarness_" + parsed.ToString("N")) && Directory.Exists(save),
             "The save must be this run's provisioned isolated working copy.");
         Require(Path.GetFileName(artifact) == runId && Directory.Exists(artifact), "Artifact directory identity mismatch.");
         RejectLinks(isolated); RejectLinks(helper.DirectoryPath); RejectLinks(save); RejectLinks(artifact);
@@ -130,10 +139,10 @@ internal sealed class FlowHostAcceptance : IDisposable
             ValidateSaveTree(secondSave);
             ValidateSaveOwner(secondSave, secondRunId, runtimeId);
         }
-        return new FlowHostAcceptance(helper, monitor, runId, scenarioId, save, secondSave, artifact, runtimeId);
+        return new AcceptanceRequest(runId, save, secondSave, artifact, runtimeId);
     }
 
-    private static void ValidateSaveOwner(string save, string runId, string runtimeId)
+    internal static void ValidateSaveOwner(string save, string runId, string runtimeId)
     {
         using JsonDocument owner = ReadBoundedJson(Path.Combine(save, ".hatifect-save-owner.json"));
         JsonElement o = owner.RootElement;
@@ -464,7 +473,7 @@ internal sealed class FlowHostAcceptance : IDisposable
         }
     }
 
-    private static void AtomicJson(string path, object value)
+    internal static void AtomicJson(string path, object value)
     {
         RejectLinks(path);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -475,13 +484,13 @@ internal sealed class FlowHostAcceptance : IDisposable
         File.Move(temporary, path, true);
     }
 
-    private static string RuntimeFingerprint()
+    internal static string RuntimeFingerprint()
     {
         Assembly[] assemblies = { typeof(FlowHostAcceptance).Assembly, typeof(FlowRuntime).Assembly, typeof(DurableFlowSession).Assembly };
         return HashText(string.Concat(assemblies.OrderBy(assembly => Path.GetFileName(assembly.Location), StringComparer.Ordinal)
             .Select(assembly => Path.GetFileName(assembly.Location) + "\t" + HashFile(assembly.Location) + "\n")));
     }
-    private static string HashFile(string path)
+    internal static string HashFile(string path)
     { RejectLinks(path); using var stream = File.OpenRead(path); using var hash = SHA256.Create(); return Convert.ToHexString(hash.ComputeHash(stream)).ToLowerInvariant(); }
     private static string HashText(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     private static JsonDocument ReadBoundedJson(string path)
@@ -491,7 +500,7 @@ internal sealed class FlowHostAcceptance : IDisposable
         Require(input.Length is > 0 and <= 65536, "The harness marker exceeds its size bound.");
         return JsonDocument.Parse(input, new JsonDocumentOptions { MaxDepth = 16 });
     }
-    private static void RejectLinks(string path)
+    internal static void RejectLinks(string path)
     {
         for (string? current = Full(path); current is not null; current = Path.GetDirectoryName(current))
         {
@@ -500,7 +509,7 @@ internal sealed class FlowHostAcceptance : IDisposable
                 "Harness paths must not traverse symbolic links.");
         }
     }
-    private static void ValidateSaveTree(string save)
+    internal static void ValidateSaveTree(string save)
     {
         Require(Directory.Exists(save), "The provisioned save directory is missing.");
         RejectLinks(save);
@@ -524,10 +533,10 @@ internal sealed class FlowHostAcceptance : IDisposable
     }
     private static string Required(string name) => Environment.GetEnvironmentVariable(name)
         ?? throw new InvalidOperationException("Missing harness setting: " + name);
-    private static string Full(string path) => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+    internal static string Full(string path) => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
     private static Guid Id(int value) => new(value, 0, 0, new byte[8]);
-    private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
-    private static void RequestReturnToTitle()
+    internal static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
+    internal static void RequestReturnToTitle()
     {
         MethodInfo method = typeof(Game1).GetMethod("ExitToTitle", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static,
             null, new[] { typeof(Action) }, null) ?? throw new MissingMethodException(typeof(Game1).FullName, "ExitToTitle(Action)");

@@ -14,12 +14,15 @@
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.2" />
     <ProjectReference Include="Hatifect.Flow.Core/Hatifect.Flow.Core.csproj" />
     <ProjectReference Include="Hatifect.Flow.Persistence/Hatifect.Flow.Persistence.csproj" />
+    <ProjectReference Include="Hatifect.Flow.UI.Semantic/Hatifect.Flow.UI.Semantic.csproj" />
+    <ProjectReference Include="../Hatifect UI/Hatifect.UI.Experience/Hatifect.UI.Experience.csproj" />
   </ItemGroup>
 
   <Target Name="CollectFlowRuntime" BeforeTargets="DeployHatifectModule">
     <ItemGroup>
       <HatifectRuntimeFile Include="$(TargetDir)Hatifect.Flow.Core.dll" />
       <HatifectRuntimeFile Include="$(TargetDir)Hatifect.Flow.Persistence.dll" />
+      <HatifectRuntimeFile Include="$(TargetDir)Hatifect.Flow.UI.Semantic.dll" />
     </ItemGroup>
   </Target>
 
@@ -28,6 +31,7 @@
     <Compile Remove="Hatifect.Flow.Persistence/**/*.cs" />
     <Compile Remove="Hatifect.Flow.UI.Semantic/**/*.cs" />
     <Compile Remove="tests/**/*.cs" />
+    <InternalsVisibleTo Include="Hatifect.Flow.Stardew.Tests" />
   </ItemGroup>
   <Import Project="../Hatifect.Build.targets" Condition="Exists('../Hatifect.Build.targets')" />
 </Project>

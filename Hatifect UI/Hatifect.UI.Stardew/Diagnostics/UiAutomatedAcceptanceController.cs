@@ -161,7 +161,8 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         string protocol = Environment.GetEnvironmentVariable("HATIFECT_TEST_PROTOCOL_VERSION") ?? string.Empty;
         string scenario = Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO") ?? string.Empty;
         if (string.Equals(scenario, "flow.route.basic", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.save.isolation", StringComparison.Ordinal))
+            || string.Equals(scenario, "flow.save.isolation", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.chest.roundtrip", StringComparison.Ordinal))
         {
             return null;
         }

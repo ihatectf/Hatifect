@@ -400,14 +400,16 @@ def _is_acceptance_storage(document: Any) -> bool:
     )
 
 
-def _working_name(run_id: str) -> str:
-    return f"HatifectHarness_{uuid.UUID(_canonical_run_id(run_id)).hex}"
+def _working_name(run_id: str, scenario_id: str = "") -> str:
+    token = uuid.UUID(_canonical_run_id(run_id)).hex
+    # Stardew loads the base before '_' and saves base + '_' + world identity.
+    return f"HatifectHarness{token}_4242424242" if scenario_id == "flow.chest.roundtrip" else f"HatifectHarness_{token}"
 
 
-def plan_working_copy(isolated_root: Path, smapi_path: Path, run_id: str) -> Path:
+def plan_working_copy(isolated_root: Path, smapi_path: Path, run_id: str, scenario_id: str = "") -> Path:
     run_id = _canonical_run_id(run_id)
     manifest, _ = validate_fixture(isolated_root, smapi_path)
-    destination = _save_root(isolated_root) / _working_name(run_id)
+    destination = _save_root(isolated_root) / _working_name(run_id, scenario_id)
     if destination.exists():
         try:
             _validate_owner(
@@ -462,11 +464,11 @@ def _validate_owner(
     return document
 
 
-def prepare_working_copy(isolated_root: Path, smapi_path: Path, run_id: str) -> Path:
+def prepare_working_copy(isolated_root: Path, smapi_path: Path, run_id: str, scenario_id: str = "") -> Path:
     run_id = _canonical_run_id(run_id)
     manifest, source = validate_fixture(isolated_root, smapi_path)
     root = _save_root(isolated_root)
-    destination = plan_working_copy(isolated_root, smapi_path, run_id)
+    destination = plan_working_copy(isolated_root, smapi_path, run_id, scenario_id)
     source_before = _inventory(source)
     try:
         destination.mkdir(mode=PRIVATE_DIRECTORY_MODE)
@@ -507,16 +509,16 @@ def prepare_working_copy(isolated_root: Path, smapi_path: Path, run_id: str) -> 
         raise
     if _inventory(source) != source_before:
         raise SaveProvisioningError("HARNESS-SAVE-IMMUTABILITY", "Golden save changed during provisioning.")
-    validate_working_copy(isolated_root, destination, manifest["runtimeId"], run_id)
+    validate_working_copy(isolated_root, destination, manifest["runtimeId"], run_id, scenario_id)
     return destination
 
 
 def validate_working_copy(
-    isolated_root: Path, save_path: Path, runtime_id: str, run_id: str
+    isolated_root: Path, save_path: Path, runtime_id: str, run_id: str, scenario_id: str = ""
 ) -> Path:
     root = _save_root(isolated_root)
     candidate = _contained(root, save_path)
-    if candidate.parent != root or candidate.name != _working_name(run_id):
+    if candidate.parent != root or candidate.name != _working_name(run_id, scenario_id):
         raise SaveProvisioningError("HARNESS-SAVE-PATH", "Working save is not this run's direct isolated child.")
     candidate = _real_directory(candidate)
     _validate_owner(candidate, runtime_id, run_id)
@@ -581,8 +583,8 @@ def prepare_flow_secondary(isolated_root: Path, smapi_path: Path, parent_run_id:
     return destination
 
 
-def cleanup_working_copy(isolated_root: Path, save_path: Path, runtime_id: str, run_id: str) -> None:
-    candidate = validate_working_copy(isolated_root, save_path, runtime_id, run_id)
+def cleanup_working_copy(isolated_root: Path, save_path: Path, runtime_id: str, run_id: str, scenario_id: str = "") -> None:
+    candidate = validate_working_copy(isolated_root, save_path, runtime_id, run_id, scenario_id)
     shutil.rmtree(candidate)
     if candidate.exists():
         raise SaveProvisioningError("HARNESS-SAVE-CLEANUP", f"Owned working save was not removed: {candidate}")
@@ -898,9 +900,9 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         if args.command == "plan":
-            print(plan_working_copy(Path(args.isolated_root), Path(args.smapi_path), args.run_id))
+            print(plan_working_copy(Path(args.isolated_root), Path(args.smapi_path), args.run_id, args.scenario))
         elif args.command == "prepare":
-            print(prepare_working_copy(Path(args.isolated_root), Path(args.smapi_path), args.run_id))
+            print(prepare_working_copy(Path(args.isolated_root), Path(args.smapi_path), args.run_id, args.scenario))
         elif args.command == "bootstrap-preflight":
             target = bootstrap_preflight(Path(args.isolated_root), Path(args.smapi_path), args.run_id)
             if target is None:

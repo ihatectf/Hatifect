@@ -15,9 +15,9 @@ REQUIRED_PROJECTS = frozenset({
     "Hatifect.UI.Stardew", "Hatifect.UI.Examples",
     "Hatifect.Flow.Core", "Hatifect.Flow.Persistence", "Hatifect.Flow.UI.Semantic", "Hatifect.Flow",
     "Hatifect.ChestsAnywhereOverlay", "Hatifect.ChestsAnywhereOverlay.UI.Semantic",
-    "Hatifect.UI.DevTools.Tests", "Hatifect.UI.Planning.Tests", "Hatifect.UI.Runtime.Tests",
+    "Hatifect.UI.DevTools.Tests", "Hatifect.UI.Planning.Tests", "Hatifect.UI.Runtime.Tests", "Hatifect.UI.Stardew.Tests",
     "Hatifect.UI.Semantics.Tests", "Hatifect.UI.Tooling.Tests", "Hatifect.UI.Tooling.Server.Tests",
-    "Hatifect.Flow.Tests", "Hatifect.ChestsAnywhereOverlay.Tests",
+    "Hatifect.Flow.Tests", "Hatifect.Flow.Stardew.Tests", "Hatifect.ChestsAnywhereOverlay.Tests",
 })
 ALLOWED_DEPENDENCIES = {
     "Hatifect.UI.Language": set(),
@@ -33,7 +33,7 @@ ALLOWED_DEPENDENCIES = {
     },
     "Hatifect.Flow.Core": set(),
     "Hatifect.Flow.Persistence": {"Hatifect.Flow.Core"},
-    "Hatifect.Flow": {"Hatifect.Flow.Core", "Hatifect.Flow.Persistence"},
+    "Hatifect.Flow": {"Hatifect.Flow.Core", "Hatifect.Flow.Persistence", "Hatifect.Flow.UI.Semantic", "Hatifect.UI.Experience"},
     "Hatifect.Flow.UI.Semantic": {"Hatifect.Flow.Core", "Hatifect.UI.Experience"},
     "Hatifect.ChestsAnywhereOverlay.UI.Semantic": {"Hatifect.UI.Experience"},
     "Hatifect.ChestsAnywhereOverlay": {
@@ -41,7 +41,7 @@ ALLOWED_DEPENDENCIES = {
     },
 }
 PLATFORM_PROJECTS = frozenset({
-    "Hatifect.UI.Stardew", "Hatifect.Flow",
+    "Hatifect.UI.Stardew", "Hatifect.UI.Stardew.Tests", "Hatifect.Flow", "Hatifect.Flow.Stardew.Tests",
     "Hatifect.ChestsAnywhereOverlay", "Hatifect.ChestsAnywhereOverlay.Tests",
 })
 RETIRED_DIRECTORIES = (

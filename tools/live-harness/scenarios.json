@@ -84,6 +84,30 @@
       }
     },
     {
+      "id": "flow.chest.roundtrip",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.roundtrip.loaded",
+        "flow.chest.roundtrip.custody",
+        "flow.chest.roundtrip.saving",
+        "flow.chest.roundtrip.saved",
+        "flow.chest.roundtrip.delivery",
+        "flow.chest.roundtrip.lifecycle",
+        "flow.chest.roundtrip.reload",
+        "flow.chest.roundtrip.no-duplication"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
       "id": "semantic.lifecycle",
       "kind": "ui",
       "requiresSave": false,

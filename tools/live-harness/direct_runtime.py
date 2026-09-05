@@ -419,7 +419,7 @@ def _validate_request(
             Path(metadata["saveProvisionerExecutable"]),
         )
         fixture, _ = provisioner.validate_fixture(isolated, Path(metadata["smapiPath"]))
-        expected = provisioner._save_root(isolated) / provisioner._working_name(request_id)
+        expected = provisioner._save_root(isolated) / provisioner._working_name(request_id, document["scenarioId"])
         if save != expected:
             raise DirectRuntimeError("Direct runtime request save path is not its planned working copy.")
         if save.exists():
@@ -428,6 +428,7 @@ def _validate_request(
                 save,
                 fixture["runtimeId"],
                 request_id,
+                document["scenarioId"],
             )
     elif save_value is not None:
         raise DirectRuntimeError("Scenario without save authority must use null savePath.")
@@ -726,7 +727,7 @@ def _complete_save_lifecycle(
         if request["scenarioId"] == "flow.save.isolation":
             secondary_id = provisioner.flow_secondary_run_id(request["requestId"])
             copies.append((Path(request["savePath"]).parent / ("HatifectHarness_" + secondary_id.replace("-", "")), secondary_id))
-        _cleanup_owned_copies(provisioner, isolated, fixture["runtimeId"], copies)
+        _cleanup_owned_copies(provisioner, isolated, fixture["runtimeId"], copies, scenario_id=request["scenarioId"])
         evidence = {
             "operation": "working-copy-cleanup",
             "status": "PASS",
@@ -770,13 +771,13 @@ def _product_runtime_was_reached(artifact: Path) -> bool:
     return "[SMAPI] Mods loaded and ready!" in log or "\n[Hatifect" in log
 
 
-def _cleanup_owned_copies(provisioner, isolated: Path, runtime_id: str, copies: list[tuple[Path, str]], *, remaining_only: bool = False) -> None:
+def _cleanup_owned_copies(provisioner, isolated: Path, runtime_id: str, copies: list[tuple[Path, str]], *, remaining_only: bool = False, scenario_id: str = "") -> None:
     errors: list[str] = []
     for path, run_id in copies:
         if remaining_only and not path.exists() and not path.is_symlink():
             continue
         try:
-            provisioner.cleanup_working_copy(isolated, path, runtime_id, run_id)
+            provisioner.cleanup_working_copy(isolated, path, runtime_id, run_id, scenario_id)
         except (OSError, ValueError) as error:
             errors.append(f"{run_id}: {error}")
     if errors:
@@ -792,7 +793,7 @@ def _prepare_request_saves(request: dict[str, Any], metadata: dict[str, Any]) ->
     fixture, _ = provisioner.validate_fixture(isolated, smapi)
     owned: list[tuple[Path, str]] = []
     try:
-        prepared = provisioner.prepare_working_copy(isolated, smapi, request["requestId"])
+        prepared = provisioner.prepare_working_copy(isolated, smapi, request["requestId"], request["scenarioId"])
         owned.append((prepared, request["requestId"]))
         if prepared != Path(request["savePath"]):
             raise DirectRuntimeError("Provisioned save path differs from the accepted request.")
@@ -801,7 +802,7 @@ def _prepare_request_saves(request: dict[str, Any], metadata: dict[str, Any]) ->
             owned.append((secondary, provisioner.flow_secondary_run_id(request["requestId"])))
     except BaseException as error:
         try:
-            _cleanup_owned_copies(provisioner, isolated, fixture["runtimeId"], owned)
+            _cleanup_owned_copies(provisioner, isolated, fixture["runtimeId"], owned, scenario_id=request["scenarioId"])
         except (OSError, ValueError) as cleanup_error:
             raise provisioner.SaveProvisioningError("HARNESS-SAVE-CLEANUP", f"Preparation failed: {error}; cleanup failed: {cleanup_error}") from error
         raise
@@ -816,13 +817,13 @@ def _prepared_request_saves(request: dict[str, Any], metadata: dict[str, Any]):
     finally:
         if prepared is not None:
             provisioner, runtime_id, owned = prepared
-            _cleanup_owned_copies(provisioner, Path(request["isolatedRoot"]), runtime_id, owned, remaining_only=True)
+            _cleanup_owned_copies(provisioner, Path(request["isolatedRoot"]), runtime_id, owned, remaining_only=True, scenario_id=request["scenarioId"])
 
 
 def _acceptance_report_source(isolated: Path, scenario_id: str) -> Path:
     # Fixed ownership for the allowlisted asynchronous Flow lifecycle scenario.
     # The request cannot supply an arbitrary report path or module name.
-    module = "Hatifect Flow" if scenario_id in {"flow.route.basic", "flow.save.isolation"} else "Hatifect UI"
+    module = "Hatifect Flow" if scenario_id in {"flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip"} else "Hatifect UI"
     return isolated / "Mods" / "Hatifect" / module / ".acceptance" / "host-acceptance-report.json"
 
 

@@ -3,16 +3,16 @@ using System.Collections.ObjectModel;
 namespace Hatifect.UI.Experience;
 
 /// <summary>
-/// Provisional first-party form-field contract used while configuration dogfooding establishes the
-/// final public authoring surface. It intentionally carries semantic identity, label, and mutable
-/// value only; layout and presentation remain runtime-owned.
+/// Semantic field identity, label, mutable value and optional consumer validation.
+/// Layout and presentation remain runtime-owned; null or whitespace validation means valid.
 /// </summary>
-internal sealed record UiSemanticFormField
+public sealed record UiSemanticFormField
 {
     public UiSemanticFormField(
         UiSymbolId id,
         string label,
-        IUiMutableSemanticSource<string> value)
+        IUiMutableSemanticSource<string> value,
+        IUiSemanticSource<string?>? validationMessage = null)
     {
         if (!id.IsValid) throw new ArgumentException("A stable form-field ID is required.", nameof(id));
         if (string.IsNullOrWhiteSpace(label))
@@ -20,11 +20,13 @@ internal sealed record UiSemanticFormField
         Id = id;
         Label = label;
         Value = value ?? throw new ArgumentNullException(nameof(value));
+        ValidationMessage = validationMessage;
     }
 
     public UiSymbolId Id { get; }
     public string Label { get; }
     public IUiMutableSemanticSource<string> Value { get; }
+    public IUiSemanticSource<string?>? ValidationMessage { get; }
 }
 
 internal interface IUiSemanticFormSource : IUiSemanticSource
@@ -36,11 +38,14 @@ internal interface IUiSemanticFormSource : IUiSemanticSource
 /// Fixed-shape semantic form. Field value changes are forwarded through one source notification so
 /// the ordinary Experience invalidation path can recompose the affected text inputs.
 /// </summary>
-internal sealed class UiFormState :
+public sealed class UiFormState :
     IUiSemanticSource<IReadOnlyList<UiSemanticFormField>>,
-    IUiSemanticFormSource
+    IUiSemanticFormSource, IDisposable
 {
     private readonly ReadOnlyCollection<UiSemanticFormField> _fields;
+    private readonly IUiSemanticSource[] _sources;
+    private readonly HashSet<IUiSemanticSource> _attached = new(ReferenceEqualityComparer.Instance);
+    private bool _disposed;
 
     public UiFormState(params UiSemanticFormField[] fields)
     {
@@ -56,9 +61,31 @@ internal sealed class UiFormState :
             if (!ids.Add(field.Id))
                 throw new ArgumentException($"Semantic form field '{field.Id}' is duplicated.", nameof(fields));
             copy[index] = field;
-            field.Value.Changed += OnFieldChanged;
         }
         _fields = Array.AsReadOnly(copy);
+        var sources = new HashSet<IUiSemanticSource>(ReferenceEqualityComparer.Instance);
+        foreach (UiSemanticFormField field in copy)
+        {
+            sources.Add(field.Value);
+            if (field.ValidationMessage is not null) sources.Add(field.ValidationMessage);
+        }
+        _sources = sources.ToArray();
+        int attached = 0;
+        try
+        {
+            while (attached < _sources.Length)
+            {
+                IUiSemanticSource source = _sources[attached++];
+                _attached.Add(source);
+                source.Changed += OnFieldChanged;
+            }
+        }
+        catch
+        {
+            for (int index = 0; index < attached; index++)
+                try { _sources[index].Changed -= OnFieldChanged; } catch { /* preserve the original subscription failure */ }
+            throw;
+        }
     }
 
     public IReadOnlyList<UiSemanticFormField> Fields => _fields;
@@ -67,5 +94,28 @@ internal sealed class UiFormState :
     public object UntypedValue => _fields;
     public event Action? Changed;
 
-    private void OnFieldChanged() => Changed?.Invoke();
+    public bool IsValid
+    {
+        get
+        {
+            foreach (UiSemanticFormField field in _fields)
+                if (!string.IsNullOrWhiteSpace(field.ValidationMessage?.Value)) return false;
+            return true;
+        }
+    }
+
+    /// <summary>Detaches owned subscriptions. Borrowed field sources remain usable.</summary>
+    public void Dispose()
+    {
+        if (_disposed && _attached.Count == 0) return;
+        _disposed = true;
+        List<Exception>? failures = null;
+        foreach (IUiSemanticSource source in _sources)
+            try { if (_attached.Contains(source)) { source.Changed -= OnFieldChanged; _attached.Remove(source); } }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        Changed = null;
+        if (failures is not null) throw new AggregateException(failures);
+    }
+
+    private void OnFieldChanged() { if (!_disposed) Changed?.Invoke(); }
 }

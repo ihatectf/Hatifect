@@ -37,7 +37,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     private readonly Action? _onClosed;
     private UiSemanticStardewHost? _host;
     private IClickableMenu? _boundActiveMenu;
-    private bool _subscribed;
+    private readonly UiSemanticOverlayEventBinding _events;
     private bool _acceptanceRegistered;
     private bool _closedNotified;
     private bool _retireRequested;
@@ -65,6 +65,10 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
             throw new ArgumentOutOfRangeException(nameof(renderLayer));
         _renderLayer = renderLayer;
         _onClosed = onClosed;
+        _events = new UiSemanticOverlayEventBinding(
+            helper.Events, Context.ScreenId, static () => Context.ScreenId, renderLayer,
+            OnUpdateTicked, OnReturnedToTitle, OnButtonPressed, OnButtonReleased,
+            OnMouseWheelScrolled, OnWindowResized, OnRenderedHud, OnRenderedActiveMenu);
         _keyboard = new UiSemanticKeyboardSubscriberLease(ReceiveTextInput, ReceiveSpecialInput);
         UiStardewAcceptanceRecorder.Shared.RegisterSemanticSurface(
             this,
@@ -87,7 +91,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
 
     /// <summary>True only while the pointer is inside the host-resolved Overlay bounds.</summary>
     public bool IsPointerOver
-        => Visible && Host.Contains(new RuntimePoint(Game1.getMouseX(), Game1.getMouseY()));
+        => _events.IsCurrentScreen && Visible && Host.Contains(new RuntimePoint(Game1.getMouseX(), Game1.getMouseY()));
 
     /// <summary>Called only for an unconsumed Escape/B request; true hides this overlay.</summary>
     public Func<bool>? CloseRequestHandler { get; set; }
@@ -95,6 +99,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     public void Show()
     {
         ThrowIfDisposed();
+        RequireCurrentScreen();
         if (_closedNotified)
         {
             throw new InvalidOperationException(
@@ -112,7 +117,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
         Visible = true;
         try
         {
-            SubscribeEvents();
+            _events.Activate();
             SynchronizePointer(force: true);
             SyncTextInputOwnership();
             sample.Complete();
@@ -133,6 +138,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     public void Update(UiScene scene)
     {
         ThrowIfDisposed();
+        RequireCurrentScreen();
         ArgumentNullException.ThrowIfNull(scene);
         var sample = BeginAcceptanceSample();
         Host.UpdateOverlay(scene, _viewport);
@@ -144,6 +150,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     public UiPortalHandle Present(UiPortalRequest request)
     {
         ThrowIfDisposed();
+        RequireCurrentScreen();
         return Host.Present(request);
     }
 
@@ -153,6 +160,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
         UiHostPlacementContext placement)
     {
         ThrowIfDisposed();
+        RequireCurrentScreen();
         return Host.UpdatePortal(id, scene, placement);
     }
 
@@ -300,13 +308,13 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     private UiSemanticStardewHost Host
         => _host ?? throw new ObjectDisposedException(nameof(UiSemanticStardewOverlaySession));
 
-    private void HideCore(bool notifyClosed)
+    private void HideCore(bool notifyClosed, bool restoreKeyboard = true)
     {
         if (!Visible) return;
         var failures = new List<Exception>();
-        try { _keyboard.Release(); }
+        try { _keyboard.Release(restoreKeyboard && (!_events.IsCurrentScreen || OwnsCurrentMenuContext())); }
         catch (Exception error) { failures.Add(error); }
-        try { UnsubscribeEvents(); }
+        try { _events.Dispose(); }
         catch (Exception error) { failures.Add(error); }
         if (failures.Count > 0)
             throw new AggregateException("Semantic Stardew overlay hide failed.", failures);
@@ -324,47 +332,6 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
         if (_closedNotified) return;
         _closedNotified = true;
         try { _onClosed?.Invoke(); }
-        catch (Exception error) { failures.Add(error); }
-    }
-
-    private void SubscribeEvents()
-    {
-        if (_subscribed) return;
-        _subscribed = true;
-        _helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
-        _helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
-        _helper.Events.Input.ButtonPressed += OnButtonPressed;
-        _helper.Events.Input.ButtonReleased += OnButtonReleased;
-        _helper.Events.Input.MouseWheelScrolled += OnMouseWheelScrolled;
-        _helper.Events.Display.WindowResized += OnWindowResized;
-        if (_renderLayer == UiSemanticStardewOverlayRenderLayer.Hud)
-            _helper.Events.Display.RenderedHud += OnRenderedHud;
-        else
-            _helper.Events.Display.RenderedActiveMenu += OnRenderedActiveMenu;
-    }
-
-    private void UnsubscribeEvents()
-    {
-        if (!_subscribed) return;
-        var failures = new List<Exception>();
-        Attempt(() => _helper.Events.GameLoop.UpdateTicked -= OnUpdateTicked, failures);
-        Attempt(() => _helper.Events.GameLoop.ReturnedToTitle -= OnReturnedToTitle, failures);
-        Attempt(() => _helper.Events.Input.ButtonPressed -= OnButtonPressed, failures);
-        Attempt(() => _helper.Events.Input.ButtonReleased -= OnButtonReleased, failures);
-        Attempt(() => _helper.Events.Input.MouseWheelScrolled -= OnMouseWheelScrolled, failures);
-        Attempt(() => _helper.Events.Display.WindowResized -= OnWindowResized, failures);
-        if (_renderLayer == UiSemanticStardewOverlayRenderLayer.Hud)
-            Attempt(() => _helper.Events.Display.RenderedHud -= OnRenderedHud, failures);
-        else
-            Attempt(() => _helper.Events.Display.RenderedActiveMenu -= OnRenderedActiveMenu, failures);
-        if (failures.Count > 0)
-            throw new AggregateException("Semantic Stardew overlay event teardown failed.", failures);
-        _subscribed = false;
-    }
-
-    private static void Attempt(Action action, ICollection<Exception> failures)
-    {
-        try { action(); }
         catch (Exception error) { failures.Add(error); }
     }
 
@@ -512,6 +479,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
 
     private bool CanRouteInput()
     {
+        if (!_events.IsCurrentScreen) return false;
         if (_retireRequested) return false;
         if (!Visible) return false;
         if (OwnsCurrentMenuContext()) return true;
@@ -523,11 +491,11 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     {
         if (_renderLayer == UiSemanticStardewOverlayRenderLayer.ActiveMenu)
         {
-            HideCore(notifyClosed: true);
+            HideCore(notifyClosed: true, restoreKeyboard: false);
             return;
         }
 
-        _keyboard.Release();
+        _keyboard.Release(restorePrevious: false);
     }
 
     private bool OwnsCurrentMenuContext()
@@ -553,7 +521,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
 
     private void ReceiveTextInput(string text)
     {
-        if (_retireRequested) return;
+        if (!CanRouteInput()) return;
         var sample = BeginAcceptanceSample();
         _input.TextInput(text);
         SyncTextInputOwnership();
@@ -562,7 +530,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
 
     private void ReceiveSpecialInput(Keys key)
     {
-        if (_retireRequested) return;
+        if (!CanRouteInput()) return;
         var sample = BeginAcceptanceSample();
         UiPortalDispatch dispatch = _input.KeyDown(key);
         NotifyPortalClosed(dispatch);
@@ -587,6 +555,12 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
         return !recorder.IsCapturing || host is null
             ? default
             : recorder.BeginSemanticOperation(this, host.Performance.LayoutBuilds);
+    }
+
+    private void RequireCurrentScreen()
+    {
+        if (!_events.IsCurrentScreen)
+            throw new InvalidOperationException("A semantic overlay can only be updated or shown on its owning screen.");
     }
 
     private void ThrowIfDisposed()

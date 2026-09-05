@@ -95,6 +95,7 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticSurfaceApi, IUiSeman
 /// <summary>One active-menu surface owner with retryable, fail-closed teardown.</summary>
 internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticSurfaceSession
 {
+    private readonly int _screen = Context.ScreenId;
     private readonly UiSemanticSurfaceService _owner;
     private readonly UiExperienceDefinition _experience;
     private readonly UiRegistrySnapshot _registry;
@@ -206,6 +207,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticSurfaceSes
     public void Refresh()
     {
         ThrowIfUnavailable();
+        if (Context.ScreenId != _screen) return;
         UiSemanticStardewOverlaySession overlay = _overlay!;
         if (_shown && !overlay.SynchronizeMenuContext()) return;
         SynchronizeState();
@@ -215,6 +217,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticSurfaceSes
     public void Synchronize()
     {
         ThrowIfUnavailable();
+        if (Context.ScreenId != _screen) return;
         UiSemanticStardewOverlaySession overlay = _overlay!;
         if (_shown && !overlay.SynchronizeMenuContext()) return;
         if (SynchronizeState())
