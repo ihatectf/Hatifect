@@ -28,58 +28,75 @@ internal sealed partial class NetworkExperience : IFlowExperience
     private bool _dirty;
     private bool _projecting;
     private bool _disposed;
+    private bool _subscribed;
+    private bool _pumping;
 
     internal NetworkExperience(UiSymbolId id, IFlowNetworkApplication application, bool russian = false, Func<string, string>? itemName = null)
     {
-        _application = application;
+        _application = application ?? throw new ArgumentNullException(nameof(application));
         _russian = russian;
-        _snapshot = application.ReadNetwork();
-        _sources = Stations(id, "source");
-        _destinations = Stations(id, "destination");
-        InitializeHistory(id, itemName ?? (key => key));
-        _recovery = new(Array.Empty<FlowRecoveryIssue>(), value => id.Child("recovery/" + value.ParcelId.ToString("N")),
-            value => value.ItemKey + " × " + value.Quantity,
-            supportingText: value => value.CanReconcile ? Text("Retained outcome available", "Сохранён результат передачи")
-                : Text("Outcome unknown; restore the complete game save from a known good backup", "Результат неизвестен; восстановите целый игровой сейв из исправной резервной копии"));
-        _inventory = new(Array.Empty<FlowInventorySlot>(), value => id.Child("slot/" + value.Index),
-            value => (itemName?.Invoke(value.ItemKey) ?? value.ItemKey) + " × " + value.Quantity,
-            supportingText: value => Text("Slot ", "Слот ") + (value.Index + 1) + Text(" · quality ", " · качество ") + value.Detail);
-        _links = new(Array.Empty<FlowLinkSnapshot>(), value => id.Child("link/" + value.Id.ToString("N")),
-            value => StationName(value.Origin) + " → " + StationName(value.Destination),
-            supportingText: value => $"{value.Capacity} · {value.TransitTicks} " + Text("ticks", "тиков"));
-        _stationForm = new(new UiSemanticFormField(id.Child("field/name"), Text("Station name", "Имя станции"), _name, _nameError));
-        _linkForm = new(new UiSemanticFormField(id.Child("field/capacity"), Text("Capacity", "Ёмкость"), _capacity, _capacityError),
-            new UiSemanticFormField(id.Child("field/ticks"), Text("Travel ticks", "Время в тиках"), _ticks, _ticksError));
-        var builder = new UiExperienceBuilder(id, Text("Flowline network", "Сеть Flowline"))
-            .Monitor(id.Child("element/transport"), Text("Transport", "Перевозки"), _status)
-            .Inspect(id.Child("element/captured-chest"), Text("Captured chest", "Выбранный сундук"), _target)
-            .Configure(id.Child("element/station-details"), Text("Station details", "Параметры станции"), _stationForm)
-            .Select(id.Child("element/source-station"), Text("Source station", "Станция отправления"), _sources)
-            .Actions(id.Child("element/station-actions"), Text("Station actions", "Действия со станцией"),
-                Action(id, "register", Text("Bind new station", "Создать станцию"), () => Command(FlowNetworkAction.RegisterStation), () => _stationForm.IsValid && _snapshot.Target != Guid.Empty
-                    && !_snapshot.Stations.Any(station => string.Equals(station.Name, _name.Value, StringComparison.OrdinalIgnoreCase))),
-                Action(id, "rename", Text("Rename source", "Переименовать источник"), () => Command(FlowNetworkAction.RenameStation), () => _stationForm.IsValid && Source is not null),
-                Action(id, "rebind", Text("Rebind source to captured chest", "Привязать источник к выбранному сундуку"), () => Command(FlowNetworkAction.RebindStation), () => Source is not null && _snapshot.Target != Guid.Empty))
-            .Select(id.Child("element/destination-station"), Text("Destination station", "Станция назначения"), _destinations)
-            .Inspect(id.Child("element/route-preview"), Text("Route preview", "Предпросмотр маршрута"), _route)
-            .Configure(id.Child("element/link-settings"), Text("Link settings", "Параметры связи"), _linkForm)
-            .Actions(id.Child("element/route-actions"), Text("Route actions", "Действия с маршрутом"),
-                Action(id, "link", Text("Add directed link", "Добавить направленную связь"), () => Command(FlowNetworkAction.AddLink), () => _linkForm.IsValid && Source is not null && Destination is not null && Source.Id != Destination.Id))
-            .Select(id.Child("element/links"), Text("Links", "Связи"), _links)
-            .Actions(id.Child("element/link-actions"), Text("Link actions", "Действия со связью"),
-                Action(id, "remove", Text("Remove selected link", "Удалить выбранную связь"), () => Command(FlowNetworkAction.RemoveLink), () => Selected(_links) is not null),
-                new UiActionDefinition(id.Child("action/refresh"), Text("Refresh", "Обновить"), () => { _dirty = true; Pump(); RefreshInventory(); }, () => IsActive));
-        AppendShipping(builder, id);
-        AppendHistory(builder, id);
-        AppendRecovery(builder, id);
-        Experience = builder.Monitor(id.Child("element/result"), Text("Result", "Результат"), _result).Build();
-        _sources.Changed += OnSelection;
-        _destinations.Changed += OnSelection;
-        _name.Changed += Validate;
-        _capacity.Changed += Validate;
-        _ticks.Changed += Validate;
-        application.RevisionChanged += OnRevision;
-        Project();
+        try
+        {
+            // Subscribe before the first read; source callbacks may publish while projecting.
+            _subscribed = true;
+            application.RevisionChanged += OnRevision;
+            _dirty = false;
+            _snapshot = application.ReadNetwork();
+            _sources = Stations(id, "source");
+            _destinations = Stations(id, "destination");
+            InitializeHistory(id, itemName ?? (key => key));
+            _recovery = new(Array.Empty<FlowRecoveryIssue>(), value => id.Child("recovery/" + value.ParcelId.ToString("N")),
+                value => value.ItemKey + " × " + value.Quantity,
+                supportingText: value => value.CanReconcile ? Text("Retained outcome available", "Сохранён результат передачи")
+                    : Text("Outcome unknown; restore the complete game save from a known good backup", "Результат неизвестен; восстановите целый игровой сейв из исправной резервной копии"));
+            _inventory = new(Array.Empty<FlowInventorySlot>(), value => id.Child("slot/" + value.Index),
+                value => (itemName?.Invoke(value.ItemKey) ?? value.ItemKey) + " × " + value.Quantity,
+                supportingText: value => Text("Slot ", "Слот ") + (value.Index + 1) + Text(" · quality ", " · качество ") + value.Detail);
+            _links = new(Array.Empty<FlowLinkSnapshot>(), value => id.Child("link/" + value.Id.ToString("N")),
+                value => StationName(value.Origin) + " → " + StationName(value.Destination),
+                supportingText: value => $"{value.Capacity} · {value.TransitTicks} " + Text("ticks", "тиков"));
+            _stationForm = new(new UiSemanticFormField(id.Child("field/name"), Text("Station name", "Имя станции"), _name, _nameError));
+            _linkForm = new(new UiSemanticFormField(id.Child("field/capacity"), Text("Capacity", "Ёмкость"), _capacity, _capacityError),
+                new UiSemanticFormField(id.Child("field/ticks"), Text("Travel ticks", "Время в тиках"), _ticks, _ticksError));
+            var builder = new UiExperienceBuilder(id, Text("Flowline network", "Сеть Flowline"))
+                .Monitor(id.Child("element/transport"), Text("Transport", "Перевозки"), _status)
+                .Inspect(id.Child("element/captured-chest"), Text("Captured chest", "Выбранный сундук"), _target)
+                .Configure(id.Child("element/station-details"), Text("Station details", "Параметры станции"), _stationForm)
+                .Select(id.Child("element/source-station"), Text("Source station", "Станция отправления"), _sources)
+                .Actions(id.Child("element/station-actions"), Text("Station actions", "Действия со станцией"),
+                    Action(id, "register", Text("Bind new station", "Создать станцию"), () => Command(FlowNetworkAction.RegisterStation), () => _stationForm.IsValid && _snapshot.Target != Guid.Empty
+                        && !_snapshot.Stations.Any(station => string.Equals(station.Name, _name.Value, StringComparison.OrdinalIgnoreCase))),
+                    Action(id, "rename", Text("Rename source", "Переименовать источник"), () => Command(FlowNetworkAction.RenameStation), () => _stationForm.IsValid && Source is not null),
+                    Action(id, "rebind", Text("Rebind source to captured chest", "Привязать источник к выбранному сундуку"), () => Command(FlowNetworkAction.RebindStation), () => Source is not null && _snapshot.Target != Guid.Empty))
+                .Select(id.Child("element/destination-station"), Text("Destination station", "Станция назначения"), _destinations)
+                .Inspect(id.Child("element/route-preview"), Text("Route preview", "Предпросмотр маршрута"), _route)
+                .Configure(id.Child("element/link-settings"), Text("Link settings", "Параметры связи"), _linkForm)
+                .Actions(id.Child("element/route-actions"), Text("Route actions", "Действия с маршрутом"),
+                    Action(id, "link", Text("Add directed link", "Добавить направленную связь"), () => Command(FlowNetworkAction.AddLink), () => _linkForm.IsValid && Source is not null && Destination is not null && Source.Id != Destination.Id))
+                .Select(id.Child("element/links"), Text("Links", "Связи"), _links)
+                .Actions(id.Child("element/link-actions"), Text("Link actions", "Действия со связью"),
+                    Action(id, "remove", Text("Remove selected link", "Удалить выбранную связь"), () => Command(FlowNetworkAction.RemoveLink), () => Selected(_links) is not null),
+                    new UiActionDefinition(id.Child("action/refresh"), Text("Refresh", "Обновить"), () => { _dirty = true; Pump(); RefreshInventory(); }, () => IsActive));
+            AppendShipping(builder, id);
+            AppendHistory(builder, id);
+            AppendRecovery(builder, id);
+            Experience = builder.Monitor(id.Child("element/result"), Text("Result", "Результат"), _result).Build();
+            _sources.Changed += OnSelection;
+            _destinations.Changed += OnSelection;
+            _name.Changed += Validate;
+            _capacity.Changed += Validate;
+            _ticks.Changed += Validate;
+            Project();
+            if (_dirty) Pump();
+        }
+        catch
+        {
+            _disposed = true;
+            Unsubscribe();
+            _stationForm?.Dispose();
+            _linkForm?.Dispose();
+            throw;
+        }
     }
 
     public UiExperienceDefinition Experience { get; }
@@ -91,18 +108,24 @@ internal sealed partial class NetworkExperience : IFlowExperience
 
     public bool Pump()
     {
-        if (_disposed || !_dirty) return false;
-        _snapshot = _application.ReadNetwork();
-        Project();
+        if (_disposed || !_dirty || _pumping) return false;
         _dirty = false;
-        return true;
+        _pumping = true;
+        try
+        {
+            _snapshot = _application.ReadNetwork();
+            Project();
+            return true;
+        }
+        catch { _dirty = true; throw; }
+        finally { _pumping = false; }
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed && !_subscribed) return;
         _disposed = true;
-        _application.RevisionChanged -= OnRevision;
+        Unsubscribe();
         _sources.Changed -= OnSelection;
         _destinations.Changed -= OnSelection;
         _name.Changed -= Validate;
@@ -150,7 +173,13 @@ internal sealed partial class NetworkExperience : IFlowExperience
     }
     private UiActionDefinition Action(UiSymbolId id, string key, string label, Action execute, Func<bool> applicable)
         => new(id.Child("action/" + key), label, execute, () => CanMutate && applicable());
-    private void OnRevision(long revision) => _dirty = true;
+    private void Unsubscribe()
+    {
+        if (!_subscribed) return;
+        _application.RevisionChanged -= OnRevision;
+        _subscribed = false;
+    }
+    private void OnRevision(long revision) { if (!_disposed) _dirty = true; }
     private void OnSelection()
     {
         if (_projecting) return;

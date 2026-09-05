@@ -20,6 +20,8 @@ internal sealed class ParcelExperience : IFlowExperience
     private FlowParcelSnapshot? _parcel;
     private bool _dirty;
     private bool _disposed;
+    private bool _subscribed;
+    private bool _pumping;
 
     internal ParcelExperience(UiSymbolId id, IFlowApplication application, Guid parcelId,
         bool russian = false, Func<Guid, string>? stationName = null, Func<string, string>? itemName = null)
@@ -30,21 +32,34 @@ internal sealed class ParcelExperience : IFlowExperience
         _russian = russian;
         _stationName = stationName ?? (_ => Text("Station", "Станция"));
         _itemName = itemName ?? (key => key);
-        _snapshot = application.ReadSnapshot();
-        Project();
-        Experience = new UiExperienceBuilder(id, Text("Flowline shipment", "Отправление Flowline"))
-            .Inspect(Text("Cargo", "Груз"), _cargo)
-            .Inspect(Text("Route", "Маршрут"), _route)
-            .Monitor(Text("State", "Состояние"), _state)
-            .Monitor(Text("Result", "Результат"), _result)
-            .Actions(Text("Actions", "Действия"),
-                Action(id, "reserve", FlowParcelAction.Reserve, FlowParcelActions.Reserve, Text("Dispatch", "Отправить")),
-                Action(id, "cancel", FlowParcelAction.Cancel, FlowParcelActions.Cancel, Text("Cancel", "Отменить")),
-                Action(id, "retry", FlowParcelAction.RetryDelivery, FlowParcelActions.RetryDelivery, Text("Retry delivery", "Повторить доставку")),
-                Action(id, "reconcile", FlowParcelAction.ReconcileTransfer, FlowParcelActions.ReconcileTransfer, Text("Check transfer", "Проверить передачу")),
-                Action(id, "return", FlowParcelAction.ReturnToSource, FlowParcelActions.ReturnToSource, Text("Return cargo to source", "Вернуть груз в источник")))
-            .Build();
-        application.RevisionChanged += OnRevision;
+        try
+        {
+            // Subscribe before the first read; source callbacks may publish while projecting.
+            _subscribed = true;
+            application.RevisionChanged += OnRevision;
+            _dirty = false;
+            _snapshot = application.ReadSnapshot();
+            Project();
+            Experience = new UiExperienceBuilder(id, Text("Flowline shipment", "Отправление Flowline"))
+                .Inspect(Text("Cargo", "Груз"), _cargo)
+                .Inspect(Text("Route", "Маршрут"), _route)
+                .Monitor(Text("State", "Состояние"), _state)
+                .Monitor(Text("Result", "Результат"), _result)
+                .Actions(Text("Actions", "Действия"),
+                    Action(id, "reserve", FlowParcelAction.Reserve, FlowParcelActions.Reserve, Text("Dispatch", "Отправить")),
+                    Action(id, "cancel", FlowParcelAction.Cancel, FlowParcelActions.Cancel, Text("Cancel", "Отменить")),
+                    Action(id, "retry", FlowParcelAction.RetryDelivery, FlowParcelActions.RetryDelivery, Text("Retry delivery", "Повторить доставку")),
+                    Action(id, "reconcile", FlowParcelAction.ReconcileTransfer, FlowParcelActions.ReconcileTransfer, Text("Check transfer", "Проверить передачу")),
+                    Action(id, "return", FlowParcelAction.ReturnToSource, FlowParcelActions.ReturnToSource, Text("Return cargo to source", "Вернуть груз в источник")))
+                .Build();
+            if (_dirty) Pump();
+        }
+        catch
+        {
+            _disposed = true;
+            Unsubscribe();
+            throw;
+        }
     }
 
     public UiExperienceDefinition Experience { get; }
@@ -53,21 +68,33 @@ internal sealed class ParcelExperience : IFlowExperience
     // Coalesces domain notifications into one complete projection per pump.
     public bool Pump()
     {
-        if (_disposed || !_dirty) return false;
-        _snapshot = _application.ReadSnapshot();
-        Project();
+        if (_disposed || !_dirty || _pumping) return false;
         _dirty = false;
-        return true;
+        _pumping = true;
+        try
+        {
+            _snapshot = _application.ReadSnapshot();
+            Project();
+            return true;
+        }
+        catch { _dirty = true; throw; }
+        finally { _pumping = false; }
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed && !_subscribed) return;
         _disposed = true;
-        _application.RevisionChanged -= OnRevision;
+        Unsubscribe();
     }
 
-    private void OnRevision(long revision) => _dirty = true;
+    private void Unsubscribe()
+    {
+        if (!_subscribed) return;
+        _application.RevisionChanged -= OnRevision;
+        _subscribed = false;
+    }
+    private void OnRevision(long revision) { if (!_disposed) _dirty = true; }
 
     private UiActionDefinition Action(UiSymbolId id, string key, FlowParcelAction action, FlowParcelActions capability, string title)
         => new(id.Child("action/" + key), title, () => Execute(action), () => Can(capability));

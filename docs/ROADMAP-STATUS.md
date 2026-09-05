@@ -2,7 +2,7 @@
 
 Date: 2026-09-06. Working branch: `codex/flowline-next-ten-slices`; source baseline: `2f08a4f4db36ef0b1ba58e385fc0ab5044cae867`.
 
-The authoritative scope is [ROADMAP.md](ROADMAP.md), restored verbatim from commit `1e741ef` because this task branch predates that documentation commit. The earlier exploratory Flow multiplayer/adapters/policies list is superseded as an execution plan; no new product work outside the approved roadmap is being added. It does not replace U01–U10, R01–R04, T01–T03 or their acceptance. The Flow foundation is verified as the bounded change recorded below; the full roadmap IDs remain incomplete until all their acceptance and integration evidence are present.
+The authoritative scope is [ROADMAP.md](ROADMAP.md), restored verbatim from commit `1e741ef` because this task branch predates that documentation commit. The earlier exploratory Flow multiplayer/adapters/policies list is superseded as an execution plan; no new product work outside the approved roadmap is being added. It does not replace U01–U10, R01–R04, T01–T03 or their acceptance. The Flow foundation is committed and published in task branch as `cdf9d2e86e90f0174251243147f8a2f9480d14e8`; its integration with the verified UI SDK/editor/D01 is owned by the UI task. The full roadmap IDs remain incomplete until all their acceptance and integration evidence are present.
 
 ## B01: current gaps
 
@@ -15,7 +15,7 @@ The authoritative scope is [ROADMAP.md](ROADMAP.md), restored verbatim from comm
 | U03–U10 | PLANNED | Current actions are synchronous; deterministic planner/profiles, layout/input/virtualization and form validation already exist | All specified async/environment/authoring/theme/component/extension acceptance remains required |
 | R01–R04 | PLANNED | Existing single-asset Last Known Good and retryable resource teardown | Generation ownership, bundle preparation, migration and multi-host commit/rollback |
 | T01–T03 | PLANNED | Existing Tooling/Server, symbols/diagnostics and DevTools | New metadata/protocol, preview matrix, editor workflow and examples |
-| F11 | IN_PROGRESS | Immutable `FlowSnapshot`, typed commands/session/revision, observer fencing; FlowApplicationTests | Explicit unavailability reasons and read/subscribe handshake; final contract review/commit |
+| F11 | IN_PROGRESS | Immutable `FlowSnapshot`, typed commands/session/revision, observer fencing; FlowApplicationTests | Explicit provider/action unavailability reasons and final contract integration; read/subscribe handshake verified below |
 | F12–F13 | IN_PROGRESS | ParcelExperience/ParcelSurface, typed controls and localized projections; host-free behavior tests | New semantic-v2 integration; complete fake-session in-game lifecycle/input evidence |
 | F14–F17 | IN_PROGRESS | SaveBoundCargoPort and FlowGameSession: item XML, physical custody, save barrier, fencing; production chest roundtrip recorded below | D03/D04 record, partial stacks and complete supported runtime failure matrix; current candidate rerun |
 | F18–F19 | IN_PROGRESS | NetworkExperience: stations/routes, inventory fingerprints, shipping/history, return/recovery | Ordinary player entry without console, Quick/View integration, reason codes, locale/input/scale acceptance |
@@ -43,6 +43,15 @@ The authoritative scope is [ROADMAP.md](ROADMAP.md), restored verbatim from comm
 - `python3 tools/release.py verify-package .smapi-test/isolated/Mods/Hatifect`: **PASS**, 14 runtime DLLs. Generated acceptance reports were byte-matched to preserved request artifacts before deleting only those generated files. Archive and DLL hashes: `artifacts/flowline-foundation/`.
 - Independent bounded review: UI screen/keyboard handoff fixes and peer endpoint authority/replay fixes rechecked; no remaining findings in the reviewed scopes. Multiplayer client/wiring and split-screen runtime remain unimplemented/unverified and disabled.
 
+## F11-a: revision subscription and projection lifecycle
+
+Owner: Flow semantic consumer; existing application event/snapshot contract and public UI API are unchanged. Both network and parcel views subscribe before their initial read, retain notifications raised during read/projection for the next pump, and reject nested pumps before they can consume dirty state. Failed reads remain retryable; failed construction detaches the subscription; a failed ordinary unsubscribe retires callbacks/actions immediately and retains a handle for retry.
+
+- `./tools/hatifect-test flow`: **PASS**, 646 tests (`run-seoy49ou`), including 12 new cases for both projections.
+- Final `./tools/hatifect-check`: **PASS**, 916 .NET + 297 Python tests (`run-3akheh8x`), including the final reentrant-pump guard.
+- Independent source/actual TRX review rechecked the subscribe/read and reentrant-read counterexample. Existing snapshot/session/observer tests remain intact. No new UI API, persistence format, game adapter or package boundary is introduced, so separate game/visual/package gates are NOT_APPLICABLE to this bounded F11-a change. Full F11 and later runtime acceptance remain required.
+- Limit: a provider whose event removal keeps throwing during a constructor failure cannot provide a usable cleanup handle; this does not imply unconditional cleanup against an arbitrarily broken event implementation. Production Flow application event accessors are ordinary managed events.
+
 ## Current next slice
 
-Complete and publish the verified Flow foundation. The UI task owns B02/U01–U10/R/T on codex/roadmap-implementation (ready SDK/editor commits 55ccc3b, 55b8360; baseline de766c5). This task owns F11–F20 and real-game acceptance, integrating verified UI commits. Next Flow work closes F11 subscription/unavailability gaps and F16 partial-stack acceptance, then F18 player entry through the available standalone host. Multiplayer remains disabled and its exploratory foundation is not a released capability.
+Integrate the published Flow foundation with the UI task and complete F11. The UI task owns B02/U01–U10/R/T on codex/roadmap-implementation (ready SDK/editor commits 55ccc3b, 55b8360; baseline de766c5). This task owns F11–F20 and real-game acceptance, integrating verified UI commits. Next Flow work closes F11 provider/action reason-code gaps and F16 partial-stack acceptance, then F18 player entry through the available standalone host. Multiplayer remains disabled and its exploratory foundation is not a released capability.
