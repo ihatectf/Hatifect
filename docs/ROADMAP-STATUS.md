@@ -17,7 +17,7 @@ This report preserves separate evidence for Flow foundation `cdf9d2e`, F11 `e31c
 | U03–U10 | PLANNED | Current actions are synchronous; deterministic planner/profiles, layout/input/virtualization and form validation already exist | All specified async/environment/authoring/theme/component/extension acceptance remains required |
 | R01–R04 | PLANNED | Existing single-asset Last Known Good and retryable resource teardown | Generation ownership, bundle preparation, migration and multi-host commit/rollback |
 | T01–T03 | PLANNED | Existing Tooling/Server, symbols/diagnostics and DevTools | New metadata/protocol, preview matrix, editor workflow and examples |
-| F11 | VERIFIED, integration pending | Published e31c1ef + ff43d0b: immutable snapshots, typed commands, observer fencing, provider mode, supported operations, owner-derived availability and stable reasons; evidence below | UI owner is integrating both commits with published D01/UI baseline |
+| F11 | DONE | Integrated `5f2d10c`: immutable snapshots, typed commands/session/revision, observer fencing, provider capabilities and stable availability reasons; combined C/G and fresh runtime evidence below | F12 after U01/U02/U04; F16 continues independently |
 | F12–F13 | IN_PROGRESS | ParcelExperience/ParcelSurface, typed controls and localized projections; host-free behavior tests | New semantic-v2 integration; complete fake-session in-game lifecycle/input evidence |
 | F14–F17 | IN_PROGRESS | SaveBoundCargoPort and FlowGameSession: item XML, physical custody, save barrier, fencing; production chest roundtrip recorded below | D03/D04 record, partial stacks and complete supported runtime failure matrix; current candidate rerun |
 | F18–F19 | IN_PROGRESS | NetworkExperience: stations/routes, inventory fingerprints, shipping/history, return/recovery | Ordinary player entry without console, Quick/View integration, reason codes, locale/input/scale acceptance |
@@ -56,7 +56,7 @@ Owner: Flow semantic consumer; existing application event/snapshot contract and 
 
 ## Current next slice
 
-F16-a is published as `54c5af5`. Verify its integration with the published UI foundation, then continue the remaining F16/F17 failure and save-isolation matrix. The UI task owns B02/U01–U10/R/T on codex/roadmap-implementation; its foundation/SDK/editor/D01 integration is published in develop at 3f11e5d (verified by fetch), and F11 commits e31c1ef + ff43d0b are its next integration step. This task owns F11–F20 and real-game acceptance, integrating verified UI commits. F18 ordinary player entry follows integration of the standalone host and U01 identity fix. Multiplayer remains disabled and its exploratory foundation is not a released capability.
+F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`, and its UI alpha.31 integration passed C/G/P/host in this task. Continue F16-b actual process-crash/reload, then the remaining F16/F17 failure and production save-isolation matrix. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
 
 ## F11-b: owner-derived availability and rejection reasons
 
@@ -114,7 +114,7 @@ The corrected candidate passed `./tools/hatifect-check --platform`: **PASS**, 1,
 - `./tools/hatifect-smoke flow.chest.roundtrip`: **PASS**, request `46967acd-30bb-4c93-89ff-ce9c1b95c9e3`, all eight checks, 347 frames, three loads, two Saving/Saved pairs and no errors. The production session retained real chest cargo across saving/loading and did not duplicate delivery. Evidence is under `artifacts/runtime/<request-id>/result.json`; exact counts are in `diagnostics/flow-chest-roundtrip.json`.
 - CA's actual third-party mod was absent in this isolated run and the adapter disabled itself normally. These scenarios do not claim CA visual/runtime acceptance. Q01–Q03 and the known U01 Network binding gap remain open.
 
-Next integration is the separately verified Flow F11 sequence `e31c1ef` and `ff43d0b`; then U01 preserves explicit identity/alias/label through the real Network binding/compile path and adds the complete typed graph/wire acceptance. The UI task remains the single `develop` integration owner.
+F11 integration is recorded below; U01 preserves explicit identity/alias/label through the real Network binding/compile path and adds the complete typed graph/wire acceptance. The UI task remains the single `develop` integration owner.
 
 ## Flow task integration of UI foundation with F16-a
 
@@ -125,3 +125,7 @@ The Flow task merged published UI foundation `3f11e5d` into its published F16-a 
 - `./tools/hatifect-isolated-ui-ca --keep`: **PASS**, 43 projected files, eight alpha.31 packages, 80 tests, two CA DLLs and no UI source. Retained projection/TRX: `/private/var/folders/ly/sph907ln7bv1tc3dxmflc62h0000gn/T/hatifect-ui-ca-isolated.l_zpwa5h`.
 - `./tools/hatifect-agent-check --host`: **PASS**, project config/skill loaded, 217 skills discovered.
 - Final source/staged review: `artifacts/flowline-ui-integration/`. Runtime evidence for the full next candidate will be generated by the next F16 crash slice; earlier normal roundtrip evidence remains scoped to its recorded fingerprint. No release or new UI acceptance is claimed by this task-branch integration.
+
+## F11 combined integration checks
+
+Combined with the published UI foundation `3f11e5d` in `/private/tmp/hatifect-ui-next-ten-slices`: `./tools/hatifect-check` **PASS**, 1,014 .NET + 301 Python (`artifacts/validation/run-9ryxhfgj/summary.json`); `./tools/hatifect-check --platform` **PASS**, 1,174 .NET + 301 Python (`artifacts/validation/run-wxasxwxo/summary.json`), including 657 Flow and 65 Flow game-adapter tests. The final committed Flow source was independently inspected before integration; the old public constructor/deconstruction signatures and current SDK form behavior remain compatible. No UI package/API or persistence format changed in this F11 delta. Fresh `./tools/hatifect-live-prepare` completed for integration commit `5f2d10c` (`artifacts/ui-flow-integration/f11-prepare.log`), followed by `./tools/hatifect-smoke flow.chest.roundtrip`: **PASS**, all 8 assertions, 347 frames, 3 loads, two Saving/Saved pairs and no errors or exceptions (`artifacts/runtime/7336456e-5400-4a77-aed6-4109aedc7c9f/result.json`). F11 acceptance is **DONE**; Network UI binding, F12 and the broader physical failure matrix remain separate open work. Previous physical runs remain attached to `803c909`.
