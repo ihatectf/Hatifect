@@ -19,6 +19,35 @@ SPEC.loader.exec_module(SAVE)
 
 
 class SaveProvisioningTests(unittest.TestCase):
+    def test_real_flow_roundtrip_uses_canonical_owned_name_and_keeps_golden_bytes(self) -> None:
+        original = b'<SaveGame><uniqueIDForThisGame>4242424242</uniqueIDForThisGame></SaveGame>'
+        self._bootstrap(save_xml=original)
+        manifest, golden = SAVE.validate_fixture(self.isolated, self.smapi)
+        before = SAVE._inventory(golden)
+        run_id = str(uuid.uuid4())
+        path = SAVE.prepare_working_copy(self.isolated, self.smapi, run_id, 'flow.chest.roundtrip')
+        self.assertEqual(f'HatifectHarness{uuid.UUID(run_id).hex}_4242424242', path.name)
+        self.assertEqual(original, (path / path.name).read_bytes())
+        self.assertEqual(before, SAVE._inventory(golden))
+        self.assertEqual(path, SAVE.validate_working_copy(self.isolated, path, manifest['runtimeId'], run_id, 'flow.chest.roundtrip'))
+        for scenario in ('', 'flow.route.basic', 'flow.save.isolation', 'flow.chest.unknown'):
+            with self.subTest(scenario=scenario), self.assertRaises(SAVE.SaveProvisioningError):
+                SAVE.cleanup_working_copy(self.isolated, path, manifest['runtimeId'], run_id, scenario)
+        self.assertTrue(path.exists())
+        SAVE.cleanup_working_copy(self.isolated, path, manifest['runtimeId'], run_id, 'flow.chest.roundtrip')
+        self.assertFalse(path.exists())
+        self.assertEqual(before, SAVE._inventory(golden))
+
+    def test_roundtrip_collision_does_not_acquire_foreign_cleanup_authority(self) -> None:
+        self._bootstrap()
+        run_id = str(uuid.uuid4())
+        path = SAVE.plan_working_copy(self.isolated, self.smapi, run_id, 'flow.chest.roundtrip')
+        path.mkdir()
+        (path / 'foreign').write_text('preserve')
+        with self.assertRaises(SAVE.SaveProvisioningError):
+            SAVE.prepare_working_copy(self.isolated, self.smapi, run_id, 'flow.chest.roundtrip')
+        self.assertEqual('preserve', (path / 'foreign').read_text())
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)

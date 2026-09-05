@@ -1,7 +1,8 @@
 namespace Hatifect.Flow.Domain.Shipments;
 
-internal enum ParcelState
+public enum ParcelState
 {
     Created, Reserved, InTransit, Arrived, DeliveryRejected, DeliveryFaulted, Delivered, Cancelled,
-    ExtractionUncertain, DeliveryUncertain
+    ExtractionUncertain, DeliveryUncertain,
+    ReturnRequested, Returned, ReturnRejected, ReturnFaulted, ReturnUncertain
 }

@@ -16,6 +16,97 @@ namespace Hatifect.UI.Runtime.Tests;
 public sealed class SemanticFormTests
 {
     [Fact]
+    public void ValidityReadsCurrentDraftWithoutCommittingOrPublishingErrors()
+    {
+        var number = UiFormFields.Number(Id("number"), "Number", 2m);
+        var name = UiFormFields.Text(Id("name"), "Name", "Before", value => value.Length == 0 ? " " : null);
+        using var form = new UiFormState(number, name);
+        int changes = 0;
+        form.Changed += () => changes++;
+        number.Value.Value = "broken";
+        Assert.False(form.IsValid);
+        Assert.Null(number.Error);
+        Assert.Equal(2m, number.CommittedValue);
+        Assert.Equal(1, changes);
+        Assert.False(form.Apply());
+        name.DraftValue = "After";
+        Assert.Null(number.Error);
+        Assert.False(form.IsValid);
+        Assert.Equal("Before", name.CommittedValue);
+
+        number.DraftValue = 3m;
+        name.DraftValue = "";
+        Assert.False(form.IsValid);
+        Assert.False(form.Apply());
+        Assert.Equal(" ", name.Error);
+        Assert.False(form.IsValid);
+        Assert.Equal(2m, number.CommittedValue);
+        name.DraftValue = "Valid";
+        int beforeRead = changes;
+        Assert.True(form.IsValid);
+        Assert.Equal(beforeRead, changes);
+        Assert.Equal(2m, number.CommittedValue);
+        Assert.True(form.Apply());
+        Assert.Equal(3m, number.CommittedValue);
+        Assert.Equal("Valid", name.CommittedValue);
+    }
+
+    [Fact]
+    public void ValidityRejectsMutatingAndReentrantValidatorsAndRecoversForTheNextRead()
+    {
+        var number = UiFormFields.Number(Id("number"), "Number", 2m);
+        UiFormState? form = null;
+        int mode = 1;
+        var name = UiFormFields.Text(Id("name"), "Name", "Before", value =>
+        {
+            if (mode == 1) number.DraftValue = 8m;
+            if (mode == 2) form!.Apply();
+            return null;
+        });
+        using (form = new UiFormState(number, name))
+        {
+            Assert.Throws<InvalidOperationException>(() => form.IsValid);
+            Assert.Equal(2m, number.CommittedValue);
+            mode = 2;
+            Assert.Throws<InvalidOperationException>(() => form.IsValid);
+            Assert.Equal(2m, number.CommittedValue);
+            mode = 0;
+            Assert.True(form.IsValid);
+            Assert.True(form.Apply());
+            Assert.Equal(8m, number.CommittedValue);
+        }
+    }
+
+    [Fact]
+    public void ExternalValidationBlocksTypedCommitAndResetPreservesConsumerError()
+    {
+        var count = UiFormFields.Number(Id("count"), "Count", 1m);
+        var error = new UiState<string?>("Station unavailable");
+        var station = new UiSemanticFormField(Id("station"), "Station", new UiState<string>("Farm"), error);
+        using var form = new UiFormState(count, station);
+        count.DraftValue = 8m;
+
+        Assert.False(form.IsValid);
+        Assert.False(form.Apply());
+        Assert.Equal(1m, count.CommittedValue);
+        Assert.Equal("Station unavailable", station.Error);
+        form.Reset();
+        Assert.Equal(1m, count.DraftValue);
+        Assert.Equal("Station unavailable", error.Value);
+        Assert.False(form.IsValid);
+
+        error.Value = null;
+        count.DraftValue = 3m;
+        Assert.True(form.Apply());
+        Assert.True(form.IsValid);
+        Assert.Equal(3m, count.CommittedValue);
+        count.Value.Value = "invalid";
+        Assert.False(form.Apply());
+        Assert.False(form.IsValid);
+        Assert.Equal(3m, count.CommittedValue);
+    }
+
+    [Fact]
     public void InvalidDraftKeepsAllCommittedValuesAndResetRestoresTheLastCommit()
     {
         var name = UiFormFields.Text(Id("name"), "Name", "Before", value => value.Length > 0 ? null : "Required");

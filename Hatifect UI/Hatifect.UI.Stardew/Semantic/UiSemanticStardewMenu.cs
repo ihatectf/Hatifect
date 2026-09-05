@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Threading;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
 using Hatifect.UI;
@@ -22,10 +22,14 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 {
     private readonly UiSemanticStardewInputAdapter _input;
     private readonly UiSemanticKeyboardSubscriberLease _keyboard;
+    private readonly UiSemanticMenuSlotLease _slot;
     private readonly Action<RuntimeRect> _recompose;
     private readonly Action? _onClosed;
     private UiSemanticStardewHost? _host;
     private bool _cleaned;
+    private bool _cleaning;
+    private bool _cleanupComplete;
+    private bool _closedNotified;
     private bool _closeRequested;
     private RuntimeRect _viewport;
 
@@ -39,6 +43,9 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
         _input = host.Input;
         _recompose = recompose ?? throw new ArgumentNullException(nameof(recompose));
         _onClosed = onClosed;
+        int owner = Context.ScreenId;
+        _slot = new UiSemanticMenuSlotLease(this, () => Context.ScreenId == owner,
+            static () => Game1.activeClickableMenu, static () => Game1.activeClickableMenu = null);
         _keyboard = new UiSemanticKeyboardSubscriberLease(ReceiveTextInput, ReceiveSpecialInput);
         ApplyViewport(viewport);
         _input.PointerMove(Game1.getMouseX(), Game1.getMouseY());
@@ -56,6 +63,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     public override void update(GameTime time)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         base.update(time);
         RuntimeRect viewport = CaptureViewport();
@@ -70,6 +79,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     public override void performHoverAction(int x, int y)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         base.performHoverAction(x, y);
         _input.PointerMove(x, y);
@@ -79,6 +90,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         _input.PointerDown(x, y);
         CompleteInput();
@@ -87,6 +100,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     public override void releaseLeftClick(int x, int y)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         _input.PointerUp(x, y);
         CompleteInput();
@@ -95,6 +110,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     public override void leftClickHeld(int x, int y)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         _input.PointerMove(x, y);
         sample.Complete();
@@ -102,6 +119,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     public override void receiveScrollWheelAction(int direction)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         _input.Wheel(Game1.getMouseX(), Game1.getMouseY(), direction);
         sample.Complete();
@@ -109,6 +128,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     public override void receiveKeyPress(Keys key)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         if (_keyboard.OwnsSubscriber) return;
         var sample = BeginAcceptanceSample();
         UiPortalDispatch dispatch = _input.KeyDown(key);
@@ -122,6 +143,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     public override void receiveGamePadButton(Buttons button)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         UiPortalDispatch dispatch = _input.GamePad(button);
         if (RequestsRootCancel(dispatch) && button == Buttons.B)
@@ -134,6 +157,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     public override void draw(SpriteBatch batch)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         UiSemanticStardewHost host = _host
             ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu));
         var sample = BeginAcceptanceSample();
@@ -166,6 +191,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     internal void InsertAutomationText(string text)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         _input.TextInput(text);
         CompleteInput();
@@ -200,18 +227,29 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     private void CleanupSession()
     {
-        if (_cleaned) return;
+        // Foreign-screen disposal must disable drawing/input before releasing the host.
         _cleaned = true;
+        _slot.Retire();
+        if (_cleanupComplete || _cleaning) return;
+        _cleaning = true;
         var failures = new List<Exception>();
-        try { _keyboard.Dispose(); }
-        catch (Exception error) { failures.Add(error); }
-        try { UiStardewAcceptanceRecorder.Shared.UnregisterSemanticSurface(this); }
-        catch (Exception error) { failures.Add(error); }
-        UiSemanticStardewHost? host = Interlocked.Exchange(ref _host, null);
-        try { host?.Dispose(); }
-        catch (Exception error) { failures.Add(error); }
-        try { _onClosed?.Invoke(); }
-        catch (Exception error) { failures.Add(error); }
+        try
+        {
+            try { _keyboard.Dispose(); }
+            catch (Exception error) { failures.Add(error); }
+            try { UiStardewAcceptanceRecorder.Shared.UnregisterSemanticSurface(this); }
+            catch (Exception error) { failures.Add(error); }
+            try { _host?.Dispose(); _host = null; }
+            catch (Exception error) { failures.Add(error); }
+            if (!_closedNotified)
+            {
+                _closedNotified = true;
+                try { _onClosed?.Invoke(); }
+                catch (Exception error) { failures.Add(error); }
+            }
+            _cleanupComplete = failures.Count == 0;
+        }
+        finally { _cleaning = false; }
         if (failures.Count > 0)
             throw new AggregateException("Semantic Stardew menu cleanup failed.", failures);
     }
@@ -248,6 +286,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     private void ReceiveTextInput(string text)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         _input.TextInput(text);
         CompleteInput();
@@ -256,6 +296,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     private void ReceiveSpecialInput(Keys key)
     {
+        _slot.PollRetirement();
+        if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         UiPortalDispatch dispatch = _input.KeyDown(key);
         if (RequestsRootCancel(dispatch) && key == Keys.Escape)

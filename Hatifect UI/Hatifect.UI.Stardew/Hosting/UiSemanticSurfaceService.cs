@@ -106,6 +106,7 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
 /// <summary>One active-menu surface owner with retryable, fail-closed teardown.</summary>
 internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearanceSession, IUiSemanticReloadSession
 {
+    private readonly int _screen = Context.ScreenId;
     private readonly UiSemanticSurfaceService _owner;
     private readonly UiExperienceDefinition _experience;
     private readonly UiRegistrySnapshot _registry;
@@ -114,8 +115,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
     private UiSemanticTheme _theme;
     private readonly UiSemanticLiveAssets _assets;
     private readonly UiSemanticAssetWatches _watches = new();
-    private readonly IModHelper _helper;
-    private bool _watchSubscribed;
+    private readonly UiSemanticAssetWatchBinding _watchEvents;
     private UiSemanticSurfaceOptions _options;
     private UiSemanticStardewRuntime? _runtime;
     private UiSemanticStardewOverlaySession? _overlay;
@@ -137,7 +137,9 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
     {
         _owner = owner ?? throw new ArgumentNullException(nameof(owner));
         ArgumentNullException.ThrowIfNull(helper);
-        _helper = helper;
+        _watchEvents = new UiSemanticAssetWatchBinding(helper.Events.GameLoop,
+            () => Context.ScreenId == _screen,
+            () => { if (!_closedRaised && !_disposeRequested) _watches.Poll(); });
         _experience = experience ?? throw new ArgumentNullException(nameof(experience));
         _options = options ?? throw new ArgumentNullException(nameof(options));
 
@@ -204,19 +206,21 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
         IDisposable lease = _watches.Add(experience, presentationPath, visualPath,
             (presentation, visual) => Reload(experience, presentation, visual),
             error => AssetsReloaded?.Invoke(_assets.Failure(experience, "LUI4103", error.Message)));
-        if (!_watchSubscribed)
+        try { _watchEvents.Activate(); }
+        catch (Exception activation)
         {
-            try { _helper.Events.GameLoop.UpdateTicked += OnWatchTick; _watchSubscribed = true; }
-            catch { lease.Dispose(); throw; }
+            try { lease.Dispose(); }
+            catch (Exception cleanup) { throw new AggregateException(activation, cleanup); }
+            throw;
         }
         return lease;
     }
-    private void OnWatchTick(object? sender, UpdateTickedEventArgs args)
-    { if (!_closedRaised && !_disposeRequested) _watches.Poll(); }
     private void StopWatches()
     {
-        if (_watchSubscribed) { _helper.Events.GameLoop.UpdateTicked -= OnWatchTick; _watchSubscribed = false; }
-        _watches.Dispose();
+        List<Exception>? failures = null;
+        try { _watchEvents.Dispose(); } catch (Exception error) { (failures ??= new()).Add(error); }
+        try { _watches.Dispose(); } catch (Exception error) { (failures ??= new()).Add(error); }
+        if (failures is not null) throw new AggregateException(failures);
     }
     private void ValidateAssets(UiSymbolId experience, UiTerminalSectionAssets assets)
     {
@@ -236,6 +240,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
     {
         if (_disposed || _disposeRequested) return;
         if (_closedRaised) return;
+        ThrowIfUnavailable();
         UiSemanticStardewOverlaySession? overlay = _overlay;
         if (overlay?.Visible == true)
             overlay.Hide();
@@ -274,6 +279,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
 
     public void Refresh()
     {
+        if (Context.ScreenId != _screen) return;
         ThrowIfUnavailable();
         UiSemanticStardewOverlaySession overlay = _overlay!;
         if (_shown && !overlay.SynchronizeMenuContext()) return;
@@ -283,6 +289,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
 
     public void Synchronize()
     {
+        if (Context.ScreenId != _screen) return;
         ThrowIfUnavailable();
         UiSemanticStardewOverlaySession overlay = _overlay!;
         if (_shown && !overlay.SynchronizeMenuContext()) return;
@@ -423,5 +430,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
             throw new InvalidOperationException(
                 "A dismissed semantic surface session can only be disposed; create a new session.");
         }
+        if (Context.ScreenId != _screen)
+            throw new InvalidOperationException("A semantic surface belongs to its creating screen.");
     }
 }

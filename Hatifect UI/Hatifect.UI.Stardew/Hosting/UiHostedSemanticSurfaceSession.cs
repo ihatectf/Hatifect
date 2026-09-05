@@ -39,6 +39,7 @@ internal sealed class UiTerminalSemanticSurfaceSession : UiHostedSemanticSurface
 internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSession, IUiSemanticReloadSession
 {
     private readonly IModHelper _helper;
+    private readonly UiSemanticHostEventBinding _events;
     private readonly UiSemanticHostKind _kind;
     private readonly UiSemanticTerminalDefinition? _terminal;
     private readonly UiRegistrySnapshot _registry;
@@ -68,6 +69,8 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
         UiExperienceDefinition? experience, UiSemanticHostKind kind, UiSemanticTerminalDefinition? terminal)
     {
         _helper = helper ?? throw new ArgumentNullException(nameof(helper));
+        _events = new UiSemanticHostEventBinding(helper.Events, Context.ScreenId, static () => Context.ScreenId,
+            OnUpdate, OnReturnedToTitle, OnMenuChanged);
         _options = options ?? throw new ArgumentNullException(nameof(options));
         if (options.DimUnderlyingMenu)
             throw new ArgumentException("Dimming a native menu is supported by active-menu overlays.", nameof(options));
@@ -95,7 +98,7 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
             ValidateAssets, _ => { _invocation = null; Refresh(); });
     }
 
-    public bool Visible => !_closed && !_disposed && (_overlay?.Visible == true
+    public bool Visible => _events.IsOwner && !_closed && !_disposed && (_overlay?.Visible == true
         || (_menu != null && ReferenceEquals(Game1.activeClickableMenu, _menu)));
     public event Action? Rendered;
     public event Action? Closed;
@@ -177,10 +180,17 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
     public void Hide()
     {
         if (_disposed || _closed) return;
+        _events.RequireOwner();
+        CloseOwnedPresentation();
+    }
+
+    private void CloseOwnedPresentation()
+    {
+        if (_closed) return;
         if (_overlay?.Visible == true) _overlay.Hide();
         if (_menu is { } menu)
         {
-            if (ReferenceEquals(Game1.activeClickableMenu, menu)) menu.exitThisMenu();
+            if (_events.IsOwner && ReferenceEquals(Game1.activeClickableMenu, menu)) menu.exitThisMenu();
             else menu.Dispose();
         }
         OnPresentationClosed();
@@ -213,6 +223,7 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
 
     public void Refresh()
     {
+        if (!_events.IsOwner) return;
         ThrowIfUnavailable();
         _dirty = true;
         Synchronize();
@@ -220,6 +231,7 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
 
     public void Synchronize()
     {
+        if (!_events.IsOwner) return;
         ThrowIfUnavailable();
         if (RetireDetachedMenu() || !Visible) return;
         RuntimeRect viewport = UiSemanticStardewMenu.CaptureViewport();
@@ -254,7 +266,7 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
         var failures = new List<Exception>();
         try
         {
-            try { Hide(); } catch (Exception error) { failures.Add(error); }
+            try { CloseOwnedPresentation(); } catch (Exception error) { failures.Add(error); }
             try { Unsubscribe(); } catch (Exception error) { failures.Add(error); }
             try { _watches.Dispose(); } catch (Exception error) { failures.Add(error); }
             try { _overlay?.Dispose(); _overlay = null; } catch (Exception error) { failures.Add(error); }
@@ -298,9 +310,7 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
     {
         if (_subscribed) return;
         _subscribed = true;
-        _helper.Events.GameLoop.UpdateTicked += OnUpdate;
-        _helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
-        _helper.Events.Display.MenuChanged += OnMenuChanged;
+        _events.Activate();
         foreach (IUiSemanticSource source in _sources) source.Changed += OnChanged;
     }
 
@@ -308,9 +318,7 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
     {
         if (!_subscribed) return;
         var failures = new List<Exception>();
-        try { _helper.Events.GameLoop.UpdateTicked -= OnUpdate; } catch (Exception error) { failures.Add(error); }
-        try { _helper.Events.GameLoop.ReturnedToTitle -= OnReturnedToTitle; } catch (Exception error) { failures.Add(error); }
-        try { _helper.Events.Display.MenuChanged -= OnMenuChanged; } catch (Exception error) { failures.Add(error); }
+        try { _events.Dispose(); } catch (Exception error) { failures.Add(error); }
         foreach (IUiSemanticSource source in _sources)
         {
             try { source.Changed -= OnChanged; } catch (Exception error) { failures.Add(error); }
@@ -349,6 +357,7 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
     {
         if (_disposed || _disposing) throw new ObjectDisposedException(nameof(UiHostedSemanticSurfaceSession));
         if (_closed) throw new InvalidOperationException("Create a new session after terminal dismissal.");
+        _events.RequireOwner();
     }
 
     private static UiPresentationProfile ResolveProfile(RuntimeRect viewport) => Game1.options.gamepadControls

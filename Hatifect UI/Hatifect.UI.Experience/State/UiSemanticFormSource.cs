@@ -10,21 +10,36 @@ public sealed record UiFormOption(string Value, string Label);
 public class UiSemanticFormField
 {
     public UiSemanticFormField(UiSymbolId id, string label, IUiMutableSemanticSource<string> value)
+        : this(id, label, value, null) { }
+
+    public UiSemanticFormField(UiSymbolId id, string label, IUiMutableSemanticSource<string> value,
+        IUiSemanticSource<string?>? validationMessage)
     {
         if (!id.IsValid) throw new ArgumentException("A stable form-field ID is required.", nameof(id));
         if (string.IsNullOrWhiteSpace(label)) throw new ArgumentException("A field label is required.", nameof(label));
         Id = id;
         Label = label;
         Value = value ?? throw new ArgumentNullException(nameof(value));
+        ValidationMessage = validationMessage;
     }
 
     public UiSymbolId Id { get; }
     public string Label { get; }
     public IUiMutableSemanticSource<string> Value { get; }
+    public IUiSemanticSource<string?>? ValidationMessage { get; }
     public UiFormFieldKind Kind { get; internal init; }
     public IReadOnlyList<UiFormOption> Options { get; internal init; } = Array.Empty<UiFormOption>();
     public string? Error { get; internal set; }
-    internal virtual object? Prepare(string draft, out string? error) { error = null; return draft; }
+    internal virtual string? ValidateDraft(string draft)
+    {
+        string? message = ValidationMessage?.Value;
+        return string.IsNullOrWhiteSpace(message) ? null : message;
+    }
+    internal virtual object? Prepare(string draft, out string? error)
+    {
+        error = ValidateDraft(draft);
+        return draft;
+    }
     internal virtual void Commit(object? value) { }
     internal virtual void ResetDraft() { }
 }
@@ -62,6 +77,13 @@ public sealed class UiFormField<T> : UiSemanticFormField
         return valid;
     }
     internal override object? Prepare(string draft, out string? error)
+        => ParseAndValidate(draft, out error);
+    internal override string? ValidateDraft(string draft)
+    {
+        ParseAndValidate(draft, out string? error);
+        return error;
+    }
+    private T ParseAndValidate(string draft, out string? error)
     {
         (bool valid, T value) = _parse(draft);
         error = valid ? _validate?.Invoke(value) : "Enter a valid value.";
@@ -127,8 +149,10 @@ public interface IUiSemanticFormSource : IUiSemanticSource
 public sealed class UiFormState : IUiSemanticSource<IReadOnlyList<UiSemanticFormField>>, IUiSemanticFormSource, IDisposable
 {
     private readonly ReadOnlyCollection<UiSemanticFormField> _fields;
-    private readonly HashSet<IUiMutableSemanticSource<string>> _sources = new(ReferenceEqualityComparer.Instance);
+    private readonly IUiSemanticSource[] _sources;
+    private readonly HashSet<IUiSemanticSource> _attached = new(ReferenceEqualityComparer.Instance);
     private bool _operating;
+    private bool _changedDuringOperation;
     private bool _disposed;
 
     public UiFormState(params UiSemanticFormField[] fields)
@@ -137,15 +161,33 @@ public sealed class UiFormState : IUiSemanticSource<IReadOnlyList<UiSemanticForm
             throw new ArgumentException("A semantic form requires at least one field.", nameof(fields));
         var ids = new HashSet<UiSymbolId>();
         var copy = (UiSemanticFormField[])fields.Clone();
+        var sources = new HashSet<IUiSemanticSource>(ReferenceEqualityComparer.Instance);
         foreach (UiSemanticFormField field in copy)
         {
             if (field == null || !ids.Add(field.Id))
                 throw new ArgumentException("Form fields must be non-null with unique IDs.", nameof(fields));
-            _sources.Add(field.Value);
+            sources.Add(field.Value);
+            if (field.ValidationMessage is not null) sources.Add(field.ValidationMessage);
         }
         _fields = Array.AsReadOnly(copy);
-        try { foreach (var source in _sources) source.Changed += OnFieldChanged; }
-        catch { foreach (var source in _sources) source.Changed -= OnFieldChanged; throw; }
+        _sources = sources.ToArray();
+        int attached = 0;
+        try
+        {
+            while (attached < _sources.Length)
+            {
+                IUiSemanticSource source = _sources[attached++];
+                _attached.Add(source);
+                source.Changed += OnFieldChanged;
+            }
+        }
+        catch
+        {
+            _disposed = true;
+            for (int index = 0; index < attached; index++)
+                try { _sources[index].Changed -= OnFieldChanged; } catch { /* preserve the original subscription failure */ }
+            throw;
+        }
     }
 
     public IReadOnlyList<UiSemanticFormField> Fields => _fields;
@@ -153,6 +195,26 @@ public sealed class UiFormState : IUiSemanticSource<IReadOnlyList<UiSemanticForm
     public Type ValueType => typeof(IReadOnlyList<UiSemanticFormField>);
     public object UntypedValue => _fields;
     public event Action? Changed;
+
+    public bool IsValid
+    {
+        get
+        {
+            EnsureActive();
+            _operating = true;
+            _changedDuringOperation = false;
+            try
+            {
+                bool valid = true;
+                for (int index = 0; index < _fields.Count; index++)
+                    valid &= _fields[index].ValidateDraft(_fields[index].Value.Value) is null;
+                if (_changedDuringOperation)
+                    throw new InvalidOperationException("A validator changed the form draft.");
+                return valid;
+            }
+            finally { _operating = false; }
+        }
+    }
 
     public bool Apply()
     {
@@ -197,9 +259,14 @@ public sealed class UiFormState : IUiSemanticSource<IReadOnlyList<UiSemanticForm
 
     public void Dispose()
     {
-        if (_disposed) return;
-        foreach (var source in _sources) source.Changed -= OnFieldChanged;
+        if (_disposed && _attached.Count == 0) return;
         _disposed = true;
+        List<Exception>? failures = null;
+        foreach (IUiSemanticSource source in _sources)
+            try { if (_attached.Contains(source)) { source.Changed -= OnFieldChanged; _attached.Remove(source); } }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        Changed = null;
+        if (failures is not null) throw new AggregateException(failures);
     }
 
     private void EnsureActive()
@@ -209,7 +276,8 @@ public sealed class UiFormState : IUiSemanticSource<IReadOnlyList<UiSemanticForm
     }
     private void OnFieldChanged()
     {
-        if (_operating || _disposed) return;
+        if (_disposed) return;
+        if (_operating) { _changedDuringOperation = true; return; }
         foreach (var field in _fields) field.Error = null;
         Changed?.Invoke();
     }

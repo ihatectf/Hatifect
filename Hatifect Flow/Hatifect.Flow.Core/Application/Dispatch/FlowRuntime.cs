@@ -286,7 +286,7 @@ internal sealed partial class FlowRuntime
         using MutationScope mutation = EnterMutation();
         Execution execution = _parcels[id];
         Parcel parcel = execution.Snapshot;
-        if (parcel.State is not (ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted)
+        if (parcel.State is not (ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted or ParcelState.ReturnRejected or ParcelState.ReturnFaulted)
             || parcel.PendingOperation is not null
             || parcel.DeliveryAttempts >= _limits.MaxDeliveryAttempts || !_operations.HasRoom)
         {
@@ -294,7 +294,23 @@ internal sealed partial class FlowRuntime
         }
         long dueTick = checked(Now + 1);
         Commit(execution, parcel.State, parcel.CurrentStation, OperationKind.DeliveryRetry, Now);
-        Schedule(execution, OperationKind.Delivery, dueTick);
+        Schedule(execution, parcel.State is ParcelState.ReturnRejected or ParcelState.ReturnFaulted ? OperationKind.ReturnDelivery : OperationKind.Delivery, dueTick);
+        return true;
+    }
+
+    // Explicit custody refund after failed delivery. This is not a new network journey:
+    // only the retained batch may be deposited back into its source, under the same receipt budget.
+    public bool ReturnToSource(ParcelId id)
+    {
+        using MutationScope mutation = EnterMutation();
+        Execution execution = _parcels[id];
+        Parcel parcel = execution.Snapshot;
+        if (parcel.State is not (ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted)
+            || parcel.PendingOperation is not null || parcel.DeliveryAttempts >= _limits.MaxDeliveryAttempts || !_operations.HasRoom)
+            return false;
+        long due = checked(Now + 1);
+        Commit(execution, ParcelState.ReturnRequested, parcel.CurrentStation, OperationKind.ReturnRequested, Now);
+        Schedule(execution, OperationKind.ReturnDelivery, due);
         return true;
     }
 
@@ -303,7 +319,7 @@ internal sealed partial class FlowRuntime
         using MutationScope mutation = EnterMutation();
         Execution execution = _parcels[id];
         Parcel parcel = execution.Snapshot;
-        if (parcel.State is not (ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain))
+        if (parcel.State is not (ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain))
         {
             return false;
         }
@@ -323,7 +339,9 @@ internal sealed partial class FlowRuntime
         return true;
     }
 
-    public int AdvanceTo(long tick, int? budget = null)
+    // A host may defer physical work while acquiring exclusive inventory access. False leaves
+    // the exact pending ticket, reservation, custody and attempt count intact, including on save.
+    public int AdvanceTo(long tick, int? budget = null, Func<StationId, bool>? canAccessPort = null)
     {
         using MutationScope mutation = EnterMutation();
         if (tick < Now)
@@ -339,6 +357,8 @@ internal sealed partial class FlowRuntime
         int processed = 0;
         while (processed < limit && _operations.Peek() is ScheduledOperation next && next.DueTick <= Now)
         {
+            if (canAccessPort is not null && PhysicalPort(next) is StationId station && !canAccessPort(station))
+                break;
             if (!Execute(next))
             {
                 throw new InvalidOperationException("The authoritative operation queue contains an invalid transition.");
@@ -346,6 +366,19 @@ internal sealed partial class FlowRuntime
             processed++;
         }
         return processed;
+    }
+
+    private StationId? PhysicalPort(ScheduledOperation operation)
+    {
+        Execution execution = _parcels[operation.ParcelId];
+        return operation.Kind switch
+        {
+            // Invalidated reservations are cancelled without touching a physical inventory.
+            OperationKind.Departure when execution.Plan!.IsCurrent(_network) => execution.Snapshot.CurrentStation,
+            OperationKind.Delivery => execution.Snapshot.CurrentStation,
+            OperationKind.ReturnDelivery => _shipments[execution.Snapshot.ShipmentId].Origin,
+            _ => null
+        };
     }
 
     public bool ApplyOperation(ScheduledOperation operation)
@@ -382,6 +415,9 @@ internal sealed partial class FlowRuntime
                 return true;
             case OperationKind.Delivery when parcel.State is ParcelState.Arrived or ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted:
                 Deliver(execution, operation.DueTick);
+                return true;
+            case OperationKind.ReturnDelivery when parcel.State is ParcelState.ReturnRequested or ParcelState.ReturnRejected or ParcelState.ReturnFaulted:
+                BeginTransfer(execution, PortTransferKind.Deposit, operation.DueTick, _shipments[parcel.ShipmentId].Origin);
                 return true;
             default:
                 return false;
@@ -420,11 +456,11 @@ internal sealed partial class FlowRuntime
         BeginTransfer(execution, PortTransferKind.Deposit, tick);
     }
 
-    private void BeginTransfer(Execution execution, PortTransferKind kind, long tick)
+    private void BeginTransfer(Execution execution, PortTransferKind kind, long tick, StationId? target = null)
     {
         Parcel parcel = execution.Snapshot;
         int attempt = kind == PortTransferKind.Extract ? 1 : parcel.DeliveryAttempts + 1;
-        PortTransfer transfer = _authority.Issue(parcel, parcel.CurrentStation, kind, attempt);
+        PortTransfer transfer = _authority.Issue(parcel, target ?? parcel.CurrentStation, kind, attempt);
         CargoOwner previous = kind == PortTransferKind.Extract
             ? CargoOwner.AtStation(parcel.CurrentStation) : CargoOwner.InParcel(parcel.Id);
         _cargo.Transfer(parcel.CargoId, previous, CargoOwner.InTransfer(transfer.Id));
@@ -455,7 +491,7 @@ internal sealed partial class FlowRuntime
         catch
         {
             Commit(execution, kind == PortTransferKind.Extract
-                ? ParcelState.ExtractionUncertain : ParcelState.DeliveryUncertain,
+                ? ParcelState.ExtractionUncertain : target.HasValue ? ParcelState.ReturnUncertain : ParcelState.DeliveryUncertain,
                 parcel.CurrentStation, OperationKind.PortUncertain, tick);
             throw;
         }
@@ -491,10 +527,13 @@ internal sealed partial class FlowRuntime
         }
         else
         {
-            ParcelState state = result == PortResult.Applied ? ParcelState.Delivered
-                : result == PortResult.Rejected ? ParcelState.DeliveryRejected : ParcelState.DeliveryFaulted;
-            Commit(execution, state, parcel.CurrentStation, OperationKind.Delivery, tick);
-            if (state == ParcelState.Delivered)
+            bool returning = transfer.StationId == _shipments[parcel.ShipmentId].Origin;
+            ParcelState state = returning
+                ? result == PortResult.Applied ? ParcelState.Returned : result == PortResult.Rejected ? ParcelState.ReturnRejected : ParcelState.ReturnFaulted
+                : result == PortResult.Applied ? ParcelState.Delivered : result == PortResult.Rejected ? ParcelState.DeliveryRejected : ParcelState.DeliveryFaulted;
+            Commit(execution, state, state == ParcelState.Returned ? transfer.StationId : parcel.CurrentStation,
+                returning ? OperationKind.ReturnDelivery : OperationKind.Delivery, tick);
+            if (state is ParcelState.Delivered or ParcelState.Returned)
             {
                 _cargo.ReleaseClaim(parcel.CargoId, parcel.Id);
             }

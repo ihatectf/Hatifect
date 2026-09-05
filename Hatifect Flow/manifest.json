@@ -2,9 +2,9 @@
   "Name": "Hatifect Flow",
   "Author": "ihatectf",
   "Version": "3.0.0-rc.89",
-  "Description": "Hatifect Flow: Flowline foundation with a host-free parcel transport core. Gameplay adapters are not active in this phase.",
+  "Description": "Flowline single-player chest transport with save-owned cargo and live shipment controls.",
   "UniqueID": "Hatifect.Flow",
   "EntryDll": "Hatifect.Flow.dll",
   "MinimumApiVersion": "4.5.2",
-  "Dependencies": []
+  "Dependencies": [{ "UniqueID": "Hatifect.UI", "IsRequired": true, "MinimumVersion": "1.0.0-alpha.31" }]
 }

@@ -37,6 +37,8 @@ class SemanticPublicApiTests(unittest.TestCase):
             "PUBLIC_API_BASELINE.json",
             "Hatifect.UI.Experience/Hatifect.UI.Experience.csproj",
             "Hatifect.UI.Experience/Hosting/UiSemanticSurfaceContracts.cs",
+            "Hatifect.UI.Experience/State/UiSemanticFormSource.cs",
+            "Hatifect.UI.Experience/UiExperienceBuilder.cs",
             "Hatifect.UI.Stardew/Hosting/UiSemanticSurfaceService.cs",
         ):
             target = root / relative
@@ -51,7 +53,7 @@ class SemanticPublicApiTests(unittest.TestCase):
             before = baseline_path.read_bytes()
             baseline = json.loads(before)
 
-            self.assertEqual({"FormatVersion", "SemanticSurface"}, set(baseline))
+            self.assertEqual({"FormatVersion", "SemanticSurface", "FormAuthoring"}, set(baseline))
             self.assertEqual(1, baseline["SemanticSurface"]["ApiVersion"])
             self.assertEqual(
             "9de29d5a7c53964ae192efb4f4f7590e1dc75a64d2fe94605f86dac3861c6335",
@@ -73,6 +75,15 @@ class SemanticPublicApiTests(unittest.TestCase):
             )
 
             self.assertIn("semantic surface changed and requires explicit review", "\n".join(API.verify(root)))
+
+    def test_form_publicity_cannot_be_removed_even_with_regenerated_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.create_api_fixture(root)
+            contract = root / "Hatifect.UI.Experience/State/UiSemanticFormSource.cs"
+            contract.write_text(contract.read_text().replace("public sealed class UiFormState", "internal sealed class UiFormState"))
+            (root / "PUBLIC_API_BASELINE.json").write_text(json.dumps(API.make_baseline(root)))
+            self.assertIn("missing form public type UiFormState", "\n".join(API.verify(root)))
 
     def test_snapshot_tamper_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

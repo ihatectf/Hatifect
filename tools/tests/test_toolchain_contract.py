@@ -128,14 +128,14 @@ class ReleaseFixture(unittest.TestCase):
 
 
 class ReleaseSourceTests(ReleaseFixture):
-    def test_current_source_declares_three_modules_and_thirteen_runtime_assemblies(self) -> None:
+    def test_current_source_declares_three_modules_and_fourteen_runtime_assemblies(self) -> None:
         actual = {module['UniqueID']: sum(name.endswith('.dll') for name in module['AllowedRootFiles'])
                   for module in self.contract['Modules']}
-        self.assertEqual(actual, {'Hatifect.UI': 8, 'Hatifect.ChestsAnywhereOverlay': 2, 'Hatifect.Flow': 3})
+        self.assertEqual(actual, {'Hatifect.UI': 8, 'Hatifect.ChestsAnywhereOverlay': 2, 'Hatifect.Flow': 4})
         release_tool.verify_source(self.contract, ROOT)
         flow = self.modules['Hatifect.Flow']
-        self.assertNotIn('Hatifect.Flow.UI.Semantic.dll', flow['AllowedRootFiles'])
-        self.assertEqual(flow['Dependencies'], [])
+        self.assertIn('Hatifect.Flow.UI.Semantic.dll', flow['AllowedRootFiles'])
+        self.assertEqual(flow['Dependencies'], [{'UniqueID': 'Hatifect.UI', 'IsRequired': True, 'MinimumVersion': '1.0.0-alpha.31'}])
 
     def test_source_validation_needs_current_projects_and_content_without_history_or_binaries(self) -> None:
         release_tool.verify_source(self.contract, self.root)
@@ -228,7 +228,7 @@ class ReleaseSourceTests(ReleaseFixture):
         contract['Modules'].append(copy.deepcopy(contract['Modules'][0]))
         cases.append(contract)
         for dependency in ({'UniqueID': 'Hatifect.Unknown'}, {'UniqueID': 'Hatifect.UI', 'MinimumVersion': '0.1'},
-                           {'UniqueID': 'Hatifect.UI', 'MinimumVersion': '1.0.0-alpha.29', 'IsRequired': False}):
+                           {'UniqueID': 'Hatifect.UI', 'MinimumVersion': '1.0.0-alpha.30', 'IsRequired': False}):
             contract = copy.deepcopy(self.contract)
             contract['Modules'][1]['Dependencies'] = [dependency]
             cases.append(contract)
@@ -259,7 +259,7 @@ class ReleasePackageTests(ReleaseFixture):
 
     def test_package_rejects_unlisted_sources_binaries_and_empty_directories(self) -> None:
         package = self.package()
-        for relative in ('Hatifect UI/Source.cs', 'Hatifect Flow/Hatifect.Flow.UI.Semantic.dll',
+        for relative in ('Hatifect UI/Source.cs', 'Hatifect Flow/Foreign.dll',
                          'Hatifect UI/Hatifect.UI.Runtime.dll', 'extra.json', 'README.md'):
             path = package / relative
             path.write_text('unexpected', encoding='utf-8')

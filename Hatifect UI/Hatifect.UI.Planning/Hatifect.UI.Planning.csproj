@@ -3,7 +3,7 @@
     <AssemblyName>Hatifect.UI.Planning</AssemblyName>
     <RootNamespace>Hatifect.UI.Planning</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.0.0-alpha.29</Version>
+    <Version>1.0.0-alpha.31</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Hatifect.UI.Experience/Hatifect.UI.Experience.csproj" />

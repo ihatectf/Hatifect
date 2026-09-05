@@ -229,7 +229,7 @@ internal sealed partial class FlowRuntime
                 PortTransferKind kind = EnumValue<PortTransferKind>(entry.Key.Kind);
                 StationId station = Station(entry.StationId);
                 Require(entry.CargoId == parcel.CargoId.Value && ReadManifest(entry.Manifest) == parcel.Manifest
-                    && station == (kind == PortTransferKind.Extract ? shipment.Origin : shipment.Destination),
+                    && (kind == PortTransferKind.Extract ? station == shipment.Origin : station == shipment.Destination || station == shipment.Origin),
                     "transfer payload does not match its execution.");
                 Require(entry.Key.Attempt >= 1 && entry.Key.Attempt <= (kind == PortTransferKind.Extract
                     ? 1 : parcel.DeliveryAttempts), "invalid transfer attempt.");
@@ -304,7 +304,7 @@ internal sealed partial class FlowRuntime
                 {
                     Parcel execution = _runtime._parcels[claimant].Snapshot;
                     Require(execution.CargoId == id && execution.Manifest == batch.Manifest
-                        && execution.State is not (ParcelState.Cancelled or ParcelState.Delivered), "invalid cargo claim.");
+                        && execution.State is not (ParcelState.Cancelled or ParcelState.Delivered or ParcelState.Returned), "invalid cargo claim.");
                 }
             }
         }
@@ -317,7 +317,7 @@ internal sealed partial class FlowRuntime
                 Shipment shipment = _runtime._shipments[parcel.ShipmentId];
                 CargoBatch batch = _runtime._cargo.Get(parcel.CargoId);
                 Require(batch.Manifest == parcel.Manifest, "Parcel cargo manifest mismatch.");
-                bool terminal = parcel.State is ParcelState.Cancelled or ParcelState.Delivered;
+                bool terminal = parcel.State is ParcelState.Cancelled or ParcelState.Delivered or ParcelState.Returned;
                 Require(terminal || batch.ClaimedBy == parcel.Id, "live Parcel has no exclusive cargo claim.");
                 Require(parcel.State == ParcelState.Created ? parcel.Version == 0 : parcel.Version > 0,
                     "state and sequence disagree.");
@@ -339,7 +339,7 @@ internal sealed partial class FlowRuntime
                 {
                     Require(execution.Plan is not null, "executing Parcel has no admitted route.");
                 }
-                bool uncertain = parcel.State is ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain;
+                bool uncertain = parcel.State is ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain;
                 Require(uncertain == (parcel.PendingTransfer is not null), "state and pending transfer disagree.");
                 ValidateHistory(parcel);
                 ValidateSchedule(execution);
@@ -350,7 +350,7 @@ internal sealed partial class FlowRuntime
                 CargoOwner expected = parcel.State switch
                 {
                     ParcelState.Created or ParcelState.Reserved => CargoOwner.AtStation(shipment.Origin),
-                    ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain => CargoOwner.InTransfer(parcel.PendingTransfer!.Id),
+                    ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain => CargoOwner.InTransfer(parcel.PendingTransfer!.Id),
                     _ => CargoOwner.InParcel(parcel.Id)
                 };
                 Require(batch.Owner == expected, "execution state and authoritative owner disagree.");
@@ -391,12 +391,18 @@ internal sealed partial class FlowRuntime
                     "extraction capability retirement mismatch.");
             }
             bool deliveryState = parcel.State is ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted
-                or ParcelState.Delivered or ParcelState.DeliveryUncertain;
+                or ParcelState.Delivered or ParcelState.DeliveryUncertain or ParcelState.ReturnRequested
+                or ParcelState.Returned or ParcelState.ReturnRejected or ParcelState.ReturnFaulted or ParcelState.ReturnUncertain;
             Require(deliveryState ? parcel.DeliveryAttempts > 0 : parcel.DeliveryAttempts == 0,
                 "state and delivery attempts disagree.");
+            bool returning = false;
             for (int attempt = 1; attempt <= parcel.DeliveryAttempts; attempt++)
             {
                 PortTransfer deposit = _transfers[new TransferKey(parcel.Id.Value, (int)PortTransferKind.Deposit, attempt)];
+                bool toSource = deposit.StationId == _runtime._shipments[parcel.ShipmentId].Origin;
+                Require(!toSource || attempt > 1, "return precedes a failed delivery.");
+                Require(!returning || toSource, "delivery resumed after returning cargo.");
+                returning |= toSource;
                 Require(_runtime._authority.IsActive(deposit) == (parcel.PendingTransfer == deposit),
                     "deposit capability retirement mismatch.");
                 PortResult result = Result(deposit);
@@ -408,10 +414,15 @@ internal sealed partial class FlowRuntime
                 {
                     Require(parcel.State switch
                     {
-                        ParcelState.Delivered => result == PortResult.Applied,
-                        ParcelState.DeliveryRejected => result == PortResult.Rejected,
-                        ParcelState.DeliveryFaulted => result == PortResult.Missing,
-                        ParcelState.DeliveryUncertain => parcel.PendingTransfer == deposit,
+                        ParcelState.Delivered => !returning && result == PortResult.Applied,
+                        ParcelState.DeliveryRejected => !returning && result == PortResult.Rejected,
+                        ParcelState.DeliveryFaulted => !returning && result == PortResult.Missing,
+                        ParcelState.DeliveryUncertain => !returning && parcel.PendingTransfer == deposit,
+                        ParcelState.ReturnRequested => !returning && result != PortResult.Applied,
+                        ParcelState.Returned => returning && result == PortResult.Applied,
+                        ParcelState.ReturnRejected => returning && result == PortResult.Rejected,
+                        ParcelState.ReturnFaulted => returning && result == PortResult.Missing,
+                        ParcelState.ReturnUncertain => returning && parcel.PendingTransfer == deposit,
                         _ => false
                     }, "latest deposit and execution state disagree.");
                 }
@@ -432,6 +443,8 @@ internal sealed partial class FlowRuntime
                 ParcelState.InTransit => OperationKind.Arrival,
                 ParcelState.Arrived => final ? OperationKind.Delivery : OperationKind.Transfer,
                 ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted when pending is not null => OperationKind.Delivery,
+                ParcelState.ReturnRequested => OperationKind.ReturnDelivery,
+                ParcelState.ReturnRejected or ParcelState.ReturnFaulted when pending is not null => OperationKind.ReturnDelivery,
                 _ => null
             };
             Require(expected is null ? pending is null : pending?.Kind == expected,
@@ -447,9 +460,11 @@ internal sealed partial class FlowRuntime
                 Require(parcel.CurrentStation == route![execution.Hop].Destination, "arrival cursor mismatch.");
             }
             else if (parcel.State is ParcelState.Delivered or ParcelState.DeliveryRejected
-                or ParcelState.DeliveryFaulted or ParcelState.DeliveryUncertain)
+                or ParcelState.DeliveryFaulted or ParcelState.DeliveryUncertain or ParcelState.ReturnRequested
+                or ParcelState.Returned or ParcelState.ReturnRejected or ParcelState.ReturnFaulted or ParcelState.ReturnUncertain)
             {
-                Require(final && parcel.CurrentStation == route![execution.Hop].Destination,
+                StationId expectedStation = parcel.State == ParcelState.Returned ? _runtime._shipments[parcel.ShipmentId].Origin : route![execution.Hop].Destination;
+                Require(final && parcel.CurrentStation == expectedStation,
                     "delivery did not reach the route destination.");
                 Require(pending is null || parcel.DeliveryAttempts < _runtime._limits.MaxDeliveryAttempts,
                     "retry exceeds attempt budget.");
@@ -565,7 +580,8 @@ internal sealed partial class FlowRuntime
                         {
                             long earliest = checked(settledAfter + 1);
                             if (parcel.State is ParcelState.Delivered or ParcelState.DeliveryRejected
-                                or ParcelState.DeliveryFaulted or ParcelState.DeliveryUncertain)
+                                or ParcelState.DeliveryFaulted or ParcelState.DeliveryUncertain or ParcelState.ReturnRequested
+                                or ParcelState.Returned or ParcelState.ReturnRejected or ParcelState.ReturnFaulted or ParcelState.ReturnUncertain)
                             {
                                 foreach (Link link in execution.Plan!.Links)
                                 {
@@ -576,9 +592,9 @@ internal sealed partial class FlowRuntime
                                 "cargo execution predates its custody or admitted transit.");
                         }
                         expected++;
-                        if (parcel.State == ParcelState.Delivered)
+                        if (parcel.State is ParcelState.Delivered or ParcelState.Returned)
                         {
-                            settled = shipment.Destination;
+                            settled = parcel.State == ParcelState.Returned ? shipment.Origin : shipment.Destination;
                             settledAfter = execution.TransferTick;
                         }
                         else if (parcel.State == ParcelState.Cancelled)

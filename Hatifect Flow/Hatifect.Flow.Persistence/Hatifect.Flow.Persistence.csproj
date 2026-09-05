@@ -9,5 +9,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Hatifect.Flow" />
     <InternalsVisibleTo Include="Hatifect.Flow.Tests" />
+    <InternalsVisibleTo Include="Hatifect.Flow.Stardew.Tests" />
   </ItemGroup>
 </Project>

@@ -12,6 +12,7 @@ public sealed class UiExperienceBuilder
     private readonly List<UiActionDefinition> _actions = new();
     private readonly List<UiVisualRoleDefinition> _roles = new();
     private readonly HashSet<string> _elementNames = new(StringComparer.Ordinal);
+    private readonly HashSet<UiSymbolId> _elementIds = new();
     private readonly HashSet<UiSymbolId> _actionIds = new();
     private readonly HashSet<string> _roleNames = new(StringComparer.Ordinal);
     private bool _built;
@@ -48,13 +49,28 @@ public sealed class UiExperienceBuilder
     public UiExperienceBuilder Navigate<T>(string element, IUiSemanticSource<T> source)
         => Element(element, source, UiCapabilities.Navigate);
 
+    public UiExperienceBuilder Inspect<T>(UiSymbolId id, string name, IUiSemanticSource<T> source)
+        => Element(id, name, source, UiCapabilities.Inspect);
+    public UiExperienceBuilder Configure<T>(UiSymbolId id, string name, IUiSemanticSource<T> source)
+        => Element(id, name, source, UiCapabilities.Configure);
+    public UiExperienceBuilder Select<T>(UiSymbolId id, string name, IUiSemanticSource<T> source)
+        => Element(id, name, source, UiCapabilities.Select);
+    public UiExperienceBuilder Monitor<T>(UiSymbolId id, string name, IUiSemanticSource<T> source)
+        => Element(id, name, source, UiCapabilities.Monitor);
+
     public UiExperienceBuilder Element<T>(string element, IUiSemanticSource<T> source, params UiCapability[] capabilities)
+        => Element(_id.Child($"element/{element}"), element, source, capabilities);
+
+    /// <summary>Authors a localized display name independently from its stable semantic identity.</summary>
+    public UiExperienceBuilder Element<T>(UiSymbolId id, string element, IUiSemanticSource<T> source, params UiCapability[] capabilities)
     {
         EnsureMutable();
+        if (!id.IsValid) throw new ArgumentException("A stable element ID is required.", nameof(id));
         if (string.IsNullOrWhiteSpace(element)) throw new ArgumentException("A semantic element name is required.", nameof(element));
         ArgumentNullException.ThrowIfNull(source);
         if (capabilities == null || capabilities.Length == 0) throw new ArgumentException("At least one semantic capability is required.", nameof(capabilities));
         if (_elementNames.Contains(element)) throw new InvalidOperationException($"Semantic element '{element}' is already declared.");
+        if (_elementIds.Contains(id)) throw new InvalidOperationException($"Semantic element ID '{id}' is already declared.");
 
         var unique = new HashSet<UiSymbolId>();
         var ordered = new List<UiCapability>();
@@ -64,11 +80,15 @@ public sealed class UiExperienceBuilder
             if (unique.Add(capability.Id)) ordered.Add(capability);
         }
         _elementNames.Add(element);
-        _elements.Add(new UiSemanticElementDefinition(_id.Child($"element/{element}"), element, source, ordered.ToArray()));
+        _elementIds.Add(id);
+        _elements.Add(new UiSemanticElementDefinition(id, element, source, ordered.ToArray()));
         return this;
     }
 
     public UiExperienceBuilder Actions(string element, params UiActionDefinition[] actions)
+        => Actions(_id.Child($"element/{element}"), element, actions);
+
+    public UiExperienceBuilder Actions(UiSymbolId id, string element, params UiActionDefinition[] actions)
     {
         EnsureMutable();
         if (actions == null || actions.Length == 0) throw new ArgumentException("At least one action is required.", nameof(actions));
@@ -79,7 +99,7 @@ public sealed class UiExperienceBuilder
             if (!staged.Add(action.Id)) throw new InvalidOperationException($"Action '{action.Id}' is already declared.");
         }
 
-        Element(element, new UiConstantSource<IReadOnlyList<UiActionDefinition>>(actions), UiCapabilities.Actions);
+        Element(id, element, new UiConstantSource<IReadOnlyList<UiActionDefinition>>(actions), UiCapabilities.Actions);
         foreach (UiActionDefinition action in actions)
         {
             _actionIds.Add(action.Id);

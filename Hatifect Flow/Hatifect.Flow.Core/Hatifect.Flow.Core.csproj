@@ -7,6 +7,7 @@
     <InternalsVisibleTo Include="Hatifect.Flow" />
     <InternalsVisibleTo Include="Hatifect.Flow.Persistence" />
     <InternalsVisibleTo Include="Hatifect.Flow.Tests" />
+    <InternalsVisibleTo Include="Hatifect.Flow.Stardew.Tests" />
     <InternalsVisibleTo Include="Hatifect.Flow.UI.Semantic" />
   </ItemGroup>
 </Project>

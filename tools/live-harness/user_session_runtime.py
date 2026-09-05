@@ -385,7 +385,8 @@ def _validate_request(
             raise UserSessionRuntimeError("Allowlisted scenario requires an isolated save.")
         save_root = isolated / "config" / "StardewValley" / "Saves"
         save = direct._contained(save_root, Path(save_value))
-        expected_name = f"HatifectHarness_{uuid.UUID(request_id).hex}"
+        provisioner = direct._load_module("hatifect_user_session_save_naming", resolved_repository / "tools/live-harness/save_provisioning.py")
+        expected_name = provisioner._working_name(request_id, document["scenarioId"])
         if save.parent != save_root.resolve(strict=True) or save.name != expected_name:
             raise UserSessionRuntimeError("User-session save path is not its planned isolated working copy.")
     elif save_value is not None:

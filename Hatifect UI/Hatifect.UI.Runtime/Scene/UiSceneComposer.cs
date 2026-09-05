@@ -320,12 +320,14 @@ internal sealed class UiSceneComposer
                 children.Add(new UiTextInputSceneNode(inputId, inputRole,
                     Resolve(inputRole, UiSceneNodeKind.TextInput, inputId, invocation, visual, interaction),
                     field.Label, field.Value));
-            if (field.Error is { } error)
+            string? error = field.Error ?? field.ValidationMessage?.Value;
+            if (!string.IsNullOrWhiteSpace(error))
             {
                 UiSymbolId errorId = field.Id.Child("scene/error");
-                children.Add(new UiTextSceneNode(errorId, labelRole,
-                    Resolve(labelRole, UiSceneNodeKind.Text, errorId, invocation, visual, interaction),
-                    $"{field.Label}: {error}"));
+                UiSymbolId errorRole = Role(invocation.Experience, "Field.Error", UiSceneRoles.Text);
+                children.Add(new UiTextSceneNode(errorId, errorRole,
+                    Resolve(errorRole, UiSceneNodeKind.Text, errorId, invocation, visual, interaction),
+                    field.Error is null ? error : $"{field.Label}: {error}"));
             }
         }
 
