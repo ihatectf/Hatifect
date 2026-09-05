@@ -105,7 +105,7 @@ internal sealed class UiLspJsonRpcDispatcher
         UiJsonRpcRequest request;
         try
         {
-            if (!TryParseRequest(payload, out request))
+            if (!TryParseRequest(payload, _messages.MaximumPayloadBytes, out request))
             {
                 await WriteErrorAsync(
                     id: null,
@@ -146,7 +146,7 @@ internal sealed class UiLspJsonRpcDispatcher
         return true;
     }
 
-    private static bool TryParseRequest(byte[] payload, out UiJsonRpcRequest request)
+    private static bool TryParseRequest(byte[] payload, int maximumPayloadBytes, out UiJsonRpcRequest request)
     {
         using JsonDocument document = JsonDocument.Parse(
             payload,
@@ -202,7 +202,7 @@ internal sealed class UiLspJsonRpcDispatcher
             return Invalid(out request);
         if (!hasMethod || method.ValueKind != JsonValueKind.String)
             return Invalid(out request);
-        if (hasId && !IsValidLspRequestId(id))
+        if (hasId && !IsValidLspRequestId(id, maximumPayloadBytes))
             return Invalid(out request);
         if (hasParameters &&
             parameters.ValueKind != JsonValueKind.Object &&
@@ -217,9 +217,15 @@ internal sealed class UiLspJsonRpcDispatcher
         return true;
     }
 
-    private static bool IsValidLspRequestId(JsonElement id)
-        => id.ValueKind == JsonValueKind.String ||
-           id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out _);
+    internal static bool IsValidLspRequestId(JsonElement id, int maximumPayloadBytes)
+    {
+        if (id.ValueKind == JsonValueKind.Number) return id.TryGetInt32(out _);
+        if (id.ValueKind != JsonValueKind.String) return false;
+        // Reject before dispatch: even a null result or an error must be able to echo the ID.
+        int maximumIdBytes = Math.Min(4096, maximumPayloadBytes / 4);
+        return id.GetString()!.Length <= maximumIdBytes &&
+            JsonSerializer.SerializeToUtf8Bytes(id).Length <= maximumIdBytes;
+    }
 
     private static bool Invalid(out UiJsonRpcRequest request)
     {
@@ -277,7 +283,7 @@ internal sealed class UiLspJsonRpcDispatcher
         await _messages.WriteFrameAsync(buffer.WrittenMemory, cancellationToken).ConfigureAwait(false);
     }
 
-    private sealed class UiBoundedBufferWriter : IBufferWriter<byte>
+    internal sealed class UiBoundedBufferWriter : IBufferWriter<byte>
     {
         private readonly int _maximumLength;
         private byte[] _buffer = Array.Empty<byte>();
@@ -292,6 +298,9 @@ internal sealed class UiLspJsonRpcDispatcher
         {
             if (count < 0 || count > _buffer.Length - _written)
                 throw new ArgumentOutOfRangeException(nameof(count));
+            if (count > _maximumLength - _written)
+                throw new InvalidDataException(
+                    $"The JSON-RPC response exceeds the {_maximumLength} byte LSP payload limit.");
             _written += count;
         }
 
@@ -311,7 +320,10 @@ internal sealed class UiLspJsonRpcDispatcher
         {
             if (sizeHint < 0) throw new ArgumentOutOfRangeException(nameof(sizeHint));
             if (sizeHint == 0) sizeHint = 1;
-            if (sizeHint > _maximumLength - _written)
+            // Utf8JsonWriter reserves up to three UTF-8 bytes per escaped UTF-16 unit and a
+            // 4 KiB growth segment. Advance still enforces the actual serialized byte limit.
+            int maximumCapacity = (int)Math.Min(int.MaxValue, (long)_maximumLength * 3 + 4096);
+            if (sizeHint > maximumCapacity - _written)
                 throw new InvalidDataException(
                     $"The JSON-RPC response exceeds the {_maximumLength} byte LSP payload limit.");
 
@@ -319,8 +331,8 @@ internal sealed class UiLspJsonRpcDispatcher
             if (required <= _buffer.Length) return;
             int doubled = _buffer.Length == 0
                 ? MinimumResponseBufferBytes
-                : _buffer.Length <= _maximumLength / 2 ? _buffer.Length * 2 : _maximumLength;
-            int capacity = Math.Min(_maximumLength, Math.Max(required, doubled));
+                : _buffer.Length <= maximumCapacity / 2 ? _buffer.Length * 2 : maximumCapacity;
+            int capacity = Math.Min(maximumCapacity, Math.Max(required, doubled));
             Array.Resize(ref _buffer, capacity);
         }
     }

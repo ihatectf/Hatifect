@@ -129,7 +129,7 @@ public sealed class ToolingProtocolSessionTests
     {
         var session = await ActiveSession();
 
-        UiJsonRpcDispatchResult result = await session.HandleAsync(Request("textDocument/hover", Json("{}")));
+        UiJsonRpcDispatchResult result = await session.HandleAsync(Request("hatifect/unknownMethod", Json("{}")));
 
         Assert.True(result.IsError);
         Assert.Equal(UiJsonRpcErrorCodes.MethodNotFound, result.ErrorCode);

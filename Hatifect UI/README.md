@@ -8,6 +8,8 @@ Consumer описывает смысл интерфейса и действия.
 
 Аддитивный SDK: [hosts, typed forms, resources/themes, adaptive sources и live reload](../docs/UI_SEMANTIC_SDK.md). Новые возможности доступны через отдельные optional interfaces; исходный контракт v1 сохранён.
 
+[Редактор и language server](../docs/UI_AUTHORING.md): incremental sync, completion, hover, outline/folding, semantic tokens, references, definition, проверяемые quick fixes и workspace diagnostics. `UiBindingContextJson.Export` передаёт реальные bindings из Experience, а `tools/hatifect-ui-language-server` запускает stdio-сервер.
+
 Из корня репозитория: `./tools/hatifect-test ui`, затем `./tools/hatifect-check --platform` для изменений Stardew host. Бюджеты реальных кадров находятся в `PERFORMANCE_BUDGETS.json`, требования к runtime-отчёту — в `HOST_ACCEPTANCE_REQUIREMENTS.json`. Статические тесты не заменяют измерения в игре.
 
 Общие границы: [архитектура](../ARCHITECTURE.md). Команды: [разработка](../docs/DEVELOPMENT.md).
