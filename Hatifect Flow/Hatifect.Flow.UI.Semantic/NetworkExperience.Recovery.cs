@@ -23,7 +23,7 @@ internal sealed partial class NetworkExperience
         if (issue is null) return;
         FlowCommandResult result = _application.Execute(new FlowRecoveryCommand(_snapshot.Transport.SessionId, _snapshot.Transport.Revision, issue.ParcelId));
         _result.Value = result.Status == FlowCommandStatus.Applied ? Text("Saved outcome reconciled", "Сохранённый результат подтверждён")
-            : Text("Recovery remains blocked; cargo retained", "Восстановление заблокировано; груз сохранён");
+            : FlowReasonText.Describe(result.Code, result.ReasonKey, _russian);
         _dirty = true;
         Pump();
     }

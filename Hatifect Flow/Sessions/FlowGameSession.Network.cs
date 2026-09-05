@@ -30,8 +30,8 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
     {
         ArgumentNullException.ThrowIfNull(command);
         if (_managing) throw new InvalidOperationException("Network commands cannot reenter their owner.");
-        FlowCommandStatus? rejected = Application.ValidateExternalCommand(command.SessionId, command.ExpectedRevision);
-        if (rejected.HasValue) return new FlowCommandResult(rejected.Value, ReadSnapshot().Revision);
+        FlowCommandResult? rejected = Application.ValidateExternalCommand(command.SessionId, command.ExpectedRevision);
+        if (rejected is not null) return rejected;
         _managing = true;
         try
         {
@@ -92,8 +92,8 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
     {
         ArgumentNullException.ThrowIfNull(command);
         if (_managing) throw new InvalidOperationException("Network commands cannot reenter their owner.");
-        FlowCommandStatus? rejected = Application.ValidateExternalCommand(command.SessionId, command.ExpectedRevision);
-        if (rejected.HasValue) return new FlowCommandResult(rejected.Value, ReadSnapshot().Revision);
+        FlowCommandResult? rejected = Application.ValidateExternalCommand(command.SessionId, command.ExpectedRevision);
+        if (rejected is not null) return rejected;
         if (!Enum.IsDefined(typeof(FlowNetworkAction), command.Action))
             return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision);
         _managing = true;

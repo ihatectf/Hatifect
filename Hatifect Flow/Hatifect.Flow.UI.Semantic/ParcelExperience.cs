@@ -15,6 +15,7 @@ internal sealed class ParcelExperience : IFlowExperience
     private readonly UiState<string> _cargo = new(string.Empty);
     private readonly UiState<string> _route = new(string.Empty);
     private readonly UiState<string> _state = new(string.Empty);
+    private readonly UiState<string> _availability = new(string.Empty);
     private readonly UiState<string> _result = new(string.Empty);
     private FlowSnapshot _snapshot;
     private FlowParcelSnapshot? _parcel;
@@ -40,17 +41,19 @@ internal sealed class ParcelExperience : IFlowExperience
             _dirty = false;
             _snapshot = application.ReadSnapshot();
             Project();
-            Experience = new UiExperienceBuilder(id, Text("Flowline shipment", "Отправление Flowline"))
+            Experience = new UiExperienceBuilder(id, Text("Flowline shipment", "Отправление Flowline")
+                + (_snapshot.ProviderMode == FlowProviderMode.DiagnosticFake ? Text(" · diagnostic", " · диагностика") : ""))
                 .Inspect(Text("Cargo", "Груз"), _cargo)
                 .Inspect(Text("Route", "Маршрут"), _route)
                 .Monitor(Text("State", "Состояние"), _state)
                 .Monitor(Text("Result", "Результат"), _result)
+                .Monitor(id.Child("element/availability"), Text("Availability", "Доступность"), _availability)
                 .Actions(Text("Actions", "Действия"),
-                    Action(id, "reserve", FlowParcelAction.Reserve, FlowParcelActions.Reserve, Text("Dispatch", "Отправить")),
-                    Action(id, "cancel", FlowParcelAction.Cancel, FlowParcelActions.Cancel, Text("Cancel", "Отменить")),
-                    Action(id, "retry", FlowParcelAction.RetryDelivery, FlowParcelActions.RetryDelivery, Text("Retry delivery", "Повторить доставку")),
-                    Action(id, "reconcile", FlowParcelAction.ReconcileTransfer, FlowParcelActions.ReconcileTransfer, Text("Check transfer", "Проверить передачу")),
-                    Action(id, "return", FlowParcelAction.ReturnToSource, FlowParcelActions.ReturnToSource, Text("Return cargo to source", "Вернуть груз в источник")))
+                    Action(id, "reserve", FlowParcelAction.Reserve, Text("Dispatch", "Отправить")),
+                    Action(id, "cancel", FlowParcelAction.Cancel, Text("Cancel", "Отменить")),
+                    Action(id, "retry", FlowParcelAction.RetryDelivery, Text("Retry delivery", "Повторить доставку")),
+                    Action(id, "reconcile", FlowParcelAction.ReconcileTransfer, Text("Check transfer", "Проверить передачу")),
+                    Action(id, "return", FlowParcelAction.ReturnToSource, Text("Return cargo to source", "Вернуть груз в источник")))
                 .Build();
             if (_dirty) Pump();
         }
@@ -96,12 +99,12 @@ internal sealed class ParcelExperience : IFlowExperience
     }
     private void OnRevision(long revision) { if (!_disposed) _dirty = true; }
 
-    private UiActionDefinition Action(UiSymbolId id, string key, FlowParcelAction action, FlowParcelActions capability, string title)
-        => new(id.Child("action/" + key), title, () => Execute(action), () => Can(capability));
+    private UiActionDefinition Action(UiSymbolId id, string key, FlowParcelAction action, string title)
+        => new(id.Child("action/" + key), title, () => Execute(action), () => Can(action));
 
-    private bool Can(FlowParcelActions action)
+    private bool Can(FlowParcelAction action)
     {
-        if (!IsActive || (_parcel!.Actions & action) == 0) return false;
+        if (!IsActive || !_parcel!.Availability[action].Available) return false;
         FlowSnapshot current = _application.ReadSnapshot();
         return current.State == FlowApplicationState.Active && current.SessionId == _snapshot.SessionId
             && current.Revision == _snapshot.Revision;
@@ -110,14 +113,8 @@ internal sealed class ParcelExperience : IFlowExperience
     private void Execute(FlowParcelAction action)
     {
         FlowCommandResult result = _application.Execute(new FlowParcelCommand(_snapshot.SessionId, _snapshot.Revision, _parcelId, action));
-        _result.Value = result.Status switch
-        {
-            FlowCommandStatus.Applied => Text("Command completed", "Команда выполнена"),
-            FlowCommandStatus.Rejected => Text("Cannot perform this action now", "Сейчас это действие недоступно"),
-            FlowCommandStatus.Conflict => Text("State changed; review the updated shipment", "Состояние изменилось; проверьте отправление"),
-            FlowCommandStatus.SessionClosed => Text("Session closed", "Сессия закрыта"),
-            _ => Text("Action failed; see the transport log", "Ошибка действия; см. журнал транспорта")
-        };
+        _result.Value = result.Status == FlowCommandStatus.Applied ? Text("Command completed", "Команда выполнена")
+            : FlowReasonText.Describe(result.Code, result.ReasonKey, _russian);
         _dirty = true;
     }
 
@@ -126,11 +123,13 @@ internal sealed class ParcelExperience : IFlowExperience
         _parcel = _snapshot.Parcels.FirstOrDefault(parcel => parcel.Id == _parcelId);
         if (_snapshot.State is FlowApplicationState.Closed or FlowApplicationState.Faulted || _parcel is null)
         {
+            _availability.Value = FlowReasonText.Describe(_snapshot.Code, _snapshot.ReasonKey, _russian);
             _cargo.Value = string.Empty;
             _route.Value = string.Empty;
             _state.Value = Text("Session closed", "Сессия закрыта");
             return;
         }
+        _availability.Value = FlowReasonText.UnavailableActions(_parcel.Availability, _russian);
         _cargo.Value = _itemName(_parcel.ItemKey) + " × " + _parcel.Quantity;
         _route.Value = _stationName(_parcel.Origin) + " → " + _stationName(_parcel.Destination);
         _state.Value = _snapshot.State == FlowApplicationState.Paused ? Text("Transport paused", "Перевозки приостановлены")

@@ -29,19 +29,19 @@ internal sealed partial class FlowGameSession
     {
         ArgumentNullException.ThrowIfNull(command);
         RequireThread();
-        if (_hostOperation) return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision);
+        if (_hostOperation) return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, FlowRejectionCode.OperationPending);
         if (_managing) throw new InvalidOperationException("Recovery cannot reenter the session owner.");
-        FlowCommandStatus? rejected = Application.ValidateExternalCommand(command.SessionId, command.ExpectedRevision, recovery: true);
-        if (rejected.HasValue) return new FlowCommandResult(rejected.Value, ReadSnapshot().Revision);
-        if (_closed || _saving || !_canMutate()) return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision);
+        FlowCommandResult? rejected = Application.ValidateExternalCommand(command.SessionId, command.ExpectedRevision, recovery: true);
+        if (rejected is not null) return rejected;
+        if (_closed || _saving || !_canMutate()) return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, FlowRejectionCode.ProviderUnavailable);
         if (!ReadSnapshot().Parcels.Any(parcel => parcel.Id == command.ParcelId))
-            return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision);
+            return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision, FlowRejectionCode.ParcelNotFound);
         _managing = true;
         try
         {
             Parcel parcel = _runtime.GetParcel(new ParcelId(command.ParcelId));
             if (parcel.PendingTransfer is not PortTransfer transfer || _ports[transfer.StationId.Value].ReadResult(transfer) == PortResult.Missing)
-                return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision);
+                return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, FlowRejectionCode.UnknownOutcome);
             if (!_runtime.ReconcileTransfer(parcel.Id)) return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision);
             // Reconciliation only reads a settled receipt; it cannot write a physical inventory.
             _faulted = ReadSnapshot().Parcels.Any(value => _runtime.GetParcel(new ParcelId(value.Id)).PendingTransfer is not null);

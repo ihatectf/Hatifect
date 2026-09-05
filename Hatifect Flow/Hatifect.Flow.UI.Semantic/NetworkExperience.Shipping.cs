@@ -31,8 +31,7 @@ internal sealed partial class NetworkExperience
         FlowCommandResult result = _application.Execute(new FlowSendCommand(_snapshot.Transport.SessionId, _snapshot.Transport.Revision,
             Source.Id, Destination.Id, slot.Index, slot.Fingerprint));
         _result.Value = result.Status == FlowCommandStatus.Applied ? Text("Shipment created", "Отправление создано")
-            : result.Status == FlowCommandStatus.Conflict ? Text("Cargo changed; select the updated stack", "Груз изменился; выберите обновлённый стек")
-            : Text("Cannot send this cargo on the selected route", "Этот груз нельзя отправить по выбранному маршруту");
+            : FlowReasonText.Describe(result.Code, result.ReasonKey, _russian);
         _dirty = true;
         Pump();
         RefreshInventory();

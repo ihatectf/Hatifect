@@ -58,7 +58,8 @@ internal sealed partial class NetworkExperience : IFlowExperience
             _stationForm = new(new UiSemanticFormField(id.Child("field/name"), Text("Station name", "Имя станции"), _name, _nameError));
             _linkForm = new(new UiSemanticFormField(id.Child("field/capacity"), Text("Capacity", "Ёмкость"), _capacity, _capacityError),
                 new UiSemanticFormField(id.Child("field/ticks"), Text("Travel ticks", "Время в тиках"), _ticks, _ticksError));
-            var builder = new UiExperienceBuilder(id, Text("Flowline network", "Сеть Flowline"))
+            var builder = new UiExperienceBuilder(id, Text("Flowline network", "Сеть Flowline")
+                + (_snapshot.Transport.ProviderMode == FlowProviderMode.DiagnosticFake ? Text(" · diagnostic", " · диагностика") : ""))
                 .Monitor(id.Child("element/transport"), Text("Transport", "Перевозки"), _status)
                 .Inspect(id.Child("element/captured-chest"), Text("Captured chest", "Выбранный сундук"), _target)
                 .Configure(id.Child("element/station-details"), Text("Station details", "Параметры станции"), _stationForm)
@@ -212,8 +213,7 @@ internal sealed partial class NetworkExperience : IFlowExperience
             Number(_capacity.Value, 999) ? int.Parse(_capacity.Value, CultureInfo.InvariantCulture) : 0,
             Number(_ticks.Value, 36000) ? int.Parse(_ticks.Value, CultureInfo.InvariantCulture) : 0));
         _result.Value = result.Status == FlowCommandStatus.Applied ? Text("Command completed", "Команда выполнена")
-            : result.Status == FlowCommandStatus.Conflict ? Text("State changed; review the updated network", "Состояние изменилось; проверьте сеть")
-            : Text("Action unavailable; check selections and cargo state", "Действие недоступно; проверьте выбор и состояние груза");
+            : FlowReasonText.Describe(result.Code, result.ReasonKey, _russian);
         _dirty = true;
         Pump();
     }

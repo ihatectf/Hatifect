@@ -118,10 +118,10 @@ internal sealed class FlowPeerHost : IDisposable
                 case FlowPeerOperation.Route: route = _session.PreviewRoute(intent.Station, intent.Destination); break;
                 case FlowPeerOperation.Target:
                     FlowSnapshot snapshot = _session.ReadSnapshot();
-                    FlowCommandStatus? unavailable = _session.Application.ValidateExternalCommand(snapshot.SessionId, snapshot.Revision);
-                    if (unavailable.HasValue)
+                    FlowCommandResult? unavailable = _session.Application.ValidateExternalCommand(snapshot.SessionId, snapshot.Revision);
+                    if (unavailable is not null)
                     {
-                        result = new FlowCommandResult(unavailable.Value, snapshot.Revision);
+                        result = unavailable;
                         break;
                     }
                     peer.Target = _captureTarget(id, intent);
@@ -163,7 +163,7 @@ internal sealed class FlowPeerHost : IDisposable
         catch (Exception reportingFailure) { Report(reportingFailure); }
         // A resolver can itself be the failing dependency. Retain the last detached view and close actions.
         _projection = _projection with { State = FlowApplicationState.RecoveryRequired,
-            Parcels = _projection.Parcels.Select(p => p with { Actions = FlowParcelActions.None }).ToArray() };
+            Parcels = _projection.Parcels.Select(p => p with { Actions = FlowParcelActions.None, Availability = FlowActionAvailabilitySet.Disabled(FlowRejectionCode.RecoveryRequired) }).ToArray() };
     }
 
     private bool IsCurrent(long id, Peer peer) => _peers.TryGetValue(id, out Peer? current) && ReferenceEquals(peer, current);
@@ -184,9 +184,11 @@ internal sealed class FlowPeerHost : IDisposable
         if (_closed) return;
         _closed = true;
         _session.RevisionChanged -= Changed;
-        _projection = _projection with { State = FlowApplicationState.Closed };
+        _projection = _projection with { State = FlowApplicationState.Closed, Stations = Array.Empty<FlowStationDetails>(),
+            Links = Array.Empty<FlowLinkSnapshot>(), Parcels = Array.Empty<FlowParcelSnapshot>(), Recovery = Array.Empty<FlowRecoveryIssue>() };
         foreach (var pair in _peers.ToArray())
         {
+            pair.Value.Target = null;
             Send(pair.Key, Reply(pair.Value, 0));
             _queue.Disconnect(pair.Key);
         }

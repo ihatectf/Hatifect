@@ -13,6 +13,37 @@ namespace Hatifect.Flow.Stardew.Tests;
 public sealed class PeerHostTests
 {
     [Fact]
+    public void HostDisposalPublishesClosedProjectionWithoutRetainingLiveCapabilities()
+    {
+        var world = new GameSessionWorld();
+        using FlowGameSession session = world.Open();
+        world.Configure(session);
+        session.Send("source", "destination", 0);
+        var replies = new List<FlowPeerReply>();
+        using var host = new FlowPeerHost(1, session, (_, _) => session.CapturePeerTarget("Farm", 0, 0, world.Source),
+            (_, reply) => replies.Add(reply), world.Errors.Add);
+        Guid client = Guid.NewGuid();
+        Assert.True(host.Connect(2, new FlowPeerHello(1, 1, client)));
+        host.Pump();
+        Assert.True(Assert.Single(replies[0].Projection.Parcels).Availability.Cancel.Available);
+        var request = new FlowPeerRequest(1, 1, client, session.ReadSnapshot().SessionId, 1,
+            new FlowPeerIntent(FlowPeerOperation.Target, Location: "Farm"));
+        Assert.Equal(FlowPeerAdmission.Queued, host.Receive(2, request));
+        host.Pump();
+        Assert.NotEqual(Guid.Empty, replies.Last().Projection.Target);
+        host.Dispose();
+        FlowPeerReply terminal = replies.Last();
+        Assert.True(FlowPeerProtocol.Valid(terminal));
+        Assert.Equal(FlowApplicationState.Closed, terminal.Projection.State);
+        Assert.Empty(terminal.Projection.Parcels);
+        Assert.Equal(Guid.Empty, terminal.Projection.Target);
+        Assert.Equal(FlowPeerAdmission.Rejected, host.Receive(2, request));
+        Assert.Equal(FlowApplicationState.Active, session.ReadSnapshot().State);
+        Assert.Single(session.ReadSnapshot().Parcels);
+        Assert.Equal(8, world.Source.Items[0].Stack);
+    }
+
+    [Fact]
     public void LostSendReplyCanBeRetriedWithoutCreatingASecondPhysicalShipment()
     {
         var world = new GameSessionWorld();
