@@ -1,12 +1,14 @@
 # Flowline
 
+[Полная roadmap](../docs/ROADMAP.md) продолжает десять инкрементов работами F11–F20 и связывает их с модернизацией UI. [Статус Flow foundation](../docs/ROADMAP-STATUS.md) отделяет выполненные проверки от оставшейся acceptance.
+
 Flowline — транспортная подсистема Hatifect. `Hatifect.Flow.Core` содержит модель и выполнение; `Hatifect.Flow.Persistence` сохраняет состояние и проверяет идентичность сейва. Игровой `Hatifect.Flow` host владеет lifecycle SMAPI. Домен не зависит от UI и конкретных сторонних модов.
 
 Эта база сохраняет десять инкрементов: очереди и операции, deterministic fake-provider execution, pause/recovery, persistence envelopes и изоляцию сейвов. Поверх них реализованы application snapshots/commands/revisions, редактор сети и отправлений, адаптер обычных сундуков и игровая сессия одиночного сейва.
 
 ## Первый игровой маршрут
 
-Нужны Hatifect Flow и Hatifect UI 1.0.0-alpha.30 или новее. В одиночном загруженном сейве доступны команды консоли SMAPI:
+Нужны Hatifect Flow и Hatifect UI 1.0.0-alpha.31 или новее. В одиночном загруженном сейве доступны команды консоли SMAPI:
 
 1. Наведи курсор на обычный сундук игрока: `hatifect_flow station source`. Так же зарегистрируй второй сундук как `destination`. Имена: до 32 букв, цифр, `_` или `-`.
 2. `hatifect_flow link source destination` создаёт направленную связь с capacity 999 и временем 180 игровых update ticks. Необязательные два последних аргумента меняют capacity (1..999) и ticks (1..36000).

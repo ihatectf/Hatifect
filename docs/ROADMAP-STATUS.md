@@ -4,7 +4,9 @@ Date: 2026-09-06. Working branch: `codex/flowline-next-ten-slices`; source basel
 
 The authoritative scope is [ROADMAP.md](ROADMAP.md), restored verbatim from commit `1e741ef` because this task branch predates that documentation commit. The earlier exploratory Flow multiplayer/adapters/policies list is superseded as an execution plan; no new product work outside the approved roadmap is being added. It does not replace U01–U10, R01–R04, T01–T03 or their acceptance. The Flow foundation is committed and published in task branch as `cdf9d2e86e90f0174251243147f8a2f9480d14e8`; its integration with the verified UI SDK/editor/D01 is owned by the UI task. The full roadmap IDs remain incomplete until all their acceptance and integration evidence are present.
 
-## B01: current gaps
+This report preserves separate evidence for Flow foundation `cdf9d2e`, F11 `e31c1ef`/`ff43d0b`, F16-a `54c5af5`, and the combined UI foundation. Flow artifact paths belong to `${HOME}/Developer/Hatifect`; the UI integration section names its own worktree. Earlier checks do not certify a later combined candidate. Shared B01/B02 statuses and D01 are authoritative in [ROADMAP.md](ROADMAP.md) and [SEMANTIC_V2.md](SEMANTIC_V2.md).
+
+## Flow owner implementation status
 
 | IDs | State | Authoritative implementation/evidence | Remaining acceptance |
 |---|---|---|---|
@@ -54,7 +56,7 @@ Owner: Flow semantic consumer; existing application event/snapshot contract and 
 
 ## Current next slice
 
-Publish verified F16-a, then continue the remaining F16/F17 failure and save-isolation matrix. The UI task owns B02/U01–U10/R/T on codex/roadmap-implementation; its foundation/SDK/editor/D01 integration is published in develop at 3f11e5d (verified by fetch), and F11 commits e31c1ef + ff43d0b are its next integration step. This task owns F11–F20 and real-game acceptance, integrating verified UI commits. F18 ordinary player entry follows integration of the standalone host and U01 identity fix. Multiplayer remains disabled and its exploratory foundation is not a released capability.
+F16-a is published as `54c5af5`. Verify its integration with the published UI foundation, then continue the remaining F16/F17 failure and save-isolation matrix. The UI task owns B02/U01–U10/R/T on codex/roadmap-implementation; its foundation/SDK/editor/D01 integration is published in develop at 3f11e5d (verified by fetch), and F11 commits e31c1ef + ff43d0b are its next integration step. This task owns F11–F20 and real-game acceptance, integrating verified UI commits. F18 ordinary player entry follows integration of the standalone host and U01 identity fix. Multiplayer remains disabled and its exploratory foundation is not a released capability.
 
 ## F11-b: owner-derived availability and rejection reasons
 
@@ -81,3 +83,45 @@ Owner: game-save adapter and physical chest access. `FlowSendCommand.Quantity` i
 - `./tools/hatifect-smoke flow.chest.roundtrip`: **PASS**, request `d60b0e0c-6d5f-4560-b07c-37bf28b1c906`, 8 checks, 347 frames, 3 loads, 2 actual Saving/Saved pairs, process exit 0 and no errors. Whole8 plus partial13→5+8 preserved total21, the exact untagged source remainder and delivered item fidelity; repeated delivery was rejected. Flow runtime fingerprint: `4b56cbc49bfcdfae5332e67e0db9818aa0707a64fdb4dafc177603a843d356c9`.
 - `python3 tools/release.py verify-package .smapi-test/isolated/Mods/Hatifect`: **PASS**. The generated acceptance report was byte-matched to the retained runtime artifact before removing only that generated report. Current package inventory/archive are in `artifacts/flowline-f16/`.
 - Full process-crash/reload and production A→B→A acceptance remain incomplete. The current executor launches one process and cleans its owned save on exit; controlled multi-process continuation needs a separate harness increment and must preserve failure reporting for unexpected exits.
+
+## Combined UI SDK/editor and Flow foundation integration
+
+The integration branch `codex/roadmap-implementation` combines `31aaa0b` with Flow foundation `cdf9d2e`, using UI package version `1.0.0-alpha.31`. The following evidence belongs to `/private/tmp/hatifect-ui-next-ten-slices`, independently from the historical Flow checks above.
+
+- Preserved the typed form factories, committed/draft state, optional standalone/Terminal/HUD host API, themes, textures, live asset reload and editor functionality. Added the Flow external validation source and explicit element-ID overloads without changing the frozen `IUiSemanticSurfaceApi` v1 source (SHA-256 `9de29d5a7c53964ae192efb4f4f7590e1dc75a64d2fe94605f86dac3861c6335`). Both consumers require the exact combined package version through the shared package authority.
+- Current-draft `IsValid` now shares validation semantics with `Apply` without publishing errors or committing values. Screen guards cover the SDK hosts as well as overlays. Foreign disposal makes a native menu inert immediately and retires only its own slot when the owner screen resumes. Failed watcher subscriptions and teardown retain retryable cleanup.
+- `./tools/hatifect-test ui --platform`: **PASS**, 370 tests, `artifacts/validation/run-33413xw6/summary.json`. Six new cases exercise draft validation, mutation/reentrancy, foreign slot retirement/replacement and partial watcher subscription/removal failures. Independent read-only review rechecked the actual native menu guards and all three fixes; no open findings in that scope. Helper tests do not establish actual split-screen visual/input acceptance.
+- `./tools/hatifect-check`: **PASS**, 991 .NET + 301 Python, `artifacts/validation/run-r03g7g_3/summary.json`.
+- `./tools/hatifect-check --platform`: **PASS**, 1,147 .NET + 301 Python, `artifacts/validation/run-vqyw7gtd/summary.json`.
+- `./tools/hatifect-isolated-ui-ca --keep`: **PASS**, 43 projected files, eight freshly built alpha.31 packages, 80 tests, two CA DLLs and no UI source. Projection and TRX retained at `/private/var/folders/ly/sph907ln7bv1tc3dxmflc62h0000gn/T/hatifect-ui-ca-isolated.wyewblmo`.
+- `./tools/hatifect-agent-check --host`: **PASS**, project config and skill loaded, 217 skills discovered.
+- Earlier `run-i5fgi7bx` failed on the fixed release version assertion; the assertion now requires alpha.31. `run-z_79vs4k` stalled under Rosetta in native process creation; its owned process was sampled and terminated, and that run remains **FAIL**. The successful gates above were new executions after the review fixes.
+
+U01 remains **IN_PROGRESS**: explicit builder IDs are not yet preserved by compiler binding, and localized multiword Flow Network labels still fail `CreateBindingContext`. The next U01 acceptance must exercise the real `NetworkExperience` through binding and compilation. Combined runtime evidence is recorded below; diagnostics lifecycle smoke does not prove that Network screen works. No additional roadmap ID is marked DONE by this integration.
+
+### Native menu callback correction after merge 6b381c0
+
+The first combined `semantic.lifecycle` request `9ff9a650-5342-47f2-bf51-87badd02e018` exposed a real teardown defect before publication. The native log reported a Rosetta synchronous-exception error and the sampled stack repeated two frames. Inspection of the installed game IL established the cause: `Game1.set_activeClickableMenu` calls the previous menu's `IDisposable.Dispose` before storing the replacement. Retiring the slot from inside that callback recursively called the same setter. Canonical cancellation preserved the request as **BLOCKED** (exit 130); the discovered implementation defect is **FAIL**, not an environment-only failure.
+
+`Retire` now only marks the menu inert. Owner-screen callbacks perform deferred exact-instance cleanup under a reentrancy guard with retry after a failed write. `./tools/hatifect-test ui --platform`: **PASS**, 372 tests, `artifacts/validation/run-jxmzuv1b/summary.json`. Two new tests model disposal before native slot assignment and recursive/failed deferred clear. Independent review verified the fix against `artifacts/ui-flow-integration/game-menu-setter.il.txt` and the real `exitThisMenu` ordering. The initial review covered helpers and wiring but missed the setter callback; the corrected review does not substitute for a new game run.
+
+The corrected candidate passed `./tools/hatifect-check --platform`: **PASS**, 1,149 .NET + 301 Python, `artifacts/validation/run-icy5beoe/summary.json`. Fresh `./tools/hatifect-isolated-ui-ca --keep`: **PASS**, eight alpha.31 packages, 43 files, 80 tests and two CA DLLs without UI sources; retained projection `/private/var/folders/ly/sph907ln7bv1tc3dxmflc62h0000gn/T/hatifect-ui-ca-isolated.lbrr_99z`, complete log `artifacts/ui-flow-integration/final-isolation.log`. The correction changes only private Stardew menu ownership and its regressions; host-free code and the previously checked API contract are unchanged.
+
+### Fresh combined runtime, candidate 803c909
+
+- `./tools/hatifect-ui-test semantic.lifecycle`: **PASS**, request `d95c475d-3c45-417d-a72e-3093e1ef45ee`, all three checks and no exceptions. The newly built isolated candidate rendered its diagnostics surface, held one focused node, and closed/reopened with one owner. The screenshot was inspected: Diagnostics/Inspector controls and the focus outline are visible. This validates the lifecycle regression; it does not cover the full locale/input/scale or split-screen matrix.
+- `./tools/hatifect-smoke save.bootstrap`: **PASS**, request `5146ce6c-2feb-451b-a196-d6520b35b466`. Stardew created and reload-verified a synthetic fixture in this worktree's isolated save root. Real user saves were not imported.
+- `./tools/hatifect-smoke flow.chest.roundtrip`: **PASS**, request `46967acd-30bb-4c93-89ff-ce9c1b95c9e3`, all eight checks, 347 frames, three loads, two Saving/Saved pairs and no errors. The production session retained real chest cargo across saving/loading and did not duplicate delivery. Evidence is under `artifacts/runtime/<request-id>/result.json`; exact counts are in `diagnostics/flow-chest-roundtrip.json`.
+- CA's actual third-party mod was absent in this isolated run and the adapter disabled itself normally. These scenarios do not claim CA visual/runtime acceptance. Q01–Q03 and the known U01 Network binding gap remain open.
+
+Next integration is the separately verified Flow F11 sequence `e31c1ef` and `ff43d0b`; then U01 preserves explicit identity/alias/label through the real Network binding/compile path and adds the complete typed graph/wire acceptance. The UI task remains the single `develop` integration owner.
+
+## Flow task integration of UI foundation with F16-a
+
+The Flow task merged published UI foundation `3f11e5d` into its published F16-a `54c5af5`. Only the status document conflicted; all source/code bytes from the incoming UI change match that reviewed upstream commit, and both owners' evidence sections remain. This integration does not replace either runtime candidate's identity.
+
+- `./tools/hatifect-check --platform`: **PASS**, 1,203 .NET + 301 Python, `artifacts/validation/run-v86kdbsx/summary.json` (659 Flow + 92 Stardew).
+- `./tools/hatifect-check`: **PASS**, 1,016 .NET + 301 Python, `artifacts/validation/run-5itzrxbq/summary.json`.
+- `./tools/hatifect-isolated-ui-ca --keep`: **PASS**, 43 projected files, eight alpha.31 packages, 80 tests, two CA DLLs and no UI source. Retained projection/TRX: `/private/var/folders/ly/sph907ln7bv1tc3dxmflc62h0000gn/T/hatifect-ui-ca-isolated.l_zpwa5h`.
+- `./tools/hatifect-agent-check --host`: **PASS**, project config/skill loaded, 217 skills discovered.
+- Final source/staged review: `artifacts/flowline-ui-integration/`. Runtime evidence for the full next candidate will be generated by the next F16 crash slice; earlier normal roundtrip evidence remains scoped to its recorded fingerprint. No release or new UI acceptance is claimed by this task-branch integration.

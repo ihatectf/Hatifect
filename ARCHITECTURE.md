@@ -48,6 +48,8 @@ CA Overlay получает UI через NuGet packages с точной вер�
 
 Связь Flowline с UI реализует публичный `IFlowApplication` в Core: immutable cached snapshots, типизированные команды с session ID/expected revision и уведомления после изменения проекции. UI объединяет уведомления и перечитывает snapshot один раз за pump; renderer не читает persistence и не изменяет Core напрямую. Host обновляет проекцию после обработки операций, а не на пустых тиках; закрытые сессии отзывают команды. Общий owner-operation guard блокирует команды из inventory callbacks до первого побочного эффекта. Пауза/recovery сохраняют видимость груза и отключают обычные действия; reconciliation с Missing receipt запрещён на границе реального save host.
 
+Предлагаемая модернизация UI и последовательность интеграции описаны в [roadmap](docs/ROADMAP.md). Минимальный semantic-v2 и первый Flow consumer развиваются согласованно; будущие Quick/View/Exact authoring API, generations и transactional reload сохраняют направление к одному IR/runtime. Конкретная совместимость публичного API и границы Exact требуют решения в соответствующих задачах; roadmap не меняет действующие контракты.
+
 Ветки `codex/<feature>` создаются от `develop` и живут до объединения законченного изменения. Для параллельных задач используются отдельные worktree. Изменение общего контракта включает обновление всех затронутых consumer в одном PR. Отдельные постоянно расходящиеся ветки для UI, Flowline и CA не нужны.
 
 ## Проверки и поставка

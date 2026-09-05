@@ -5,6 +5,7 @@ using Hatifect.UI.Planning;
 using Hatifect.UI.Runtime.Visual.Resolution;
 using Hatifect.UI.Runtime.Visual.Theming;
 using Hatifect.UI.Semantics;
+using Hatifect.UI.Tooling.Metadata;
 
 UiSymbolId catalogId = new("Author.Example", "catalog");
 var query = new UiState<string>(string.Empty);
@@ -12,6 +13,12 @@ var selection = new UiState<string?>(null);
 var choose = new UiActionDefinition(catalogId.Child("action/choose"), "Choose", () => { });
 
 UiExperienceDefinition experience = CreateCatalog(catalogId, query, selection, choose);
+
+if (args.Length == 1 && args[0] == "--binding-metadata")
+{
+    Console.OpenStandardOutput().Write(UiBindingContextJson.Export(experience.CreateBindingContext()));
+    return;
+}
 
 const string presentationSource = @"presentation Catalog
 

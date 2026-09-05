@@ -40,6 +40,13 @@ internal sealed class UiSemanticStardewRuntime : IDisposable
         Func<RuntimeSymbolId, Texture2D> resolveTexture)
         => _bridge = new UiSemanticSpriteBatchBridge(graphicsDevice, resolveFont, resolveTexture);
 
+    internal void ValidateCandidate(UiScene scene, UiHostPlacementContext placement)
+    {
+        ThrowIfDisposed();
+        UiSemanticStardewCapabilities.Validate(scene);
+        new Hatifect.UI.Runtime.Layout.UiSceneLayoutEngine(_bridge).Build(scene, placement);
+    }
+
     public UiSemanticStardewHost CreateHost(
         UiScene scene,
         UiHostPlacementContext placement,
@@ -380,6 +387,8 @@ internal sealed class UiSemanticStardewHost : IDisposable
         return Session.UpdateRoot(scene, placement);
     }
 
+    internal void SetTerminalTheme(UiTheme theme) => _terminal!.SetTheme(theme);
+
     public UiHostUpdate RecomposeTerminal(
         UiPresentationProfile profile,
         UiHostPlacementContext placement,
@@ -440,6 +449,7 @@ internal sealed class UiSemanticStardewHost : IDisposable
         UiSemanticStardewRuntime? runtime = _runtime;
         if (runtime == null && _owner == null) return;
         _retireRequested = true;
+        Session.Deactivate();
         _retiring = true;
         try
         {

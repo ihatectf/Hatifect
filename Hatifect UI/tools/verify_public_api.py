@@ -81,7 +81,7 @@ def verify(root: Path = ROOT) -> list[str]:
                 errors.append(f'public API baseline: missing semantic public type {name}')
         form = _scrub_comments((root / 'Hatifect.UI.Experience/State/UiSemanticFormSource.cs').read_text(encoding='utf-8'))
         for name in FORM_AUTHORING_TYPES:
-            if not re.search(rf'\bpublic\s+sealed\s+(?:record|class)\s+{re.escape(name)}\b', form):
+            if not re.search(rf'\bpublic\s+(?:sealed\s+)?(?:record|class)\s+{re.escape(name)}\b', form):
                 errors.append(f'public API baseline: missing form public type {name}')
         implementation = _scrub_comments(
             (root / 'Hatifect.UI.Stardew/Hosting/UiSemanticSurfaceService.cs').read_text(encoding='utf-8')

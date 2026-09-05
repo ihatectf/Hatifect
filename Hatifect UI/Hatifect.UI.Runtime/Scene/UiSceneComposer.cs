@@ -22,7 +22,7 @@ internal sealed class UiSceneComposer
     private static readonly IReadOnlyDictionary<UiSymbolId, FoundationComponentKind> FoundationComponents =
         CreateFoundationCatalog();
     private readonly UiRegistrySnapshot? _registry;
-    private readonly UiTheme _theme;
+    private UiTheme _theme;
     private readonly UiVisualResolver _visualResolver;
     private readonly UiFoundationVisuals _foundationVisuals;
     private readonly UiSymbolId _uniformItemSizing;
@@ -49,6 +49,8 @@ internal sealed class UiSceneComposer
         _uniformItemSizing = uniform.Id;
         _adaptiveItemSizing = adaptive.Id;
     }
+
+    internal void SetTheme(UiTheme theme) => _theme = theme ?? throw new ArgumentNullException(nameof(theme));
 
     internal static int FoundationComponentCount => FoundationComponents.Count;
 
@@ -300,19 +302,32 @@ internal sealed class UiSceneComposer
                 field.Label));
 
             UiSymbolId inputId = field.Id.Child("scene/input");
-            children.Add(new UiTextInputSceneNode(
-                inputId,
-                inputRole,
-                Resolve(inputRole, UiSceneNodeKind.TextInput, inputId, invocation, visual, interaction),
-                field.Label,
-                field.Value));
-            if (!string.IsNullOrWhiteSpace(field.ValidationMessage?.Value))
+            if (field.Kind is UiFormFieldKind.Toggle or UiFormFieldKind.Choice)
+            {
+                for (int index = 0; index < field.Options.Count; index++)
+                {
+                    UiFormOption option = field.Options[index];
+                    UiSymbolId optionId = inputId.Child(index.ToString(CultureInfo.InvariantCulture));
+                    bool selected = field.Value.Value == option.Value;
+                    var action = new UiActionDefinition(optionId, $"{field.Label}: {option.Label}{(selected ? " ✓" : string.Empty)}",
+                        () => field.Value.Value = option.Value);
+                    children.Add(new UiButtonSceneNode(optionId, UiSceneRoles.Button,
+                        Resolve(UiSceneRoles.Button, UiSceneNodeKind.Button, optionId, invocation, visual, interaction,
+                            domainStates: selected ? new[] { UiVisualStates.Selected } : null), action));
+                }
+            }
+            else
+                children.Add(new UiTextInputSceneNode(inputId, inputRole,
+                    Resolve(inputRole, UiSceneNodeKind.TextInput, inputId, invocation, visual, interaction),
+                    field.Label, field.Value));
+            string? error = field.Error ?? field.ValidationMessage?.Value;
+            if (!string.IsNullOrWhiteSpace(error))
             {
                 UiSymbolId errorId = field.Id.Child("scene/error");
                 UiSymbolId errorRole = Role(invocation.Experience, "Field.Error", UiSceneRoles.Text);
                 children.Add(new UiTextSceneNode(errorId, errorRole,
                     Resolve(errorRole, UiSceneNodeKind.Text, errorId, invocation, visual, interaction),
-                    field.ValidationMessage.Value!));
+                    field.Error is null ? error : $"{field.Label}: {error}"));
             }
         }
 
@@ -428,7 +443,7 @@ internal sealed class UiSceneComposer
             Add(
                 bySlot,
                 UiHostSlots.Navigation,
-                new UiRouteButtonSceneNode(nodeId, UiSceneRoles.Button, resolved, descriptor.Title, descriptor.Id, current));
+                new UiRouteButtonSceneNode(nodeId, UiSceneRoles.Button, resolved, descriptor.Title, descriptor.Id, current, descriptor.Terminal.Icon));
         }
         if (!activeFound)
             throw new InvalidOperationException(

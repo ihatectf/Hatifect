@@ -282,7 +282,9 @@ class ChestsAnywhereUiBoundaryTests(unittest.TestCase):
             "IClickableMenu",
             "IModHelper",
         )
-        exposed = [token for token in forbidden if token in source]
+        sources = list(SEMANTIC_SURFACE_CONTRACT.parent.glob("*.cs"))
+        exposed = [f"{path.name}: {token}" for path in sources for token in forbidden
+                   if token in path.read_text(encoding="utf-8")]
 
         self.assertEqual(
             [],

@@ -221,14 +221,15 @@ internal sealed class UiSceneLayoutEngine
         else if (text != null)
         {
             UiTypography typography = Required<UiTypography>(node.Visual, "typography", node.Id);
-            UiSize desiredText = _textMetrics.Measure(text, typography, contentWidth, overflow);
+            float iconSpace = node is UiRouteButtonSceneNode route ? route.IconSpace : 0;
+            UiSize desiredText = _textMetrics.Measure(text, typography, Math.Max(1, contentWidth - iconSpace), overflow);
             UiSize minimumLine = _textMetrics.Measure("M", typography, contentWidth, UiTextOverflow.Clip);
             desiredContent = new UiSize(
-                Math.Min(contentWidth, desiredText.Width),
-                desiredText.Height);
+                Math.Min(contentWidth, desiredText.Width + iconSpace),
+                Math.Max(desiredText.Height, iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 0));
             minimumContent = new UiSize(
-                IsInteractive(node) ? Math.Min(contentWidth, Math.Max(1, minimumLine.Width)) : 0,
-                Math.Max(1, minimumLine.Height));
+                IsInteractive(node) ? Math.Min(contentWidth, Math.Max(1, minimumLine.Width + iconSpace)) : 0,
+                Math.Max(iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 1, minimumLine.Height));
         }
         else if (node is UiHostSceneNode { Policy.Kind: UiHostKind.Terminal })
         {

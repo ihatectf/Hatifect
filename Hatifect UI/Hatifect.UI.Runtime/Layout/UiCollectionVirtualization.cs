@@ -20,7 +20,8 @@ internal readonly record struct UiVirtualizedItemLayout(
     UiTextOverflow SupportingOverflow,
     UiRect Clip,
     UiVisualResolution Visual,
-    bool Selected);
+    bool Selected,
+    UiRect? IconBounds = null);
 
 internal sealed record UiCollectionScrollAnchor(UiSymbolId Item, float LocalOffset);
 
@@ -381,6 +382,7 @@ internal sealed class UiCollectionVirtualizer
         var key = new MeasurementKey(
             item.Id,
             item.ContentVersion,
+            item.Icon != null,
             itemWidth,
             context.Profile,
             context.Locale,
@@ -391,7 +393,7 @@ internal sealed class UiCollectionVirtualizer
         if (state.Measurements.TryGetValue(key, out MeasuredItem measured)) return measured;
 
         RecipeMetrics recipe = Metrics(collection.Recipe, lineHeight, context.Profile, context.Locale);
-        float contentWidth = Math.Max(1, itemWidth - recipe.HorizontalPadding * 2);
+        float contentWidth = Math.Max(1, itemWidth - recipe.HorizontalPadding * 2 - (item.Icon != null ? lineHeight + 4 : 0));
         UiSize label = _textMetrics.Measure(item.Label, typography, contentWidth, UiTextOverflow.Ellipsis);
         float labelHeight = Math.Max(lineHeight, label.Height);
         float supportingHeight = 0;
@@ -462,10 +464,13 @@ internal sealed class UiCollectionVirtualizer
                     lineHeight,
                     typography!,
                     measurementContext);
+            float iconSpace = item.Icon != null ? lineHeight + 4 : 0;
+            UiRect? iconBounds = item.Icon != null ? new UiRect(bounds.X + content.HorizontalPadding,
+                bounds.Y + content.VerticalPadding, lineHeight, lineHeight) : null;
             var labelBounds = new UiRect(
-                bounds.X + content.HorizontalPadding,
+                bounds.X + content.HorizontalPadding + iconSpace,
                 bounds.Y + content.VerticalPadding,
-                Math.Max(0, bounds.Width - content.HorizontalPadding * 2),
+                Math.Max(0, bounds.Width - content.HorizontalPadding * 2 - iconSpace),
                 Math.Min(content.LabelHeight, Math.Max(0, bounds.Height - content.VerticalPadding * 2)));
             UiRect? supportingBounds = content.SupportingHeight > 0
                 ? new UiRect(
@@ -487,7 +492,7 @@ internal sealed class UiCollectionVirtualizer
                 collection.Recipe.IsAdaptive ? UiTextOverflow.Wrap : UiTextOverflow.Ellipsis,
                 UiRect.Intersect(clip, bounds),
                 collection.VisualFor(node, item.Id),
-                collection.IsSelected(item.Id));
+                collection.IsSelected(item.Id), iconBounds);
         }
         return items;
     }
@@ -625,6 +630,7 @@ internal sealed class UiCollectionVirtualizer
     private readonly record struct MeasurementKey(
         UiSymbolId Item,
         long ContentVersion,
+        bool HasIcon,
         float Width,
         UiSymbolId Profile,
         string Locale,

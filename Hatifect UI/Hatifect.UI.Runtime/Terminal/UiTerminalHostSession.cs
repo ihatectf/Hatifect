@@ -88,6 +88,8 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
         }
     }
 
+    internal void SetTheme(UiTheme theme) { EnsureActive(); _shell.SetTheme(theme); }
+
     public UiHostUpdate Recompose(
         UiPresentationProfile profile,
         UiHostPlacementContext placement,
@@ -176,6 +178,7 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
     {
         if (_disposed) return;
         _disposed = true;
+        Host.Deactivate();
         _shell.Dispose();
     }
 
@@ -195,12 +198,14 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
 
     private UiPortalDispatch Follow(UiPortalDispatch dispatch)
     {
+        if (_disposed) return dispatch;
         if (dispatch.Portal != null || dispatch.Interaction is not { } interaction)
             return dispatch;
         if (interaction.Route is not { } route)
             return dispatch;
 
         _onRouteRequested?.Invoke(route);
+        if (_disposed) return dispatch;
         UiTerminalFrame? frame;
         try
         {

@@ -27,22 +27,37 @@ internal enum UiToolingProtocolState
 /// Internal/provisional product protocol v0. The embedding owner supplies scheduling and the process
 /// loop; this session serializes lifecycle/workspace mutations and owns only bounded editor state.
 /// </summary>
-internal sealed class UiToolingProtocolSession
+internal sealed partial class UiToolingProtocolSession
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly UiEditorWorkspace _workspace;
+    private readonly UiCompiler _authoringCompiler;
     private UiBindingContext? _bindingContext;
     private UiToolingProtocolState _state;
+    private bool _hierarchicalSymbols;
+    private bool _versionedCodeActions;
+    private int _maximumPayloadBytes = UiLspMessageStream.DefaultMaximumPayloadBytes;
+    private int _maximumResultBytes = UiLspMessageStream.DefaultMaximumPayloadBytes - 128;
 
     public UiToolingProtocolSession(
         UiSemanticCatalog? catalog = null,
         int documentCapacity = UiEditorWorkspace.DefaultCapacity,
         int maximumSourceLength = UiEditorWorkspace.DefaultMaximumSourceLength)
-        => _workspace = new UiEditorWorkspace(catalog, documentCapacity, maximumSourceLength);
+    {
+        catalog ??= UiSemanticCatalog.CreateFoundation();
+        _workspace = new UiEditorWorkspace(catalog, documentCapacity, maximumSourceLength);
+        _authoringCompiler = new UiCompiler(catalog);
+    }
 
     public UiToolingProtocolState State => _state;
     public bool ExitRequested => _state == UiToolingProtocolState.Exited;
     public int DocumentCount => _workspace.Count;
+
+    internal void ConfigurePayloadLimit(int maximumPayloadBytes)
+    {
+        if (maximumPayloadBytes < 256) throw new ArgumentOutOfRangeException(nameof(maximumPayloadBytes));
+        _maximumPayloadBytes = maximumPayloadBytes;
+    }
 
     public bool TryGetDocument(string uri, out UiEditorDocumentSnapshot? snapshot)
         => _workspace.TryGet(uri, out snapshot);
@@ -65,6 +80,13 @@ internal sealed class UiToolingProtocolSession
 
     private UiJsonRpcDispatchResult Handle(UiJsonRpcRequest request)
     {
+        _maximumResultBytes = _maximumPayloadBytes - 132;
+        if (request.Id is { } candidateId &&
+            !UiLspJsonRpcDispatcher.IsValidLspRequestId(candidateId, _maximumPayloadBytes))
+            return Error(UiJsonRpcErrorCodes.InvalidRequest, "Invalid Request");
+        // Reserve the JSON-RPC envelope and the ID's actual escaped UTF-8 representation.
+        _maximumResultBytes = _maximumPayloadBytes - 128 -
+            (request.Id is { } id ? JsonSerializer.SerializeToUtf8Bytes(id).Length : 4);
         if (_state == UiToolingProtocolState.Exited)
             return Error(UiJsonRpcErrorCodes.InvalidRequest, "The tooling session has exited.");
 
@@ -78,7 +100,18 @@ internal sealed class UiToolingProtocolSession
             "textDocument/didChange" => WithActive(request, DidChange),
             "textDocument/didClose" => WithActive(request, DidClose),
             "textDocument/diagnostic" => WithActive(request, Diagnostic),
+            "workspace/diagnostic" => WithActive(request, WorkspaceDiagnostic),
+            "hatifect/updateBindings" => WithActive(request, UpdateBindings),
             "textDocument/formatting" => WithActive(request, Formatting),
+            "textDocument/completion" => WithActive(request, Completion),
+            "textDocument/hover" => WithActive(request, Hover),
+            "textDocument/documentSymbol" => WithActive(request, DocumentSymbols),
+            "textDocument/foldingRange" => WithActive(request, FoldingRanges),
+            "textDocument/semanticTokens/full" => WithActive(request, SemanticTokens),
+            "textDocument/references" => WithActive(request, References),
+            "textDocument/documentHighlight" => WithActive(request, DocumentHighlights),
+            "textDocument/definition" => WithActive(request, Definition),
+            "textDocument/codeAction" => WithActive(request, CodeActions),
             _ => Error(UiJsonRpcErrorCodes.MethodNotFound, "Method not found")
         };
     }
@@ -93,28 +126,54 @@ internal sealed class UiToolingProtocolSession
         {
             JsonElement parameters = RequiredObject(request.Parameters, "initialize params");
             JsonElement options = RequiredObject(Property(parameters, "initializationOptions"), "initializationOptions");
-            JsonElement metadataValue = Property(options, "bindingMetadata");
-            byte[] metadataJson = Encoding.UTF8.GetBytes(metadataValue.GetRawText());
-            UiBindingContextMetadata metadata = UiBindingContextMetadataWire.Deserialize(metadataJson);
-            UiBindingContext bindingContext = UiBindingContextMetadataWire.CreateBindingContext(metadata);
+            BindingConfiguration configuration = ReadBindingConfiguration(options);
+            int bindingRevision = OptionalProperty(options, "bindingRevision") != null
+                ? RequiredNonNegativeInt32(options, "bindingRevision") : 0;
+            bool hierarchicalSymbols = NestedProperty(parameters, "capabilities", "textDocument",
+                "documentSymbol", "hierarchicalDocumentSymbolSupport") is { ValueKind: JsonValueKind.True };
+            bool versionedCodeActions = NestedProperty(parameters, "capabilities", "workspace", "workspaceEdit",
+                "documentChanges") is { ValueKind: JsonValueKind.True }
+                && NestedProperty(parameters, "capabilities", "textDocument", "codeAction", "codeActionLiteralSupport")
+                    is { ValueKind: JsonValueKind.Object };
 
-            _bindingContext = bindingContext;
-            _state = UiToolingProtocolState.AwaitingInitialized;
-            return Success(new
+            UiJsonRpcDispatchResult response = Success(new
             {
                 capabilities = new
                 {
-                    textDocumentSync = new { openClose = true, change = 1 },
+                    positionEncoding = "utf-16",
+                    textDocumentSync = new { openClose = true, change = 2 },
                     diagnosticProvider = new
                     {
                         identifier = "hatifect-ui",
                         interFileDependencies = false,
-                        workspaceDiagnostics = false
+                        workspaceDiagnostics = true
                     },
-                    documentFormattingProvider = true
+                    documentFormattingProvider = true,
+                    hoverProvider = true,
+                    documentSymbolProvider = true,
+                    foldingRangeProvider = true,
+                    referencesProvider = true,
+                    documentHighlightProvider = true,
+                    definitionProvider = true,
+                    codeActionProvider = versionedCodeActions,
+                    semanticTokensProvider = new
+                    {
+                        legend = new { tokenTypes = UiEditorAnalysis.TokenTypes, tokenModifiers = new[] { "declaration" } },
+                        full = true, range = false
+                    },
+                    completionProvider = new { triggerCharacters = new[] { ".", "@", "=" }, resolveProvider = false }
                 },
                 serverInfo = new { name = "Hatifect UI Tooling", version = "0" }
             });
+            if (response.IsError) return response;
+            _bindingContext = configuration.Default;
+            _documentBindings = configuration.Documents;
+            _declarations = configuration.Declarations;
+            _bindingRevision = bindingRevision;
+            _hierarchicalSymbols = hierarchicalSymbols;
+            _versionedCodeActions = versionedCodeActions;
+            _state = UiToolingProtocolState.AwaitingInitialized;
+            return response;
         }
         catch (Exception error) when (IsInvalidInput(error))
         {
@@ -139,6 +198,9 @@ internal sealed class UiToolingProtocolSession
         if (_state is not (UiToolingProtocolState.AwaitingInitialized or UiToolingProtocolState.Active))
             return Error(UiJsonRpcErrorCodes.InvalidRequest, "shutdown is not valid in the current lifecycle state.");
         _workspace.Clear();
+        _declarations.Clear();
+        _documentBindings.Clear();
+        _bindingContext = null;
         _state = UiToolingProtocolState.Shutdown;
         return UiJsonRpcDispatchResult.Success();
     }
@@ -148,6 +210,8 @@ internal sealed class UiToolingProtocolSession
         if (!request.IsNotification)
             return Error(UiJsonRpcErrorCodes.InvalidRequest, "exit must be a notification.");
         _workspace.Clear();
+        _declarations.Clear();
+        _documentBindings.Clear();
         _bindingContext = null;
         _state = UiToolingProtocolState.Exited;
         return UiJsonRpcDispatchResult.Success();
@@ -178,7 +242,9 @@ internal sealed class UiToolingProtocolSession
         string text = RequiredString(textDocument, "text", allowEmpty: true);
         if (_workspace.TryGet(uri, out _))
             throw new InvalidDataException($"Editor document '{uri}' is already open.");
-        _workspace.Update(uri, version, text, _bindingContext!);
+        if (_workspace.Count >= _workspace.Capacity)
+            throw new InvalidDataException($"The session already has {_workspace.Capacity} open documents. Close a document first.");
+        _workspace.Update(uri, version, text, ContextFor(uri));
         return UiJsonRpcDispatchResult.Success();
     }
 
@@ -195,14 +261,34 @@ internal sealed class UiToolingProtocolSession
             throw new InvalidDataException(
                 $"Editor document '{uri}' requires a version newer than {current.Version}.");
         JsonElement changes = Property(parameters, "contentChanges");
-        if (changes.ValueKind != JsonValueKind.Array || changes.GetArrayLength() != 1)
-            throw new InvalidDataException("v0 didChange requires exactly one full-document change.");
-        JsonElement change = RequiredObject(changes[0], "content change");
-        foreach (JsonProperty property in change.EnumerateObject())
-            if (property.Name != "text")
-                throw new InvalidDataException("v0 didChange accepts only a full-document text replacement.");
-        string text = RequiredString(change, "text", allowEmpty: true);
-        _workspace.Update(uri, version, text, _bindingContext!);
+        if (changes.ValueKind != JsonValueKind.Array || changes.GetArrayLength() is < 1 or > 128)
+            throw new InvalidDataException("didChange requires between 1 and 128 content changes.");
+        string text = current.Source;
+        UiEditorText map = current.Text;
+        foreach (JsonElement item in changes.EnumerateArray())
+        {
+            JsonElement change = RequiredObject(item, "content change");
+            string replacement = RequiredString(change, "text", allowEmpty: true);
+            int start = 0;
+            int end = text.Length;
+            if (OptionalProperty(change, "range") is { } rangeValue)
+            {
+                JsonElement range = RequiredObject(rangeValue, "range");
+                start = Offset(map, Property(range, "start"));
+                end = Offset(map, Property(range, "end"));
+                if (end < start) throw new InvalidDataException("The edit range must be ordered.");
+                if (OptionalProperty(change, "rangeLength") is not null
+                    && RequiredNonNegativeInt32(change, "rangeLength") != end - start)
+                    throw new InvalidDataException("rangeLength does not match the UTF-16 edit range.");
+            }
+            else if (OptionalProperty(change, "rangeLength") is not null)
+                throw new InvalidDataException("rangeLength requires a range.");
+            if ((long)text.Length - (end - start) + replacement.Length > _workspace.MaximumSourceLength)
+                throw new InvalidDataException("The content change exceeds the workspace source limit.");
+            text = string.Concat(text.AsSpan(0, start), replacement.AsSpan(), text.AsSpan(end));
+            map = new UiEditorText(text);
+        }
+        _workspace.Update(uri, version, text, ContextFor(uri));
         return UiJsonRpcDispatchResult.Success();
     }
 
@@ -219,20 +305,12 @@ internal sealed class UiToolingProtocolSession
         RequireRequest(request, "textDocument/diagnostic");
         string uri = RequiredString(TextDocument(request.Parameters), "uri");
         UiEditorDocumentSnapshot snapshot = OpenDocument(uri);
-        var items = snapshot.Diagnostics.Select(diagnostic => new
-        {
-            range = Range(snapshot.Source, diagnostic.Span),
-            severity = diagnostic.Severity switch
-            {
-                UiDiagnosticSeverity.Error => 1,
-                UiDiagnosticSeverity.Warning => 2,
-                _ => 3
-            },
-            code = diagnostic.Id,
-            source = "hatifect-ui",
-            message = diagnostic.Message
-        }).ToArray();
-        return Success(new { kind = "full", items });
+        JsonElement parameters = RequiredObject(request.Parameters, "diagnostic params");
+        string? previous = OptionalProperty(parameters, "previousResultId") != null
+            ? RequiredString(parameters, "previousResultId", allowEmpty: true) : null;
+        return previous == snapshot.ResultId
+            ? Success(new { kind = "unchanged", resultId = snapshot.ResultId })
+            : Success(new { kind = "full", resultId = snapshot.ResultId, items = DiagnosticItems(snapshot) });
     }
 
     private UiJsonRpcDispatchResult Formatting(UiJsonRpcRequest request)
@@ -249,7 +327,7 @@ internal sealed class UiToolingProtocolSession
                 range = new
                 {
                     start = new { line = 0, character = 0 },
-                    end = PositionAt(snapshot.Source, snapshot.Source.Length)
+                    end = Position(snapshot.Text.PositionAt(snapshot.Source.Length))
                 },
                 newText = snapshot.Format.Text
             }
@@ -261,45 +339,19 @@ internal sealed class UiToolingProtocolSession
             ? snapshot
             : throw new InvalidDataException($"Editor document '{uri}' is not open.");
 
-    private static object Range(string source, UiTextSpan span)
+    private static object Range(UiEditorText text, UiTextSpan span)
     {
-        int start = Math.Clamp(span.Start, 0, source.Length);
-        int end = Math.Clamp(span.End, start, source.Length);
-        int line = Math.Max(0, span.Line);
-        int character = Math.Max(0, span.Column);
-        object startPosition = new { line, character };
-        for (int index = start; index < end; index++)
-        {
-            if (source[index] == '\n')
-            {
-                line++;
-                character = 0;
-            }
-            else if (source[index] != '\r')
-            {
-                character++;
-            }
-        }
-        return new { start = startPosition, end = new { line, character } };
+        int start = Math.Clamp(span.Start, 0, text.Source.Length);
+        int end = (int)Math.Clamp((long)span.Start + span.Length, start, text.Source.Length);
+        return new { start = Position(text.PositionAt(start)), end = Position(text.PositionAt(end)) };
     }
 
-    private static object PositionAt(string source, int offset)
+    private static object Position(UiEditorPosition position) => new { line = position.Line, character = position.Character };
+
+    private static int Offset(UiEditorText text, JsonElement value)
     {
-        int line = 0;
-        int character = 0;
-        for (int index = 0; index < offset; index++)
-        {
-            if (source[index] == '\n')
-            {
-                line++;
-                character = 0;
-            }
-            else if (source[index] != '\r')
-            {
-                character++;
-            }
-        }
-        return new { line, character };
+        JsonElement position = RequiredObject(value, "position");
+        return text.OffsetAt(RequiredNonNegativeInt32(position, "line"), RequiredNonNegativeInt32(position, "character"));
     }
 
     private static JsonElement TextDocument(JsonElement? parameters)
@@ -314,6 +366,9 @@ internal sealed class UiToolingProtocolSession
             : throw new InvalidDataException($"{description} must be an object.");
 
     private static JsonElement Property(JsonElement value, string name)
+        => OptionalProperty(value, name) ?? throw new InvalidDataException($"Required property '{name}' is missing.");
+
+    private static JsonElement? OptionalProperty(JsonElement value, string name)
     {
         JsonElement result = default;
         bool found = false;
@@ -324,9 +379,15 @@ internal sealed class UiToolingProtocolSession
             found = true;
             result = property.Value;
         }
-        return found
-            ? result
-            : throw new InvalidDataException($"Required property '{name}' is missing.");
+        return found ? result : null;
+    }
+
+    private static JsonElement? NestedProperty(JsonElement value, params string[] path)
+    {
+        JsonElement? current = value;
+        foreach (string name in path)
+            current = current is { ValueKind: JsonValueKind.Object } item ? OptionalProperty(item, name) : null;
+        return current;
     }
 
     private static string RequiredString(JsonElement value, string name, bool allowEmpty = false)
@@ -364,12 +425,38 @@ internal sealed class UiToolingProtocolSession
         => error is InvalidDataException or JsonException or FormatException or ArgumentException or
             InvalidOperationException;
 
-    private static UiJsonRpcDispatchResult InvalidParams(string message)
+    private UiJsonRpcDispatchResult InvalidParams(string message)
         => Error(UiJsonRpcErrorCodes.InvalidParams, message);
 
-    private static UiJsonRpcDispatchResult Error(int code, string message)
-        => UiJsonRpcDispatchResult.Error(code, message);
+    private UiJsonRpcDispatchResult Error(int code, string message)
+    {
+        // JSON can escape each UTF-16 unit as six bytes. Error text may contain user input.
+        int maximumCharacters = Math.Min(512, _maximumResultBytes / 6);
+        if (message.Length > maximumCharacters)
+        {
+            int length = maximumCharacters - 1;
+            if (length > 0 && char.IsHighSurrogate(message[length - 1])) length--;
+            message = message[..length] + "…";
+        }
+        return UiJsonRpcDispatchResult.Error(code, message);
+    }
 
-    private static UiJsonRpcDispatchResult Success<T>(T value)
-        => UiJsonRpcDispatchResult.Success(JsonSerializer.SerializeToElement(value));
+    private UiJsonRpcDispatchResult Success<T>(T value)
+    {
+        try
+        {
+            var buffer = new UiLspJsonRpcDispatcher.UiBoundedBufferWriter(Math.Max(256, _maximumResultBytes));
+            using (var writer = new Utf8JsonWriter(buffer)) JsonSerializer.Serialize(writer, value);
+            if (buffer.WrittenMemory.Length > _maximumResultBytes) return ResponseTooLarge();
+            using JsonDocument result = JsonDocument.Parse(buffer.WrittenMemory);
+            return UiJsonRpcDispatchResult.Success(result.RootElement);
+        }
+        catch (InvalidDataException)
+        {
+            return ResponseTooLarge();
+        }
+    }
+
+    private UiJsonRpcDispatchResult ResponseTooLarge()
+        => Error(UiJsonRpcErrorCodes.InternalError, "Response exceeds the session payload budget.");
 }

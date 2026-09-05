@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Threading;
 using Hatifect.UI.Language.Diagnostics;
+using Hatifect.UI.Language.Syntax;
 using Hatifect.UI.Semantics;
 using Hatifect.UI.Tooling.Formatting;
 using Hatifect.UI.Tooling.Inspection;
+using Hatifect.UI.Tooling.Metadata;
 
 namespace Hatifect.UI.Tooling.Editor;
 
@@ -22,21 +26,31 @@ public sealed class UiEditorDocumentSnapshot
         UiBoundDefinition? definition,
         UiDiagnostic[] diagnostics,
         UiFormatResult format,
-        UiSourceInspectionIndex? inspection)
+        UiSourceInspectionIndex? inspection,
+        UiDocumentSyntax syntax,
+        UiBindingContextMetadata bindings,
+        UiLanguageMetadata language,
+        long revision)
     {
         SourceName = sourceName;
         Version = version;
         Source = source;
+        Text = new UiEditorText(source);
         ExpectedKind = expectedKind;
         Definition = definition;
         Diagnostics = Array.AsReadOnly((UiDiagnostic[])diagnostics.Clone());
         Format = format;
         Inspection = inspection;
+        Analysis = new UiEditorAnalysis(Text, syntax, bindings, language);
+        ResultId = revision.ToString(CultureInfo.InvariantCulture);
     }
 
     public string SourceName { get; }
     public long Version { get; }
     public string Source { get; }
+    internal UiEditorText Text { get; }
+    internal UiEditorAnalysis Analysis { get; }
+    internal string ResultId { get; }
     public UiDefinitionKind? ExpectedKind { get; }
     public UiBoundDefinition? Definition { get; }
     public IReadOnlyList<UiDiagnostic> Diagnostics { get; }
@@ -58,6 +72,8 @@ public sealed class UiEditorWorkspace
 
     private readonly object _sync = new();
     private readonly UiCompiler _compiler;
+    private readonly UiLanguageMetadata _language;
+    private long _revision;
     private readonly UiSourceFormatter _formatter = new();
     private readonly Dictionary<string, LinkedListNode<UiEditorDocumentSnapshot>> _documents =
         new(StringComparer.Ordinal);
@@ -70,7 +86,9 @@ public sealed class UiEditorWorkspace
     {
         if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
         if (maximumSourceLength <= 0) throw new ArgumentOutOfRangeException(nameof(maximumSourceLength));
+        catalog ??= UiSemanticCatalog.CreateFoundation();
         _compiler = new UiCompiler(catalog);
+        _language = UiLanguageMetadataExporter.Export(catalog);
         Capacity = capacity;
         MaximumSourceLength = maximumSourceLength;
     }
@@ -179,6 +197,28 @@ public sealed class UiEditorWorkspace
         }
     }
 
+    internal IReadOnlyList<UiEditorDocumentSnapshot> Snapshots()
+    {
+        lock (_sync) return _recency.OrderBy(snapshot => snapshot.SourceName, StringComparer.Ordinal).ToArray();
+    }
+
+    internal int Rebind(Func<string, UiBindingContext> resolveContext)
+    {
+        ArgumentNullException.ThrowIfNull(resolveContext);
+        IReadOnlyList<UiEditorDocumentSnapshot> originals = Snapshots();
+        UiEditorDocumentSnapshot[] candidates = originals.Select(original => CreateSnapshot(original.SourceName,
+            original.Version, original.Source, resolveContext(original.SourceName), original.ExpectedKind)).ToArray();
+        lock (_sync)
+        {
+            if (_documents.Count != originals.Count || originals.Any(original =>
+                !_documents.TryGetValue(original.SourceName, out var node) || !ReferenceEquals(node.Value, original)))
+                throw new InvalidOperationException("Documents changed while rebinding the workspace.");
+            foreach (UiEditorDocumentSnapshot candidate in candidates)
+                _documents[candidate.SourceName].Value = candidate;
+        }
+        return candidates.Length;
+    }
+
     private UiEditorDocumentSnapshot CreateSnapshot(
         string sourceName,
         long version,
@@ -186,7 +226,9 @@ public sealed class UiEditorWorkspace
         UiBindingContext bindingContext,
         UiDefinitionKind? expectedKind)
     {
-        UiCompilationResult compilation = _compiler.Compile(source, bindingContext, sourceName);
+        UiBindingContextMetadata bindings = UiBindingContextMetadataExporter.Export(bindingContext);
+        UiCompilationResult compilation = _compiler.Compile(source,
+            UiBindingContextMetadataWire.CreateBindingContext(bindings), sourceName);
         UiBoundDefinition? definition = compilation.Definition;
         UiDiagnostic[] diagnostics = compilation.Diagnostics.ToArray();
         if (definition != null && expectedKind is { } expected && definition.Kind != expected)
@@ -216,7 +258,11 @@ public sealed class UiEditorWorkspace
             definition,
             diagnostics,
             format,
-            inspection);
+            inspection,
+            compilation.Syntax,
+            bindings,
+            _language,
+            Interlocked.Increment(ref _revision));
     }
 
     private bool TryResolveExisting(

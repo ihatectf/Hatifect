@@ -127,7 +127,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
 {
     private readonly IUiSelectableCollectionSource? _selection;
     private readonly IUiSemanticCollectionSource _source;
-    private readonly IUiCollectionRuntimeMetadata? _runtimeMetadata;
+    private readonly IUiSemanticCollectionMetadata? _runtimeMetadata;
     private readonly long _sourceRevision;
     private readonly bool _mayHaveSupportingText;
     private readonly IReadOnlyDictionary<UiSymbolId, UiVisualResolution> _activeItemVisuals;
@@ -151,21 +151,21 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
             throw new InvalidOperationException($"Collection '{id}' returned a negative item count.");
         SemanticName = semanticName;
         _source = source;
-        _runtimeMetadata = source as IUiCollectionRuntimeMetadata;
+        _runtimeMetadata = source as IUiSemanticCollectionMetadata;
         Count = count;
         Recipe = recipe ?? throw new ArgumentNullException(nameof(recipe));
         if (Recipe.IsAdaptive && _runtimeMetadata == null)
             throw new InvalidOperationException(
-                $"Adaptive collection '{id}' requires the provisional stable-ID lookup capability. " +
-                "Use a built-in Hatifect semantic collection source until the public source contract is frozen.");
+                $"Adaptive collection '{id}' requires the stable-ID lookup capability IUiSemanticCollectionMetadata.");
         _sourceRevision = _runtimeMetadata?.Revision ?? 0;
+        if (_sourceRevision < 0) throw new InvalidOperationException($"Collection '{id}' returned a negative revision.");
         _mayHaveSupportingText = !Recipe.IsNavigation && (_runtimeMetadata?.HasSupportingText ?? true);
         SelectedItemVisual = selectedItemVisual ?? throw new ArgumentNullException(nameof(selectedItemVisual));
         _selection = source as IUiSelectableCollectionSource;
         SelectedItemId = _selection?.SelectedItemId;
         if (SelectedItemId is { } selected &&
             _runtimeMetadata != null &&
-            !_runtimeMetadata.TryGetIndex(selected, out _))
+            !TryGetIndex(selected, -1, out _))
             throw new InvalidOperationException(
                 $"Collection '{id}' selected item '{selected}' is absent from its semantic snapshot.");
         _activeItemVisuals = new ReadOnlyDictionary<UiSymbolId, UiVisualResolution>(
@@ -195,7 +195,12 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
 
     public bool TryGetIndex(UiSymbolId item, int hint, out int index)
     {
-        if (_runtimeMetadata != null && _runtimeMetadata.TryGetIndex(item, out index)) return true;
+        if (_runtimeMetadata != null && _runtimeMetadata.TryGetIndex(item, out index))
+        {
+            if ((uint)index >= (uint)Count || ItemAt(index).Id != item)
+                throw new InvalidOperationException($"Collection '{Id}' returned an invalid stable-ID lookup for '{item}'.");
+            return true;
+        }
         if ((uint)hint < (uint)Count && ItemAt(hint).Id == item)
         {
             index = hint;
@@ -244,7 +249,8 @@ internal sealed class UiRouteButtonSceneNode : UiSceneNode
         UiVisualResolution visual,
         string label,
         UiSymbolId route,
-        bool isCurrent = false)
+        bool isCurrent = false,
+        UiSymbolId? icon = null)
         : base(id, UiSceneNodeKind.RouteButton, role, visual)
     {
         if (string.IsNullOrWhiteSpace(label)) throw new ArgumentException("A route button label is required.", nameof(label));
@@ -252,11 +258,15 @@ internal sealed class UiRouteButtonSceneNode : UiSceneNode
         Label = label;
         Route = route;
         IsCurrent = isCurrent;
+        Icon = icon;
     }
 
     public string Label { get; }
     public UiSymbolId Route { get; }
     public bool IsCurrent { get; }
+    public UiSymbolId? Icon { get; }
+    internal const float IconExtent = 20;
+    internal float IconSpace => Icon == null ? 0 : IconExtent + 4;
 }
 
 internal sealed class UiTextInputSceneNode : UiSceneNode

@@ -9,7 +9,7 @@
     "Files": [
       {
         "Path": "State/UiSemanticFormSource.cs",
-        "Sha256": "bc25dbb5518b3f93726081dd799e13cb99145cab1600c748ed34f723f041c87c"
+        "Sha256": "57c911c165c1e7692e76dd5e62f456a55c6b5f1dea11ebcf3933aac72acad5b3"
       },
       {
         "Path": "UiExperienceBuilder.cs",
@@ -19,7 +19,7 @@
   },
   "SemanticSurface": {
     "Assembly": "Hatifect.UI.Experience",
-    "ContractVersion": "1.0.0-alpha.30",
+    "ContractVersion": "1.0.0-alpha.31",
     "ApiVersion": 1,
     "Policy": "consumer-source-freeze",
     "PublicTypes": [

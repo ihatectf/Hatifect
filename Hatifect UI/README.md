@@ -2,14 +2,20 @@
 
 Семантический UI framework: Language → Semantics → Experience, затем Planning и Runtime; Stardew host связывает framework с игрой. Tooling, Tooling.Server и DevTools предоставляют диагностику и инспекцию.
 
-Consumer описывает смысл интерфейса и действия. Framework владеет layout, visual policy, вводом и rendering. Runtime Terminal hosts — текущая реализация семантических поверхностей.
+Consumer описывает смысл интерфейса и действия. Framework владеет layout, visual policy, вводом и rendering. Доступны standalone Window/Modal/Fullscreen/HUD, Terminal и active-menu overlay.
 
 Публичная игровая граница — `IUiSemanticSurfaceApi` v1 из `Hatifect.UI.Experience`. `PUBLIC_API_BASELINE.json` фиксирует её исходный контракт. CA Overlay использует точно версионированные NuGet packages; корневой `tools/hatifect-pack-ui` собирает feed из текущих исходников. Runtime-модуль поставляет восемь UI DLL; Tooling.Server используется как инструмент разработки.
 
-Пакеты `1.0.0-alpha.30` открывают authoring форм через `UiFormState` и `UiSemanticFormField`. Consumer передаёт поля, источники значений и необязательный источник сообщения валидации; пустое сообщение означает допустимое значение. Framework показывает ошибки и включает их в accessibility tree. Владелец формы вызывает `Dispose`, чтобы снять подписки; источники значений остаются собственностью consumer.
+Аддитивный SDK: [hosts, typed forms, resources/themes, adaptive sources и live reload](../docs/UI_SEMANTIC_SDK.md). Новые возможности доступны через отдельные optional interfaces; исходный контракт v1 сохранён.
 
-Для локализованных названий используй overloads `UiExperienceBuilder` с явным `UiSymbolId` и отдельным `displayName`, в том числе для `Configure`, `Select`, `Monitor` и `Actions`. ID сохраняется между языками и обновлениями, а отображаемое имя может содержать пробелы. Повторный ID в одной experience отклоняется при построении. Старые overloads с одним именем сохраняют прежнее правило формирования ID из имени.
+[Редактор и language server](../docs/UI_AUTHORING.md): incremental sync, completion, hover, outline/folding, semantic tokens, references, definition, проверяемые quick fixes и workspace diagnostics. `UiBindingContextJson.Export` передаёт реальные bindings из Experience, а `tools/hatifect-ui-language-server` запускает stdio-сервер.
+
+`UiSemanticFormField` также принимает внешний `ValidationMessage`: непустое сообщение блокирует `UiFormState.Apply`, отображается и входит в accessibility tree. Типизированные Text/Number/Toggle/Choice и `Apply/Reset` сохраняются. Владелец формы вызывает `Dispose`; при ошибке снятия подписки повторный `Dispose` завершает очистку, а закрытая форма уже не уведомляет observers. Источники остаются собственностью consumer.
+
+Overloads `UiExperienceBuilder` с явным `UiSymbolId` сохраняют ID элемента при смене локализованного имени, включая пробелы. Старые overloads сохраняют прежнее формирование ID из имени. Полный перенос независимого ID через compiler binding и metadata реализуется в U01; одного builder overload для этого недостаточно.
 
 Из корня репозитория: `./tools/hatifect-test ui`, затем `./tools/hatifect-check --platform` для изменений Stardew host. Бюджеты реальных кадров находятся в `PERFORMANCE_BUDGETS.json`, требования к runtime-отчёту — в `HOST_ACCEPTANCE_REQUIREMENTS.json`. Статические тесты не заменяют измерения в игре.
 
 Общие границы: [архитектура](../ARCHITECTURE.md). Команды: [разработка](../docs/DEVELOPMENT.md).
+
+[Roadmap UI и Flowline](../docs/ROADMAP.md) описывает semantic-v2, Quick/View/Exact authoring, общие компоненты, transactional reload и editor/preview. Это план развития текущего framework; перечисленные будущие API не считаются уже опубликованными.
