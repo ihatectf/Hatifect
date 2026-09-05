@@ -34,3 +34,5 @@
 | `dev/Hatifect.TestHarness/schemas/` | Форматы запросов, сценариев и результатов runtime harness |
 
 Flowline пока не подключён к реальным игровым inventory adapters. Сборка проекта не означает готовность перевозок или UI Flowline к использованию игроком. Текущее состояние и границы описаны в [архитектуре](ARCHITECTURE.md), команды и процесс интеграции — в [руководстве разработки](docs/DEVELOPMENT.md).
+
+[Полная roadmap](docs/ROADMAP.md) связывает модернизацию UI, развитие Flowline и CA: вехи, зависимости, владельцы, критерии готовности и выбор reasoning. Ближайший сквозной результат — минимальный semantic-v2, application boundary Flowline и работающий read-only экран; реальные inventory и полный authoring/tooling развиваются по отдельным зависимостям.
