@@ -744,6 +744,7 @@ def _minimal_environment(request: dict[str, Any], metadata: dict[str, Any]) -> d
             "SMAPI_USE_CURRENT_SHELL": "true",
             "HATIFECT_TEST_MODE": "1",
             "HATIFECT_TEST_AUTOMATED": "1",
+            "HATIFECT_TEST_BACKGROUND_PROGRESS": "1",
             "HATIFECT_TEST_PROTOCOL_VERSION": str(HARNESS_PROTOCOL_VERSION),
             "HATIFECT_TEST_SCENARIO": request["scenarioId"],
             "HATIFECT_TEST_ISOLATED_ROOT": str(isolated),

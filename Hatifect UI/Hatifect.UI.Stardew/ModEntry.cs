@@ -3,6 +3,7 @@ using System.Linq;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using Hatifect.TestHarness;
 using Hatifect.UI.Stardew.Dogfood;
 
 namespace Hatifect.UI.Stardew;
@@ -14,9 +15,11 @@ public sealed class ModEntry : Mod
 {
     private UiSemanticDogfoodCompositionRoot? _semanticDogfood;
     private UiAutomatedAcceptanceController? _automatedAcceptance;
+    private AutomatedBackgroundProgress? _automatedBackgroundProgress;
 
     public override void Entry(IModHelper helper)
     {
+        _automatedBackgroundProgress = AutomatedBackgroundProgress.TryAttach(helper);
         UiStardewAcceptanceRecorder.Shared.Configure(helper, Monitor, ModManifest.Version.ToString());
         helper.ConsoleCommands.Add(
             "hatifect_ui_acceptance",
@@ -36,6 +39,21 @@ public sealed class ModEntry : Mod
 
     public override object GetApi()
         => new UiStardewApiBridge(Helper);
+
+    protected override void Dispose(bool disposing)
+    {
+        try
+        {
+            if (disposing)
+            {
+                _automatedBackgroundProgress?.Dispose();
+            }
+        }
+        finally
+        {
+            base.Dispose(disposing);
+        }
+    }
 
     private void OnAcceptanceCommand(string command, string[] args)
         => UiStardewAcceptanceRecorder.Shared.ExecuteCommand(args);
