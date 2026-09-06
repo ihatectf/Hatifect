@@ -146,6 +146,39 @@ class DirectRuntimeTests(unittest.TestCase):
                         self.fail('Linked configuration must not be changed')
                 self.assertEqual(target.read_bytes(), original)
 
+    def test_background_options_reject_linked_evidence_before_copying_originals(self) -> None:
+        for component in ('diagnostics', 'runtime-options-originals'):
+            with self.subTest(component=component), _RequestFixture() as fixture:
+                root = Path(fixture.request['isolatedRoot']) / 'config' / 'StardewValley'
+                root.mkdir(parents=True)
+                originals = {'startup_preferences': b'<StartupPreferences/>', 'default_options': b'<Options/>'}
+                for name, content in originals.items():
+                    (root / name).write_bytes(content)
+                outside = Path(fixture.temporary.name) / 'outside-evidence'
+                outside.mkdir(mode=0o750)
+                artifact = Path(fixture.request['artifactDirectory'])
+                if component == 'diagnostics':
+                    link = artifact / component
+                else:
+                    diagnostics = artifact / 'diagnostics'
+                    diagnostics.mkdir()
+                    link = diagnostics / component
+                link.symlink_to(outside, target_is_directory=True)
+                error = None
+                entered = False
+                try:
+                    with DIRECT_RUNTIME._background_game_options(fixture.request):
+                        entered = True
+                except DIRECT_RUNTIME.DirectRuntimeError as caught:
+                    error = caught
+
+                self.assertEqual(list(outside.iterdir()), [], 'Original options must stay inside request evidence')
+                self.assertEqual(outside.stat().st_mode & 0o777, 0o750)
+                self.assertEqual({name: (root / name).read_bytes() for name in originals}, originals)
+                self.assertIsInstance(error, DIRECT_RUNTIME.DirectRuntimeError)
+                self.assertFalse(entered, 'Linked evidence must be rejected before running the owned process')
+                self.assertTrue(link.is_symlink())
+
     def test_crash_options_failure_is_not_misreported_as_product_crash_evidence(self) -> None:
         with _RequestFixture() as fixture:
             fixture.request['scenarioId'] = 'flow.chest.crash-after-save'
