@@ -1,7 +1,7 @@
 {
   "Name": "Hatifect UI",
   "Author": "ihatectf",
-  "Version": "1.0.0-alpha.34",
+  "Version": "1.0.0-alpha.35",
   "Description": "Semantic-first UI framework and Stardew/SMAPI adapter for Hatifect modules.",
   "UniqueID": "Hatifect.UI",
   "EntryDll": "Hatifect.UI.Stardew.dll",
