@@ -73,9 +73,14 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
         _slot.PollRetirement();
         if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
-        base.update(time);
-        SynchronizeViewport();
-        CompleteInput();
+        _host?.Session.PumpActions();
+        _slot.PollRetirement();
+        if (_slot.CanDispatch)
+        {
+            base.update(time);
+            SynchronizeViewport();
+            CompleteInput();
+        }
         sample.Complete();
     }
 
@@ -231,6 +236,7 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
 
     private void CleanupSession()
     {
+        _host?.Session.Root.RequireOwner();
         // Foreign-screen disposal must disable drawing/input before releasing the host.
         _cleaned = true;
         _slot.Retire();
@@ -239,6 +245,8 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
         var failures = new List<Exception>();
         try
         {
+            try { _host?.Session.Deactivate(); }
+            catch (Exception error) { failures.Add(error); }
             try { _keyboard.Dispose(); }
             catch (Exception error) { failures.Add(error); }
             try { UiStardewAcceptanceRecorder.Shared.UnregisterSemanticSurface(this); }

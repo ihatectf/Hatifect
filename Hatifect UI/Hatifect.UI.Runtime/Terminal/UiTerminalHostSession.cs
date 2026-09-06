@@ -179,6 +179,7 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
 
     public void Dispose()
     {
+        Host.Root.RequireOwner();
         if (_disposed) return;
         _disposed = true;
         Host.Deactivate();

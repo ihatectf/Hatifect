@@ -142,10 +142,12 @@ internal sealed class UiHostActionBindings : IDisposable
     private readonly UiActionDispatcher _dispatcher = new(Guid.NewGuid(), Guid.NewGuid());
     private readonly Func<long> _acceptedVersion;
     private UiActionBindingMap _current = new();
+    private bool _disposed;
     internal UiHostActionBindings(Func<long> acceptedVersion) => _acceptedVersion = acceptedVersion;
     internal IUiActionResolver Current => _current;
     internal int Count => _current.Bindings.Count;
     internal void RequireOwner() => _dispatcher.RequireOwner();
+    internal void FenceRetirement() => _dispatcher.FenceRetirement();
 
     internal Prepared Prepare(UiScene scene)
     {
@@ -180,7 +182,8 @@ internal sealed class UiHostActionBindings : IDisposable
     public void Dispose()
     {
         _dispatcher.RequireOwner();
-        if (_dispatcher.IsDisposed) return;
+        if (_disposed) return;
+        _disposed = true;
         // Dispatcher retirement fences all siblings before any cancellation callback runs.
         _dispatcher.Dispose();
         var previous = _current;

@@ -22,9 +22,19 @@ internal sealed record UiHostUpdate(bool LayoutChanged, bool FrameChanged, UiSce
 internal sealed record UiHostScrollUpdate(bool Consumed, bool LayoutChanged, bool FrameChanged, float Offset);
 internal readonly record struct UiHostRuntimePerformanceSnapshot(long LayoutBuilds, long FrameBuilds);
 
+// Every scene acceptance path of a graph-owned runtime uses the same ownership transaction.
+// FenceAcceptedScene publishes inert membership only; EndSceneUpdate performs cancellation.
+internal interface IUiHostSceneOwner
+{
+    void BeginSceneUpdate();
+    void FenceAcceptedScene();
+    void EndSceneUpdate();
+}
+
 internal sealed class UiHostRuntimeSession
 {
     private readonly IUiPlatformBridge _platform;
+    private IUiHostSceneOwner? _sceneOwner;
     private readonly UiSceneLayoutEngine _layoutEngine;
     private readonly UiSceneRenderPlanner _renderPlanner = new();
     private readonly UiAccessibilitySnapshotBuilder _accessibilityBuilder = new();
@@ -40,6 +50,7 @@ internal sealed class UiHostRuntimeSession
     private bool _preparingUpdate;
     private bool _active = true;
     private bool _pumpingActions;
+    private bool _actionPresentationDirty;
     private readonly UiHostActionBindings _actions;
 
     public UiHostRuntimeSession(
@@ -55,8 +66,10 @@ internal sealed class UiHostRuntimeSession
         UiHostPlacementContext placement,
         IUiPlatformBridge platform,
         UiInteractionSnapshot? interaction = null,
-        Func<UiInteractionSnapshot, UiScene>? composeInteraction = null)
+        Func<UiInteractionSnapshot, UiScene>? composeInteraction = null,
+        IUiHostSceneOwner? sceneOwner = null)
     {
+        _sceneOwner = sceneOwner;
         _scene = scene ?? throw new ArgumentNullException(nameof(scene));
         _placement = placement ?? throw new ArgumentNullException(nameof(placement));
         _platform = platform ?? throw new ArgumentNullException(nameof(platform));
@@ -86,11 +99,18 @@ internal sealed class UiHostRuntimeSession
     internal UiHostUpdate? LastUpdate { get; private set; }
     internal bool IsActive => _active;
     internal long AcceptedVersion { get; private set; }
-    internal void Deactivate()
+    internal void RequireOwner() => _actions.RequireOwner();
+    // No callbacks: portal ownership can fence a whole tree before cancelling any operation.
+    internal void FenceRetirement()
     {
         _actions.RequireOwner();
-        if (!_active) return;
         _active = false;
+        _sceneOwner = null;
+        _actions.FenceRetirement();
+    }
+    internal void Deactivate()
+    {
+        FenceRetirement();
         _actions.Dispose();
     }
     internal int ActionCount => _actions.Count;
@@ -106,11 +126,24 @@ internal sealed class UiHostRuntimeSession
             bool changed = _actions.Pump();
             if (!_active) return changed;
             changed |= _actions.RefreshAvailability();
-            if (!_active || !changed) return changed;
-            Interactions.Reconcile(_scene, Layout);
-            _frame = BuildFrame(_scene);
-            Accessibility = BuildAccessibility(_scene, Layout, Interactions.Snapshot);
-            return true;
+            _actionPresentationDirty |= changed;
+            if (!_active || !_actionPresentationDirty) return changed;
+            _preparingUpdate = true;
+            try
+            {
+                // Availability/execution may already have advanced. Retain the presentation
+                // debt until all callback-bearing preparation succeeds, just like scene Update.
+                UiInteractionSession interaction = Interactions.PrepareReconcile(_scene, Layout);
+                UiAccessibilitySnapshot accessibility = BuildAccessibility(_scene, Layout, interaction.Snapshot);
+                UiRenderFrame frame = BuildFrame(_scene, Layout, interaction.Snapshot);
+                EnsureActive();
+                Interactions.CommitReconcile(interaction);
+                _frame = frame;
+                Accessibility = accessibility;
+                _actionPresentationDirty = false;
+                return true;
+            }
+            finally { _preparingUpdate = false; }
         }
         finally { _pumpingActions = false; }
     }
@@ -151,6 +184,8 @@ internal sealed class UiHostRuntimeSession
         EnsureNotPreparing();
         ArgumentNullException.ThrowIfNull(next);
         ArgumentNullException.ThrowIfNull(placement);
+        IUiHostSceneOwner? sceneOwner = _sceneOwner;
+        sceneOwner?.BeginSceneUpdate();
         _preparingUpdate = true;
         bool attemptedLayout = false;
         try
@@ -163,7 +198,7 @@ internal sealed class UiHostRuntimeSession
             UiInteractionSession interaction = Interactions.PrepareReconcile(next, layout, actions.Resolver);
             EnsureActive();
             UiAccessibilitySnapshot accessibility = BuildAccessibility(next, layout, interaction.Snapshot, actions.Resolver);
-            bool frameChanged = layoutChanged || diff.RequiresRender || actions.RequiresRender ||
+            bool frameChanged = _actionPresentationDirty || layoutChanged || diff.RequiresRender || actions.RequiresRender ||
                                 interaction.Snapshot != Interactions.Snapshot;
             UiRenderFrame frame = frameChanged ? BuildFrame(next, layout, interaction.Snapshot, actions.Map) : _frame;
             UiCollectionViewportState collections = _collections;
@@ -188,6 +223,8 @@ internal sealed class UiHostRuntimeSession
             _placement = placement;
             LastUpdate = update;
             AcceptedVersion++;
+            _actionPresentationDirty = false;
+            sceneOwner?.FenceAcceptedScene();
             return update;
         }
         catch
@@ -195,7 +232,11 @@ internal sealed class UiHostRuntimeSession
             if (attemptedLayout) _layoutEngine.RestoreCollectionTransitions(_scene);
             throw;
         }
-        finally { _preparingUpdate = false; }
+        finally
+        {
+            try { sceneOwner?.EndSceneUpdate(); }
+            finally { _preparingUpdate = false; }
+        }
     }
 
     public UiHostScrollUpdate ScrollCollection(UiSymbolId collection, float delta)
