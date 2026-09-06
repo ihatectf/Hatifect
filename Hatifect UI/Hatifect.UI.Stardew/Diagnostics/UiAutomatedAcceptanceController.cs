@@ -95,6 +95,11 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             "semantic.input.native.text",
             "semantic.input.native.backspace"
         }, includeInAggregate: false),
+        new("semantic.input.retired-overlay", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.RetiredOverlayInput, true, new[]
+        {
+            "semantic.input.retired-overlay.keyboard",
+            "semantic.input.retired-overlay.retry"
+        }, includeInAggregate: false),
         new("semantic.actions.pump", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.ActionPump, true, new[]
         {
             "semantic.actions.pump.menu",
@@ -583,6 +588,9 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             case AcceptanceScenarioExecution.LocaleScaleTheme:
                 BeginVisualMatrix();
                 return true;
+            case AcceptanceScenarioExecution.RetiredOverlayInput:
+                ExecuteRetiredOverlayInput();
+                return false;
             case AcceptanceScenarioExecution.ActionPump:
                 BeginActionPump();
                 return true;
@@ -1215,6 +1223,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             },
             visualMatrix = _visualCaptures.ToArray(),
             visualMatrixRestored = _visualSettingsRestored,
+            retiredOverlayInput = _retiredOverlayInput,
             actionPump = new { completed = _actionPumpCompleted, ownerThread = _actionOwnerThread, ticks = _actionTicks, probes = _actionProbes.ToArray() },
             nativeInput = new { completed = _nativeInputCompleted, expectedText = _nativeExpectedText, lastObservation = _nativeLastObservation, captures = _nativeCaptures.ToArray() },
             terminalError = _terminalFailure == null ? null : new
@@ -1247,6 +1256,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         Input,
         NativeInput,
         ActionPump,
+        RetiredOverlayInput,
         LocaleScaleTheme,
         Performance,
         Contribution

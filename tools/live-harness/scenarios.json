@@ -461,6 +461,18 @@
       }
     },
     {
+      "id": "semantic.input.retired-overlay",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.input.retired-overlay.keyboard",
+        "semantic.input.retired-overlay.retry"
+      ],
+      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+    },
+    {
       "id": "semantic.actions.pump",
       "kind": "ui",
       "requiresSave": true,
