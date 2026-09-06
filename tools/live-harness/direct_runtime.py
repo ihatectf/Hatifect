@@ -743,10 +743,7 @@ def _complete_save_lifecycle(
             Path(metadata["saveProvisionerExecutable"]),
         )
         fixture, _ = provisioner.validate_fixture(isolated, smapi)
-        copies = [(Path(request["savePath"]), request["requestId"])]
-        if request["scenarioId"] == "flow.save.isolation":
-            secondary_id = provisioner.flow_secondary_run_id(request["requestId"])
-            copies.append((Path(request["savePath"]).parent / ("HatifectHarness_" + secondary_id.replace("-", "")), secondary_id))
+        copies = _request_save_copies(request, provisioner)
         _cleanup_owned_copies(provisioner, isolated, fixture["runtimeId"], copies, scenario_id=request["scenarioId"])
         evidence = {
             "operation": "working-copy-cleanup",
@@ -756,8 +753,8 @@ def _complete_save_lifecycle(
             "fixtureRuntimeId": fixture["runtimeId"],
             "completedAtUtc": _timestamp(),
         }
-        if request["scenarioId"] == "flow.save.isolation":
-            evidence["workingCopies"] = [{"runId": run_id, "savePath": str(path), "status": "PASS"} for path, run_id in copies]
+        if request["scenarioId"] in ("flow.save.isolation", "flow.chest.isolation"):
+            evidence["workingCopies"] = [{"runId": run_id, "savePath": str(path), "role": role, "status": "PASS"} for path, run_id, role in copies]
     elif request["scenarioId"] == "save.bootstrap" and process_succeeded and report_exists:
         provisioner = _load_module(
             "hatifect_direct_runtime_save_lifecycle",
@@ -791,35 +788,51 @@ def _product_runtime_was_reached(artifact: Path) -> bool:
     return "[SMAPI] Mods loaded and ready!" in log or "\n[Hatifect" in log
 
 
-def _cleanup_owned_copies(provisioner, isolated: Path, runtime_id: str, copies: list[tuple[Path, str]], *, remaining_only: bool = False, scenario_id: str = "") -> None:
+def _request_save_copies(request: dict[str, Any], provisioner) -> list[tuple[Path, str, str]]:
+    primary = Path(request["savePath"])
+    copies = [(primary, request["requestId"], "primary")]
+    scenario = request["scenarioId"]
+    if scenario in ("flow.save.isolation", "flow.chest.isolation"):
+        secondary_id = provisioner.flow_secondary_run_id(request["requestId"])
+        role = "secondary" if scenario == "flow.chest.isolation" else "primary"
+        secondary = primary.parent / provisioner._working_name(secondary_id, scenario, role=role)
+        copies.append((secondary, secondary_id, role))
+    return copies
+
+
+def _cleanup_owned_copies(provisioner, isolated: Path, runtime_id: str, copies: list[tuple[Path, str, str]], *, remaining_only: bool = False, scenario_id: str = "") -> None:
     errors: list[str] = []
-    for path, run_id in copies:
+    for path, run_id, role in copies:
         if remaining_only and not path.exists() and not path.is_symlink():
             continue
         try:
-            provisioner.cleanup_working_copy(isolated, path, runtime_id, run_id, scenario_id)
+            provisioner.cleanup_working_copy(isolated, path, runtime_id, run_id, scenario_id, role=role)
         except (OSError, ValueError) as error:
             errors.append(f"{run_id}: {error}")
     if errors:
         raise provisioner.SaveProvisioningError("HARNESS-SAVE-CLEANUP", "; ".join(errors))
 
 
-def _prepare_request_saves(request: dict[str, Any], metadata: dict[str, Any]) -> tuple[Any, str, list[tuple[Path, str]]] | None:
+def _prepare_request_saves(request: dict[str, Any], metadata: dict[str, Any]) -> tuple[Any, str, list[tuple[Path, str, str]]] | None:
     if request["savePath"] is None:
         return None
     provisioner = _load_module("hatifect_direct_runtime_save_preparer", Path(metadata["saveProvisionerExecutable"]))
     isolated = Path(request["isolatedRoot"])
     smapi = Path(metadata["smapiPath"])
     fixture, _ = provisioner.validate_fixture(isolated, smapi)
-    owned: list[tuple[Path, str]] = []
+    expected = _request_save_copies(request, provisioner)
+    owned: list[tuple[Path, str, str]] = []
     try:
         prepared = provisioner.prepare_working_copy(isolated, smapi, request["requestId"], request["scenarioId"])
-        owned.append((prepared, request["requestId"]))
+        owned.append((prepared, request["requestId"], "primary"))
         if prepared != Path(request["savePath"]):
             raise DirectRuntimeError("Provisioned save path differs from the accepted request.")
-        if request["scenarioId"] == "flow.save.isolation":
-            secondary = provisioner.prepare_flow_secondary(isolated, smapi, request["requestId"])
-            owned.append((secondary, provisioner.flow_secondary_run_id(request["requestId"])))
+        if len(expected) == 2:
+            expected_path, secondary_id, role = expected[1]
+            secondary = provisioner.prepare_flow_secondary(isolated, smapi, request["requestId"], request["scenarioId"])
+            owned.append((secondary, secondary_id, role))
+            if secondary != expected_path:
+                raise DirectRuntimeError("Provisioned secondary differs from this scenario's derived save.")
     except BaseException as error:
         try:
             _cleanup_owned_copies(provisioner, isolated, fixture["runtimeId"], owned, scenario_id=request["scenarioId"])
@@ -843,7 +856,7 @@ def _prepared_request_saves(request: dict[str, Any], metadata: dict[str, Any]):
 def _acceptance_report_source(isolated: Path, scenario_id: str) -> Path:
     # Fixed ownership for the allowlisted asynchronous Flow lifecycle scenario.
     # The request cannot supply an arbitrary report path or module name.
-    module = "Hatifect Flow" if scenario_id in {"flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip", "flow.chest.cancellation", "flow.chest.return", *SAVED_CRASH_BOUNDARIES} else "Hatifect UI"
+    module = "Hatifect Flow" if scenario_id in {"flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip", "flow.chest.cancellation", "flow.chest.return", "flow.chest.isolation", *SAVED_CRASH_BOUNDARIES} else "Hatifect UI"
     return isolated / "Mods" / "Hatifect" / module / ".acceptance" / "host-acceptance-report.json"
 
 

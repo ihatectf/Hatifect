@@ -687,6 +687,16 @@ class LiveHarnessTests(unittest.TestCase):
                          | {scenario + ".process-restart"})
         self._verify_each_flow_check_is_required(resolved)
 
+    def test_production_isolation_requires_every_world_session_and_file_check(self) -> None:
+        scenario = "flow.chest.isolation"
+        resolved = HARNESS.resolve_scenario(self.scenarios, scenario, "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.Flow"])
+        self.assertNotIn(scenario, self.scenarios["all"]["includes"])
+        self.assertTrue({scenario + ".save-isolation", scenario + ".session-fencing", scenario + ".inactive-files",
+                         scenario + ".item-fidelity", scenario + ".no-duplication"}.issubset(resolved["checks"]))
+        self._verify_each_flow_check_is_required(resolved)
+
     def _verify_each_flow_check_is_required(self, resolved) -> None:
         report = self._report(resolved)
         self.assertEqual(report["Scenarios"], [])

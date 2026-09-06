@@ -277,6 +277,34 @@
       }
     },
     {
+      "id": "flow.chest.isolation",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.isolation.loaded",
+        "flow.chest.isolation.custody",
+        "flow.chest.isolation.saving",
+        "flow.chest.isolation.saved",
+        "flow.chest.isolation.lifecycle",
+        "flow.chest.isolation.save-isolation",
+        "flow.chest.isolation.session-fencing",
+        "flow.chest.isolation.reload",
+        "flow.chest.isolation.delivery",
+        "flow.chest.isolation.item-fidelity",
+        "flow.chest.isolation.no-duplication",
+        "flow.chest.isolation.inactive-files"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
       "id": "semantic.lifecycle",
       "kind": "ui",
       "requiresSave": false,
