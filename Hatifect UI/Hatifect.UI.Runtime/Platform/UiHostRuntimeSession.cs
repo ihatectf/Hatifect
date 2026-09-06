@@ -100,6 +100,7 @@ internal sealed class UiHostRuntimeSession
     internal bool IsActive => _active;
     internal long AcceptedVersion { get; private set; }
     internal void RequireOwner() => _actions.RequireOwner();
+    internal void RequireSceneMutation() => EnsureNotPreparing();
     // No callbacks: portal ownership can fence a whole tree before cancelling any operation.
     internal void FenceRetirement()
     {
@@ -185,7 +186,7 @@ internal sealed class UiHostRuntimeSession
     // acceptOwnerState is framework-owned, callback-free metadata publication. All validation
     // belongs before this call; it runs after scene acceptance and before retirement callbacks.
     internal UiHostUpdate Update(UiScene next, UiHostPlacementContext placement,
-        bool renewActionGeneration, Action? acceptOwnerState)
+        bool renewActionGeneration, Action? acceptOwnerState, Action? validatePreparedOwner = null)
     {
         EnsureNotPreparing();
         ArgumentNullException.ThrowIfNull(next);
@@ -214,6 +215,7 @@ internal sealed class UiHostRuntimeSession
                 collections.Synchronize(layout);
             }
             var update = new UiHostUpdate(layoutChanged, frameChanged, diff);
+            validatePreparedOwner?.Invoke();
             EnsureActive();
 
             // All callback-bearing work succeeded. Publish the prepared state without calling
@@ -344,8 +346,14 @@ internal sealed class UiHostRuntimeSession
             LastUpdate = directUpdate;
             return directUpdate;
         }
+        long version = AcceptedVersion;
         UiScene next = compose(Interactions.Snapshot)
             ?? throw new InvalidOperationException("The interaction scene composer returned null.");
+        EnsureNotPreparing();
+        // Composition may accept a nested update. Keep that accepted frame and reject
+        // this obsolete result, including when the nested update reused the same model.
+        if (AcceptedVersion != version)
+            throw new InvalidOperationException("The accepted host changed during interaction composition.");
         return Update(next, _placement);
     }
 

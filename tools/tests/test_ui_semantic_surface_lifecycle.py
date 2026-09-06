@@ -125,7 +125,7 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
             )
             self.assertLess(
                 body.index("SynchronizeMenuContext()"),
-                body.index("SynchronizeState()"),
+                body.index("SynchronizeState(UiSemanticStardewMenu.CaptureViewport()"),
             )
 
     def test_hidden_surface_can_recompose_before_first_show(self) -> None:
@@ -135,7 +135,7 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
 
         for body in (refresh, synchronize):
             self.assertIn("_shown && !overlay.SynchronizeMenuContext()", body)
-            self.assertLess(body.index("_shown &&"), body.index("SynchronizeState()"))
+            self.assertLess(body.index("_shown &&"), body.index("SynchronizeState(UiSemanticStardewMenu.CaptureViewport()"))
 
     def test_automated_cancel_honors_consumed_surface_dismissal(self) -> None:
         source = OVERLAY_SESSION.read_text(encoding="utf-8")
@@ -207,7 +207,7 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
             surface_show.index("_overlay!.Show();"),
         )
         throw_if_unavailable = _method_body(service_source, "private void ThrowIfUnavailable()")
-        self.assertIn("if (_closedRaised)", throw_if_unavailable)
+        self.assertIn("if (_retireRequested || _closedRaised)", throw_if_unavailable)
         self.assertLess(
             surface_closed.index("_closedRaised = true;"),
             surface_closed.index("Closed?.Invoke();"),
@@ -220,7 +220,7 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
 
         self.assertIn("if (overlay?.Visible == true)", hide)
         self.assertIn("else\n            OnOverlayClosed();", hide)
-        self.assertIn("if (_closedRaised)", throw_if_unavailable)
+        self.assertIn("if (_retireRequested || _closedRaised)", throw_if_unavailable)
         for signature in (
             "public void Show()",
             "public void Configure(",

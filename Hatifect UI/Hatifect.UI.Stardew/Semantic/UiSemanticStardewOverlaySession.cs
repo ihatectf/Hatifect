@@ -35,6 +35,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     private readonly UiSemanticStardewOverlayRenderLayer _renderLayer;
     private readonly UiSemanticKeyboardSubscriberLease _keyboard;
     private readonly Action? _onClosed;
+    private readonly Action<RuntimeRect>? _synchronizeEnvironment;
     private UiSemanticStardewHost? _host;
     private IClickableMenu? _boundActiveMenu;
     private readonly UiSemanticOverlayEventBinding _events;
@@ -43,6 +44,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     private bool _retireRequested;
     private bool _disposing;
     private bool _hiding;
+    private bool _showing;
     private bool _disposed;
     private bool _pointerSynchronized;
     private int _pointerX;
@@ -55,7 +57,8 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
         UiSemanticStardewHost host,
         RuntimeRect viewport,
         UiSemanticStardewOverlayRenderLayer renderLayer,
-        Action? onClosed = null)
+        Action? onClosed = null,
+        Action<RuntimeRect>? synchronizeEnvironment = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _helper = helper ?? throw new ArgumentNullException(nameof(helper));
@@ -66,6 +69,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
             throw new ArgumentOutOfRangeException(nameof(renderLayer));
         _renderLayer = renderLayer;
         _onClosed = onClosed;
+        _synchronizeEnvironment = synchronizeEnvironment;
         _events = new UiSemanticOverlayEventBinding(
             helper.Events, Context.ScreenId, static () => Context.ScreenId, renderLayer,
             OnUpdateTicked, OnReturnedToTitle, OnButtonPressed, OnButtonReleased,
@@ -107,26 +111,37 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
                 "A closed semantic Stardew overlay session cannot be shown again.");
         }
         if (Visible) return;
+        if (_showing) throw new InvalidOperationException("The overlay is already preparing its first Show.");
         var sample = BeginAcceptanceSample();
         IClickableMenu? activeMenu = Game1.activeClickableMenu;
         if (_renderLayer == UiSemanticStardewOverlayRenderLayer.ActiveMenu && activeMenu == null)
             throw new InvalidOperationException("An active-menu semantic overlay requires an active menu to bind.");
 
+        _showing = true;
         _boundActiveMenu = activeMenu;
-        _viewport = UiSemanticStardewMenu.CaptureViewport();
-        Host.ReflowOverlay(_viewport);
-        Visible = true;
         try
         {
-            _events.Activate();
-            SynchronizePointer(force: true);
-            SyncTextInputOwnership();
-            sample.Complete();
+            ReflowIfViewportChanged();
+            ValidatePreparedOwner();
+            Visible = true;
+            try
+            {
+                _events.Activate();
+                ValidatePreparedOwner();
+                SynchronizePointer(force: true);
+                SyncTextInputOwnership();
+                sample.Complete();
+            }
+            catch
+            {
+                HideCore(notifyClosed: false);
+                throw;
+            }
         }
-        catch
+        finally
         {
-            HideCore(notifyClosed: false);
-            throw;
+            _showing = false;
+            if (!Visible) _boundActiveMenu = null;
         }
     }
 
@@ -146,6 +161,52 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
         SynchronizePointer(force: true);
         SyncTextInputOwnership();
         sample.Complete();
+    }
+
+    internal void Reload(Func<UiScene> prepareScene, Action acceptOwnerState)
+        => UpdatePrepared(prepareScene, _viewport, acceptOwnerState, renewActionGeneration: true);
+
+    internal void UpdatePrepared(Func<UiScene> prepareScene, RuntimeRect viewport, Action acceptOwnerState,
+        Action? validateOwner = null, bool renewActionGeneration = false)
+    {
+        ValidateOwner();
+        var sample = BeginAcceptanceSample();
+        Host.UpdateOverlayPrepared(() =>
+        {
+            UiScene scene = prepareScene();
+            ValidateOwner();
+            return scene;
+        }, viewport, () =>
+        {
+            _viewport = viewport;
+            acceptOwnerState();
+        }, ValidateOwner, renewActionGeneration);
+        // Cancellation may close this owner. Do not re-enter its retired input adapter.
+        if (!_disposed && !_retireRequested)
+        {
+            SynchronizePointer(force: true);
+            SyncTextInputOwnership();
+        }
+        sample.Complete();
+
+        void ValidateOwner()
+        {
+            validateOwner?.Invoke();
+            ValidatePreparedOwner();
+        }
+    }
+
+    private void ValidatePreparedOwner()
+    {
+        ThrowIfDisposed();
+        RequireCurrentScreen();
+        if ((Visible || _showing) && _renderLayer == UiSemanticStardewOverlayRenderLayer.ActiveMenu && !OwnsCurrentMenuContext())
+        {
+            // A not-yet-visible Show can retry against a new menu without publishing its
+            // candidate or installing subscriptions. An existing visible owner is retired.
+            if (Visible) RetireLostMenuContext();
+            throw new InvalidOperationException("The overlay lost its native menu owner during preparation.");
+        }
     }
 
     public UiPortalHandle Present(UiPortalRequest request)
@@ -362,9 +423,10 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
         var sample = BeginAcceptanceSample();
         // HUD occlusion by a native menu pauses input/draw, not owning-thread completions.
         Host.Session.PumpActions();
+        if (_retireRequested || !Visible) return;
+        bool reflowed = ReflowIfViewportChanged();
         if (CanRouteInput())
         {
-            bool reflowed = ReflowIfViewportChanged();
             SynchronizePointer(force: reflowed);
             SyncTextInputOwnership();
         }
@@ -481,6 +543,12 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     private bool ReflowIfViewportChanged()
     {
         RuntimeRect viewport = UiSemanticStardewMenu.CaptureViewport();
+        if (_synchronizeEnvironment != null)
+        {
+            long version = Host.Session.Root.AcceptedVersion;
+            _synchronizeEnvironment(viewport);
+            return !_retireRequested && !_disposed && Host.Session.Root.AcceptedVersion != version;
+        }
         if (viewport == _viewport) return false;
         Host.ReflowOverlay(viewport);
         _viewport = viewport;

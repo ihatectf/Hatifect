@@ -242,10 +242,10 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession, IUiHostScen
         => UpdateRoot(scene, placement, renewActionGeneration: false, acceptOwnerState: null);
 
     internal UiHostUpdate UpdateRoot(UiScene scene, UiHostPlacementContext placement,
-        bool renewActionGeneration, Action? acceptOwnerState)
+        bool renewActionGeneration, Action? acceptOwnerState, Action? validatePreparedOwner = null)
     {
         EnsureActive();
-        return Root.Update(scene, placement, renewActionGeneration, acceptOwnerState);
+        return Root.Update(scene, placement, renewActionGeneration, acceptOwnerState, validatePreparedOwner);
     }
 
     public UiHostUpdate UpdatePortal(UiSymbolId id, UiScene scene, UiHostPlacementContext placement)

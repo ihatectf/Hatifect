@@ -32,7 +32,9 @@ internal sealed class UiTerminalShellSession : IDisposable
     private readonly UiRegistrySnapshot _registry;
     private readonly UiExperienceActivator _activator;
     private readonly UiInvocationService _invocations;
-    private readonly UiSceneComposer _composer;
+    private UiSceneComposer _composer;
+    private UiTheme _theme;
+    private readonly UiSemanticCatalog? _catalog;
     private readonly Func<UiExperienceDescriptor, UiTerminalSectionAssets> _resolveAssets;
     private UiExperienceDefinition? _activeExperience;
     private long _commitVersion;
@@ -47,39 +49,54 @@ internal sealed class UiTerminalShellSession : IDisposable
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _activator = new UiExperienceActivator(registry);
         _invocations = new UiInvocationService(registry, _activator);
-        _composer = new UiSceneComposer(theme ?? throw new ArgumentNullException(nameof(theme)), registry, catalog);
+        _theme = theme ?? throw new ArgumentNullException(nameof(theme));
+        _catalog = catalog;
+        _composer = new UiSceneComposer(theme, registry, catalog);
         _resolveAssets = resolveAssets ?? (_ => DefaultAssets);
     }
 
-    internal void SetTheme(UiTheme theme) { EnsureActive(); _composer.SetTheme(theme); }
+    internal void SetTheme(UiTheme theme)
+    {
+        EnsureActive();
+        ArgumentNullException.ThrowIfNull(theme);
+        if (ReferenceEquals(theme, _theme)) return;
+        // Captured composers keep their own immutable theme even if a callback changes
+        // the accepted configuration. No candidate mutates a composer used by nested work.
+        _composer = new UiSceneComposer(theme, _registry, _catalog);
+        _theme = theme;
+        _commitVersion++;
+    }
 
     public UiSymbolId? ActiveSection { get; private set; }
 
     public UiTerminalFrame OpenFirstAvailable(
         UiPresentationProfile profile,
         string? locale = null,
-        UiInteractionSnapshot? interaction = null)
+        UiInteractionSnapshot? interaction = null,
+        UiEnvironment? environment = null)
     {
         EnsureActive();
+        locale = ValidateEnvironment(profile, locale, environment);
         UiExperienceDescriptor[] available = SnapshotAvailableSections();
         UiExperienceDescriptor? descriptor = available.FirstOrDefault();
         if (descriptor == null) throw new InvalidOperationException("No available Terminal section is registered.");
-        return Open(descriptor, profile, available, locale, interaction, commit: true);
+        return Open(descriptor, profile, available, locale, interaction, commit: true, environment);
     }
 
     public UiTerminalFrame Open(
         UiSymbolId section,
         UiPresentationProfile profile,
         string? locale = null,
-        UiInteractionSnapshot? interaction = null)
+        UiInteractionSnapshot? interaction = null,
+        UiEnvironment? environment = null)
     {
         EnsureActive();
-        ArgumentNullException.ThrowIfNull(profile);
+        locale = ValidateEnvironment(profile, locale, environment);
         UiExperienceDescriptor descriptor = TerminalDescriptor(section);
         UiExperienceDescriptor[] available = SnapshotAvailableSections();
         if (!available.Any(item => item.Id == section))
             throw new InvalidOperationException($"Terminal section '{section}' is currently unavailable.");
-        return Open(descriptor, profile, available, locale, interaction, commit: true);
+        return Open(descriptor, profile, available, locale, interaction, commit: true, environment);
     }
 
     private UiTerminalFrame Open(
@@ -88,12 +105,13 @@ internal sealed class UiTerminalShellSession : IDisposable
         IReadOnlyList<UiExperienceDescriptor> available,
         string? locale,
         UiInteractionSnapshot? interaction,
-        bool commit)
+        bool commit,
+        UiEnvironment? environment)
     {
         ArgumentNullException.ThrowIfNull(profile);
         UiTerminalSectionAssets assets = _resolveAssets(descriptor)
             ?? throw new InvalidOperationException($"Asset resolver for Terminal section '{descriptor.Id}' returned null.");
-        UiInvocationResult invocation = _invocations.InvokeKnownAvailable(descriptor, profile, assets.Presentation);
+        UiInvocationResult invocation = _invocations.InvokeKnownAvailable(descriptor, profile, assets.Presentation, environment);
         UiScene scene = _composer.Compose(
             invocation,
             assets.Visual,
@@ -108,26 +126,39 @@ internal sealed class UiTerminalShellSession : IDisposable
     public UiTerminalFrame Recompose(
         UiPresentationProfile profile,
         string? locale = null,
-        UiInteractionSnapshot? interaction = null)
+        UiInteractionSnapshot? interaction = null,
+        UiEnvironment? environment = null,
+        UiTheme? theme = null)
+        => RecomposeCore(profile, locale, interaction, null, environment, theme);
+
+    internal UiTerminalFrame RecomposeWithAssets(UiPresentationProfile profile,
+        UiTerminalSectionAssets assets, string? locale, UiInteractionSnapshot? interaction, UiEnvironment? environment = null,
+        UiTheme? theme = null)
+        => RecomposeCore(profile, locale, interaction, assets ?? throw new ArgumentNullException(nameof(assets)), environment, theme);
+
+    private UiTerminalFrame RecomposeCore(UiPresentationProfile profile, string? locale,
+        UiInteractionSnapshot? interaction, UiTerminalSectionAssets? candidateAssets, UiEnvironment? environment, UiTheme? theme)
     {
         EnsureActive();
-        ArgumentNullException.ThrowIfNull(profile);
+        locale = ValidateEnvironment(profile, locale, environment);
         if (ActiveSection is not { } section || _activeExperience is not { } experience)
             throw new InvalidOperationException("No Terminal section is active.");
         long commitVersion = _commitVersion;
+        UiSceneComposer composer = theme == null || ReferenceEquals(theme, _theme)
+            ? _composer : new UiSceneComposer(theme, _registry, _catalog);
         UiExperienceDescriptor descriptor = TerminalDescriptor(section);
         UiExperienceDescriptor[] available = SnapshotAvailableSections();
         EnsureRecompositionActive(commitVersion);
         if (!available.Any(item => item.Id == section))
             throw new InvalidOperationException($"Terminal section '{section}' is currently unavailable.");
-        UiTerminalSectionAssets assets = _resolveAssets(descriptor)
+        UiTerminalSectionAssets assets = candidateAssets ?? _resolveAssets(descriptor)
             ?? throw new InvalidOperationException($"Asset resolver for Terminal section '{section}' returned null.");
         EnsureRecompositionActive(commitVersion);
         // Input, environment and asset refresh keep the committed model. Only an explicit open
         // activates a new Transient instance, and only its accepted frame replaces that model.
         UiInvocationResult invocation = _invocations.ReplanKnownAvailable(
-            descriptor, experience, profile, assets.Presentation);
-        UiScene scene = _composer.Compose(invocation, assets.Visual, interaction, locale,
+            descriptor, experience, profile, assets.Presentation, environment);
+        UiScene scene = composer.Compose(invocation, assets.Visual, interaction, locale,
             terminalSections: available);
         EnsureRecompositionActive(commitVersion);
         return new UiTerminalFrame(section, invocation, scene);
@@ -138,30 +169,33 @@ internal sealed class UiTerminalShellSession : IDisposable
         UiPresentationProfile profile,
         out UiTerminalFrame? frame,
         string? locale = null,
-        UiInteractionSnapshot? interaction = null)
-        => TryFollowCore(update, profile, out frame, locale, interaction, commit: true);
+        UiInteractionSnapshot? interaction = null,
+        UiEnvironment? environment = null)
+        => TryFollowCore(update, profile, out frame, locale, interaction, commit: true, environment);
 
     internal bool TryComposeFollow(
         UiInteractionUpdate update,
         UiPresentationProfile profile,
         out UiTerminalFrame? frame,
         string? locale = null,
-        UiInteractionSnapshot? interaction = null)
-        => TryFollowCore(update, profile, out frame, locale, interaction, commit: false);
+        UiInteractionSnapshot? interaction = null,
+        UiEnvironment? environment = null)
+        => TryFollowCore(update, profile, out frame, locale, interaction, commit: false, environment);
 
     internal UiTerminalFrame ComposeOpen(
         UiSymbolId section,
         UiPresentationProfile profile,
         string? locale = null,
-        UiInteractionSnapshot? interaction = null)
+        UiInteractionSnapshot? interaction = null,
+        UiEnvironment? environment = null)
     {
         EnsureActive();
-        ArgumentNullException.ThrowIfNull(profile);
+        locale = ValidateEnvironment(profile, locale, environment);
         UiExperienceDescriptor descriptor = TerminalDescriptor(section);
         UiExperienceDescriptor[] available = SnapshotAvailableSections();
         if (!available.Any(item => item.Id == section))
             throw new InvalidOperationException($"Terminal section '{section}' is currently unavailable.");
-        return Open(descriptor, profile, available, locale, interaction, commit: false);
+        return Open(descriptor, profile, available, locale, interaction, commit: false, environment);
     }
 
     internal bool Evict(UiSymbolId section)
@@ -198,10 +232,12 @@ internal sealed class UiTerminalShellSession : IDisposable
         out UiTerminalFrame? frame,
         string? locale,
         UiInteractionSnapshot? interaction,
-        bool commit)
+        bool commit,
+        UiEnvironment? environment)
     {
         EnsureActive();
         ArgumentNullException.ThrowIfNull(update);
+        locale = ValidateEnvironment(profile, locale, environment);
         if (update.Route is not { } route ||
             !_registry.TryGetExperience(route, out UiExperienceDescriptor? descriptor) ||
             descriptor?.Terminal == null)
@@ -217,8 +253,19 @@ internal sealed class UiTerminalShellSession : IDisposable
             frame = null;
             return false;
         }
-        frame = Open(selected, profile, available, locale, interaction, commit);
+        frame = Open(selected, profile, available, locale, interaction, commit, environment);
         return true;
+    }
+
+    internal static string? ValidateEnvironment(UiPresentationProfile profile, string? locale, UiEnvironment? environment)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        if (environment == null) return locale;
+        if (profile.Id != UiPresentationProfiles.Resolve(environment).Id)
+            throw new ArgumentException("The Terminal profile contradicts its captured environment.", nameof(profile));
+        if (locale != null && !StringComparer.Ordinal.Equals(locale, environment.Locale))
+            throw new ArgumentException("The Terminal locale contradicts its captured environment.", nameof(locale));
+        return environment.Locale;
     }
 
     public void Dispose()

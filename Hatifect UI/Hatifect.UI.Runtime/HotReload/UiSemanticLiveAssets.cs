@@ -5,23 +5,21 @@ using Hatifect.UI.Semantics;
 
 namespace Hatifect.UI.Runtime.HotReload;
 
-/// <summary>Compiles both documents before publishing, then validates/applies with rollback on host rejection.</summary>
+/// <summary>Compiles both documents privately; the owning host publishes assets at scene acceptance.</summary>
 internal sealed class UiSemanticLiveAssets
 {
     internal const int MaximumDocumentBytes = 1024 * 1024;
     private readonly Dictionary<UiSymbolId, Entry> _entries;
     private readonly UiCompiler _compiler = new(UiSemanticCatalog.CreateFoundation());
-    private readonly Action<UiSymbolId, UiTerminalSectionAssets> _validate;
-    private readonly Action<UiSymbolId> _apply;
+    private readonly Action<UiSymbolId, UiTerminalSectionAssets, Action> _apply;
     private bool _applying;
     private long _version;
 
     internal UiSemanticLiveAssets(IEnumerable<UiExperienceDefinition> experiences,
-        Action<UiSymbolId, UiTerminalSectionAssets> validate, Action<UiSymbolId> apply)
+        Action<UiSymbolId, UiTerminalSectionAssets, Action> apply)
     {
         _entries = experiences.ToDictionary(experience => experience.Id, experience => new Entry(experience));
-        _validate = validate;
-        _apply = apply;
+        _apply = apply ?? throw new ArgumentNullException(nameof(apply));
     }
 
     internal UiTerminalSectionAssets For(UiSymbolId experience) => Find(experience).Assets;
@@ -54,27 +52,34 @@ internal sealed class UiSemanticLiveAssets
         var candidate = new UiTerminalSectionAssets(Compile<UiPresentationDefinition>(presentation, "presentation"),
             Compile<UiVisualDefinition>(visual, "visual"));
         if (!valid) return new(experience, false, false, _version, diagnostics.AsReadOnly());
-        UiTerminalSectionAssets previous = entry.Assets;
         _applying = true;
-        bool staged = false;
+        bool accepted = false;
+        bool accepting = true;
+        int ownerThread = Environment.CurrentManagedThreadId;
         try
         {
-            _validate(experience, candidate);
+            // The callback is private framework metadata publication, invoked exactly once
+            // after scene acceptance and before cancellation. No candidate is staged in For.
+            _apply(experience, candidate, Accept);
+            if (!accepted) throw new InvalidOperationException("The host did not accept the live asset candidate.");
+            return new(experience, true, true, _version, diagnostics.AsReadOnly());
+        }
+        catch (Exception error) when (!accepted && error is InvalidOperationException or ArgumentException)
+        {
+            return Failure(experience, "LUI4102", error.Message);
+        }
+        finally { accepting = false; _applying = false; }
+
+        void Accept()
+        {
+            if (!accepting || accepted || Environment.CurrentManagedThreadId != ownerThread)
+                throw new InvalidOperationException("The live asset acceptance is no longer available on this thread.");
             entry.Assets = candidate;
-            staged = true;
-            _apply(experience);
             entry.Presentation = presentation;
             entry.Visual = visual;
             _version++;
-            return new(experience, true, true, _version, diagnostics.AsReadOnly());
+            accepted = true;
         }
-        catch (Exception error) when (error is InvalidOperationException or ArgumentException)
-        {
-            entry.Assets = previous;
-            if (staged) _apply(experience);
-            return Failure(experience, "LUI4102", error.Message);
-        }
-        finally { _applying = false; }
     }
 
     private Entry Find(UiSymbolId experience) => _entries.TryGetValue(experience, out Entry? entry) ? entry

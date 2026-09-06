@@ -100,6 +100,55 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             "semantic.input.retired-overlay.keyboard",
             "semantic.input.retired-overlay.retry"
         }, includeInAggregate: false),
+        new("semantic.environment", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.Environment, true, new[]
+        {
+            "semantic.environment.window.facets",
+            "semantic.environment.window.rejection",
+            "semantic.environment.window.reentry",
+            "semantic.environment.window.idle",
+            "semantic.environment.window.delivery",
+            "semantic.environment.window.automatic",
+            "semantic.environment.terminal.facets",
+            "semantic.environment.terminal.rejection",
+            "semantic.environment.terminal.reentry",
+            "semantic.environment.terminal.idle",
+            "semantic.environment.terminal.delivery",
+            "semantic.environment.terminal.automatic",
+            "semantic.environment.hud.facets",
+            "semantic.environment.hud.rejection",
+            "semantic.environment.hud.reentry",
+            "semantic.environment.hud.idle",
+            "semantic.environment.hud.delivery",
+            "semantic.environment.hud.automatic",
+            "semantic.environment.active-menu.facets",
+            "semantic.environment.active-menu.rejection",
+            "semantic.environment.active-menu.reentry",
+            "semantic.environment.active-menu.idle",
+            "semantic.environment.active-menu.delivery",
+            "semantic.environment.active-menu.automatic",
+            "semantic.environment.active-menu.show-owner",
+        }, includeInAggregate: false),
+        new("semantic.actions.reload", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.ActionReload, true, new[]
+        {
+            "semantic.actions.reload.window.publication",
+            "semantic.actions.reload.window.generation",
+            "semantic.actions.reload.window.retirement",
+            "semantic.actions.reload.terminal.publication",
+            "semantic.actions.reload.terminal.generation",
+            "semantic.actions.reload.terminal.retirement",
+            "semantic.actions.reload.hud.publication",
+            "semantic.actions.reload.hud.generation",
+            "semantic.actions.reload.hud.retirement",
+            "semantic.actions.reload.active-menu.publication",
+            "semantic.actions.reload.active-menu.generation",
+            "semantic.actions.reload.active-menu.retirement",
+            "semantic.actions.reload.hud-hide.failed-cleanup",
+            "semantic.actions.reload.hud-hide.retry",
+            "semantic.actions.reload.hud-dispose.failed-cleanup",
+            "semantic.actions.reload.hud-dispose.retry",
+            "semantic.actions.reload.active-menu-hide.failed-cleanup",
+            "semantic.actions.reload.active-menu-hide.retry"
+        }, includeInAggregate: false),
         new("semantic.actions.terminal", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.TerminalGeneration, true, new[]
         {
             "semantic.actions.terminal.same.transition",
@@ -340,6 +389,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        StopEnvironment();
         StopTerminalGeneration();
         StopActionPump();
         StopNativeInput();
@@ -446,6 +496,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             return;
         }
         if (_awaitingReturnedToTitle) return;
+        if (AdvanceEnvironment()) return;
         if (AdvanceTerminalGeneration()) return;
         if (AdvanceActionPump()) return;
         if (AdvanceNativeInput()) return;
@@ -532,6 +583,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         catch (Exception error)
         {
             RetainTerminalFailure("HARNESS-AUTOMATION-EXECUTION-EXCEPTION", error);
+            StopEnvironment();
             StopTerminalGeneration();
             StopActionPump();
             StopNativeInput();
@@ -605,6 +657,12 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             case AcceptanceScenarioExecution.RetiredOverlayInput:
                 ExecuteRetiredOverlayInput();
                 return false;
+            case AcceptanceScenarioExecution.ActionReload:
+                ExecuteActionReload();
+                return false;
+            case AcceptanceScenarioExecution.Environment:
+                BeginEnvironment();
+                return true;
             case AcceptanceScenarioExecution.TerminalGeneration:
                 BeginTerminalGeneration();
                 return true;
@@ -680,6 +738,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         _returnToTitleContribution = null;
         _verifyReturnToTitleContribution = false;
         RetainTerminalFailure("HARNESS-AUTOMATION-LIFECYCLE-EXCEPTION", error);
+        StopEnvironment();
         StopTerminalGeneration();
         StopActionPump();
         StopNativeInput();
@@ -1248,6 +1307,8 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             visualMatrix = _visualCaptures.ToArray(),
             visualMatrixRestored = _visualSettingsRestored,
             retiredOverlayInput = _retiredOverlayInput,
+            environment = new { completed = _environmentCompleted, targets = _environmentObservations.ToArray(), operations = _environmentOperations.ToArray() },
+            actionReload = new { completed = _reloadCompleted, targets = _reloadObservations.ToArray(), failedCleanup = _reloadFailedCleanup.ToArray() },
             terminalGeneration = new { completed = _terminalGenerationCompleted, ownerThread = _generationOwnerThread, transitions = _terminalGenerationTransitions.ToArray(), actions = _terminalGenerationActions.ToArray() },
             actionPump = new { completed = _actionPumpCompleted, ownerThread = _actionOwnerThread, ticks = _actionTicks, probes = _actionProbes.ToArray() },
             nativeInput = new { completed = _nativeInputCompleted, expectedText = _nativeExpectedText, lastObservation = _nativeLastObservation, captures = _nativeCaptures.ToArray() },
@@ -1282,6 +1343,8 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         NativeInput,
         TerminalGeneration,
         ActionPump,
+        ActionReload,
+        Environment,
         RetiredOverlayInput,
         LocaleScaleTheme,
         Performance,

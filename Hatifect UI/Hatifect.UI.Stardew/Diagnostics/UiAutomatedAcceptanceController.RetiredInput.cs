@@ -101,6 +101,18 @@ internal sealed partial class UiAutomatedAcceptanceController
     {
         private object _target = null!;
         internal Dictionary<string, object> Properties { get; } = new();
+        private readonly Dictionary<string, List<Delegate>> _handlers = new();
+        internal IReadOnlyList<Exception> ReplayRetained(string eventName)
+        {
+            var errors = new List<Exception>();
+            if (!_handlers.TryGetValue(eventName, out var handlers)) return errors;
+            foreach (Delegate handler in handlers.ToArray())
+            {
+                try { handler.DynamicInvoke(_target, null); }
+                catch (Exception error) { errors.Add(error is TargetInvocationException { InnerException: { } inner } ? inner : error); }
+            }
+            return errors;
+        }
         internal string? FailRemove { get; set; }
         internal int ActiveHandlers { get; private set; }
         internal int RemovalFailures { get; private set; }
@@ -123,8 +135,17 @@ internal sealed partial class UiAutomatedAcceptanceController
             try
             {
                 object? result = method.Invoke(_target, args);
-                if (name.StartsWith("add_", StringComparison.Ordinal)) ActiveHandlers++;
-                if (name.StartsWith("remove_", StringComparison.Ordinal)) ActiveHandlers--;
+                if (name.StartsWith("add_", StringComparison.Ordinal))
+                {
+                    ActiveHandlers++;
+                    if (!_handlers.TryGetValue(name[4..], out var handlers)) _handlers.Add(name[4..], handlers = new());
+                    handlers.Add((Delegate)args![0]!);
+                }
+                if (name.StartsWith("remove_", StringComparison.Ordinal))
+                {
+                    ActiveHandlers--;
+                    if (_handlers.TryGetValue(name[7..], out var handlers)) handlers.Remove((Delegate)args![0]!);
+                }
                 return result;
             }
             catch (TargetInvocationException error) when (error.InnerException != null)

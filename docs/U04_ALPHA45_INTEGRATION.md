@@ -1,6 +1,6 @@
 # U04: общая интеграция alpha.45
 
-Общая интеграционная приёмка — **PASS** на source [`92f4890`](https://github.com/ihatectf/Hatifect/commit/92f48904e766f1c3fac479d84c85a57502d41b75); публикация и её CI ещё предстоят. Полный U04 остаётся **IN_PROGRESS**. GQ принял только зафиксированный checkpoint `f4b7386436166fae7f66f5a45447a0335a441e0e`: foundation `b89c792` и Stardew capture `29373a2` с их документацией. Основа интеграции — опубликованная alpha.44 `bea00ad`, включая explicit Terminal generations, native fixtures и общую background policy `fe51271`. Все 17 package/version/consumer authorities переведены с alpha.44 на alpha.45 одним владельцем — GQ.
+Ограниченная интеграция alpha.45 — **DONE**; приёмка **PASS** на source [`92f4890`](https://github.com/ihatectf/Hatifect/commit/92f48904e766f1c3fac479d84c85a57502d41b75); опубликовано в `develop` как [`12e7aab`](https://github.com/ihatectf/Hatifect/commit/12e7aabf816a8e67a4f64846d2fb90231e1d76b1). Exact [CI34058056333](https://github.com/ihatectf/Hatifect/actions/runs/34058056333) — **SUCCESS**, все 10 jobs. Полный U04 остаётся **IN_PROGRESS**. GQ принял только зафиксированный checkpoint `f4b7386436166fae7f66f5a45447a0335a441e0e`: foundation `b89c792` и Stardew capture `29373a2` с их документацией. Основа интеграции — опубликованная alpha.44 `bea00ad`, включая explicit Terminal generations, native fixtures и общую background policy `fe51271`. Все 17 package/version/consumer authorities переведены с alpha.44 на alpha.45 одним владельцем — GQ.
 
 ## Контракт и область
 
@@ -47,4 +47,4 @@ Aggregate подтвердил worldReady, pauseWhenOutOfFocus=false, fade=-0.03
 
 ## Ограничения и следующий шаг
 
-Foundation/capture integration прошла собственную проверку. Полные U04/F12, concrete typed consumer, согласованная consumer locale projection, active reload/save-switch и физический Backspace не закрыты этим результатом. Приёмка crash-return alpha.44 сохраняется как evidence именно alpha.44, новый crash-прогон здесь не заявлен. Следующий готовый шаг после публикации/CI — независимая приёмка frozen alpha.46 native host wiring и reload от UI; live text/Flow Parcel projection остаётся отдельным согласованным продолжением.
+Foundation/capture integration прошла собственную проверку. Полные U04/F12, concrete typed consumer, согласованная consumer locale projection, active reload/save-switch и физический Backspace не закрыты этим результатом. Приёмка crash-return alpha.44 сохраняется как evidence именно alpha.44, новый crash-прогон здесь не заявлен. Следующий готовый шаг — общая интеграция проверенного frozen alpha.46 native host wiring и reload от UI; live text/Flow Parcel projection остаётся отдельным согласованным продолжением.

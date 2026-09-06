@@ -74,7 +74,8 @@ internal sealed class UiSemanticStardewRuntime : IDisposable
         Func<UiExperienceDescriptor, UiTerminalSectionAssets>? resolveAssets = null,
         UiSemanticCatalog? catalog = null,
         string? locale = null,
-        Action<RuntimeSymbolId>? onRouteRequested = null)
+        Action<RuntimeSymbolId>? onRouteRequested = null,
+        UiEnvironment? environment = null)
     {
         ThrowIfDisposed();
         UiSemanticStardewCapabilities.Validate(theme);
@@ -92,7 +93,8 @@ internal sealed class UiSemanticStardewRuntime : IDisposable
                 catalog,
                 locale,
                 validateScene: UiSemanticStardewCapabilities.Validate,
-                onRouteRequested: onRouteRequested);
+                onRouteRequested: onRouteRequested,
+                environment: environment);
             var host = new UiSemanticStardewHost(this, terminal);
             if (!_hosts.Add(host))
                 throw new InvalidOperationException("The Terminal host is already registered with this runtime.");
@@ -159,7 +161,8 @@ internal sealed class UiSemanticStardewRuntime : IDisposable
         UiScene scene,
         UiSemanticStardewOverlayRenderLayer renderLayer = UiSemanticStardewOverlayRenderLayer.Hud,
         Func<UiInteractionSnapshot, UiScene>? composeInteraction = null,
-        Action? onClosed = null)
+        Action? onClosed = null,
+        Action<RuntimeRect>? synchronizeEnvironment = null)
     {
         ArgumentNullException.ThrowIfNull(helper);
         ArgumentNullException.ThrowIfNull(scene);
@@ -182,7 +185,8 @@ internal sealed class UiSemanticStardewRuntime : IDisposable
                 host,
                 viewport,
                 renderLayer,
-                onClosed);
+                onClosed,
+                synchronizeEnvironment);
             if (!_overlays.Add(overlay))
                 throw new InvalidOperationException("The semantic overlay is already registered with this runtime.");
             return overlay;
@@ -387,16 +391,55 @@ internal sealed class UiSemanticStardewHost : IDisposable
         return Session.UpdateRoot(scene, placement);
     }
 
+    internal UiHostUpdate Reload(Func<UiScene> prepareScene, UiHostPlacementContext placement,
+        Action acceptOwnerState, Action? validateOwner = null)
+        => UpdatePrepared(prepareScene, placement, acceptOwnerState, validateOwner, renewActionGeneration: true);
+
+    internal UiHostUpdate UpdatePrepared(Func<UiScene> prepareScene, UiHostPlacementContext placement,
+        Action acceptOwnerState, Action? validateOwner = null, bool renewActionGeneration = false)
+    {
+        ThrowIfRetired();
+        if (_terminal != null)
+            throw new InvalidOperationException("Terminal preparation belongs to its Runtime-owned Terminal session.");
+        long version = Session.Root.AcceptedVersion;
+        UiScene scene = prepareScene();
+        ValidateOwner();
+        UiSemanticStardewCapabilities.Validate(scene);
+        return Session.UpdateRoot(scene, placement, renewActionGeneration, acceptOwnerState,
+            validatePreparedOwner: ValidateOwner);
+
+        void ValidateOwner()
+        {
+            validateOwner?.Invoke();
+            ThrowIfRetired();
+            if (Session.Root.AcceptedVersion != version)
+                throw new InvalidOperationException("The accepted host changed during scene preparation.");
+        }
+    }
+
+    internal UiHostUpdate ReloadTerminal(UiTerminalSectionAssets assets, UiPresentationProfile profile,
+        UiHostPlacementContext placement, string? locale, Action acceptAssets, Action validateOwner,
+        UiEnvironment? environment = null, UiTheme? theme = null)
+    {
+        ThrowIfRetired();
+        return (_terminal ?? throw new InvalidOperationException("This host does not own a Terminal session."))
+            .Reload(assets, profile, placement, locale, acceptAssets, validateOwner, environment, theme);
+    }
+
     internal void SetTerminalTheme(UiTheme theme) => _terminal!.SetTheme(theme);
 
     public UiHostUpdate RecomposeTerminal(
         UiPresentationProfile profile,
         UiHostPlacementContext placement,
-        string? locale = null)
+        string? locale = null,
+        UiEnvironment? environment = null,
+        Action? acceptOwnerState = null,
+        Action? validateOwner = null,
+        UiTheme? theme = null)
     {
         ThrowIfRetired();
         return (_terminal ?? throw new InvalidOperationException("This semantic host does not own a Terminal session."))
-            .Recompose(profile, placement, locale);
+            .Recompose(profile, placement, locale, environment, acceptOwnerState, validateOwner, theme);
     }
 
     internal UiHostUpdate OpenTerminalSection(RuntimeSymbolId section)
@@ -424,6 +467,20 @@ internal sealed class UiSemanticStardewHost : IDisposable
         UiSemanticStardewCapabilities.Validate(scene);
         return Session.UpdateRoot(scene, new UiHostPlacementContext(viewport));
     }
+
+    internal UiHostUpdate ReloadOverlay(Func<UiScene> prepareScene, RuntimeRect viewport,
+        Action acceptOwnerState, Action validateOwner)
+        => UpdateOverlayPrepared(prepareScene, viewport, acceptOwnerState, validateOwner, renewActionGeneration: true);
+
+    internal UiHostUpdate UpdateOverlayPrepared(Func<UiScene> prepareScene, RuntimeRect viewport,
+        Action acceptOwnerState, Action validateOwner, bool renewActionGeneration = false)
+        => UpdatePrepared(() =>
+        {
+            UiScene scene = prepareScene();
+            if (Session.Root.Policy.Kind != UiHostKind.Overlay || scene.Root.Policy.Kind != UiHostKind.Overlay)
+                throw new InvalidOperationException("Only Overlay hosts can use the overlay preparation lifecycle.");
+            return scene;
+        }, new UiHostPlacementContext(viewport), acceptOwnerState, validateOwner, renewActionGeneration);
 
     internal UiHostUpdate ReflowOverlay(RuntimeRect viewport)
     {
