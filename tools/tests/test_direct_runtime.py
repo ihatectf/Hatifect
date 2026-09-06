@@ -216,6 +216,8 @@ class DirectRuntimeTests(unittest.TestCase):
 
     def test_flow_lifecycle_report_has_fixed_module_ownership(self) -> None:
         isolated = Path("/isolated")
+        self.assertEqual(DIRECT_RUNTIME._acceptance_report_source(isolated, "flow.ui.names"),
+                         isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")
         self.assertEqual(
             DIRECT_RUNTIME._acceptance_report_source(isolated, "flow.route.basic"),
             isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json",
@@ -226,12 +228,34 @@ class DirectRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(DIRECT_RUNTIME._acceptance_report_source(isolated, 'flow.chest.roundtrip'),
                          isolated / 'Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json')
-        for scenario in ("runtime.boot", "semantic.terminal", "flow.route.unknown", "../escape"):
+        for scenario in ("runtime.boot", "semantic.terminal", "flow.route.unknown", "flow.ui.names.extra", "../escape"):
             with self.subTest(scenario=scenario):
                 self.assertEqual(
                     DIRECT_RUNTIME._acceptance_report_source(isolated, scenario),
                     isolated / "Mods/Hatifect/Hatifect UI/.acceptance/host-acceptance-report.json",
                 )
+
+    def test_flow_names_uses_one_owned_copy_and_cleans_it_after_launch_failure(self) -> None:
+        with _RequestFixture() as fixture:
+            scenario = "flow.ui.names"
+            fixture.request["scenarioId"] = scenario
+            isolated = Path(fixture.request["isolatedRoot"])
+            path = isolated / ("HatifectHarness_" + fixture.request["requestId"].replace("-", ""))
+            path.mkdir()
+            fixture.request["savePath"] = str(path)
+            fixture.metadata["saveProvisionerExecutable"] = "save.py"
+            provisioner = mock.Mock()
+            provisioner.validate_fixture.return_value = ({"runtimeId": "runtime"}, None)
+            provisioner.prepare_working_copy.return_value = path
+            provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
+            with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
+                with self.assertRaisesRegex(OSError, "launch failed"):
+                    with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
+                        raise OSError("launch failed")
+            self.assertFalse(path.exists())
+            provisioner.prepare_flow_secondary.assert_not_called()
+            provisioner.cleanup_working_copy.assert_called_once_with(
+                isolated, path, "runtime", fixture.request["requestId"], scenario, role="primary")
 
     def test_secondary_preparation_failure_cleans_primary_without_claiming_collision(self) -> None:
         with _RequestFixture() as fixture:
