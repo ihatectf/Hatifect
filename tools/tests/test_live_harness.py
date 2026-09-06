@@ -675,6 +675,18 @@ class LiveHarnessTests(unittest.TestCase):
                          "flow.chest.return.taken-items"}.issubset(resolved["checks"]))
         self._verify_each_flow_check_is_required(resolved)
 
+    def test_returned_crash_requires_restart_and_all_return_family_checks(self) -> None:
+        scenario = "flow.chest.crash-after-return"
+        resolved = HARNESS.resolve_scenario(self.scenarios, scenario, "smoke")
+        ordinary = HARNESS.resolve_scenario(self.scenarios, "flow.chest.return", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.Flow"])
+        self.assertNotIn(scenario, self.scenarios["all"]["includes"])
+        self.assertEqual(set(resolved["checks"]),
+                         {check.replace("flow.chest.return.", scenario + ".") for check in ordinary["checks"]}
+                         | {scenario + ".process-restart"})
+        self._verify_each_flow_check_is_required(resolved)
+
     def _verify_each_flow_check_is_required(self, resolved) -> None:
         report = self._report(resolved)
         self.assertEqual(report["Scenarios"], [])

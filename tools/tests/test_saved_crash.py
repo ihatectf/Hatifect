@@ -160,6 +160,20 @@ class SavedCrashTests(unittest.TestCase):
                 with self.assertRaises(DIRECT.DirectRuntimeError):
                     DIRECT._saved_crash_marker(self.request, self.metadata, self.process)
 
+    def test_returned_marker_requires_returned_phase_and_exact_fourth_save(self):
+        self.use_boundary(DIRECT.RETURNED_CRASH_SCENARIO, "saved-returned", 4)
+        self.write_marker()
+        self.assertEqual(self.marker, DIRECT._saved_crash_marker(self.request, self.metadata, self.process))
+        self.assertEqual(self.save.name, f"HatifectHarness{uuid.UUID(self.run_id).hex}_4242424242")
+        for changes in ({"phase": "saved-delivered"}, {"phase": "saved-in-transit"},
+                        {"phase": "saved-in-transit-unsaved-delivery"}, {"scenarioId": DIRECT.DELIVERED_CRASH_SCENARIO},
+                        {"scenarioId": "flow.chest.return"}, {"loads": 3}, {"loads": 5},
+                        {"savingEvents": 3}, {"savedEvents": 3}, {"savedEvents": True}, {"savedEvents": 5}):
+            with self.subTest(changes=changes):
+                self.write_marker(changes)
+                with self.assertRaises(DIRECT.DirectRuntimeError):
+                    DIRECT._saved_crash_marker(self.request, self.metadata, self.process)
+
     def test_marker_requires_current_process_save_bytes_and_actual_fixture_owner(self):
         self.assertIsNone(DIRECT._saved_crash_marker(self.request, self.metadata, self.process))
         self.write_marker()
@@ -230,6 +244,10 @@ class SavedCrashTests(unittest.TestCase):
 
     def test_real_unsaved_delivery_boundary_restarts_from_its_confirmed_inflight_save(self):
         self.use_boundary(DIRECT.UNSAVED_DELIVERY_CRASH_SCENARIO, "saved-in-transit-unsaved-delivery", 1)
+        self.verify_real_two_processes()
+
+    def test_real_returned_boundary_restarts_from_the_fourth_confirmed_save(self):
+        self.use_boundary(DIRECT.RETURNED_CRASH_SCENARIO, "saved-returned", 4)
         self.verify_real_two_processes()
 
     def verify_real_two_processes(self):
@@ -385,13 +403,13 @@ time.sleep(30)
     def test_manifest_keeps_crash_out_of_aggregate_and_uses_fixed_flow_report(self):
         validator = _load("validate")
         unsaved_scenarios = (DIRECT.UNSAVED_EXTRACTION_CRASH_SCENARIO, DIRECT.UNSAVED_DELIVERY_CRASH_SCENARIO)
-        for scenario_id in (DIRECT.SAVED_CRASH_SCENARIO, DIRECT.DELIVERED_CRASH_SCENARIO, *unsaved_scenarios):
+        for scenario_id in (DIRECT.SAVED_CRASH_SCENARIO, DIRECT.DELIVERED_CRASH_SCENARIO, DIRECT.RETURNED_CRASH_SCENARIO, *unsaved_scenarios):
             with self.subTest(scenario=scenario_id):
                 scenario = validator.load_manifest()[scenario_id]
                 self.assertFalse(scenario["includeInAll"])
                 self.assertTrue(scenario["requiresSave"])
                 self.assertEqual(scenario["requiredMods"], ["Hatifect.Flow"])
-                self.assertEqual(len(scenario["checks"]), 10 if scenario_id in unsaved_scenarios else 9)
+                self.assertEqual(len(scenario["checks"]), 15 if scenario_id == DIRECT.RETURNED_CRASH_SCENARIO else 10 if scenario_id in unsaved_scenarios else 9)
                 self.assertEqual(scenario_id + ".unsaved-rollback" in scenario["checks"], scenario_id in unsaved_scenarios)
                 self.assertIn(scenario_id + ".process-restart", scenario["checks"])
                 self.assertEqual(DIRECT._acceptance_report_source(self.isolated, scenario_id),

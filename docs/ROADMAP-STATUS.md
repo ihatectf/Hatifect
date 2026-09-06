@@ -56,7 +56,7 @@ Owner: Flow semantic consumer; existing application event/snapshot contract and 
 
 ## Current next slice
 
-F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`; F16-b `51eee23`, F16-c `c12261c`, F16-d `1a06fa3`, F16-e `2224c6e`, F16-f `b4eff25` and F16-g have actual confirmed-save, unsaved-effect, cancellation and return evidence below. Continue F16-h with the Saved Returned process restart, then production A→B→A and idle/paused performance. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
+F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`; F16-b `51eee23`, F16-c `c12261c`, F16-d `1a06fa3`, F16-e `2224c6e`, F16-f `b4eff25`, F16-g `2a36f34` and F16-h have actual confirmed-save, unsaved-effect, cancellation and return evidence below. Continue F17 with production A→B→A, then idle/paused performance. F16-h closes the bounded supported matrix on this task candidate; combined develop integration remains with the UI owner. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
 
 ## F11-b: owner-derived availability and rejection reasons
 
@@ -273,6 +273,20 @@ Owner: separate `FlowChestReturnAcceptance` over the production session, with fi
 
 The ordinary capacity/retry/return and taken-item runtime family is complete. The fixed Saved Returned process checkpoint remains the next F16 increment; F17 still needs production A→B→A and performance evidence. Complete-save rollback, interrupted-save limitations and unit fault injection retain their distinct guarantees in [FLOW_PROVIDER_CONSISTENCY.md](FLOW_PROVIDER_CONSISTENCY.md). Visual, UI package-boundary and settings/skills host-audit changes are NOT_APPLICABLE here.
 
+## F16-h: confirmed returned cargo survives process termination
+
+Owner: private crash branch of the return acceptance driver plus one fixed harness registry entry. `flow.chest.crash-after-return` follows the complete capacity/retry/return chain, then requires the fourth real Saved with Delivered/2 and Returned/3, exact cargo/filler XML and counters4/4/4. It holds the existing save barrier and writes the unchanged21-field marker with fixed phase `saved-returned`. The executor validates owner/PID/hash/fingerprint, sends SIGKILL only to its owned process group and restarts on the same canonical save without reprovisioning. Load5 requires a distinct session/process, derives the third owned chest within a bounded15×15 area and verifies the full fixture before recording process-restart. The final two120-tick periods, terminal-command rejection, taken-item movement, Save5 and Load6 still execute in the resumed process. Normal return retains14 checks; the crash scenario adds process-restart. Old roundtrip crash logic, production effects, public API, game-save format and request/marker fields are unchanged.
+
+- `./tools/hatifect-test tools`: **PASS**,326 Python (`run-qnmjc29g`). Three added behavioral tests cover exact returned phase/fourth-save counters, actual SIGKILL/new synthetic process on the same fixture and mandatory return/restart checks. Existing canonical save/golden and crash manifest checks include the new fixed scenario.
+- `./tools/hatifect-check --platform`: **PASS**,1,203 .NET +326 Python (`run-0e1guvk_`), including659 Flow/92 Stardew. `./tools/hatifect-check`: **PASS**,1,016 .NET +326 Python (`run-dpy9h6ms`).
+- Fresh isolated deployment `run-ep3yk4yh`: selected stages **PASS**; packaging tests explicitly SKIPPED, no RC promotion.
+- `./tools/hatifect-smoke flow.chest.crash-after-return`: **PASS15**, request `21f4c1a2-d90c-436b-9403-c4381d614da8`,47,042 ms. PID89331 raw−9/normalized137 → PID89809 exit0. Marker4/4/4; final6 loads/5 Saving/Saved pairs/280 resume frames, quantity21. Full logs retain four completed game saves in prepare and one in resume; no exceptions/errors/teardown errors.
+- Same-candidate `./tools/hatifect-smoke flow.chest.return`: **PASS14**, request `e9ca3209-e0ec-49da-841b-c182347919a1`,41,946 ms, PID90270 exit0,728 frames,6 loads/5 pairs, no errors. Both reports use deployed Flow fingerprint `501a2f9f127531489ff7463da239d62cf5ec5fd3c238f9b71d5f1fd1a4610ab2`.
+- Independent source, G/C and actual evidence review found no actionable regression; both full process histories and report/deployed fingerprint were verified. Both request-owned copies were removed. Generated report matched preserved runtime bytes before removal.
+- Package contract **PASS**,21 files/14 DLLs. Archive, inventory, hashes and final source/staged attestation: `artifacts/flowline-f16-returned-crash/`.
+
+This completes the explicitly supported F16 failure matrix on the checked task candidate: Saved InTransit/Delivered/Returned process boundaries, complete-save rollback after unsaved extraction/delivery, cancellation/source changes, full-container refusal/retry/return and taken-item persistence. It does not claim recovery from interrupted game-save file generation or arbitrary observer ambiguity. Synthetic recovery evidence remains separately labelled. Combined develop integration and F17 production A→B→A/performance remain open. Visual, UI package-boundary and settings/skills host-audit changes are NOT_APPLICABLE to this increment.
+
 
 ## Combined U02-a and F16-c–g integration
 
@@ -307,3 +321,24 @@ Local text/page requests read a fresh model and overlay bounded pending intent: 
 - Independent read-only review identified and rechecked pending inventory loss, stale action reads, dropped text input and filter/page precedence. Each has an executed regression. Retirement callbacks stop before further reads/commands; observer errors preserve the committed result.
 - Historical failures remain FAIL. `run-yxuyjat_`:695/696 Flow passed; one new test incorrectly expected another Pump after Network already refreshed during its guarded action attempt. Its corrected timing still asserts zero commands and current model. `run-nihmtych` stopped before .NET on the unchanged Python fake-executable stdout/stderr fixture timing out with124. The exact fixture passed separately with its original2-second timeout (`artifacts/validation/nihmtych-fixture-diagnostic.txt`), and all323 Python tests passed in final C; no harness source, timeout or assertion was changed.
 - UI producer/package version remains alpha.33; Core/Persistence, game adapters and public/frozen API are unchanged. Platform/runtime/visual/isolated-package gates are NOT_APPLICABLE to this bounded consumer-only checkpoint; the queued Flow integration gets its own combined G evidence. Full U02 is still IN_PROGRESS: focus/scroll anchors/fallbacks and remaining update measurements follow.
+
+## Flow integration of U02-a with completed F16 matrix
+
+The Flow task combines published develop `816f12e531d233cee895082969e2931201ee368c` (U01/U02-a and F16-c–g) with its checked F16-h `eb30f620642ff48d968d876c76c19de7210c4e7d`. The only conflict was appended roadmap evidence; both complete sections are preserved. All74 incoming files other than this status document match the published upstream bytes, and all12 h files other than this document match the verified h commit. UI package authorities remain exactly alpha.33; no independent producer/API/CA modifications are introduced.
+
+- `./tools/hatifect-check --platform`: **PASS**,1,350 .NET +326 Python (`artifacts/validation/run-akm8dyi_/summary.json` in `${HOME}/Developer/Hatifect`), including660 Flow/92 Flow Stardew/90 CA.
+- `./tools/hatifect-check`: **PASS**,1,153 .NET +326 Python (`artifacts/validation/run-54u01ze5/summary.json`).
+- `./tools/hatifect-isolated-ui-ca --keep`: **PASS**,44 projected files, eight alpha.33 packages,90 tests,two CA DLLs and no UI source. Retained projection/TRX: `/private/var/folders/ly/sph907ln7bv1tc3dxmflc62h0000gn/T/hatifect-ui-ca-isolated.s74zo_nd`.
+- Independent bounded source/authority review found no lost Flow driver, scenario requirement, save barrier or evidence, and no package/API ownership regression. Final source/staged attestation is retained in `artifacts/flowline-u02-integration/`.
+- Existing runtime evidence remains attached to the original F16 candidate fingerprints. Runtime/visual and settings/skills host audit are NOT_APPLICABLE to this source-only integration; a fresh runtime candidate will accompany F17.
+
+The UI task owns the next atomic Parcel/Network semantic publication work. This Flow task continues F17 production A→B→A and bounded idle/paused measurements; it preserves the published UI producer while implementing game diagnostics and harness ownership. F16 acceptance remains bounded by complete-save coordination and its explicitly documented unsupported interrupted-write/unknown-result cases.
+
+## Combined atomic Flow UI and F16-h integration
+
+The candidate combines atomic Parcel/Network publication `22f56fd`/`0fa2aa7` with immutable Flow handoff `d1dcc649`. Only append-only roadmap evidence conflicted; both complete histories are preserved. All twelve incoming source/harness/test files match the handoff bytes. UI producer authorities remain alpha.33, and the frozen surface API and atomic CA consumer are unchanged.
+
+- `./tools/hatifect-check --platform`: **PASS**, 1,409 .NET +326 Python, `artifacts/validation/run-ztdrwe6_/summary.json` in `/private/tmp/hatifect-ui-next-ten-slices`.
+- `./tools/hatifect-check`: **PASS**, 1,212 .NET +326 Python, `artifacts/validation/run-9007o4mm/summary.json`:719 Flow and493 UI.
+- Independent read-only integration review confirmed source ownership, exact F16-h routing/save barriers, package/API compatibility and both evidence histories. Actual TRX counts and Python results match both summaries, with no failed or skipped tests. Existing isolated alpha.33 package evidence remains attached to the unchanged producer/CA candidate.
+- Original F16 actual-game evidence keeps its original fingerprints; these source integration gates do not claim a new runtime or visual run. Runtime/visual and settings/skills host audit are NOT_APPLICABLE to this merge. Full U02 remains IN_PROGRESS; Runtime stable focus/scroll anchors and update measurements are next. F17 production isolation continues independently in the Flow task.
