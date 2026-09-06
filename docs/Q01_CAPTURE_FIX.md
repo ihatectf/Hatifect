@@ -2,6 +2,8 @@
 
 Status: **DONE** for the bounded capture correction; full Q01 remains **IN_PROGRESS**. This corrects the screenshot evidence identified in [the original Q01 baseline](Q01_RUNTIME_BASELINE.md). That baseline remains attached to `7a9e590`; this change starts from integration `47117bb`, including the published F17 performance work.
 
+Implementation and verification report: [`85a786f`](https://github.com/ihatectf/Hatifect/commit/85a786f479895bd23046cf0d0f7ebc615cc90324). Validation below belongs to this alpha.35 source candidate, not a later integration.
+
 ## Cause and scope
 
 The original UI aggregate reported an open Terminal and 620 measured render frames, but `all.png` showed only the game room. `CaptureScreenshot` read the back buffer during SMAPI's `Rendered` event. [SMAPI 4.5.2 raises that event inside the instance's `_draw` override](https://github.com/Pathoschild/SMAPI/blob/4.5.2/src/SMAPI/Framework/SGame.cs). Inspection of the installed Stardew 1.6.15 assembly confirms that `Game1.Draw` calls `renderScreenBuffer` afterwards, combining the world target with the separate `uiScreen`. Neither the back buffer nor the current world target is a complete UI frame during that event.
