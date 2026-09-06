@@ -139,7 +139,7 @@ internal sealed class UiActionBindingMap : IUiActionResolver
 /// work nor exposes a new binding to input. A failed candidate retires only its new registrations.</summary>
 internal sealed class UiHostActionBindings : IDisposable
 {
-    private readonly UiActionDispatcher _dispatcher = new(Guid.NewGuid(), Guid.NewGuid());
+    private UiActionDispatcher _dispatcher = new(Guid.NewGuid(), Guid.NewGuid());
     private readonly Func<long> _acceptedVersion;
     private UiActionBindingMap _current = new();
     private bool _disposed;
@@ -149,11 +149,11 @@ internal sealed class UiHostActionBindings : IDisposable
     internal void RequireOwner() => _dispatcher.RequireOwner();
     internal void FenceRetirement() => _dispatcher.FenceRetirement();
 
-    internal Prepared Prepare(UiScene scene)
+    internal Prepared Prepare(UiScene scene, bool renewGeneration = false)
     {
         _dispatcher.RequireOwner();
         if (_dispatcher.IsDisposed) throw new ObjectDisposedException(nameof(UiHostActionBindings));
-        var prepared = new Prepared(this, _current);
+        var prepared = new Prepared(this, _current, renewGeneration);
         try { Visit(scene.Root); return prepared; }
         catch { prepared.Dispose(); throw; }
 
@@ -195,6 +195,9 @@ internal sealed class UiHostActionBindings : IDisposable
     {
         private readonly UiHostActionBindings _owner;
         private readonly UiActionBindingMap _previous;
+        private readonly UiActionDispatcher _previousDispatcher;
+        private readonly UiActionDispatcher _candidateDispatcher;
+        private readonly bool _renewGeneration;
         private bool _committed;
         private bool _disposed;
         internal UiActionBindingMap Map { get; } = new();
@@ -202,8 +205,16 @@ internal sealed class UiHostActionBindings : IDisposable
         internal bool RequiresRender => Map.LegacyAvailabilityChanged || Map.Bindings.Count != _previous.Bindings.Count ||
             Map.Bindings.Any(pair => pair.Value.PresentationChanged ||
                 !_previous.Bindings.TryGetValue(pair.Key, out var previous) || !ReferenceEquals(previous, pair.Value));
-        internal Prepared(UiHostActionBindings owner, UiActionBindingMap previous)
-        { _owner = owner; _previous = previous; Resolver = Map.ForPreparation(); }
+        internal Prepared(UiHostActionBindings owner, UiActionBindingMap previous, bool renewGeneration)
+        {
+            _owner = owner;
+            _previous = previous;
+            _previousDispatcher = owner._dispatcher;
+            _renewGeneration = renewGeneration;
+            _candidateDispatcher = renewGeneration
+                ? new UiActionDispatcher(_previousDispatcher.SessionId, Guid.NewGuid()) : _previousDispatcher;
+            Resolver = Map.ForPreparation();
+        }
 
         internal void Add(UiActionDefinition definition)
         {
@@ -216,9 +227,10 @@ internal sealed class UiHostActionBindings : IDisposable
             }
             if (Map.Bindings.Count == UiActionDispatcher.MaximumActions)
                 throw new InvalidOperationException("The host action capacity is exhausted.");
-            UiHostActionBinding binding = _previous.Bindings.TryGetValue(definition.Id, out var previous)
-                && ReferenceEquals(previous.Definition, definition)
-                    ? previous : new Factory(_owner._dispatcher, definition, _owner._acceptedVersion).Create();
+            _previous.Bindings.TryGetValue(definition.Id, out var previous);
+            UiHostActionBinding binding = !_renewGeneration && previous != null &&
+                ReferenceEquals(previous.Definition, definition)
+                    ? previous : new Factory(_candidateDispatcher, definition, _owner._acceptedVersion).Create();
             Map.Bindings.Add(definition.Id, binding);
             Map.Executions.Add(definition.Id, binding.Execution);
             if (!ReferenceEquals(binding, previous) && definition.Binding is not null) binding.RefreshAvailability();
@@ -226,10 +238,18 @@ internal sealed class UiHostActionBindings : IDisposable
 
         internal void Commit()
         {
-            if (_disposed || _committed || !ReferenceEquals(_owner._current, _previous))
+            if (_disposed || _committed || _owner._disposed ||
+                !ReferenceEquals(_owner._current, _previous) || !ReferenceEquals(_owner._dispatcher, _previousDispatcher))
                 throw new InvalidOperationException("The prepared action registration is no longer current.");
-            _owner._dispatcher.Install(Map.Executions);
+            _candidateDispatcher.Install(Map.Executions);
             Map.AcceptLegacyAvailability();
+            if (_renewGeneration)
+            {
+                // Fence without callbacks. The accepting host publishes its scene and owner
+                // metadata before Dispose cancels any work from the previous generation.
+                _previousDispatcher.FenceRetirement();
+                _owner._dispatcher = _candidateDispatcher;
+            }
             _owner._current = Map;
             _committed = true;
         }
@@ -238,6 +258,8 @@ internal sealed class UiHostActionBindings : IDisposable
         {
             if (_disposed) return;
             _disposed = true;
+            if (_renewGeneration)
+                (_committed ? _previousDispatcher : _candidateDispatcher).Dispose();
             UiActionBindingMap retired = _committed ? _previous : Map;
             UiActionBindingMap retained = _committed ? Map : _previous;
             foreach (var (id, binding) in retired.Bindings)
