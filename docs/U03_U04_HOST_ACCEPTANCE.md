@@ -2,6 +2,8 @@
 
 Status: **IN_PROGRESS** for the complete U03 and U04 roadmap IDs. This bounded implementation combines transactional active asset reload with environment capture and acceptance in the existing Window, Terminal, HUD and active-menu hosts. UI owns Runtime and native host wiring; FLOWLINE owns the independently reviewed environment foundation/capture and subsequent text projection/Parcel consumer. The latter text work is not included here.
 
+Implementation source: [`902d834`](https://github.com/ihatectf/Hatifect/commit/902d834). Common alpha45 base `92f48904e766f1c3fac479d84c85a57502d41b75` is integrated in local merge `db09ede`, preserving all reviewed production changes and adding six existing GQ diagnostic observations. All17 version authorities are now aligned to alpha46 for the next candidate. Its exact-candidate gates are **pending**; the pre-version evidence below keeps its original identity. Common alpha45 acceptance/publication remains coordinated by GQ.
+
 ## Accepted behavior and ownership
 
 `UiSemanticLiveAssets` prepares assets privately. Its owning host accepts the candidate exactly once within the synchronous preparation scope. Active reload publishes the new scene, invocation, environment and asset metadata before old action cancellation callbacks run. Rejected preparation preserves the last accepted assets and pending actions. Reload of an inactive Terminal section validates that section without replacing the current action generation. Post-acceptance callback failures remain observable.
