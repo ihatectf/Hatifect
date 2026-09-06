@@ -207,11 +207,11 @@ public sealed class ParcelPublicationTests
         Func<string, string>? itemName = null)
         => new(new UiSymbolId("Hatifect.Flow", "parcel"), app, CheckpointFixture.Parcel.Value,
             stationName: stationName, itemName: itemName);
-    private static UiPublishedState<string> Source(ParcelExperience view, string name)
-        => Assert.IsType<UiPublishedState<string>>(view.Experience.Elements.Single(element => element.Name == name).Source);
-    private static string Value(ParcelExperience view, string name) => Source(view, name).Value;
-    private static string Read(UiPublicationView view, UiPublishedState<string> source)
-        => Assert.IsAssignableFrom<IUiSemanticSource<string>>(view.Read(source)).Value;
+    private static UiPublishedState<ParcelTextValue> Source(ParcelExperience view, string name)
+        => Assert.IsType<UiPublishedState<ParcelTextValue>>(view.Experience.Elements.Single(element => element.Name == name).Source);
+    private static string Value(ParcelExperience view, string name) => Source(view, name).Value.ToString();
+    private static string Read(UiPublicationView view, UiPublishedState<ParcelTextValue> source)
+        => Assert.IsAssignableFrom<IUiSemanticSource<ParcelTextValue>>(view.Read(source)).Value.ToString();
 
     private sealed class ObservedApplication : IFlowApplication, IDisposable
     {

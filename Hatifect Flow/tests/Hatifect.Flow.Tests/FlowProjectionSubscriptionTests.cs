@@ -21,7 +21,7 @@ public sealed class FlowProjectionSubscriptionTests
         app.AfterRead = () => app.Inner.Application.SetAvailability(FlowApplicationState.Paused);
         using IFlowExperience view = Create(network, app);
         Assert.False(app.ReadBeforeSubscription);
-        Assert.Equal(Paused(network), Status(view, network).Value);
+        Assert.Equal(Paused(network), Status(view, network).UntypedValue!.ToString());
         Assert.False(view.Pump());
         Assert.Equal(1, app.Subscribers);
         view.Dispose();
@@ -35,7 +35,7 @@ public sealed class FlowProjectionSubscriptionTests
     {
         using var app = new PublishingApplication();
         using IFlowExperience view = Create(network, app);
-        IUiSemanticSource<string> status = Status(view, network);
+        IUiSemanticSource status = Status(view, network);
         bool resume = true;
         bool reentered = false;
         status.Changed += () =>
@@ -47,11 +47,11 @@ public sealed class FlowProjectionSubscriptionTests
         };
         app.Inner.Application.SetAvailability(FlowApplicationState.Paused);
         Assert.True(view.Pump());
-        Assert.Equal(Paused(network), status.Value);
+        Assert.Equal(Paused(network), status.UntypedValue!.ToString());
         Assert.False(reentered);
         Assert.Equal(FlowApplicationState.Active, app.Inner.ReadSnapshot().State);
         Assert.True(view.Pump());
-        Assert.Equal(network ? "Ready" : "Ready to dispatch", status.Value);
+        Assert.Equal(network ? "Ready" : "Ready to dispatch", status.UntypedValue!.ToString());
         Assert.False(view.Pump());
     }
 
@@ -66,7 +66,7 @@ public sealed class FlowProjectionSubscriptionTests
         app.AfterRead = () => throw new InvalidOperationException("read unavailable");
         Assert.Throws<InvalidOperationException>(() => view.Pump());
         Assert.True(view.Pump());
-        Assert.Equal(Paused(network), Status(view, network).Value);
+        Assert.Equal(Paused(network), Status(view, network).UntypedValue!.ToString());
         Assert.False(view.Pump());
     }
 
@@ -84,7 +84,7 @@ public sealed class FlowProjectionSubscriptionTests
         app.Inner.Application.SetAvailability(FlowApplicationState.Paused);
         app.FailAdd = false;
         using IFlowExperience replacement = Create(network, app);
-        Assert.Equal(Paused(network), Status(replacement, network).Value);
+        Assert.Equal(Paused(network), Status(replacement, network).UntypedValue!.ToString());
         Assert.Equal(1, app.Subscribers);
     }
 
@@ -110,8 +110,13 @@ public sealed class FlowProjectionSubscriptionTests
     private static IFlowExperience Create(bool network, IFlowNetworkApplication app)
         => network ? new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network"), app)
             : new ParcelExperience(new UiSymbolId("Hatifect.Flow", "parcel"), app, CheckpointFixture.Parcel.Value);
-    private static IUiSemanticSource<string> Status(IFlowExperience view, bool network)
-        => Assert.IsAssignableFrom<IUiSemanticSource<string>>(view.Experience.Elements.Single(element => element.Name == (network ? "Transport" : "State")).Source);
+    private static IUiSemanticSource Status(IFlowExperience view, bool network)
+    {
+        var source = view.Experience.Elements.Single(element => element.Name == (network ? "Transport" : "State")).Source;
+        if (network) Assert.IsAssignableFrom<IUiSemanticSource<string>>(source);
+        else Assert.IsAssignableFrom<IUiSemanticSource<ParcelTextValue>>(source);
+        return source;
+    }
     private static string Paused(bool network) => network ? "Paused" : "Transport paused";
 
     // Adversarial owner boundary: a read returns its captured value while publishing a newer one.
