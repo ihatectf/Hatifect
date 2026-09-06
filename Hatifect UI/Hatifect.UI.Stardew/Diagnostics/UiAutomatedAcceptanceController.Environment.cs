@@ -32,6 +32,8 @@ internal sealed partial class UiAutomatedAcceptanceController
     private bool _environmentOriginalGamepad;
     private Options.GamepadModes _environmentOriginalGamepadMode;
     private LocalizedContentManager.LanguageCode _environmentOriginalLanguage;
+    private StardewValley.GameData.ModLanguage? _environmentOriginalModLanguage;
+    private string? _environmentOriginalLocale;
     private bool _environmentSettingsCaptured;
     private bool _environmentActive;
     private bool _environmentCompleted;
@@ -58,6 +60,8 @@ internal sealed partial class UiAutomatedAcceptanceController
         _environmentOriginalGamepad = Game1.options.gamepadControls;
         _environmentOriginalGamepadMode = Game1.options.gamepadMode;
         _environmentOriginalLanguage = LocalizedContentManager.CurrentLanguageCode;
+        _environmentOriginalModLanguage = LocalizedContentManager.CurrentModLanguage;
+        _environmentOriginalLocale = LocalizedContentManager.LanguageCodeString(_environmentOriginalLanguage);
         _environmentSettingsCaptured = true;
         _environmentOwnerThread = Environment.CurrentManagedThreadId;
         _environmentActive = true;
@@ -352,7 +356,15 @@ internal sealed partial class UiAutomatedAcceptanceController
         Game1.options.desiredUIScale = _environmentOriginalDesiredScale;
         Game1.options.gamepadMode = _environmentOriginalGamepadMode;
         Game1.options.gamepadControls = _environmentOriginalGamepad;
-        LocalizedContentManager.CurrentLanguageCode = _environmentOriginalLanguage;
+        if (_environmentOriginalLanguage == LocalizedContentManager.LanguageCode.mod)
+            LocalizedContentManager.SetModLanguage(_environmentOriginalModLanguage
+                ?? throw new InvalidOperationException("The original environment custom language descriptor is unavailable."));
+        else
+            LocalizedContentManager.CurrentLanguageCode = _environmentOriginalLanguage;
+        RequireAction(LocalizedContentManager.CurrentLanguageCode == _environmentOriginalLanguage
+            && ReferenceEquals(LocalizedContentManager.CurrentModLanguage, _environmentOriginalModLanguage)
+            && LocalizedContentManager.LanguageCodeString(_environmentOriginalLanguage) == _environmentOriginalLocale,
+            "Environment acceptance did not restore the original language identity and custom descriptor.");
     }
 
     private void StopEnvironment()
@@ -361,8 +373,11 @@ internal sealed partial class UiAutomatedAcceptanceController
         try { CloseEnvironmentCase(); }
         finally
         {
-            RestoreEnvironmentSettings();
-            foreach (var operation in _environmentOperations) operation.CompleteFromWorker(0, fault: true);
+            try { RestoreEnvironmentSettings(); }
+            finally
+            {
+                foreach (var operation in _environmentOperations) operation.CompleteFromWorker(0, fault: true);
+            }
         }
     }
 
