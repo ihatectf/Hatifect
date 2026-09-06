@@ -305,6 +305,41 @@
       }
     },
     {
+      "id": "flow.chest.performance",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "includeInAll": false,
+      "checks": [
+        "flow.chest.performance.loaded",
+        "flow.chest.performance.saving",
+        "flow.chest.performance.saved",
+        "flow.chest.performance.paused",
+        "flow.chest.performance.due-work",
+        "flow.chest.performance.idle",
+        "flow.chest.performance.item-fidelity",
+        "flow.chest.performance.unchanged-files"
+      ],
+      "flowPerformance": {
+        "scenarioId": "flow.chest.performance",
+        "warmupFrames": 120,
+        "measurementFrames": 600,
+        "shipments": 80,
+        "routes": 3,
+        "maxOperationsPerTick": 64,
+        "maximumP95TickMs": 0.25,
+        "maximumP99TickMs": 1.0,
+        "maximumAllocatedBytesPerTick": 0
+      },
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      },
+      "requiredMods": [
+        "Hatifect.Flow"
+      ]
+    },
+    {
       "id": "semantic.lifecycle",
       "kind": "ui",
       "requiresSave": false,

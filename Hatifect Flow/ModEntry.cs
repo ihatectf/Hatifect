@@ -16,6 +16,7 @@ public sealed partial class ModEntry : Mod
     private FlowChestCancellationAcceptance? _cancellationAcceptance;
     private FlowChestReturnAcceptance? _returnAcceptance;
     private FlowChestIsolationAcceptance? _isolationAcceptance;
+    private FlowGamePerformanceAcceptance? _performanceAcceptance;
     private bool _attached;
     private bool _startupFailed;
 
@@ -40,6 +41,7 @@ public sealed partial class ModEntry : Mod
             _cancellationAcceptance = FlowChestCancellationAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
             _returnAcceptance = FlowChestReturnAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
             _isolationAcceptance = FlowChestIsolationAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
+            _performanceAcceptance = FlowGamePerformanceAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
         }
         catch (Exception error)
         {
@@ -59,6 +61,7 @@ public sealed partial class ModEntry : Mod
             _cancellationAcceptance?.OnSaveLoaded();
             _returnAcceptance?.OnSaveLoaded();
             _isolationAcceptance?.OnSaveLoaded();
+            _performanceAcceptance?.OnSaveLoaded();
             return;
         }
         try
@@ -91,6 +94,7 @@ public sealed partial class ModEntry : Mod
             _cancellationAcceptance?.Tick();
             _returnAcceptance?.Tick();
             _isolationAcceptance?.Tick();
+            _performanceAcceptance?.Tick();
         }
         catch (Exception error) { ReportFailure(error); }
     }
@@ -106,6 +110,7 @@ public sealed partial class ModEntry : Mod
             _cancellationAcceptance?.OnReturnedToTitle();
             _returnAcceptance?.OnReturnedToTitle();
             _isolationAcceptance?.OnReturnedToTitle();
+            _performanceAcceptance?.OnReturnedToTitle();
         }
         catch (Exception error) { ReportFailure(error); }
     }
@@ -138,7 +143,7 @@ public sealed partial class ModEntry : Mod
                     finally
                     {
                         try { _cancellationAcceptance?.Dispose(); }
-                        finally { try { _returnAcceptance?.Dispose(); } finally { _isolationAcceptance?.Dispose(); } }
+                        finally { try { _returnAcceptance?.Dispose(); } finally { try { _isolationAcceptance?.Dispose(); } finally { _performanceAcceptance?.Dispose(); } } }
                     }
                 }
             }
@@ -162,5 +167,6 @@ public sealed partial class ModEntry : Mod
         _cancellationAcceptance?.Fail(error);
         _returnAcceptance?.Fail(error);
         _isolationAcceptance?.Fail(error);
+        _performanceAcceptance?.Fail(error);
     }
 }

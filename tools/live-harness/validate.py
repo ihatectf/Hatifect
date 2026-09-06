@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
+import uuid
 import os
 import re
 import sys
@@ -22,6 +24,13 @@ DEFAULT_MANIFEST = Path(__file__).with_name("scenarios.json")
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+$")
 MOD_UNIQUE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 STATUSES = {"PASS", "FAIL", "BLOCKED"}
+FLOW_PERFORMANCE = {'scenarioId': 'flow.chest.performance', 'warmupFrames': 120, 'measurementFrames': 600, 'shipments': 80, 'routes': 3, 'maxOperationsPerTick': 64, 'maximumP95TickMs': 0.25, 'maximumP99TickMs': 1.0, 'maximumAllocatedBytesPerTick': 0}
+FLOW_PERFORMANCE_CHECKS = [
+    'flow.chest.performance.' + suffix for suffix in (
+        'loaded', 'saving', 'saved', 'paused', 'due-work', 'idle',
+        'item-fidelity', 'unchanged-files',
+    )
+]
 
 
 class HarnessError(ValueError):
@@ -59,6 +68,7 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, dict[str, Any]]:
             "checks",
             "includes",
             "performance",
+            "flowPerformance",
             "automation",
             "requiredMods",
             "includeInAll",
@@ -118,6 +128,14 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, dict[str, Any]]:
             or len(required_mods) != len(set(required_mods))
         ):
             raise HarnessError(f"Scenario '{scenario_id}' has invalid requiredMods.")
+        flow_performance = scenario.get("flowPerformance")
+        if scenario_id == FLOW_PERFORMANCE["scenarioId"] or "flowPerformance" in scenario:
+            if (scenario_id != FLOW_PERFORMANCE["scenarioId"] or kind != "smoke"
+                    or scenario["requiresSave"] is not True or scenario.get("includes")
+                    or scenario.get("includeInAll") is not False or "performance" in scenario
+                    or checks != FLOW_PERFORMANCE_CHECKS or required_mods != ["Hatifect.Flow"]
+                    or json.dumps(flow_performance, sort_keys=True) != json.dumps(FLOW_PERFORMANCE, sort_keys=True)):
+                raise HarnessError("Flow performance requires its fixed isolated workload and checked-in budgets.")
         scenarios[scenario_id] = scenario
 
     for scenario in scenarios.values():
@@ -188,7 +206,8 @@ def resolve_scenario(
             check_owners[check] = owner
             checks.append(check)
     performances = [item["performance"] for item in ordered if "performance" in item]
-    if len(performances) > 1:
+    flow_performances = [item["flowPerformance"] for item in ordered if "flowPerformance" in item]
+    if len(performances) + len(flow_performances) > 1:
         raise HarnessError(f"Scenario '{scenario_id}' resolves multiple performance captures.")
     required_mods: list[str] = []
     seen_required_mods: set[str] = set()
@@ -204,6 +223,7 @@ def resolve_scenario(
         "timeoutSeconds": root.get("timeoutSeconds", DEFAULT_TIMEOUT_SECONDS),
         "checks": checks,
         "performance": performances[0] if performances else None,
+        "flowPerformance": flow_performances[0] if flow_performances else None,
         "automation": root["automation"],
         "requiredMods": required_mods,
     }
@@ -444,8 +464,113 @@ def _parse_timestamp(value: Any) -> float:
     return parsed.timestamp()
 
 
+def validate_flow_performance(report: dict[str, Any], expected_run_id: str | None) -> dict[str, Any]:
+    def require(condition: bool, message: str) -> None:
+        if not condition:
+            raise HarnessError("Flow performance: " + message)
+
+    def integer(value: Any) -> bool:
+        return type(value) is int and 0 <= value <= 2**63 - 1
+
+    def guid(value: Any) -> bool:
+        try:
+            return isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0
+        except (ValueError, AttributeError):
+            return False
+
+    def digest(value: Any) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) is not None
+
+    captured = report.get("FlowPerformance")
+    require(isinstance(captured, dict), "missing capture")
+    require(guid(expected_run_id) and captured.get("RunId") == expected_run_id, "foreign or absent request identity")
+    require(type(captured.get("FormatVersion")) is int and captured["FormatVersion"] == 1
+            and captured.get("ScenarioId") == FLOW_PERFORMANCE["scenarioId"], "unsupported capture identity")
+    require(guid(captured.get("SessionId")), "invalid session identity")
+    require(digest(captured.get("RuntimeFingerprint")) and captured["RuntimeFingerprint"] == report.get("RuntimeFingerprint")
+            and report.get("RuntimeFingerprintAlgorithm") == "sha256-flow-runtime-v1", "runtime fingerprint mismatch")
+    fixed = {"WorldId": 4242424242, "Shipments": 80, "Routes": 3, "Stations": 6, "MaxOperationsPerTick": 64,
+             "Loads": 1, "SavingEvents": 1, "SavedEvents": 1}
+    require(all(type(captured.get(key)) is int and captured[key] == value for key, value in fixed.items()), "wrong workload or lifecycle")
+    require(integer(captured.get("ThreadId")) and captured["ThreadId"] > 0
+            and integer(captured.get("StopwatchFrequency")) and captured["StopwatchFrequency"] > 0, "invalid thread or timer")
+    require(captured.get("GcOverride") is False and type(captured.get("ServerGc")) is bool, "unreported or overridden GC environment")
+    require(all(isinstance(captured.get(key), str) and 0 < len(captured[key]) <= 1024
+                for key in ("Runtime", "OperatingSystem", "Architecture")), "missing machine/runtime metadata")
+    require(digest(captured.get("SaveTreeHash")), "missing saved tree fingerprint")
+    counter_keys = {"TickInvocations", "Now", "PendingOperations", "RouteSearches", "ProcessedOperations",
+                    "LastTickProcessedOperations", "RefreshRequests", "CheckpointCaptures", "PhysicalApplyCalls"}
+
+    def counters(value: Any) -> dict[str, int]:
+        require(isinstance(value, dict) and set(value) == counter_keys
+                and all(integer(item) for item in value.values()), "invalid owner counters")
+        require(value["CheckpointCaptures"] == 1 and value["RouteSearches"] > 0
+                and value["PendingOperations"] <= 80 and value["LastTickProcessedOperations"] <= 64,
+                "missing positive control or exceeded counter bounds")
+        return value
+
+    def identity(value: Any) -> None:
+        require(isinstance(value, dict) and value.get("SessionId") == captured["SessionId"]
+                and type(value.get("ThreadId")) is int and value["ThreadId"] == captured["ThreadId"],
+                "window changed session or thread")
+
+    windows = {}
+    for name, time_passes, queue in (("Paused", False, 80), ("Idle", True, 0)):
+        window = captured.get(name)
+        identity(window)
+        require(type(window.get("WarmupFrames")) is int and window["WarmupFrames"] == 120
+                and type(window.get("Frames")) is int and window["Frames"] == 600, "incomplete warm-up or samples")
+        require(window.get("TimePasses") is time_passes and window.get("CachedSnapshotUnchanged") is True,
+                "wrong clock or changed cached projection")
+        start, end = counters(window.get("Start")), counters(window.get("End"))
+        require(end["TickInvocations"] - start["TickInvocations"] == 600 and start["TickInvocations"] >= 120
+                and end["Now"] - start["Now"] == (600 if time_passes else 0), "window did not observe exactly one actual tick per frame")
+        require(start["PendingOperations"] == end["PendingOperations"] == queue
+                and start["LastTickProcessedOperations"] == end["LastTickProcessedOperations"] == 0
+                and all(start[key] == end[key] for key in ("RouteSearches", "ProcessedOperations", "RefreshRequests",
+                                                          "CheckpointCaptures", "PhysicalApplyCalls")), "steady window performed work")
+        require(integer(window.get("AllocatedBytesTotal")) and window["AllocatedBytesTotal"] == 0
+                and integer(window.get("MaximumAllocatedBytesPerTick")) and window["MaximumAllocatedBytesPerTick"] == 0,
+                "steady tick allocated memory")
+        times = [window.get(key) for key in ("P50TickMs", "P95TickMs", "P99TickMs", "MaxTickMs")]
+        require(all(type(value) in (int, float) and 0 <= value <= 1_000_000_000 and math.isfinite(value) for value in times)
+                and times == sorted(times), "invalid timing percentiles")
+        require(times[1] <= FLOW_PERFORMANCE["maximumP95TickMs"] and times[2] <= FLOW_PERFORMANCE["maximumP99TickMs"],
+                "steady tick latency exceeds the checked-in budget")
+        windows[name] = (start, end)
+
+    due = captured.get("Due")
+    identity(due)
+    require(integer(due.get("Frames")) and 1 < due["Frames"] <= 600
+            and integer(due.get("WorkTicks")) and 1 < due["WorkTicks"] <= due["Frames"]
+            and type(due.get("MaximumOperationsPerTick")) is int and due["MaximumOperationsPerTick"] == 64
+            and type(due.get("Delivered")) is int and due["Delivered"] == 80, "due queue did not saturate and drain")
+    start, end = counters(due.get("Start")), counters(due.get("End"))
+    # The final work tick has the reported LastTick count; at least one tick reached the reported maximum.
+    work_ticks, last = due["WorkTicks"], end["LastTickProcessedOperations"]
+    minimum_operations = last + work_ticks - 1 + (63 if last < 64 else 0)
+    maximum_operations = last + (work_ticks - 1) * 64
+    require(minimum_operations <= 240 <= maximum_operations, "work tick counts cannot produce the reported operation total")
+    require(start == windows["Paused"][1] and end["PendingOperations"] == 0
+            and 0 < end["LastTickProcessedOperations"] <= 64
+            and end["TickInvocations"] - start["TickInvocations"] == due["Frames"]
+            and end["Now"] - start["Now"] == due["Frames"]
+            and end["ProcessedOperations"] - start["ProcessedOperations"] == 240
+            and end["PhysicalApplyCalls"] - start["PhysicalApplyCalls"] == 160
+            and end["RefreshRequests"] - start["RefreshRequests"] == due["WorkTicks"]
+            and end["RouteSearches"] == start["RouteSearches"], "due work counters or continuity differ")
+    idle_start = windows["Idle"][0]
+    require(idle_start["TickInvocations"] - end["TickInvocations"] == 120 and idle_start["Now"] - end["Now"] == 120
+            and all(idle_start[key] == end[key] for key in ("PendingOperations", "ProcessedOperations", "RouteSearches",
+                                                          "RefreshRequests", "CheckpointCaptures", "PhysicalApplyCalls")),
+            "idle warm-up changed retained state or lost actual ticks")
+    require(start["ProcessedOperations"] == start["PhysicalApplyCalls"] == start["RefreshRequests"] == 0,
+            "work occurred before releasing the paused queue")
+    return captured
+
+
 def validate_report(
-    resolved: dict[str, Any], report: dict[str, Any], started_at: float
+    resolved: dict[str, Any], report: dict[str, Any], started_at: float, *, expected_run_id: str | None = None
 ) -> dict[str, Any]:
     if report.get("FormatVersion") != 3 or report.get("PerformanceFormatVersion") != 3:
         raise HarnessError(
@@ -635,6 +760,14 @@ def validate_report(
             f"p99={captured['P99UiThreadMs']}",
         ))
 
+    if resolved.get("flowPerformance") is not None:
+        performance_evidence = validate_flow_performance(report, expected_run_id)
+        assertions.append(_assertion(
+            FLOW_PERFORMANCE["scenarioId"] + ".budget", "PASS", resolved["id"],
+            "The fixed Flow workload satisfies all operation, allocation and latency budgets.",
+            "600 paused and 600 idle ticks; bounded 80-parcel delivery completed.",
+        ))
+
     return {
         "runtimeFingerprint": report["RuntimeFingerprint"],
         "gameVersion": report.get("GameVersion"),
@@ -694,7 +827,7 @@ def command_finalize(args: argparse.Namespace) -> int:
         resolved = resolve_scenario(load_manifest(Path(args.manifest)), args.scenario, args.kind)
         with Path(args.report).open("r", encoding="utf-8") as stream:
             report = json.load(stream)
-        evidence = validate_report(resolved, report, args.started_at)
+        evidence = validate_report(resolved, report, args.started_at, expected_run_id=args.run_id)
         write_result(
             result_path,
             "PASS",

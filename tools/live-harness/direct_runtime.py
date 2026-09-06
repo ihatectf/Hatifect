@@ -856,7 +856,7 @@ def _prepared_request_saves(request: dict[str, Any], metadata: dict[str, Any]):
 def _acceptance_report_source(isolated: Path, scenario_id: str) -> Path:
     # Fixed ownership for the allowlisted asynchronous Flow lifecycle scenario.
     # The request cannot supply an arbitrary report path or module name.
-    module = "Hatifect Flow" if scenario_id in {"flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip", "flow.chest.cancellation", "flow.chest.return", "flow.chest.isolation", *SAVED_CRASH_BOUNDARIES} else "Hatifect UI"
+    module = "Hatifect Flow" if scenario_id in {"flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip", "flow.chest.cancellation", "flow.chest.return", "flow.chest.isolation", "flow.chest.performance", *SAVED_CRASH_BOUNDARIES} else "Hatifect UI"
     return isolated / "Mods" / "Hatifect" / module / ".acceptance" / "host-acceptance-report.json"
 
 
