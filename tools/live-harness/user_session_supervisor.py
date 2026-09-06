@@ -607,14 +607,15 @@ class RuntimeSupervisor:
     def _supervisor_restart_required(self) -> int:
         self.stop_worker()
         message = (
-            "Stable runtime supervisor source changed. Restart the existing VS Code task manually; "
+            "Stable runtime supervisor source changed. Restart the owned executor in its terminal "
+            "with `rtk proxy ./tools/hatifect-runtime-executor serve` from this worktree root; "
             "no new requests will be accepted."
         )
         while not self.stop_requested:
             self.publish("SupervisorRestartRequired", message)
             self.sleep(1.0)
-        self.publish("Stopping", "Stopping the supervisor awaiting a manual self-update restart.")
-        self.publish("Stopped", "Supervisor stopped; restart the existing VS Code task to load its update.")
+        self.publish("Stopping", "Stopping the supervisor awaiting an owner-controlled self-update restart.")
+        self.publish("Stopped", "Supervisor stopped; run `rtk proxy ./tools/hatifect-runtime-executor serve` in this worktree to load its update.")
         return 2
 
     def run(self) -> int:
