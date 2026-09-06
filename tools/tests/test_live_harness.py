@@ -655,6 +655,27 @@ class LiveHarnessTests(unittest.TestCase):
                     HARNESS.validate_report(resolved, report, started_at=0)
                 check["Passed"] = True
 
+    def test_cancellation_requires_each_fresh_flow_lifecycle_and_source_check(self) -> None:
+        resolved = HARNESS.resolve_scenario(self.scenarios, "flow.chest.cancellation", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.Flow"])
+        self.assertNotIn("flow.chest.cancellation", self.scenarios["all"]["includes"])
+        self.assertTrue({"flow.chest.cancellation.cancellation", "flow.chest.cancellation.source-conflict",
+                         "flow.chest.cancellation.re-admission", "flow.chest.cancellation.no-late-effect"}
+                        .issubset(resolved["checks"]))
+        report = self._report(resolved)
+        self.assertEqual(report["Scenarios"], [])
+        HARNESS.validate_report(resolved, report, started_at=0)
+        for index, check in enumerate(report["HostChecks"]):
+            with self.subTest(check=check["Id"]):
+                check["Passed"] = False
+                with self.assertRaises(HARNESS.HarnessError):
+                    HARNESS.validate_report(resolved, report, started_at=0)
+                check["Passed"] = True
+                missing = dict(report, HostChecks=report["HostChecks"][:index] + report["HostChecks"][index + 1:])
+                with self.assertRaises(HARNESS.HarnessError):
+                    HARNESS.validate_report(resolved, missing, started_at=0)
+
     def test_fresh_complete_semantic_report_passes(self) -> None:
         resolved = HARNESS.resolve_scenario(self.scenarios, "semantic.performance", "ui")
         report = self._report(resolved)

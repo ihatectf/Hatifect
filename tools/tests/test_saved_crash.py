@@ -204,14 +204,18 @@ class SavedCrashTests(unittest.TestCase):
         self.assertEqual(json.loads(outside.read_text()), self.marker)
 
     def test_ordinary_scenario_cannot_use_marker_or_running_continuation(self):
-        self.request["scenarioId"] = "flow.chest.roundtrip"
-        self.write_marker()
-        with self.assertRaises(DIRECT.DirectRuntimeError):
-            DIRECT._saved_crash_marker(self.request, self.metadata, self.process)
-        DIRECT._atomic_write_json(self.active, {"lifecycleState": "Running", "smapiPid": 4242}, replace=True)
-        with self.assertRaises(DIRECT.DirectRuntimeError):
-            self.started(4343, 4343, True)
-        self.assertEqual(DIRECT._read_json(self.active)["smapiPid"], 4242)
+        for scenario in ("flow.chest.roundtrip", "flow.chest.cancellation"):
+            with self.subTest(scenario=scenario):
+                self.request["scenarioId"] = scenario
+                self.write_marker()
+                with self.assertRaises(DIRECT.DirectRuntimeError):
+                    DIRECT._saved_crash_marker(self.request, self.metadata, self.process)
+                DIRECT._atomic_write_json(self.active, {"lifecycleState": "Running", "smapiPid": 4242}, replace=True)
+                with self.assertRaises(DIRECT.DirectRuntimeError):
+                    self.started(4343, 4343, True)
+                self.assertEqual(DIRECT._read_json(self.active)["smapiPid"], 4242)
+                self.assertEqual(DIRECT._acceptance_report_source(self.isolated, scenario),
+                                 self.isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")
 
     def test_real_sigkill_then_distinct_process_uses_same_owned_saved_bytes(self):
         self.verify_real_two_processes()

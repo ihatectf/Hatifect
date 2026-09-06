@@ -190,6 +190,32 @@
       "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
     },
     {
+      "id": "flow.chest.cancellation",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.cancellation.loaded",
+        "flow.chest.cancellation.duplicate-admission",
+        "flow.chest.cancellation.cancellation",
+        "flow.chest.cancellation.source-conflict",
+        "flow.chest.cancellation.saving",
+        "flow.chest.cancellation.saved",
+        "flow.chest.cancellation.lifecycle",
+        "flow.chest.cancellation.reload",
+        "flow.chest.cancellation.re-admission",
+        "flow.chest.cancellation.no-late-effect"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
       "id": "semantic.lifecycle",
       "kind": "ui",
       "requiresSave": false,

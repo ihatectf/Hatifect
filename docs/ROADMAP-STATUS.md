@@ -56,7 +56,7 @@ Owner: Flow semantic consumer; existing application event/snapshot contract and 
 
 ## Current next slice
 
-F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`; F16-b `51eee23`, F16-c `c12261c`, F16-d `1a06fa3` and F16-e have actual confirmed-save and unsaved-effect process-crash evidence below. Continue F16-f with production cancellation/source-conflict acceptance, followed by rejection/retry/return and production A→B→A. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
+F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`; F16-b `51eee23`, F16-c `c12261c`, F16-d `1a06fa3`, F16-e `2224c6e` and F16-f have actual confirmed-save, unsaved-effect and cancellation/source-conflict evidence below. Continue F16-g with capacity refusal, explicit retry and return checkpoints; follow with Saved Returned process restart and production A→B→A. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
 
 ## F11-b: owner-derived availability and rejection reasons
 
@@ -188,3 +188,17 @@ Owner: existing Flow diagnostics and fixed harness policy. `flow.chest.crash-aft
 - Package contract **PASS**,21 files/14 DLLs. Generated report matched preserved runtime bytes before removal. Archive, inventory, hashes and final source/staged attestation: `artifacts/flowline-f16-unsaved-delivery/`.
 
 F16/F17 remain IN_PROGRESS. The next bounded family covers cancellation/source changes, then capacity refusal/retry/return and production save isolation. Unit fault injection, an actual process crash and an interrupted game-save write remain distinct evidence categories. Visual, UI package-boundary and settings/skills host-audit changes are NOT_APPLICABLE here.
+
+## F16-f: cancellation, changed sources and explicit reuse
+
+Owner: a separate `FlowChestCancellationAcceptance` over the production session, with exact startup/load/tick/title/failure/disposal hooks and fixed harness ownership. `flow.chest.cancellation` creates wine stacks8/13/17, admits selected3/5/7, rejects stale/fresh duplicate admission without mutation and explicitly cancels the first parcel before extraction. One unit is moved from the second source to a third request-owned chest and metadata changes on the third source before the first owning tick. Both changed-source effects must settle Cancelled with zero delivery attempts and no recovery fault. Full XML8/12/17 plus holding1 and empty destination survive real Saving/Saved/reload and120 ticks. A new admission from the first cancelled source delivers2, leaving6/12/17+holding1; a second save/reload/120 ticks preserves quantity38 and rejects old Reserve/new duplicate delivery. Existing roundtrip/crash drivers, production effects, public API and persistence format are unchanged.
+
+- `./tools/hatifect-test tools`: **PASS**,322 Python (`run-_tqx40n6`). Added strict missing/failed check validation for the new report; extended canonical save ownership/golden preservation and denial of crash continuation to the new ordinary scenario. Existing assertions remain intact.
+- `./tools/hatifect-check --platform`: **PASS**,1,203 .NET +322 Python (`run-eg21a8lk`), including659 Flow/92 Stardew. `./tools/hatifect-check`: **PASS**,1,016 .NET +322 Python (`run-frht02ih`).
+- Fresh isolated deployment `run-ssc48glg`: selected stages **PASS**; packaging tests explicitly SKIPPED, no RC promotion.
+- `./tools/hatifect-smoke flow.chest.cancellation`: **PASS10**, request `856cfa3b-76c4-48f1-9165-d8904254f693`,23,499 ms, PID81850 exit0,468 frames,3 loads/2 Saving/Saved pairs. Three distinct Cancelled IDs and a separate re-admitted Delivered parcel; quantity38, no exceptions/errors/teardown errors.
+- Same-candidate `./tools/hatifect-smoke flow.chest.roundtrip`: **PASS8**, request `1ee6623e-a520-49e7-ac47-bc86ba98b2cd`,22,568 ms, PID82210 exit0,347 frames,3 loads/2 pairs; no errors. Both reports use deployed Flow fingerprint `6189f9635bc64c6660e1101370db3bba7ff50626a05d12337fdcaf4c9db88289`.
+- Independent source and actual evidence review found no actionable regression. Final G/C, both reports, full process journals, two real save traces per run, deployed fingerprint and cleanup were checked. Both request-owned copies were removed.
+- Package contract **PASS**,21 files/14 DLLs. Generated report matched preserved runtime bytes before removal. Archive, hashes, inventory and full source/staged attestation: `artifacts/flowline-f16-cancellation/`.
+
+The supported remaining F16 runtime matrix is now explicitly finite in [FLOW_PROVIDER_CONSISTENCY.md](FLOW_PROVIDER_CONSISTENCY.md): capacity refusal/retry/return and Saved Returned/taken-item persistence. Interrupted game-save file generation has no automatic-repair guarantee under the complete-save protocol; it is a documented limitation with complete-backup fallback, not a missing PASS or proof of file-write atomicity. Synthetic known-receipt recovery and observer fault injection remain separately identified. F16/F17 stay IN_PROGRESS. Visual, UI package-boundary and settings/skills host-audit changes are NOT_APPLICABLE to this increment.
