@@ -461,3 +461,32 @@ Integration commit: `f76ab21`. The integration combines UI `959c8cc` (alpha.35 i
 F17 is complete for its documented provider/lifecycle scope. Full U02 remains **IN_PROGRESS**. Next: U02-e alpha.36 updates only changed collection payloads/projections while preserving immutable snapshots, stable indices, version history and atomic validation; Flow independently continues F20.
 
 Before publication, the fresh remote `develop` contained `7a9e590` with nine runtime executor instruction/config/tool files. They merge without conflict or compiled-source changes. Final combined `./tools/hatifect-test tools` is **PASS342**, `run-q0jhgtwg`; `./tools/hatifect-check` is **PASS1263 .NET +342 Python**, `run-syq2_ud9`, zero failures/skips. `./tools/hatifect-agent-check --host` is **PASS**, project config/skill loaded and217 skills discovered. The final source pass confirms the already published command rule and Ready/transport validation remain intact; this merge changes neither personal settings nor acceptance budgets. No executor or game was started for this tooling integration.
+
+## U02-e: bounded Update preparation and U02 acceptance
+
+Owner: UI Experience, alpha.36, based on published `7dec9c7`. A single typed Update previously copied and projected all N payloads, rebuilt the stable-ID dictionary and repeated full source validation. Update-only changes now validate every sequential operation's address/identity/nullability, retain final values by index and project them in index order. The registered immutable schema and exact captured source/base authorize a private prepared candidate; shared item validation retains the existing CLR/nullability semantics. Errors still reject the entire publication through `UIP010`. The proof is not stored in the committed snapshot or history.
+
+Collection storage uses private leaves of at most128 elements. An updated capture clones the root array and touched leaves, retaining neither an older root nor an older snapshot. The stable-ID map is reused, and a supporting-item count avoids rescanning when the last supporting text disappears. Equivalent explicit updates still advance source version/history while retaining item/content revisions and immutable storage. Mixed equivalent/non-equivalent updates preserve the existing distinction between the supplied typed value and a reused equivalent semantic item. Empty explicit changes retain selection capability/membership validation. Shared formatter/locale changes use Reset/Replace to reproject unchanged payloads.
+
+Projection/item validation is O(K); total preparation includes O(N/128 +128×touchedBlocks +K log K +history), with K≤128 and history≤64. Insert/Remove/Move/Reset retain full O(N) preparation. No public signature, persistence contract or dependency is added; all17 producer/consumer version authorities move together to alpha.36 and frozen public API source hashes remain unchanged.
+
+Validation:
+
+- Initial `./tools/hatifect-test ui`: **PASS559**, `artifacts/validation/run-ghfreyf6/summary.json`. This includes15 new Update cases; it precedes the final allocation regression assertion.
+- Final `./tools/hatifect-check`: **PASS1278 .NET +342 Python**, `artifacts/validation/run-rhgz6ysz/summary.json`.
+- Final `./tools/hatifect-check --platform`: **PASS1493 .NET +342 Python**, `artifacts/validation/run-htdyajte/summary.json`, including90 CA,110 Flow Stardew and15 UI Stardew tests.
+- `env -u DOTNET_gcConcurrent -u COMPlus_gcConcurrent ... ./tools/hatifect-test ui --no-build --project 'Hatifect UI/tests/Hatifect.UI.Runtime.Tests/Hatifect.UI.Runtime.Tests.csproj'`: **PASS263**, `artifacts/validation/run-t87jl1b3/summary.json`. Seven compiled DLL hashes match before/after. This uses the existing x64 .NET runner, SDK8.0.424 and net6.0 target on macOS27; environment and full measurement lines are retained in `artifacts/u02-update-preparation/performance-environment.json` and `performance.json`. No local build runs concurrently; this is not a globally idle/thermally controlled benchmark.
+- `./tools/hatifect-isolated-ui-ca --keep`: **PASS90**,44 byte-identical projected files, eight exact alpha.36 packages matching current producer DLLs, two CA output/deploy DLLs and no UI sources. Full log: `artifacts/u02-update-preparation/isolated-ca.log`; retained workspace: `/private/var/folders/ly/sph907ln7bv1tc3dxmflc62h0000gn/T/hatifect-ui-ca-isolated.ulga7jn8`.
+- U/C/G source and evidence review passed with no open findings. All15 new cases execute in U/C/G. Current G also executes the earlier atomic, version/history, selection/focus/scroll and rendering acceptance:12 Publication,24 PublishedCollection,3 PublicationScene,30 CollectionPublicationInteraction,15 CollectionStateRendering,17 ParcelPublication,42 NetworkPublication and20 CA experience cases. All gate/TRX failure, skipped/notExecuted and error counters are zero.
+
+Ordinary-GC preparation measurements,600 samples per case, whole BeginUpdate/Apply/Commit. Allocations are the measured mean, not a per-sample maximum:
+
+| Items | Update p95/p99 ms | Update bytes/publication | Reset p95/p99 ms | Reset bytes/publication |
+|---:|---:|---:|---:|---:|
+|100|0.003375 /0.003791|4568.00|0.043000 /0.333583|34659.08|
+|1000|0.003625 /0.017916|5129.48|0.792667 /1.046583|292606.00|
+|10000|0.004500 /0.005458|6264.00|7.287292 /7.929292|2757495.01|
+
+The three Update cases additionally enforce mean allocations≤16KiB/publication, rejecting a regression to full projection/validation. Existing UI time/frame budgets are unchanged. The large cold Reset measurements do not establish an overall steady-frame budget PASS. C/G/P use command-local `DOTNET_gcConcurrent=0` for the previously diagnosed SDK fork stall; the separate measurements above explicitly remove both GC override variables. Runtime/visual game acceptance and settings/skills host audit are **NOT_APPLICABLE** to this host-free storage change.
+
+Independent bounded acceptance review finds no remaining U02 exit criterion: source version/atomicity, all four deltas/reset, replay/gap handling, bounded history, stable selection/focus/scroll and coherent current rendering are covered by current tests. **U02 is DONE** with the explicit large structural/cold preparation limitation. Candidate source/package/DLL hashes are in `artifacts/u02-update-preparation/candidate.json`. Next UI ID is U03 typed request/result and asynchronous action lifecycle; U04 is independently ready after U01. The received Flow resource checkpoint is integrated separately after this source candidate.

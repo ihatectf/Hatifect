@@ -86,7 +86,7 @@ internal static class UiSourceTypeValidation
             for (int index = 0; index < count; index++)
             {
                 object? item = collection.GetItem(index).Value;
-                if ((item is null && !itemType.Nullable) || (item is not null && !itemClr.IsInstanceOfType(item)))
+                if (!IsValidCollectionItem(item, itemType, itemClr))
                     Error($"Collection item {index} violates its CLR type or required nullability.");
             }
         }
@@ -124,4 +124,7 @@ internal static class UiSourceTypeValidation
         }
         void Error(string message) => errors.Add(new("UIG022", message, binding.Id));
     }
+
+    internal static bool IsValidCollectionItem(object? value, UiDataType itemType, Type itemClr)
+        => value is null ? itemType.Nullable : itemClr.IsInstanceOfType(value);
 }
