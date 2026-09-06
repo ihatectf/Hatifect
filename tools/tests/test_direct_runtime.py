@@ -21,24 +21,26 @@ SPEC.loader.exec_module(DIRECT_RUNTIME)
 
 class DirectRuntimeTests(unittest.TestCase):
     def test_canonical_flow_save_is_cleaned_on_launch_failure_with_same_scenario_authority(self) -> None:
-        with _RequestFixture() as fixture:
-            fixture.request['scenarioId'] = 'flow.chest.roundtrip'
-            isolated = Path(fixture.request['isolatedRoot'])
-            path = isolated / ('HatifectHarness' + fixture.request['requestId'].replace('-', '') + '_4242424242')
-            path.mkdir()
-            fixture.request['savePath'] = str(path)
-            fixture.metadata['saveProvisionerExecutable'] = 'save.py'
-            provisioner = mock.Mock()
-            provisioner.validate_fixture.return_value = ({'runtimeId': 'runtime'}, None)
-            provisioner.prepare_working_copy.return_value = path
-            provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
-            with mock.patch.object(DIRECT_RUNTIME, '_load_module', return_value=provisioner):
-                with self.assertRaisesRegex(OSError, 'launch failed'):
-                    with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
-                        raise OSError('launch failed')
-            self.assertFalse(path.exists())
-            provisioner.prepare_flow_secondary.assert_not_called()
-            provisioner.cleanup_working_copy.assert_called_once_with(isolated, path, 'runtime', fixture.request['requestId'], 'flow.chest.roundtrip', role='primary')
+        for scenario in ('flow.chest.roundtrip', 'flow.chest.performance'):
+            with self.subTest(scenario=scenario):
+                with _RequestFixture() as fixture:
+                    fixture.request['scenarioId'] = scenario
+                    isolated = Path(fixture.request['isolatedRoot'])
+                    path = isolated / ('HatifectHarness' + fixture.request['requestId'].replace('-', '') + '_4242424242')
+                    path.mkdir()
+                    fixture.request['savePath'] = str(path)
+                    fixture.metadata['saveProvisionerExecutable'] = 'save.py'
+                    provisioner = mock.Mock()
+                    provisioner.validate_fixture.return_value = ({'runtimeId': 'runtime'}, None)
+                    provisioner.prepare_working_copy.return_value = path
+                    provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
+                    with mock.patch.object(DIRECT_RUNTIME, '_load_module', return_value=provisioner):
+                        with self.assertRaisesRegex(OSError, 'launch failed'):
+                            with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
+                                raise OSError('launch failed')
+                    self.assertFalse(path.exists())
+                    provisioner.prepare_flow_secondary.assert_not_called()
+                    provisioner.cleanup_working_copy.assert_called_once_with(isolated, path, 'runtime', fixture.request['requestId'], scenario, role='primary')
 
     def test_flow_lifecycle_report_has_fixed_module_ownership(self) -> None:
         isolated = Path("/isolated")
