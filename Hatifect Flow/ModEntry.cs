@@ -19,6 +19,7 @@ public sealed partial class ModEntry : Mod
     private FlowGamePerformanceAcceptance? _performanceAcceptance;
     private FlowGameResourceAcceptance? _resourceAcceptance;
     private FlowItemNamesAcceptance? _itemNamesAcceptance;
+    private FlowUiAcceptance? _uiAcceptance;
     private bool _attached;
     private bool _startupFailed;
 
@@ -39,6 +40,8 @@ public sealed partial class ModEntry : Mod
         try
         {
             _itemNamesAcceptance = FlowItemNamesAcceptance.TryCreate(Helper, Monitor);
+            _uiAcceptance = FlowUiAcceptance.TryCreate(Helper, Monitor,
+                (application, parcel, names, api) => ShowParcel(application, parcel, names, api), CloseParcelSurface);
             _acceptance = FlowHostAcceptance.TryCreate(Helper, Monitor);
             _chestAcceptance = FlowChestRoundtripAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
             _cancellationAcceptance = FlowChestCancellationAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
@@ -58,6 +61,12 @@ public sealed partial class ModEntry : Mod
 
     private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
     {
+        if (_uiAcceptance is not null)
+        {
+            try { RequireReadOnlyUiSession(); _uiAcceptance.OnSaveLoaded(); }
+            catch (Exception error) { ReportFailure(error); }
+            return;
+        }
         if (_itemNamesAcceptance is not null)
         {
             try
@@ -101,6 +110,13 @@ public sealed partial class ModEntry : Mod
         }
         try
         {
+            if (_uiAcceptance is not null)
+            {
+                RequireReadOnlyUiSession();
+                TickGameSession(e);
+                _uiAcceptance.Tick();
+                return;
+            }
             if (_itemNamesAcceptance is not null)
             {
                 RequireReadOnlyNamesSession();
@@ -128,6 +144,7 @@ public sealed partial class ModEntry : Mod
         {
             CloseGameSession();
             CloseHost();
+            _uiAcceptance?.OnReturnedToTitle();
             _acceptance?.OnReturnedToTitle();
             _chestAcceptance?.OnReturnedToTitle();
             _cancellationAcceptance?.OnReturnedToTitle();
@@ -174,7 +191,12 @@ public sealed partial class ModEntry : Mod
         }
         finally
         {
-            try { if (disposing) _itemNamesAcceptance?.Dispose(); }
+            try
+            {
+                if (disposing)
+                    try { _itemNamesAcceptance?.Dispose(); }
+                    finally { _uiAcceptance?.Dispose(); }
+            }
             finally { base.Dispose(disposing); }
         }
     }
@@ -188,6 +210,18 @@ public sealed partial class ModEntry : Mod
     private void RequireReadOnlyNamesSession()
         => FlowHostAcceptance.Require(_host is null && _gameSession is null && _parcelSurface is null,
             "Read-only name acceptance unexpectedly retained transport or a Flow surface.");
+
+    private void RequireReadOnlyUiSession()
+        => FlowHostAcceptance.Require(_host is null && _gameSession is null,
+            "Read-only Flow UI acceptance unexpectedly retained a production transport session.");
+
+    private bool RejectReadOnlySaveLifecycle(string lifecycle)
+    {
+        if (RejectNamesLifecycle(lifecycle)) return true;
+        if (_uiAcceptance is null) return false;
+        _uiAcceptance.Fail(new InvalidOperationException("Unexpected read-only Flow UI lifecycle: " + lifecycle));
+        return true;
+    }
 
     private bool RejectNamesLifecycle(string lifecycle)
     {
@@ -209,5 +243,6 @@ public sealed partial class ModEntry : Mod
         _performanceAcceptance?.Fail(error);
         _resourceAcceptance?.Fail(error);
         _itemNamesAcceptance?.Fail(error);
+        _uiAcceptance?.Fail(error);
     }
 }
