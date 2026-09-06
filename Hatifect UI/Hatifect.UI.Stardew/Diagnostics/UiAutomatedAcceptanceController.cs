@@ -160,6 +160,27 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             "semantic.actions.terminal.failed-route.transition",
             "semantic.actions.terminal.failed-route.delivery"
         }, includeInAggregate: false),
+        new("semantic.actions.save-switch", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.SaveSwitch, true, new[]
+        {
+            "semantic.actions.save-switch.copies",
+            "semantic.actions.save-switch.window.pending",
+            "semantic.actions.save-switch.window.retirement",
+            "semantic.actions.save-switch.window.late",
+            "semantic.actions.save-switch.window.delivery",
+            "semantic.actions.save-switch.terminal.pending",
+            "semantic.actions.save-switch.terminal.retirement",
+            "semantic.actions.save-switch.terminal.late",
+            "semantic.actions.save-switch.terminal.delivery",
+            "semantic.actions.save-switch.hud.pending",
+            "semantic.actions.save-switch.hud.retirement",
+            "semantic.actions.save-switch.hud.late",
+            "semantic.actions.save-switch.hud.delivery",
+            "semantic.actions.save-switch.active-menu.pending",
+            "semantic.actions.save-switch.active-menu.retirement",
+            "semantic.actions.save-switch.active-menu.late",
+            "semantic.actions.save-switch.active-menu.delivery",
+            "semantic.actions.save-switch.lifecycle"
+        }, includeInAggregate: false),
         new("semantic.actions.pump", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.ActionPump, true, new[]
         {
             "semantic.actions.pump.menu",
@@ -390,6 +411,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        StopSaveSwitch();
         StopEnvironment();
         StopTerminalGeneration();
         StopActionPump();
@@ -425,6 +447,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             Game1.game1.Exit();
             return;
         }
+        if (AdvanceSaveSwitch()) return;
         if (_verifyReturnToTitleContribution)
         {
             VerifyReturnedToTitleContribution();
@@ -584,6 +607,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         catch (Exception error)
         {
             RetainTerminalFailure("HARNESS-AUTOMATION-EXECUTION-EXCEPTION", error);
+            StopSaveSwitch();
             StopEnvironment();
             StopTerminalGeneration();
             StopActionPump();
@@ -667,6 +691,9 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             case AcceptanceScenarioExecution.TerminalGeneration:
                 BeginTerminalGeneration();
                 return true;
+            case AcceptanceScenarioExecution.SaveSwitch:
+                BeginSaveSwitch();
+                return true;
             case AcceptanceScenarioExecution.ActionPump:
                 BeginActionPump();
                 return true;
@@ -709,6 +736,13 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         try
         {
             _awaitingReturnedToTitle = false;
+            if (_saveSwitchStage == SaveSwitchStage.AwaitTitle)
+            {
+                _saveSwitchTitles++;
+                _saveSwitchStage = SaveSwitchStage.LoadNext;
+                _saveSwitchTicks = 0;
+                return;
+            }
             if (_returnToTitleContribution != null)
             {
                 // The UI handler can precede other mods' handlers. Observe their completed teardown
@@ -739,6 +773,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         _returnToTitleContribution = null;
         _verifyReturnToTitleContribution = false;
         RetainTerminalFailure("HARNESS-AUTOMATION-LIFECYCLE-EXCEPTION", error);
+        StopSaveSwitch();
         StopEnvironment();
         StopTerminalGeneration();
         StopActionPump();
@@ -1309,6 +1344,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             visualMatrixRestored = _visualSettingsRestored,
             retiredOverlayInput = _retiredOverlayInput,
             environment = new { completed = _environmentCompleted, targets = _environmentObservations.ToArray(), operations = _environmentOperations.ToArray(), automatic = _environmentAutomaticObservations.ToArray() },
+            saveSwitch = new { completed = _saveSwitchCompleted, ownerThread = _saveSwitchOwnerThread, titles = _saveSwitchTitles, loads = _saveSwitchLoads, targets = _saveSwitchObservations.ToArray(), effects = _saveSwitchEffects.ToArray() },
             actionReload = new { completed = _reloadCompleted, targets = _reloadObservations.ToArray(), failedCleanup = _reloadFailedCleanup.ToArray() },
             terminalGeneration = new { completed = _terminalGenerationCompleted, ownerThread = _generationOwnerThread, transitions = _terminalGenerationTransitions.ToArray(), actions = _terminalGenerationActions.ToArray() },
             actionPump = new { completed = _actionPumpCompleted, ownerThread = _actionOwnerThread, ticks = _actionTicks, probes = _actionProbes.ToArray() },
@@ -1343,6 +1379,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         Input,
         NativeInput,
         TerminalGeneration,
+        SaveSwitch,
         ActionPump,
         ActionReload,
         Environment,

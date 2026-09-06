@@ -112,17 +112,22 @@ class SaveProvisioningTests(unittest.TestCase):
         self.assertEqual(SAVE.validate_fixture(self.isolated, self.smapi)[0], manifest)
         SAVE.validate_working_copy(self.isolated, secondary, manifest["runtimeId"], SAVE.flow_secondary_run_id(run_id))
 
+    def test_ui_save_switch_derives_owned_world_and_preserves_primary_and_golden(self) -> None:
+        self._assert_isolation_copies("semantic.actions.save-switch", SAVE.prepare_secondary)
+
     def test_production_isolation_derives_two_world_names_and_preserves_every_other_byte(self) -> None:
+        self._assert_isolation_copies("flow.chest.isolation", SAVE.prepare_flow_secondary)
+
+    def _assert_isolation_copies(self, scenario, prepare_secondary) -> None:
         original = b'<SaveGame xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><uniqueIDForThisGame>4242424242</uniqueIDForThisGame><other xsi:type="Thing">4242424242</other></SaveGame>'
         self._bootstrap(save_xml=original)
         manifest, golden = SAVE.validate_fixture(self.isolated, self.smapi)
         before = SAVE._inventory(golden)
         run_id = str(uuid.uuid4())
         secondary_id = SAVE.flow_secondary_run_id(run_id)
-        scenario = "flow.chest.isolation"
         primary = SAVE.prepare_working_copy(self.isolated, self.smapi, run_id, scenario)
         first = SAVE._inventory(primary)
-        secondary = SAVE.prepare_flow_secondary(self.isolated, self.smapi, run_id, scenario)
+        secondary = prepare_secondary(self.isolated, self.smapi, run_id, scenario)
         self.assertEqual(primary.name, f"HatifectHarness{uuid.UUID(run_id).hex}_4242424242")
         self.assertEqual(secondary.name, f"HatifectHarness{uuid.UUID(secondary_id).hex}_4242424243")
         self.assertEqual((secondary / secondary.name).read_bytes(), original.replace(b">4242424242</uniqueID", b">4242424243</uniqueID"))
@@ -143,26 +148,43 @@ class SaveProvisioningTests(unittest.TestCase):
         self.assertFalse(secondary.exists())
         self.assertEqual(SAVE._inventory(golden), before)
 
+    def test_ui_save_switch_reseed_failure_and_collision_release_only_acquired_copy(self) -> None:
+        self._assert_secondary_failure_ownership("semantic.actions.save-switch", SAVE.prepare_secondary)
+
     def test_production_secondary_collision_and_invalid_xml_preserve_existing_paths(self) -> None:
+        self._assert_secondary_failure_ownership("flow.chest.isolation", SAVE.prepare_flow_secondary)
+
+    def _assert_secondary_failure_ownership(self, scenario, prepare_secondary) -> None:
         self._bootstrap(save_xml=b"not-xml")
         run_id = str(uuid.uuid4())
-        scenario = "flow.chest.isolation"
         primary = SAVE.prepare_working_copy(self.isolated, self.smapi, run_id, scenario)
         before = SAVE._inventory(primary)
         secondary_id = SAVE.flow_secondary_run_id(run_id)
         secondary = primary.parent / SAVE._working_name(secondary_id, scenario, role="secondary")
         with self.assertRaises(SAVE.SaveProvisioningError) as caught:
-            SAVE.prepare_flow_secondary(self.isolated, self.smapi, run_id, scenario)
+            prepare_secondary(self.isolated, self.smapi, run_id, scenario)
         self.assertEqual(caught.exception.assertion_id, "HARNESS-SAVE-IDENTITY")
         self.assertFalse(secondary.exists())
         self.assertEqual(SAVE._inventory(primary), before)
         secondary.mkdir()
         (secondary / "foreign").write_text("preserve")
         with self.assertRaises(SAVE.SaveProvisioningError) as caught:
-            SAVE.prepare_flow_secondary(self.isolated, self.smapi, run_id, scenario)
+            prepare_secondary(self.isolated, self.smapi, run_id, scenario)
         self.assertEqual(caught.exception.assertion_id, "HARNESS-SAVE-COLLISION")
         self.assertEqual((secondary / "foreign").read_text(), "preserve")
         self.assertEqual(SAVE._inventory(primary), before)
+
+    def test_secondary_preparation_rejects_unadmitted_scenarios_before_copying(self) -> None:
+        self._bootstrap()
+        run_id = str(uuid.uuid4())
+        for scenario in ("", "semantic.actions.reload", "semantic.actions.save-switch.extra", "flow.ui.isolation"):
+            with self.subTest(scenario=scenario), mock.patch.object(SAVE, "prepare_working_copy") as prepare:
+                with self.assertRaises(SAVE.SaveProvisioningError) as caught:
+                    SAVE.prepare_secondary(self.isolated, self.smapi, run_id, scenario)
+                self.assertEqual(caught.exception.assertion_id, "HARNESS-SAVE-PATH")
+                prepare.assert_not_called()
+        self.assertEqual(SAVE.secondary_run_id(run_id), SAVE.flow_secondary_run_id(run_id))
+        self.assertNotEqual(SAVE.secondary_run_id(run_id), run_id)
 
     def test_flow_secondary_rejects_invalid_xml_and_cleans_only_new_copy(self) -> None:
         invalid = [b"not-xml", b"<SaveGame/>", b"<Farmer><uniqueIDForThisGame>4242424242</uniqueIDForThisGame></Farmer>", b"<SaveGame><uniqueIDForThisGame>1</uniqueIDForThisGame></SaveGame>", b"<SaveGame><nested><uniqueIDForThisGame>4242424242</uniqueIDForThisGame></nested></SaveGame>", b"<SaveGame><uniqueIDForThisGame>4242424242</uniqueIDForThisGame><uniqueIDForThisGame>4242424242</uniqueIDForThisGame></SaveGame>"]

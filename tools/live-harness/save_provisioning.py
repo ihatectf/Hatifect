@@ -402,9 +402,9 @@ def _is_acceptance_storage(document: Any) -> bool:
 
 def _working_name(run_id: str, scenario_id: str = "", *, role: str = "primary") -> str:
     token = uuid.UUID(_canonical_run_id(run_id)).hex
-    if role not in ("primary", "secondary") or (role == "secondary" and scenario_id != "flow.chest.isolation"):
-        raise SaveProvisioningError("HARNESS-SAVE-PATH", "Secondary role is reserved for production Flow isolation.")
-    if scenario_id == "flow.chest.isolation":
+    if role not in ("primary", "secondary") or (role == "secondary" and scenario_id not in ("flow.chest.isolation", "semantic.actions.save-switch")):
+        raise SaveProvisioningError("HARNESS-SAVE-PATH", "Secondary role needs an exact world-switch scenario.")
+    if scenario_id in ("flow.chest.isolation", "semantic.actions.save-switch"):
         return f"HatifectHarness{token}_{4242424243 if role == 'secondary' else 4242424242}"
     # Stardew loads the base before '_' and saves base + '_' + world identity.
     return f"HatifectHarness{token}_4242424242" if scenario_id in {"flow.chest.roundtrip", "flow.chest.crash-after-save", "flow.chest.crash-after-delivery", "flow.chest.crash-after-unsaved-extraction", "flow.chest.crash-after-unsaved-delivery", "flow.chest.cancellation", "flow.chest.return", "flow.chest.crash-after-return", "flow.chest.performance", "flow.chest.resources"} else f"HatifectHarness_{token}"
@@ -529,9 +529,14 @@ def validate_working_copy(
     return candidate
 
 
-def flow_secondary_run_id(run_id: str) -> str:
-    """Fixed second-copy identity for Flow isolation; no new request authority."""
+def secondary_run_id(run_id: str) -> str:
+    """Fixed companion identity derived from the accepted request; no new authority."""
     return str(uuid.UUID(int=uuid.UUID(_canonical_run_id(run_id)).int ^ 1))
+
+
+def flow_secondary_run_id(run_id: str) -> str:
+    """Compatibility for the original Flow isolation fixture protocol."""
+    return secondary_run_id(run_id)
 
 
 def _reseed_flow_secondary(isolated_root: Path, save: Path, runtime_id: str, run_id: str, scenario_id: str = "", *, role: str = "primary") -> None:
@@ -571,11 +576,11 @@ def _reseed_flow_secondary(isolated_root: Path, save: Path, runtime_id: str, run
             os.unlink(temporary)
 
 
-def prepare_flow_secondary(isolated_root: Path, smapi_path: Path, parent_run_id: str, scenario_id: str = "flow.save.isolation") -> Path:
-    if scenario_id not in ("flow.save.isolation", "flow.chest.isolation"):
+def prepare_secondary(isolated_root: Path, smapi_path: Path, parent_run_id: str, scenario_id: str) -> Path:
+    if scenario_id not in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch"):
         raise SaveProvisioningError("HARNESS-SAVE-PATH", "Secondary preparation needs an exact isolation scenario.")
-    role = "secondary" if scenario_id == "flow.chest.isolation" else "primary"
-    run_id = flow_secondary_run_id(parent_run_id)
+    role = "primary" if scenario_id == "flow.save.isolation" else "secondary"
+    run_id = secondary_run_id(parent_run_id)
     manifest, _ = validate_fixture(isolated_root, smapi_path)
     # A collision fails before we acquire cleanup authority over this path.
     destination = prepare_working_copy(isolated_root, smapi_path, run_id, scenario_id, role=role)
@@ -588,6 +593,13 @@ def prepare_flow_secondary(isolated_root: Path, smapi_path: Path, parent_run_id:
             raise SaveProvisioningError("HARNESS-SAVE-CLEANUP", f"Secondary preparation failed: {error}; cleanup failed: {cleanup_error}") from error
         raise
     return destination
+
+
+def prepare_flow_secondary(isolated_root: Path, smapi_path: Path, parent_run_id: str, scenario_id: str = "flow.save.isolation") -> Path:
+    """Preserve the original Flow helper's default and exact scenario admission."""
+    if scenario_id not in ("flow.save.isolation", "flow.chest.isolation"):
+        raise SaveProvisioningError("HARNESS-SAVE-PATH", "Flow secondary preparation needs an exact Flow isolation scenario.")
+    return prepare_secondary(isolated_root, smapi_path, parent_run_id, scenario_id)
 
 
 def cleanup_working_copy(isolated_root: Path, save_path: Path, runtime_id: str, run_id: str, scenario_id: str = "", *, role: str = "primary") -> None:

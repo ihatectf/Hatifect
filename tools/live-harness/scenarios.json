@@ -609,6 +609,37 @@
       }
     },
     {
+      "id": "semantic.actions.save-switch",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.actions.save-switch.copies",
+        "semantic.actions.save-switch.window.pending",
+        "semantic.actions.save-switch.window.retirement",
+        "semantic.actions.save-switch.window.late",
+        "semantic.actions.save-switch.window.delivery",
+        "semantic.actions.save-switch.terminal.pending",
+        "semantic.actions.save-switch.terminal.retirement",
+        "semantic.actions.save-switch.terminal.late",
+        "semantic.actions.save-switch.terminal.delivery",
+        "semantic.actions.save-switch.hud.pending",
+        "semantic.actions.save-switch.hud.retirement",
+        "semantic.actions.save-switch.hud.late",
+        "semantic.actions.save-switch.hud.delivery",
+        "semantic.actions.save-switch.active-menu.pending",
+        "semantic.actions.save-switch.active-menu.retirement",
+        "semantic.actions.save-switch.active-menu.late",
+        "semantic.actions.save-switch.active-menu.delivery",
+        "semantic.actions.save-switch.lifecycle"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
       "id": "semantic.actions.pump",
       "kind": "ui",
       "requiresSave": true,
