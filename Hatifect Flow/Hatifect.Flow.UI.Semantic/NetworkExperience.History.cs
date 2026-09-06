@@ -9,31 +9,29 @@ namespace Hatifect.Flow.UI.Semantic;
 internal sealed partial class NetworkExperience
 {
     private const int HistoryPageSize = 12;
-    private readonly UiState<string> _historyQuery = new("");
-    private readonly UiState<string> _historyPage = new("");
-    private readonly UiState<string> _historyAvailability = new("");
-    private readonly UiState<string> _historyDetails = new("");
-    private readonly UiState<FlowParcelSnapshot?> _historySelectedParcel = new(null);
-    private UiSelectableCollectionState<string> _historyFilter = null!;
-    private UiSelectableCollectionState<FlowParcelSnapshot> _history = null!;
+    private FlowTextSource _historyQuery = null!;
+    private UiPublishedState<string> _historyPage = null!, _historyAvailability = null!, _historyDetails = null!;
+    private UiPublishedState<FlowParcelSnapshot?> _historySelectedParcel = null!;
+    private FlowSelectionSource<string> _historyFilter = null!;
+    private FlowSelectionSource<FlowParcelSnapshot> _history = null!;
     private Func<string, string> _historyItemName = null!;
-    private Guid? _historySelection;
-    private int _page;
-    private int _historyCount;
-    private bool _projectingHistory;
+    private int _page => _projection.Value.Page;
+    private int _historyCount => _projection.Value.HistoryCount;
 
     private void InitializeHistory(UiSymbolId id, Func<string, string> itemName)
     {
-        _historyItemName = itemName;
-        _historyFilter = new(new[] { "all", "active", "attention" }, value => id.Child("history-filter/" + value),
+        _historyItemName = value => Format(itemName, value);
+        UiPublishedState<string> State(string key) => _publication.State(id.Child("source/" + key), "", UiSourceTypes.String);
+        _historyQuery = new(State("history-query"), RequestEdit);
+        _historyPage = State("history-page"); _historyAvailability = State("history-availability"); _historyDetails = State("history-details");
+        _historySelectedParcel = _publication.State<FlowParcelSnapshot?>(id.Child("source/history-selected"), null,
+            new(FlowUiDataTypes.Parcel.Descriptor with { Nullable = true }));
+        _historyFilter = Selection(id.Child("source/history-filter-values"), new[] { "all", "active", "attention" }, UiSourceTypes.String, value => id.Child("history-filter/" + value),
             value => value == "all" ? Text("All shipments", "Все отправления") : value == "active" ? Text("Active shipments", "Активные отправления") : Text("Needs attention", "Требуют внимания"),
             selectedItemId: id.Child("history-filter/all"));
-        _history = new(Array.Empty<FlowParcelSnapshot>(), value => id.Child("history/" + value.Id.ToString("N")),
-            value => itemName(value.ItemKey) + " × " + value.Quantity,
+        _history = Selection(id.Child("source/history-values"), Array.Empty<FlowParcelSnapshot>(), FlowUiDataTypes.Parcel, value => id.Child("history/" + value.Id.ToString("N")),
+            value => _historyItemName(value.ItemKey) + " × " + value.Quantity,
             supportingText: value => StationName(value.Origin) + " → " + StationName(value.Destination) + " · " + Describe(value.State));
-        _historyQuery.Changed += OnHistoryQuery;
-        _historyFilter.Changed += OnHistoryQuery;
-        _history.Changed += OnHistorySelection;
     }
 
     private void AppendHistory(UiExperienceBuilder builder, UiSymbolId id)
@@ -55,8 +53,8 @@ internal sealed partial class NetworkExperience
             .Element(id.Child("element/history-detail"), "HistoryDetail", Text("Selected shipment", "Выбранное отправление"), _historyDetails, UiSourceTypes.String, UiCapabilities.Inspect)
             .Element(id.Child("element/history-availability"), "HistoryAvailability", Text("Availability", "Доступность"), _historyAvailability, UiSourceTypes.String, UiCapabilities.Monitor)
             .Actions(id.Child("element/history-navigation"), "HistoryNavigation", Text("History navigation", "Навигация истории"),
-                new UiActionDefinition(id.Child("action/previous-page"), Text("Previous page", "Предыдущая страница"), () => { _page--; ProjectHistory(); }, () => IsActive && _page > 0),
-                new UiActionDefinition(id.Child("action/next-page"), Text("Next page", "Следующая страница"), () => { _page++; ProjectHistory(); }, () => IsActive && (_page + 1) * HistoryPageSize < _historyCount))
+                new UiActionDefinition(id.Child("action/previous-page"), Text("Previous page", "Предыдущая страница"), () => ChangePage(-1), () => CanRequest && IsActive && _page > 0),
+                new UiActionDefinition(id.Child("action/next-page"), Text("Next page", "Следующая страница"), () => ChangePage(1), () => CanRequest && IsActive && (_page + 1) * HistoryPageSize < _historyCount))
             .Actions(id.Child("element/history-actions"), "HistoryActions", Text("Selected shipment actions", "Действия с отправлением"),
                 HistoryAction(id, "reserve", Text("Dispatch selected", "Отправить выбранное"), FlowParcelAction.Reserve),
                 HistoryAction(id, "cancel", Text("Cancel selected", "Отменить выбранное"), FlowParcelAction.Cancel),
@@ -77,58 +75,40 @@ internal sealed partial class NetworkExperience
             FlowParcelSnapshot? parcel = Selected(_history);
             if (parcel is null) return;
             FlowCommandResult result = _application.Execute(new FlowParcelCommand(_snapshot.Transport.SessionId, _snapshot.Transport.Revision, parcel.Id, action));
-            _result.Value = result.Status == FlowCommandStatus.Applied ? Text("Command completed", "Команда выполнена") : FlowReasonText.Describe(result.Code, result.ReasonKey, _russian);
-            _dirty = true;
-            Pump();
+            Complete(result, Text("Command completed", "Команда выполнена"));
         }, () => Selected(_history) is { } parcel && parcel.Availability[action].Available);
 
-    private void OnHistoryQuery()
+    private Projection ProjectHistory(UiPublicationBatch batch, Projection projection)
     {
-        if (_disposed || _projectingHistory) return;
-        _page = 0;
-        ProjectHistory();
-    }
-    private void OnHistorySelection()
-    {
-        if (_disposed || _projectingHistory) return;
-        _historySelection = Selected(_history)?.Id;
-        ProjectHistoryDetails();
-    }
-    private void ProjectHistory()
-    {
-        _projectingHistory = true;
-        try
-        {
-            string query = _historyQuery.Value.Trim();
-            if (query.Length > 128) query = query[..128];
-            string? filter = Selected(_historyFilter);
-            // The host retains at most 256 parcels; the visible collection is a detached twelve-row page.
-            FlowParcelSnapshot[] matches = _snapshot.Transport.Parcels.Where(parcel =>
-                (filter != "active" || parcel.State is not (ParcelState.Delivered or ParcelState.Cancelled or ParcelState.Returned))
-                && (filter != "attention" || parcel.State is ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted
-                    or ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain or ParcelState.ReturnRejected or ParcelState.ReturnFaulted or ParcelState.ReturnUncertain)
-                && (query.Length == 0 || _historyItemName(parcel.ItemKey).Contains(query, StringComparison.OrdinalIgnoreCase)
-                    || StationName(parcel.Origin).Contains(query, StringComparison.OrdinalIgnoreCase)
-                    || StationName(parcel.Destination).Contains(query, StringComparison.OrdinalIgnoreCase)
-                    || parcel.Id.ToString("D").Contains(query, StringComparison.OrdinalIgnoreCase)))
-                .OrderBy(parcel => parcel.Id).ToArray();
-            _historyCount = matches.Length;
-            _page = Math.Min(_page, Math.Max(0, (matches.Length - 1) / HistoryPageSize));
-            _history.Replace(matches.Skip(_page * HistoryPageSize).Take(HistoryPageSize).ToArray());
-            for (int index = 0; index < _history.Count; index++)
-                if (_history.Value[index].Id == _historySelection) _history.TrySelect(_history.GetItem(index).Id);
-            _historyPage.Value = $"{_page + 1} / {Math.Max(1, (matches.Length + HistoryPageSize - 1) / HistoryPageSize)} · {matches.Length}";
-            ProjectHistoryDetails();
-        }
-        finally { _projectingHistory = false; }
-    }
-    private void ProjectHistoryDetails()
-    {
-        FlowParcelSnapshot? parcel = Selected(_history);
-        _historySelectedParcel.Value = parcel;
-        _historyAvailability.Value = parcel is null ? "" : FlowReasonText.UnavailableActions(parcel.Availability, _russian);
-        _historyDetails.Value = parcel is null ? Text("Select a shipment", "Выберите отправление")
-            : $"{parcel.Id} · {Describe(parcel.State)} · " + Text("attempts: ", "попыток: ") + parcel.DeliveryAttempts;
+        string query = batch.Read(_historyQuery.Source).Trim();
+        if (query.Length > 128) query = query[..128];
+        string? filter = Selected(batch, _historyFilter);
+        // The host retains at most 256 parcels; the visible collection is a detached twelve-row page.
+        FlowParcelSnapshot[] matches = projection.Snapshot.Transport.Parcels.Where(parcel =>
+            (filter != "active" || parcel.State is not (ParcelState.Delivered or ParcelState.Cancelled or ParcelState.Returned))
+            && (filter != "attention" || parcel.State is ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted
+                or ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain or ParcelState.ReturnRejected or ParcelState.ReturnFaulted or ParcelState.ReturnUncertain)
+            && (query.Length == 0 || _historyItemName(parcel.ItemKey).Contains(query, StringComparison.OrdinalIgnoreCase)
+                || StationName(parcel.Origin).Contains(query, StringComparison.OrdinalIgnoreCase)
+                || StationName(parcel.Destination).Contains(query, StringComparison.OrdinalIgnoreCase)
+                || parcel.Id.ToString("D").Contains(query, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(parcel => parcel.Id).ToArray();
+        int page = Math.Min(projection.Page, Math.Max(0, (matches.Length - 1) / HistoryPageSize));
+        FlowParcelSnapshot[] visible = matches.Skip(page * HistoryPageSize).Take(HistoryPageSize).ToArray();
+        batch.Replace(_history.Source, visible);
+        if (Retired) return projection;
+        IUiSemanticCollectionSnapshot snapshot = batch.Read(_history.Source);
+        UiSymbolId? selected = null;
+        for (int index = 0; index < visible.Length; index++)
+            if (visible[index].Id == projection.HistorySelection) { selected = snapshot.GetItem(index).Id; break; }
+        batch.Select(_history.Source, selected);
+        FlowParcelSnapshot? parcel = Selected(batch, _history);
+        batch.Set(_historyPage, $"{page + 1} / {Math.Max(1, (matches.Length + HistoryPageSize - 1) / HistoryPageSize)} · {matches.Length}")
+            .Set(_historySelectedParcel, parcel)
+            .Set(_historyAvailability, parcel is null ? "" : FlowReasonText.UnavailableActions(parcel.Availability, _russian))
+            .Set(_historyDetails, parcel is null ? Text("Select a shipment", "Выберите отправление")
+                : $"{parcel.Id} · {Describe(parcel.State)} · " + Text("attempts: ", "попыток: ") + parcel.DeliveryAttempts);
+        return projection with { Page = page, HistoryCount = matches.Length };
     }
     private string Describe(ParcelState state) => state switch
     {

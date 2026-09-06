@@ -7,11 +7,10 @@ namespace Hatifect.Flow.UI.Semantic;
 
 internal sealed partial class NetworkExperience
 {
-    private readonly UiSelectableCollectionState<FlowInventorySlot> _inventory;
-    private readonly UiState<string> _quantity = new("1");
-    private readonly UiState<string?> _quantityError = new(null);
+    private readonly FlowSelectionSource<FlowInventorySlot> _inventory;
+    private readonly FlowTextSource _quantity;
+    private readonly UiPublishedState<string?> _quantityError;
     private readonly UiFormState _shipmentForm;
-    private Guid? _inventorySource;
 
     private void AppendShipping(UiExperienceBuilder builder, UiSymbolId id)
     {
@@ -23,21 +22,17 @@ internal sealed partial class NetworkExperience
                 Action(id, "send-quantity", Text("Send selected quantity", "Отправить указанное количество"),
                     () => Send(int.Parse(_quantity.Value, CultureInfo.InvariantCulture)),
                     () => Source is not null && Destination is not null && Source.Id != Destination.Id && _shipmentForm.IsValid),
-                new UiActionDefinition(id.Child("action/inventory"), Text("Refresh cargo", "Обновить груз"), RefreshInventory, () => IsActive));
+                new UiActionDefinition(id.Child("action/inventory"), Text("Refresh cargo", "Обновить груз"), RefreshInventory, () => CanRequest && IsActive));
     }
 
-    private void RefreshInventory()
-    {
-        _inventorySource = Source?.Id;
-        _inventory.Replace(_inventorySource.HasValue ? _application.ReadInventory(_inventorySource.Value) : Array.Empty<FlowInventorySlot>());
-    }
+    private void RefreshInventory() => Refresh();
 
-    private void ValidateQuantity()
+    private void ValidateQuantity(UiPublicationBatch batch)
     {
-        FlowInventorySlot? slot = Selected(_inventory);
-        _quantityError.Value = slot is null ? Text("Select source cargo", "Выберите груз в источнике")
-            : Number(_quantity.Value, slot.Quantity) ? null
-            : Text("Enter 1–", "Введите 1–") + slot.Quantity.ToString(CultureInfo.InvariantCulture);
+        FlowInventorySlot? slot = Selected(batch, _inventory);
+        batch.Set(_quantityError, slot is null ? Text("Select source cargo", "Выберите груз в источнике")
+            : Number(batch.Read(_quantity.Source), slot.Quantity) ? null
+            : Text("Enter 1–", "Введите 1–") + slot.Quantity.ToString(CultureInfo.InvariantCulture));
     }
 
     private void Send(int? quantity)
@@ -46,10 +41,6 @@ internal sealed partial class NetworkExperience
         if (slot is null || Source is null || Destination is null) return;
         FlowCommandResult result = _application.Execute(new FlowSendCommand(_snapshot.Transport.SessionId, _snapshot.Transport.Revision,
             Source.Id, Destination.Id, slot.Index, slot.Fingerprint) { Quantity = quantity });
-        _result.Value = result.Status == FlowCommandStatus.Applied ? Text("Shipment created", "Отправление создано")
-            : FlowReasonText.Describe(result.Code, result.ReasonKey, _russian);
-        _dirty = true;
-        Pump();
-        RefreshInventory();
+        Complete(result, Text("Shipment created", "Отправление создано"), refreshInventory: true);
     }
 }

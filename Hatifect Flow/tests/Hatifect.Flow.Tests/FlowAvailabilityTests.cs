@@ -153,7 +153,7 @@ public sealed class FlowAvailabilityTests
         Assert.Contains(mode, network.Experience.DisplayName);
         Assert.False(parcel.Experience.Actions[0].CanExecute);
         Assert.Contains(reason, parcel.Experience.Elements.Single(e => e.Name == (russian ? "Доступность" : "Availability")).Source.UntypedValue!.ToString());
-        var history = Assert.IsType<UiSelectableCollectionState<FlowParcelSnapshot>>(network.Experience.Elements.Single(e => e.Name == (russian ? "Отправления" : "Shipments")).Source);
+        var history = Assert.IsType<FlowSelectionSource<FlowParcelSnapshot>>(network.Experience.Elements.Single(e => e.Name == (russian ? "Отправления" : "Shipments")).Source);
         history.TrySelect(history.GetItem(0).Id);
         Assert.Contains(reason, network.Experience.Elements.Single(e => e.Name == (russian ? "Доступность" : "Availability")).Source.UntypedValue!.ToString());
         Assert.Equal(reason, FlowReasonText.Describe(FlowRejectionCode.RouteUnavailable, "unknown.translation", russian));

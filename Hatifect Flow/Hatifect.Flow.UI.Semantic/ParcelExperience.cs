@@ -21,6 +21,7 @@ internal sealed class ParcelExperience : IFlowExperience
     private readonly UiPublishedState<Projection> _projection;
     private string? _pendingResult;
     private bool _requesting;
+    private long _notificationEpoch;
     private FlowSnapshot Snapshot => _projection.Value.Snapshot;
     private FlowParcelSnapshot? Parcel => _projection.Value.Parcel;
     private sealed record Projection(FlowSnapshot Snapshot, FlowParcelSnapshot? Parcel);
@@ -116,7 +117,12 @@ internal sealed class ParcelExperience : IFlowExperience
         _application.RevisionChanged -= OnRevision;
         _subscribed = false;
     }
-    private void OnRevision(long revision) { if (!_disposed) _dirty = true; }
+    private void OnRevision(long revision)
+    {
+        if (_disposed) return;
+        _notificationEpoch++;
+        _dirty = true;
+    }
 
     private UiActionDefinition Action(UiSymbolId id, string key, FlowParcelAction action, string title)
         => new(id.Child("action/" + key), title, () => Execute(action), () => Can(action));
@@ -134,8 +140,9 @@ internal sealed class ParcelExperience : IFlowExperience
     {
         if (!IsActive || !Parcel!.Availability[action].Available) return false;
         FlowSnapshot expected = Snapshot;
+        long epoch = _notificationEpoch;
         FlowSnapshot current = _application.ReadSnapshot();
-        return !_disposed && !_publication.IsDisposed && current.State == FlowApplicationState.Active
+        return !_disposed && !_publication.IsDisposed && epoch == _notificationEpoch && current.State == FlowApplicationState.Active
             && current.SessionId == expected.SessionId && current.Revision == expected.Revision;
     }
 

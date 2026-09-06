@@ -186,6 +186,23 @@ public sealed class ParcelPublicationTests
         Assert.Equal(ParcelState.Reserved, app.Inner.ReadSnapshot().Parcels.Single().State);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NotificationWithinActionReadCannotDispatchTheReturnedStaleSnapshot(bool secondRead)
+    {
+        using var app = new ObservedApplication();
+        using var view = Create(app);
+        Action invalidate = () => app.Inner.Refresh(force: true);
+        app.AfterRead = secondRead ? () => app.AfterRead = invalidate : invalidate;
+
+        Assert.Equal(secondRead, view.Experience.Actions[0].TryExecute());
+
+        Assert.Equal(0, app.Commands);
+        Assert.True(view.Pump());
+        Assert.Equal("Ready to dispatch", Value(view, "State"));
+    }
+
     private static ParcelExperience Create(ObservedApplication app, Func<Guid, string>? stationName = null,
         Func<string, string>? itemName = null)
         => new(new UiSymbolId("Hatifect.Flow", "parcel"), app, CheckpointFixture.Parcel.Value,
