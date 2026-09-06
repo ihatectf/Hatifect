@@ -30,6 +30,7 @@ internal sealed partial class UiAutomatedAcceptanceController
     private float _environmentOriginalScale;
     private float _environmentOriginalDesiredScale;
     private bool _environmentOriginalGamepad;
+    private Options.GamepadModes _environmentOriginalGamepadMode;
     private LocalizedContentManager.LanguageCode _environmentOriginalLanguage;
     private bool _environmentSettingsCaptured;
     private bool _environmentActive;
@@ -55,6 +56,7 @@ internal sealed partial class UiAutomatedAcceptanceController
         _environmentOriginalScale = Game1.options.baseUIScale;
         _environmentOriginalDesiredScale = Game1.options.desiredUIScale;
         _environmentOriginalGamepad = Game1.options.gamepadControls;
+        _environmentOriginalGamepadMode = Game1.options.gamepadMode;
         _environmentOriginalLanguage = LocalizedContentManager.CurrentLanguageCode;
         _environmentSettingsCaptured = true;
         _environmentOwnerThread = Environment.CurrentManagedThreadId;
@@ -225,6 +227,10 @@ internal sealed partial class UiAutomatedAcceptanceController
                 _environmentBeforeAutomatic = ReloadField<UiEnvironment>(_environmentSurface!, "_environment");
                 Game1.options.baseUIScale = Game1.options.desiredUIScale = Game1.options.uiScale == 1.5f ? 1 : 1.5f;
                 Game1.options.gamepadControls = !Game1.options.gamepadControls;
+                // Auto may replace this requested facet on the next native input poll. Use the
+                // game's explicit mode while observing the host, then restore the user's mode.
+                Game1.options.gamepadMode = Game1.options.gamepadControls
+                    ? Options.GamepadModes.ForceOn : Options.GamepadModes.ForceOff;
                 LocalizedContentManager.CurrentLanguageCode = LocalizedContentManager.CurrentLanguageCode == LocalizedContentManager.LanguageCode.ru
                     ? LocalizedContentManager.LanguageCode.en : LocalizedContentManager.LanguageCode.ru;
                 _environmentAutomaticLocale = UiSemanticStardewEnvironmentCapture.ResolveLocale(LocalizedContentManager.CurrentLanguageCode);
@@ -344,6 +350,7 @@ internal sealed partial class UiAutomatedAcceptanceController
         Game1.uiViewport = _environmentOriginalViewport;
         Game1.options.baseUIScale = _environmentOriginalScale;
         Game1.options.desiredUIScale = _environmentOriginalDesiredScale;
+        Game1.options.gamepadMode = _environmentOriginalGamepadMode;
         Game1.options.gamepadControls = _environmentOriginalGamepad;
         LocalizedContentManager.CurrentLanguageCode = _environmentOriginalLanguage;
     }
