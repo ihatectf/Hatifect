@@ -195,10 +195,10 @@ internal sealed class UiBinder
 
         if (targetElement != null && value is UiSymbolValue presentationValue && presentationValue.SymbolType == UiSemanticType.Presentation &&
             _catalog.TryGetPresentation(presentationValue.Name, out UiPresentationSymbol? presentation) && presentation != null &&
-            targetElement.Capabilities.Count > 0 && !presentation.SupportedCapabilities.Overlaps(targetElement.Capabilities))
+            !presentation.SupportedCapabilities.IsSupersetOf(targetElement.Capabilities))
         {
             Report("LUI2009",
-                $"Presentation '{presentation.Name}' is not capability-compatible with semantic element '{targetElement.Name}'.",
+                $"Presentation '{presentation.Name}' does not cover every required capability of semantic element '{targetElement.Name}'.",
                 valueSyntax.Span);
             return;
         }
