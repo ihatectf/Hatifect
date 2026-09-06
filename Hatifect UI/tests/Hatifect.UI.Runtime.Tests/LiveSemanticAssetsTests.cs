@@ -8,6 +8,7 @@ using Hatifect.UI.Runtime.Layout;
 using Hatifect.UI.Runtime.Platform;
 using Hatifect.UI.Runtime.Rendering;
 using Hatifect.UI.Runtime.Scene;
+using Hatifect.UI.Runtime.Terminal;
 using Hatifect.UI.Runtime.Visual;
 using Hatifect.UI.Runtime.Visual.Theming;
 using Xunit;
@@ -28,15 +29,12 @@ public sealed class LiveSemanticAssetsTests
         var platform = new TestPlatform();
         UiHostRuntimeSession? host = null;
         UiSemanticLiveAssets? assets = null;
-        assets = new UiSemanticLiveAssets(new[] { experience }, (id, candidate) =>
+        assets = new UiSemanticLiveAssets(new[] { experience }, (id, candidate, accept) =>
         {
             var scene = composer.Compose(invocations.Invoke(id, UiPresentationProfiles.Wide, candidate.Presentation), candidate.Visual);
             new UiSceneLayoutEngine(platform).Build(scene, placement);
-        }, id =>
-        {
-            var candidate = assets!.For(id);
             host!.Update(composer.Compose(invocations.Invoke(id, UiPresentationProfiles.Wide, candidate.Presentation),
-                candidate.Visual, host.Interactions.Snapshot), placement);
+                candidate.Visual, host.Interactions.Snapshot), placement, renewActionGeneration: true, acceptOwnerState: accept);
         });
         host = new UiHostRuntimeSession(composer.Compose(invocations.Invoke(experience.Id, UiPresentationProfiles.Wide)), placement, platform);
         host.Interactions.MoveFocus(UiNavigationDirection.Next);
@@ -80,11 +78,10 @@ public sealed class LiveSemanticAssetsTests
         var host = new UiHostRuntimeSession(composer.Compose(invocations.Invoke(experience.Id, UiPresentationProfiles.Wide)),
             placement, new TestPlatform());
         UiSemanticLiveAssets? assets = null;
-        assets = new UiSemanticLiveAssets(new[] { experience }, (_, _) => { }, id =>
+        assets = new UiSemanticLiveAssets(new[] { experience }, (id, candidate, accept) =>
         {
-            var candidate = assets!.For(id);
             host.Update(composer.Compose(invocations.Invoke(id, UiPresentationProfiles.Wide, candidate.Presentation),
-                candidate.Visual, host.Interactions.Snapshot), placement);
+                candidate.Visual, host.Interactions.Snapshot), placement, renewActionGeneration: true, acceptOwnerState: accept);
         });
         var before = Assert.Single(host.Scene.Root.Children.SelectMany(slot => slot.Children).OfType<UiCollectionSceneNode>());
         Assert.Equal(UiCollectionLayoutKind.AdaptiveGrid, before.Recipe.Layout);
@@ -106,8 +103,8 @@ public sealed class LiveSemanticAssetsTests
             .VisualRole("Item").Build();
         int applyCalls = 0;
         bool reject = false;
-        var assets = new UiSemanticLiveAssets(new[] { experience }, (_, _) => { }, _ =>
-        { applyCalls++; if (reject) { reject = false; throw new InvalidOperationException("Unsupported backend value"); } });
+        var assets = new UiSemanticLiveAssets(new[] { experience }, (_, _, accept) =>
+        { applyCalls++; if (reject) { reject = false; throw new InvalidOperationException("Unsupported backend value"); } accept(); });
         string visual = "visual Reject\n\nItem\n    surface = Surface.Raised\n";
         Assert.True(assets.Reload(experience.Id, null, visual).Accepted);
         var before = assets.For(experience.Id);
@@ -116,7 +113,42 @@ public sealed class LiveSemanticAssetsTests
         Assert.False(rejected.Accepted);
         Assert.Equal(1, rejected.Version);
         Assert.Same(before, assets.For(experience.Id));
-        Assert.Equal(3, applyCalls);
+        Assert.Equal(2, applyCalls);
+    }
+
+    [Fact]
+    public void FailedHostPreparationNeverPublishesCandidateAssetsOrReappliesLastGood()
+    {
+        var experience = new UiExperienceBuilder(Id("atomic-reject"), "Atomic reject")
+            .Monitor("Status", new UiState<string>("Ready")).VisualRole("Item").Build();
+        UiSemanticLiveAssets? assets = null;
+        UiTerminalSectionAssets? observed = null;
+        int applications = 0;
+        bool reject = false;
+        assets = new UiSemanticLiveAssets(new[] { experience }, (id, _, accept) =>
+        {
+            applications++;
+            if (!reject) { accept(); return; }
+            observed ??= assets!.For(id);
+            throw new InvalidOperationException("Host preparation refused the candidate.");
+        });
+        string visual = "visual Atomic\n\nItem\n    surface = Surface.Raised\n";
+        Assert.True(assets.Reload(experience.Id, null, visual).Accepted);
+        UiTerminalSectionAssets previous = assets.For(experience.Id);
+        reject = true;
+
+        UiSemanticReloadResult? result = null;
+        Exception? failure = Record.Exception(() => result = assets.Reload(experience.Id, null,
+            visual.Replace("Raised", "Hover")));
+
+        Assert.Null(failure);
+        Assert.NotNull(result);
+        Assert.False(result!.Accepted);
+        Assert.False(result.Changed);
+        Assert.Equal(1, result.Version);
+        Assert.Same(previous, observed);
+        Assert.Same(previous, assets.For(experience.Id));
+        Assert.Equal(2, applications);
     }
 
     [Fact]
@@ -131,7 +163,7 @@ public sealed class LiveSemanticAssetsTests
             File.WriteAllText(path, initial);
             var experience = new UiExperienceBuilder(Id("watch"), "Watch").Monitor("Status", new UiState<string>("Ready"))
                 .VisualRole("Item").Build();
-            var assets = new UiSemanticLiveAssets(new[] { experience }, (_, _) => { }, _ => { });
+            var assets = new UiSemanticLiveAssets(new[] { experience }, (_, _, accept) => accept());
             using var watches = new UiSemanticAssetWatches();
             UiSemanticReloadResult? last = null;
             int callbacks = 0;

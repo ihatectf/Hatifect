@@ -113,7 +113,9 @@
       "requiresSave": true,
       "includeInAll": false,
       "timeoutSeconds": 1800,
-      "requiredMods": ["Hatifect.Flow"],
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
       "checks": [
         "flow.chest.crash-after-save.loaded",
         "flow.chest.crash-after-save.custody",
@@ -125,7 +127,10 @@
         "flow.chest.crash-after-save.no-duplication",
         "flow.chest.crash-after-save.process-restart"
       ],
-      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
     },
     {
       "id": "flow.chest.crash-after-delivery",
@@ -133,7 +138,9 @@
       "requiresSave": true,
       "includeInAll": false,
       "timeoutSeconds": 1800,
-      "requiredMods": ["Hatifect.Flow"],
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
       "checks": [
         "flow.chest.crash-after-delivery.loaded",
         "flow.chest.crash-after-delivery.custody",
@@ -145,7 +152,10 @@
         "flow.chest.crash-after-delivery.no-duplication",
         "flow.chest.crash-after-delivery.process-restart"
       ],
-      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
     },
     {
       "id": "flow.chest.crash-after-unsaved-extraction",
@@ -153,7 +163,9 @@
       "requiresSave": true,
       "includeInAll": false,
       "timeoutSeconds": 1800,
-      "requiredMods": ["Hatifect.Flow"],
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
       "checks": [
         "flow.chest.crash-after-unsaved-extraction.loaded",
         "flow.chest.crash-after-unsaved-extraction.custody",
@@ -166,7 +178,10 @@
         "flow.chest.crash-after-unsaved-extraction.process-restart",
         "flow.chest.crash-after-unsaved-extraction.unsaved-rollback"
       ],
-      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
     },
     {
       "id": "flow.chest.crash-after-unsaved-delivery",
@@ -174,7 +189,9 @@
       "requiresSave": true,
       "includeInAll": false,
       "timeoutSeconds": 1800,
-      "requiredMods": ["Hatifect.Flow"],
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
       "checks": [
         "flow.chest.crash-after-unsaved-delivery.loaded",
         "flow.chest.crash-after-unsaved-delivery.custody",
@@ -187,7 +204,10 @@
         "flow.chest.crash-after-unsaved-delivery.process-restart",
         "flow.chest.crash-after-unsaved-delivery.unsaved-rollback"
       ],
-      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
     },
     {
       "id": "flow.chest.cancellation",
@@ -470,7 +490,100 @@
         "semantic.input.retired-overlay.keyboard",
         "semantic.input.retired-overlay.retry"
       ],
-      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.environment",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.environment.window.facets",
+        "semantic.environment.window.rejection",
+        "semantic.environment.window.reentry",
+        "semantic.environment.window.idle",
+        "semantic.environment.window.delivery",
+        "semantic.environment.window.automatic",
+        "semantic.environment.terminal.facets",
+        "semantic.environment.terminal.rejection",
+        "semantic.environment.terminal.reentry",
+        "semantic.environment.terminal.idle",
+        "semantic.environment.terminal.delivery",
+        "semantic.environment.terminal.automatic",
+        "semantic.environment.hud.facets",
+        "semantic.environment.hud.rejection",
+        "semantic.environment.hud.reentry",
+        "semantic.environment.hud.idle",
+        "semantic.environment.hud.delivery",
+        "semantic.environment.hud.automatic",
+        "semantic.environment.active-menu.facets",
+        "semantic.environment.active-menu.rejection",
+        "semantic.environment.active-menu.reentry",
+        "semantic.environment.active-menu.idle",
+        "semantic.environment.active-menu.delivery",
+        "semantic.environment.active-menu.automatic",
+        "semantic.environment.active-menu.show-owner"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.actions.reload",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.actions.reload.window.publication",
+        "semantic.actions.reload.window.generation",
+        "semantic.actions.reload.window.retirement",
+        "semantic.actions.reload.terminal.publication",
+        "semantic.actions.reload.terminal.generation",
+        "semantic.actions.reload.terminal.retirement",
+        "semantic.actions.reload.hud.publication",
+        "semantic.actions.reload.hud.generation",
+        "semantic.actions.reload.hud.retirement",
+        "semantic.actions.reload.active-menu.publication",
+        "semantic.actions.reload.active-menu.generation",
+        "semantic.actions.reload.active-menu.retirement",
+        "semantic.actions.reload.hud-hide.failed-cleanup",
+        "semantic.actions.reload.hud-hide.retry",
+        "semantic.actions.reload.hud-dispose.failed-cleanup",
+        "semantic.actions.reload.hud-dispose.retry",
+        "semantic.actions.reload.active-menu-hide.failed-cleanup",
+        "semantic.actions.reload.active-menu-hide.retry"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.actions.terminal",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.actions.terminal.same.transition",
+        "semantic.actions.terminal.same.delivery",
+        "semantic.actions.terminal.route.transition",
+        "semantic.actions.terminal.route.delivery",
+        "semantic.actions.terminal.failed-open.transition",
+        "semantic.actions.terminal.failed-open.delivery",
+        "semantic.actions.terminal.failed-route.transition",
+        "semantic.actions.terminal.failed-route.delivery"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
     },
     {
       "id": "semantic.actions.pump",
@@ -484,7 +597,10 @@
         "semantic.actions.pump.hud",
         "semantic.actions.pump.context"
       ],
-      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
     },
     {
       "id": "semantic.locale-scale-theme",

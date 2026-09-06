@@ -1,5 +1,9 @@
 # Roadmap implementation evidence
 
+## U03-b active reload and U04 host environment checkpoint
+
+Combined implementation and actual pre-version evidence are recorded in [U03_U04_HOST_ACCEPTANCE.md](U03_U04_HOST_ACCEPTANCE.md). C **PASS1528 .NET +366 Python**, G **PASS1801 +366**, P **PASS90**, native combined reload **PASS18** (`6d3593a1`); all21 source hashes and C/G/P outputs independently reviewed. The native environment candidate **PASS25** (`f2e780d9`) retains its earlier exact source identity. Full U03/U04 remain **IN_PROGRESS**. Next: common alpha45 integration, aligned alpha46 versions and exact-candidate gates, then the remaining typed consumer/save-switch and environment/planner/consumer acceptance. The current alpha.44 version strings do not make this WIP alpha44 release evidence.
+
 Date: 2026-09-06. Working branch: `codex/flowline-next-ten-slices`; source baseline: `2f08a4f4db36ef0b1ba58e385fc0ab5044cae867`.
 
 The authoritative scope is [ROADMAP.md](ROADMAP.md), restored verbatim from commit `1e741ef` because this task branch predates that documentation commit. The earlier exploratory Flow multiplayer/adapters/policies list is superseded as an execution plan; no new product work outside the approved roadmap is being added. It does not replace U01–U10, R01–R04, T01–T03 or their acceptance. The Flow foundation is committed and published in task branch as `cdf9d2e86e90f0174251243147f8a2f9480d14e8`; its integration with the verified UI SDK/editor/D01 is owned by the UI task. The full roadmap IDs remain incomplete until all their acceptance and integration evidence are present.
@@ -962,7 +966,7 @@ The controlled ValueTask source uses inline ManualResetValueTaskSourceCore conti
 
 Completed commands use the explicit x64 .NET8 SDK/.NET6 runtime with command-local DOTNET_gcConcurrent=0 for build/check:
 
-- `./tools/hatifect-test ui-runtime`: `run-tpgza_ok`, **PASS444**, actual counters and every outcome audited in `runtime-trx.json`.
+- `./tools/hatifect-test ui --project 'Hatifect UI/tests/Hatifect.UI.Runtime.Tests/Hatifect.UI.Runtime.Tests.csproj'`: `run-tpgza_ok`, **PASS444**, actual counters and every outcome audited in `runtime-trx.json`.
 - `./tools/hatifect-check`: `run-1s3sgwvd`, **PASS1466 .NET +365 Python**, seven actual TRX, zero failures/skips.
 - `./tools/hatifect-check --platform`: `run-1h63c5rf`, **PASS1707 .NET +365 Python**, ten actual TRX, including Runtime444, zero failures/skips.
 - `./tools/hatifect-isolated-ui-ca --keep`: **PASS90**, retained `hatifect-ui-ca-isolated.vukebou9`. Independent root audit verifies44 exact projection files,8 alpha.44 package DLLs equal to final producer outputs,3 assets files resolving solely from the isolated cache,90 actual Passed results and2 exact CA deployed DLLs with no UI copies.
