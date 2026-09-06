@@ -124,7 +124,7 @@ Batch явно читает draft через `Read`; обычный `source.Valu
 
 Runtime захватывает все объявленные publications и nested form input/validation owners до форматирования. Старые scenes сохраняют значения, order/selection и lookup. Ввод пишет живому owner и затем повторно составляет сцену; сохраняется действующий host/planner/runtime. Legacy external collection без capture отклоняет чтение под изменёнными count/revision до live getter. Источник без metadata не даёт гарантии обнаружения изменения payload при прежнем count; его прежний запрет mutation во время layout остаётся обязательным.
 
-Сквозной CA consumer завершён и проверен на exact packages. Полный U02 **IN_PROGRESS**: Flow publication, окончательный focus/scroll fallback и оставшиеся collection update measurements ещё не закрыты. Evidence: [ROADMAP-STATUS.md](ROADMAP-STATUS.md#u02-a-publication-collection-changes-and-atomic-ca).
+Сквозной CA consumer завершён и проверен на exact packages. Flow ParcelExperience публикует backing snapshot, cargo/route/state/availability и pending command result в одном batch на следующем Pump; ошибка подготовки сохраняет прежний view для retry, а retirement прекращает внешние callbacks и publication. Полный U02 **IN_PROGRESS**: NetworkExperience publication, окончательный focus/scroll fallback и оставшиеся collection update measurements ещё не закрыты. Evidence: [ROADMAP-STATUS.md](ROADMAP-STATUS.md#u02-a-publication-collection-changes-and-atomic-ca).
 
 ## Действия и lifecycle (U03, R01)
 
