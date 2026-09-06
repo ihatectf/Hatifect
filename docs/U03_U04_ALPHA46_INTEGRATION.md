@@ -1,6 +1,6 @@
 # U03/U04: общая интеграция alpha.46
 
-Статус общей приёмки — **IN_PROGRESS**. Frozen handoff UI — [`b6f60b4`](https://github.com/ihatectf/Hatifect/commit/b6f60b49af5c7f94469bab4021ab12f2b61acd88), immutable source [`0cd356f`](https://github.com/ihatectf/Hatifect/commit/0cd356f0fd252a0744fe6a871e46ba631193f876), implementation `902d834`. Основа GQ — опубликованная alpha.45 `12e7aab` с успешным exact CI34058056333 во всех 10 jobs. Все 17 version authorities уже переведены на alpha.46 владельцем UI; повторного изменения версий при интеграции нет.
+Локальная общая приёмка исправленного source [`61e8a94`](https://github.com/ihatectf/Hatifect/commit/61e8a941bbb2936e2b41f029e931b2ee8d30fe8e) — **PASS**. Публикация и exact CI — **IN_PROGRESS**. Frozen handoff UI — [`b6f60b4`](https://github.com/ihatectf/Hatifect/commit/b6f60b49af5c7f94469bab4021ab12f2b61acd88), immutable source [`0cd356f`](https://github.com/ihatectf/Hatifect/commit/0cd356f0fd252a0744fe6a871e46ba631193f876), implementation `902d834`. Основа GQ — опубликованная alpha.45 `12e7aab` с успешным exact CI34058056333 во всех 10 jobs. Все 17 version authorities уже переведены на alpha.46 владельцем UI; повторного изменения версий при интеграции нет.
 
 ## Область и контракт
 
@@ -43,6 +43,35 @@ Merge frozen handoff поверх alpha.45 прошёл без конфликт�
 
 На исправленном source команда `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-test ui --platform --project 'Hatifect UI/tests/Hatifect.UI.Stardew.Tests/Hatifect.UI.Stardew.Tests.csproj'` дала `run-px5ihswm` — **PASS50** по actual TRX. Prepare `run-9nykgrit` — **PASS**, 8 producer/game DLL сверены. Fresh `ui semantic.environment`, request `4a2bb5d3-c38e-4b52-8685-30ea4023f823`, — **PASS25** на fingerprint `c2f56563f4015f13614fcd5c31e30ab9a45c7119f03f5b87af0cbb8d98d4ba08`. Window/Terminal принимают automatic transition за 1 tick, HUD/active-menu за 2 ticks; 8 pending operations доставляются однократно на owner thread, каждый host сохраняет 256 idle synchronizations без source reads/allocations. Process exit0, teardown errors пусты, options bytes/modes восстановлены, request-owned save copy очищена, 3 golden hashes неизменны. Все 53 source/doc hashes связаны с Git; фактические проверки сохранены в `artifacts/alpha46-environment-fix/`.
 
-Это закрывает выявленный environment fixture FAIL. Общая публикация alpha.46 остаётся **IN_PROGRESS**: следующая задача GQ — завершить проверку исправленной поставки и её пакетной/runtime совместимости, затем публикацию и exact CI. Результаты исходного `fc83019` сохраняют свою source attribution и не объявляются проверками fingerprint исправленного `7d68b6a`.
+Это закрывает выявленный environment fixture FAIL. Результаты исходного `fc83019` сохраняют свою source attribution и не объявляются проверками исправленной поставки. Промежуточный documentation source `72a853e` прошёл C `run-4gsnlpuw` — PASS1528 +366, G `run-rmlk6irj` — PASS1801 +366 и P `hatifect-ui-ca-isolated.nfo6k75j` — PASS90. Перед его native запуском выявлена дополнительная ошибка восстановления custom locale в fixture; окончательная проверка выполнена после её исправления.
+
+## Восстановление custom locale в сценарии
+
+Установленный `LocalizedContentManager.CurrentLanguageCode` очищает descriptor пользовательского языка при выходе из `mod`. Поэтому одного восстановления enum недостаточно. Исправление UI `728a7f9af828f4eb529dad7538d8be1c4906b762` принято GQ как `61e8a941bbb2936e2b41f029e931b2ee8d30fe8e`: fixture захватывает descriptor и uncached locale до изменений, восстанавливает custom language через публичный `SetModLanguage` и проверяет enum, ту же reference identity и строку locale. Вложенный `finally` освобождает pending worker sources даже при ошибке восстановления. Production host, публичный API, версии, 25 checks и лимит 600 ticks не меняются.
+
+Owner scoped `run-q9_ky7j2` — **PASS50** по actual TRX; GQ сверил source postimage, тестовый результат и поведение установленного игрового setter. Evidence: `artifacts/alpha46-locale-correction/owner-review.json`. Отдельный native старт с custom locale — **NOT_RUN**; успешный запуск ниже начинается с EN и не доказывает исполнение custom-start ветки.
+
+## Итоговая общая приёмка source 61e8a94
+
+Все проверки ниже выполнены на неизменном `61e8a941bbb2936e2b41f029e931b2ee8d30fe8e`. Сверены 53 source/doc hashes с рабочей копией и Git, фактические строки 17 TRX, отчёты native запросов, process exit и восстановление options. Результат `artifacts/alpha46-release-preflight/final-audit.json` — **PASS**.
+
+| Проверка | Фактический результат |
+| --- | --- |
+| `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-check` | `run-856rkloj`: PASS1528 .NET +366 Python, 7 TRX |
+| `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-check --platform` | `run-k8rpgi68`: PASS1801 .NET +366 Python, 10 TRX |
+| `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-isolated-ui-ca --keep` | `hatifect-ui-ca-isolated.345up_ep`: PASS90; 44 projected files, 8 packages, 3 isolated assets/cache entries, 2 CA DLL |
+| `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-live-prepare` | `run-u5owgesw`: PASS; все 8 package/producer/game DLL совпадают |
+| `ui semantic.actions.reload` | `0c835525-5651-4fe9-a82d-5b65238b5321`: PASS18 |
+| `ui semantic.environment` | `5f25aa9b-c155-4d36-b260-22dae7543304`: PASS25 |
+| `ui all` | `19185451-a271-4405-82cb-694e440935bc`: PASS28 |
+| `smoke flow.route.basic` | `a5bad11d-9c9f-41ad-9da7-6e0256ad3d02`: PASS6 |
+| `smoke flow.save.isolation` | `70d3c662-676c-47a1-b1e9-44b432f21480`: PASS7 |
+| `ui semantic.performance` | `55b85814-71bf-4a98-9cb4-fe7b06536f55`: PASS2; 620 frames, p95/p99 0.051792/0.417460 ms, 4451.265 B/frame, layout misses 0 |
+
+Native команды выполнены через `rtk proxy ./tools/hatifect-live-runner <kind> <scenario> <result.json> <artifact-directory>` и существующий worktree executor. Игровой процесс использовал обычный GC. Для PERF сохранены 15 наблюдений без процессов dotnet/MSBuild/vstest. Это наблюдение фоновых сборок, без утверждения о полностью бездействующей ОС.
+
+UI fingerprint — `76f1f5ded2337aec104f3c5493239ffec06c19fe2421d0502a7dd5d2c3340bce`; Flow fingerprint — `c6ab1fc273a3ade0155112790d02c7cd20ce6e0af9420c020928607a3a69ca71`. Все шесть процессов завершились с exit0 без teardown errors. Options bytes/modes восстановлены, шесть request-owned save copies очищены, три golden hashes неизменны; PERF не требует сейва. Все восемь composed EN/RU × 75/100/125/150% × Dark PNG просмотрены: диагностический текст и focus border масштабируются без замеченного clipping, fade или перекрытия probe курсором. Это диагностическая матрица, без утверждения о полной продуктовой локализации.
+
+Повторная проверка исходников и итогового diff не обнаружила открытых замечаний в этом срезе. Изменений Codex/skills нет; `hatifect-agent-check --host` — NOT_APPLICABLE. Следующий шаг GQ — публикация и exact CI, затем интеграция проверенного UI save-switch `889f9b1` / handoff `d044f22` и завершение review FLOWLINE text/Parcel `485c815`. Их новая незакоммиченная работа не включена в alpha.46; общий alpha.47 version bump принадлежит GQ.
 
 Automatic Window/Terminal environment может обновиться через native Update или существующую Draw-time viewport synchronization; Update-only подготовка здесь не доказана. Нулевые allocations относятся к 256 неизменным public Synchronize на владельца, а не к полному frame/Update/Pump. Полные U03/U04/F12, actual action save-switch, concrete typed consumer/messages, consumer localization и representative PERF остаются открытыми. Следующие владельцы согласованы: UI — actual A→title→B с pending root/portal actions в отдельном worktree; FLOWLINE — live text/Parcel projection после принятия host checkpoint. Физический Backspace этим срезом не закрывается.
