@@ -1,8 +1,11 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using Microsoft.Xna.Framework;
 using Hatifect.Flow.Domain.Shipments;
+using Hatifect.Flow.Inventory;
+using StardewValley;
 using static Hatifect.Flow.Diagnostics.FlowHostAcceptance;
 
 namespace Hatifect.Flow.Diagnostics;
@@ -11,15 +14,19 @@ internal sealed partial class FlowChestRoundtripAcceptance
 {
     internal const string CrashScenario = "flow.chest.crash-after-save";
     internal const string DeliveryCrashScenario = "flow.chest.crash-after-delivery";
+    internal const string ExtractionCrashScenario = "flow.chest.crash-after-unsaved-extraction";
     private string? _crashPhase;
+    private string? _confirmedReservedSaveHash;
     private bool CrashAfterDelivery => _scenario == DeliveryCrashScenario;
+    private bool CrashAfterUnsavedExtraction => _scenario == ExtractionCrashScenario;
     private int CrashSavedEvents => CrashAfterDelivery ? 2 : 1;
-    private string CrashMarkerPhase => CrashAfterDelivery ? "saved-delivered" : "saved-in-transit";
+    private string CrashMarkerPhase => CrashAfterUnsavedExtraction ? "saved-reserved-unsaved-extraction"
+        : CrashAfterDelivery ? "saved-delivered" : "saved-in-transit";
     private ParcelState CrashParcelState => CrashAfterDelivery ? ParcelState.Delivered : ParcelState.InTransit;
 
     private void InitializeCrash()
     {
-        if (_scenario is not (CrashScenario or DeliveryCrashScenario)) return;
+        if (_scenario is not (CrashScenario or DeliveryCrashScenario or ExtractionCrashScenario)) return;
         _crashPhase = Environment.GetEnvironmentVariable("HATIFECT_TEST_CRASH_PHASE");
         Require(_crashPhase is "prepare" or "resume", "A controlled crash needs a fixed executor phase.");
         string markerPath = Path.Combine(_request.Artifact, "diagnostics", "flow-crash-ready.json");
@@ -76,6 +83,9 @@ internal sealed partial class FlowChestRoundtripAcceptance
         Require(_loads == CrashSavedEvents && _savings == CrashSavedEvents && _saves == CrashSavedEvents && BothAt(CrashParcelState),
             "Controlled crash did not reach the required confirmed save boundary.");
         VerifyCrashInventory();
+        string saveHash = HashFile(Path.Combine(_request.SavePath, Path.GetFileName(_request.SavePath)));
+        if (CrashAfterUnsavedExtraction)
+            Require(_confirmedReservedSaveHash == saveHash, "Unsaved extraction changed the confirmed Reserved save bytes.");
         // Saved has completed. Hold the existing host barrier so no new transport effect runs before SIGKILL.
         Session().BeginSave();
         _stage = Stage.AwaitCrash;
@@ -83,12 +93,32 @@ internal sealed partial class FlowChestRoundtripAcceptance
         {
             formatVersion = 1, runId = _request.RunId, scenarioId = _scenario, phase = CrashMarkerPhase,
             pid = Environment.ProcessId, sessionId = _sessionId, saveName = Path.GetFileName(_request.SavePath), saveId = 4242424242UL,
-            saveHash = HashFile(Path.Combine(_request.SavePath, Path.GetFileName(_request.SavePath))), runtimeFingerprint = _fingerprint,
+            saveHash, runtimeFingerprint = _fingerprint,
             parcelId = _parcel, partialParcelId = _partialParcel,
             sourceX = (int)_sourceTile.X, sourceY = (int)_sourceTile.Y, destinationX = (int)_destinationTile.X, destinationY = (int)_destinationTile.Y,
             remainderXml = _remainderXml, loads = _loads, savingEvents = _savings, savedEvents = _saves,
             capturedAtUtc = DateTimeOffset.UtcNow.ToString("O")
         });
+    }
+
+    private void VerifyReservedSource()
+    {
+        Require(BothAt(ParcelState.Reserved), "The confirmed queue must contain both Reserved parcels before extraction.");
+        Item[] source = Items(_sourceTile);
+        Require(source.Length == 2 && Items(_destinationTile).Length == 0,
+            "The Reserved save did not retain both full source stacks and an empty destination.");
+        foreach (bool partial in new[] { false, true })
+        {
+            Item actual = source.Single(item => item.modData.ContainsKey("Hatifect.Flow/PartialAcceptance") == partial);
+            Item expected = FlowItemCodec.Decode(_remainderXml);
+            expected.Stack = partial ? 13 : 8;
+            if (!partial) expected.modData.Remove("Hatifect.Flow/PartialAcceptance");
+            Guid parcelId = partial ? _partialParcel : _parcel;
+            expected.modData[ChestInventoryAccess.CargoKey] = Session().ReadSnapshot().Parcels.Single(parcel => parcel.Id == parcelId).CargoId.ToString("D");
+            VerifyWine(actual, expected.Stack);
+            Require(FlowItemCodec.Encode(actual) == FlowItemCodec.Encode(expected),
+                "The Reserved source changed full item metadata, quantity or assigned cargo identity.");
+        }
     }
 
     private void VerifyCrashInventory()

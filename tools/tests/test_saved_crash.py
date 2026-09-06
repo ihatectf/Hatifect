@@ -1,4 +1,4 @@
-"""Contract and real process tests for the single approved confirmed-save crash boundary."""
+"""Contract and real process tests for the fixed approved confirmed-save crash boundaries."""
 
 import datetime as dt
 import importlib.util
@@ -110,10 +110,26 @@ class SavedCrashTests(unittest.TestCase):
         return DIRECT._run_saved_crash(self.request, self.metadata, runner, self.active, self.cancel, self.started, self.completed)
 
     def use_delivery_boundary(self):
+        self.use_boundary(DIRECT.DELIVERED_CRASH_SCENARIO, "saved-delivered", 2)
+
+    def use_boundary(self, scenario, phase, saves):
         SAVE.cleanup_working_copy(self.isolated, self.save, self.runtime_id, self.run_id, self.request["scenarioId"])
-        self.request["scenarioId"] = DIRECT.DELIVERED_CRASH_SCENARIO
+        self.request["scenarioId"] = scenario
         self.save = SAVE.prepare_working_copy(self.isolated, self.smapi, self.run_id, self.request["scenarioId"])
-        self.marker.update(scenarioId=DIRECT.DELIVERED_CRASH_SCENARIO, phase="saved-delivered", loads=2, savingEvents=2, savedEvents=2)
+        self.marker.update(scenarioId=scenario, phase=phase, loads=saves, savingEvents=saves, savedEvents=saves)
+
+    def test_unsaved_extraction_marker_requires_reserved_save_phase_and_first_save(self):
+        self.use_boundary(DIRECT.UNSAVED_EXTRACTION_CRASH_SCENARIO, "saved-reserved-unsaved-extraction", 1)
+        self.write_marker()
+        self.assertEqual(self.marker, DIRECT._saved_crash_marker(self.request, self.metadata, self.process))
+        self.assertEqual(self.save.name, f"HatifectHarness{uuid.UUID(self.run_id).hex}_4242424242")
+        for changes in ({"phase": "saved-in-transit"}, {"phase": "saved-delivered"},
+                        {"scenarioId": DIRECT.SAVED_CRASH_SCENARIO}, {"scenarioId": DIRECT.DELIVERED_CRASH_SCENARIO},
+                        {"loads": 2}, {"savingEvents": 2}, {"savedEvents": 2}, {"savedEvents": True}, {"savedEvents": 0}):
+            with self.subTest(changes=changes):
+                self.write_marker(changes)
+                with self.assertRaises(DIRECT.DirectRuntimeError):
+                    DIRECT._saved_crash_marker(self.request, self.metadata, self.process)
 
     def test_delivery_marker_requires_delivered_phase_and_exact_second_save(self):
         self.use_delivery_boundary()
@@ -188,6 +204,10 @@ class SavedCrashTests(unittest.TestCase):
 
     def test_real_delivered_boundary_restarts_with_its_fixed_scenario_and_saved_bytes(self):
         self.use_delivery_boundary()
+        self.verify_real_two_processes()
+
+    def test_real_unsaved_extraction_boundary_restarts_with_the_same_confirmed_save(self):
+        self.use_boundary(DIRECT.UNSAVED_EXTRACTION_CRASH_SCENARIO, "saved-reserved-unsaved-extraction", 1)
         self.verify_real_two_processes()
 
     def verify_real_two_processes(self):
@@ -342,13 +362,14 @@ time.sleep(30)
 
     def test_manifest_keeps_crash_out_of_aggregate_and_uses_fixed_flow_report(self):
         validator = _load("validate")
-        for scenario_id in (DIRECT.SAVED_CRASH_SCENARIO, DIRECT.DELIVERED_CRASH_SCENARIO):
+        for scenario_id in (DIRECT.SAVED_CRASH_SCENARIO, DIRECT.DELIVERED_CRASH_SCENARIO, DIRECT.UNSAVED_EXTRACTION_CRASH_SCENARIO):
             with self.subTest(scenario=scenario_id):
                 scenario = validator.load_manifest()[scenario_id]
                 self.assertFalse(scenario["includeInAll"])
                 self.assertTrue(scenario["requiresSave"])
                 self.assertEqual(scenario["requiredMods"], ["Hatifect.Flow"])
-                self.assertEqual(len(scenario["checks"]), 9)
+                self.assertEqual(len(scenario["checks"]), 10 if scenario_id == DIRECT.UNSAVED_EXTRACTION_CRASH_SCENARIO else 9)
+                self.assertEqual(scenario_id + ".unsaved-rollback" in scenario["checks"], scenario_id == DIRECT.UNSAVED_EXTRACTION_CRASH_SCENARIO)
                 self.assertIn(scenario_id + ".process-restart", scenario["checks"])
                 self.assertEqual(DIRECT._acceptance_report_source(self.isolated, scenario_id),
                                  self.isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")

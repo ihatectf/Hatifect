@@ -45,7 +45,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
     private int _verificationFrames;
     private bool _disposed;
     private bool _returning;
-    private enum Stage { Startup, Loading, Transit, SavingTransit, ReturnTransit, ReloadTransit, Delivery, SavingDelivered, ReturnDelivered, ReloadDelivered, Verify, AwaitCrash, Exit }
+    private enum Stage { Startup, Loading, Transit, SavingTransit, ReturnTransit, ReloadTransit, Delivery, SavingDelivered, ReturnDelivered, ReloadDelivered, Verify, AwaitUnsavedExtraction, AwaitCrash, Exit }
 
     private FlowChestRoundtripAcceptance(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current, string scenario)
     {
@@ -64,7 +64,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
     {
         string? scenario = Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO");
         return Environment.GetEnvironmentVariable("HATIFECT_TEST_MODE") == "1" && Environment.GetEnvironmentVariable("HATIFECT_TEST_AUTOMATED") == "1"
-            && scenario is Scenario or CrashScenario or DeliveryCrashScenario ? new(helper, monitor, current, scenario) : null;
+            && scenario is Scenario or CrashScenario or DeliveryCrashScenario or ExtractionCrashScenario ? new(helper, monitor, current, scenario) : null;
     }
 
     internal void OnSaveLoaded()
@@ -109,12 +109,27 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                 Require(partial.Stack == 13, "Partial admission extracted units before the scheduled effect.");
                 _passed.Add("loaded");
                 _stage = Stage.Transit;
+                if (CrashAfterUnsavedExtraction)
+                {
+                    VerifyReservedSource();
+                    // Freeze before returning from SaveLoaded: the production tick precedes this driver's next Tick.
+                    session.BeginSave();
+                    BeginGameSave(Stage.SavingTransit);
+                }
             }
             else if (_loads == 2)
             {
-                Require(BothAt(ParcelState.InTransit), "In-flight parcels did not survive the actual game save.");
-                VerifyRemainder();
-                Require(Items(_destinationTile).Length == 0, "In-flight cargo appeared in the destination chest.");
+                if (CrashAfterUnsavedExtraction)
+                {
+                    VerifyReservedSource();
+                    _passed.Add("unsaved-rollback");
+                }
+                else
+                {
+                    Require(BothAt(ParcelState.InTransit), "In-flight parcels did not survive the actual game save.");
+                    VerifyRemainder();
+                    Require(Items(_destinationTile).Length == 0, "In-flight cargo appeared in the destination chest.");
+                }
                 _passed.Add("reload");
                 _stage = Stage.Delivery;
             }
@@ -150,6 +165,11 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                     Require(Items(_destinationTile).Length == 0, "Extraction did not move exclusive custody into the parcels.");
                     _passed.Add("custody");
                     BeginGameSave(Stage.SavingTransit);
+                    break;
+                case Stage.AwaitUnsavedExtraction when BothAt(ParcelState.InTransit):
+                    VerifyCrashInventory();
+                    _passed.Add("custody");
+                    PrepareCrashBoundary();
                     break;
                 case Stage.ReturnTransit:
                 case Stage.ReturnDelivered:
@@ -217,6 +237,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             Require(_stage is Stage.SavingTransit or Stage.SavingDelivered, "Unexpected Saving event.");
             ValidateLoadedSave();
             Require(Session().IsSaving, "Production session did not enter its save barrier.");
+            if (CrashAfterUnsavedExtraction && _stage == Stage.SavingTransit) VerifyReservedSource();
             _savings++;
             _passed.Add("saving");
         }
@@ -233,6 +254,13 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             Require(_saveHash != HashFile(Path.Combine(_request.SavePath, Path.GetFileName(_request.SavePath))), "Saved event did not update the owned on-disk game save.");
             _saves++;
             _passed.Add("saved");
+            if (CrashAfterUnsavedExtraction && _stage == Stage.SavingTransit)
+            {
+                VerifyReservedSource();
+                _confirmedReservedSaveHash = HashFile(Path.Combine(_request.SavePath, Path.GetFileName(_request.SavePath)));
+                _stage = Stage.AwaitUnsavedExtraction;
+                return;
+            }
             if (_crashPhase == "prepare" && _stage == (CrashAfterDelivery ? Stage.SavingDelivered : Stage.SavingTransit))
             {
                 PrepareCrashBoundary();
@@ -316,7 +344,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             FormatVersion = 3, PerformanceFormatVersion = 3, CapturedAtUtc = captured,
             RuntimeFingerprintAlgorithm = "sha256-flow-runtime-v1", RuntimeFingerprint = _fingerprint,
             GameVersion = Game1.GetVersionString(), SmapiVersion = Constants.ApiVersion.ToString(), Scenarios = Array.Empty<object>(),
-            HostChecks = (_crashPhase is null ? Checks : Checks.Concat(new[] { "process-restart" })).Select(id => new { Id = _scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
+            HostChecks = (_crashPhase is null ? Checks : Checks.Concat(CrashAfterUnsavedExtraction ? new[] { "process-restart", "unsaved-rollback" } : new[] { "process-restart" })).Select(id => new { Id = _scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
                 CapturedAtUtc = captured, Note = _errors.Count == 0 ? "Whole and partial stacks, real chests, two actual game saves and reloads; total quantity conserved." : string.Join("\n", _errors) }).ToArray()
         });
         AtomicJson(Path.Combine(_request.Artifact, "diagnostics", "flow-chest-roundtrip.json"), new
