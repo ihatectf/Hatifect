@@ -7,7 +7,6 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using Hatifect.UI.Stardew.Semantic;
-using RuntimeAccessibilityNode = Hatifect.UI.Runtime.Accessibility.UiAccessibilityNodeSnapshot;
 using RuntimeAccessibilityRole = Hatifect.UI.Runtime.Accessibility.UiAccessibilityRole;
 
 namespace Hatifect.UI.Stardew;
@@ -17,6 +16,7 @@ internal sealed partial class UiAutomatedAcceptanceController
     private const int MaximumNativeWaitTicks = 18000;
     private readonly List<NativeInputCapture> _nativeCaptures = new(5);
     private UiNativeInputGate? _nativeInputGate;
+    private UiNativeInputObservation? _nativeLastObservation;
     private string _nativeExpectedText = string.Empty;
     private long _nativeFrame;
     private long _nativePointerPressed;
@@ -32,6 +32,7 @@ internal sealed partial class UiAutomatedAcceptanceController
         _nativeExpectedText = "native-" + _runId[..Math.Min(8, _runId.Length)];
         _nativeInputGate = new UiNativeInputGate(_nativeExpectedText);
         _nativeCaptures.Clear();
+        _nativeLastObservation = null;
         _nativeInputCompleted = false;
         _nativeFrame = _nativePointerPressed = _nativePointerReleased = _nativeTabPressed = _nativeBackspacePressed = 0;
         _nativeWaitTicks = 0;
@@ -80,16 +81,22 @@ internal sealed partial class UiAutomatedAcceptanceController
         var nodes = accessibility is null ? null : Flatten(accessibility.Root).ToArray();
         var field = nodes?.FirstOrDefault(node => node.Role == RuntimeAccessibilityRole.TextField);
         var observation = new UiNativeInputObservation(
-            accessibility != null && PositiveGeometry(accessibility.Root) && Game1.game1.IsActive && Game1.fadeToBlackAlpha <= 0f
+            accessibility != null && UiNativeInputGate.IsVisible(accessibility.Root) && Game1.game1.IsActive && Game1.fadeToBlackAlpha <= 0f
                 && menu!.xPositionOnScreen == 0 && menu.yPositionOnScreen == 0
                 && menu.width == Game1.uiViewport.Width && menu.height == Game1.uiViewport.Height,
-            field != null && NativeNodeVisible(field),
-            nodes?.FirstOrDefault(node => node.Focused && NativeNodeVisible(node))?.Id.ToString(),
+            field != null && UiNativeInputGate.IsVisible(field),
+            nodes?.FirstOrDefault(node => node.Focused && UiNativeInputGate.IsVisible(node))?.Id.ToString(),
             field?.Value,
             _nativePointerPressed, _nativePointerReleased, _nativeTabPressed,
             field?.Focused == true, _nativeBackspacePressed);
+        _nativeLastObservation = observation;
         UiNativeInputPhase? completed = _nativeInputGate!.Observe(++_nativeFrame, observation);
-        if (completed is null) return;
+        if (completed is null)
+        {
+            // Retain a bounded live diagnostic while waiting, without writing on every draw.
+            if (_nativeFrame % 60 == 0) WriteNativeProgress();
+            return;
+        }
 
         string name = "native-" + completed.Value.ToString().ToLowerInvariant();
         CaptureScreenshot(name);
@@ -118,11 +125,6 @@ internal sealed partial class UiAutomatedAcceptanceController
         WriteNativeProgress();
     }
 
-    private static bool NativeNodeVisible(RuntimeAccessibilityNode node)
-        => node.Bounds.Width > 0 && node.Bounds.Height > 0 && node.Clip.Width > 0 && node.Clip.Height > 0
-            && node.Clip.X + node.Clip.Width > node.Bounds.X && node.Clip.Y + node.Clip.Height > node.Bounds.Y
-            && node.Bounds.X + node.Bounds.Width > node.Clip.X && node.Bounds.Y + node.Bounds.Height > node.Clip.Y;
-
     private void WriteNativeProgress()
     {
         string path = Path.Combine(_artifactDirectory, "native-input-progress.json");
@@ -133,6 +135,8 @@ internal sealed partial class UiAutomatedAcceptanceController
             scenario = _scenario,
             phase = _nativeInputGate!.Phase.ToString(),
             expectedText = _nativeExpectedText,
+            completedFrame = _nativeFrame,
+            lastObservation = _nativeLastObservation,
             inputEvidence = "SMAPI events and rendered postconditions; physical versus OS-injected origin is recorded by the external observer.",
             captures = _nativeCaptures.ToArray()
         };

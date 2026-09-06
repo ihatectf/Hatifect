@@ -1201,7 +1201,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             },
             visualMatrix = _visualCaptures.ToArray(),
             visualMatrixRestored = _visualSettingsRestored,
-            nativeInput = new { completed = _nativeInputCompleted, expectedText = _nativeExpectedText, captures = _nativeCaptures.ToArray() },
+            nativeInput = new { completed = _nativeInputCompleted, expectedText = _nativeExpectedText, lastObservation = _nativeLastObservation, captures = _nativeCaptures.ToArray() },
             terminalError = _terminalFailure == null ? null : new
             {
                 reason = _terminalFailure.Reason,

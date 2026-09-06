@@ -1,4 +1,6 @@
 using System;
+using Hatifect.UI.Runtime.Accessibility;
+using Hatifect.UI.Runtime.Layout;
 
 namespace Hatifect.UI.Stardew;
 
@@ -18,6 +20,17 @@ internal sealed class UiNativeInputGate
     }
 
     internal UiNativeInputPhase Phase { get; private set; } = UiNativeInputPhase.Ready;
+
+    // Visibility belongs to the observed target. Empty sibling lists legitimately have no area.
+    internal static bool IsVisible(UiAccessibilityNodeSnapshot node)
+        => FiniteArea(node.Bounds) && FiniteArea(node.Clip)
+            && node.Clip.Right > node.Bounds.X && node.Clip.Bottom > node.Bounds.Y
+            && node.Bounds.Right > node.Clip.X && node.Bounds.Bottom > node.Clip.Y;
+
+    private static bool FiniteArea(UiRect rect)
+        => rect.Width > 0 && rect.Height > 0
+            && float.IsFinite(rect.X) && float.IsFinite(rect.Y)
+            && float.IsFinite(rect.Right) && float.IsFinite(rect.Bottom);
 
     internal UiNativeInputPhase? Observe(long completedFrame, UiNativeInputObservation value)
     {

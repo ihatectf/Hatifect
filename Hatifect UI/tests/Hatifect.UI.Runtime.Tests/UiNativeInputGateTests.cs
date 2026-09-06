@@ -1,10 +1,48 @@
 using Hatifect.UI.Stardew;
+using Hatifect.UI.Runtime.Accessibility;
+using Hatifect.UI.Runtime.Layout;
 using Xunit;
 
 namespace Hatifect.UI.Runtime.Tests;
 
 public sealed class UiNativeInputGateTests
 {
+    [Fact]
+    public void EmptyResultsDoNotHideTheVisibleRootOrSearchField()
+    {
+        UiRect viewport = new(0, 0, 1280, 720);
+        var empty = Node(new UiRect(0, 80, 1280, 0), viewport);
+        var field = Node(new UiRect(94, 12, 1174, 40), viewport);
+        var root = Node(viewport, viewport, empty, field);
+
+        Assert.False(UiNativeInputGate.IsVisible(empty));
+        Assert.True(UiNativeInputGate.IsVisible(root));
+        Assert.True(UiNativeInputGate.IsVisible(field));
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0, 40)]
+    [InlineData(0, 0, 40, 0)]
+    [InlineData(1280, 0, 40, 40)]
+    [InlineData(0, 720, 40, 40)]
+    public void EmptyOrClippedTargetsCannotConfirmInput(float x, float y, float width, float height)
+    {
+        UiRect viewport = new(0, 0, 1280, 720);
+        UiRect invalid = new(x, y, width, height);
+        Assert.False(UiNativeInputGate.IsVisible(Node(invalid, viewport)));
+        Assert.False(UiNativeInputGate.IsVisible(Node(viewport, invalid)));
+    }
+
+    [Fact]
+    public void OverflowingAreaCannotConfirmInput()
+    {
+        UiRect overflow = new(float.MaxValue, 0, float.MaxValue, 40);
+        Assert.False(UiNativeInputGate.IsVisible(Node(overflow, overflow)));
+    }
+
+    private static UiAccessibilityNodeSnapshot Node(UiRect bounds, UiRect clip, params UiAccessibilityNodeSnapshot[] children)
+        => new(default, UiAccessibilityRole.Group, null, null, true, false, false, bounds, clip, children);
+
     private long _frame;
     private const string Probe = "native-42";
     private static UiNativeInputObservation Ready => new(true, false, "diagnostics", null, 0, 0, 0);

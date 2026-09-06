@@ -6,6 +6,7 @@ using Hatifect.UI.Language.Diagnostics;
 using Hatifect.UI.Language.Text;
 using Hatifect.UI.Planning;
 using Hatifect.UI.Runtime.Hosting;
+using Hatifect.UI.Runtime.Accessibility;
 using Hatifect.UI.Runtime.Input;
 using Hatifect.UI.Runtime.Invocation;
 using Hatifect.UI.Runtime.Layout;
@@ -77,6 +78,20 @@ public sealed class InspectorTests
                 Assert.Equal(rowsBeforeFilter[((UiInspectorNodeSnapshot)item.Value!).Id], item.Id));
             Assert.Contains(terminal.Host.Root.Frame.Primitives.OfType<UiTextPrimitive>(),
                 primitive => primitive.Node == field.Id && primitive.Text == "navigation-route");
+
+            Assert.True(terminal.EditText(UiTextEditAction.SelectAll).Consumed);
+            Assert.True(terminal.InsertText("native-no-matching-inspected-node").Interaction?.TextChanged);
+            Assert.Empty(inspector.Nodes.Value);
+            Assert.Equal("native-no-matching-inspected-node", inspector.Query.Value);
+            UiAccessibilityNodeSnapshot emptyResultField = Assert.Single(AccessibilityNodes(terminal.Host.Root.Accessibility.Root),
+                node => node.Role == UiAccessibilityRole.TextField);
+            Assert.True(emptyResultField.Focused);
+            Assert.Equal(inspector.Query.Value, emptyResultField.Value);
+            Assert.True(emptyResultField.Bounds.Width > 0 && emptyResultField.Bounds.Height > 0);
+            Assert.True(terminal.EditText(UiTextEditAction.Backspace).Interaction?.TextChanged);
+            Assert.Equal("native-no-matching-inspected-nod", inspector.Query.Value);
+            Assert.Contains(terminal.Host.Root.Frame.Primitives.OfType<UiTextPrimitive>(),
+                primitive => primitive.Node == field.Id && primitive.Text == "native-no-matching-inspected-nod");
         }
         inspector?.Dispose();
     }
@@ -86,6 +101,13 @@ public sealed class InspectorTests
         yield return root;
         foreach (UiSceneNode child in root.Children)
         foreach (UiSceneNode node in SceneNodes(child)) yield return node;
+    }
+
+    private static IEnumerable<UiAccessibilityNodeSnapshot> AccessibilityNodes(UiAccessibilityNodeSnapshot root)
+    {
+        yield return root;
+        foreach (UiAccessibilityNodeSnapshot child in root.Children)
+        foreach (UiAccessibilityNodeSnapshot node in AccessibilityNodes(child)) yield return node;
     }
 
     [Fact]
