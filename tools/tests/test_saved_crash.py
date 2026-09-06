@@ -12,6 +12,7 @@ import unittest
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -97,9 +98,9 @@ class SavedCrashTests(unittest.TestCase):
         self.marker_path.write_text(json.dumps(value))
         return value
 
-    def started(self, pid, group, continuation=False):
+    def started(self, pid, group, started, continuation=False):
         DIRECT._record_started_process(self.active, self.request, self.smapi, pid, group, continuation=continuation)
-        DIRECT._atomic_write_json(self.process_path, {"pid": pid, "processGroup": group, "startedAtUtc": DIRECT._timestamp()}, replace=True)
+        DIRECT._atomic_write_json(self.process_path, {"pid": pid, "processGroup": group, "startedAtUtc": DIRECT._timestamp(started)}, replace=True)
 
     def completed(self, code, errors):
         process = DIRECT._read_json(self.process_path)
@@ -226,7 +227,7 @@ class SavedCrashTests(unittest.TestCase):
                     DIRECT._saved_crash_marker(self.request, self.metadata, self.process)
                 DIRECT._atomic_write_json(self.active, {"lifecycleState": "Running", "smapiPid": 4242}, replace=True)
                 with self.assertRaises(DIRECT.DirectRuntimeError):
-                    self.started(4343, 4343, True)
+                    self.started(4343, 4343, DIRECT._utc_now(), True)
                 self.assertEqual(DIRECT._read_json(self.active)["smapiPid"], 4242)
                 self.assertEqual(DIRECT._acceptance_report_source(self.isolated, scenario),
                                  self.isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")
@@ -249,6 +250,33 @@ class SavedCrashTests(unittest.TestCase):
     def test_real_returned_boundary_restarts_from_the_fourth_confirmed_save(self):
         self.use_boundary(DIRECT.RETURNED_CRASH_SCENARIO, "saved-returned", 4)
         self.verify_real_two_processes()
+
+    def test_child_save_before_launch_notification_still_authorizes_owned_restart(self):
+        self.use_boundary(DIRECT.RETURNED_CRASH_SCENARIO, "saved-returned", 4)
+        started = self.started
+        notifications = []
+
+        def after_child_save(pid, group, *args):
+            if not notifications:
+                deadline = time.monotonic() + 5
+                while not self.marker_path.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(self.marker_path.is_file(), "child did not reach its confirmed-save barrier")
+            notifications.append(DIRECT._utc_now())
+            started(pid, group, *args)
+
+        with mock.patch.object(self, "started", side_effect=after_child_save):
+            self.verify_real_two_processes()
+
+        marker = DIRECT._read_json(self.marker_path)
+        prepare = DIRECT._read_json(self.artifact / "diagnostics/process-prepare.json")
+        resume = DIRECT._read_json(self.artifact / "diagnostics/process-resume.json")
+        captured = DIRECT._parse_timestamp(marker["capturedAtUtc"])
+        self.assertEqual(len(notifications), 2)
+        self.assertLess(captured, notifications[0])
+        self.assertLessEqual(DIRECT._parse_timestamp(prepare["startedAtUtc"]), captured)
+        self.assertLess(captured, DIRECT._parse_timestamp(resume["startedAtUtc"]))
+        self.assertLessEqual(DIRECT._parse_timestamp(resume["startedAtUtc"]), notifications[1])
 
     def verify_real_two_processes(self):
         template = self.artifact / "marker-template.json"
@@ -300,7 +328,7 @@ else:
             self.assertTrue(self.save.exists())
             log.write_text("[Hatifect Flow] process log\n")
             if len(calls) == 1:
-                kwargs["on_started"](4242, 4242)
+                kwargs["on_started"](4242, 4242, DIRECT._utc_now())
                 self.write_marker({"capturedAtUtc": DIRECT._timestamp()})
                 if raw_exit is not None:
                     self.assertTrue(kwargs["force_kill_requested"]())
@@ -312,7 +340,7 @@ else:
             self.assertIsNone(DIRECT._read_json(self.active)["smapiPid"])
             self.assertIsNone(DIRECT._read_json(self.process_path)["pid"])
             if not failed_launch:
-                kwargs["on_started"](4343, 4343)
+                kwargs["on_started"](4343, 4343, DIRECT._utc_now())
             kwargs["on_completed"](second_exit, [])
             return second_exit
 

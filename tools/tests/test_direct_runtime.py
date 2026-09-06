@@ -563,6 +563,7 @@ class DirectRuntimeTests(unittest.TestCase):
             DIRECT_RUNTIME._atomic_write_json(active, fixture.request)
             DIRECT_RUNTIME._transition(active, fixture.request, "Accepted", "accepted")
             captured = {}
+            started = DIRECT_RUNTIME._utc_now() - dt.timedelta(seconds=1)
 
             def run(command, working_directory, _log, _timeout, _grace, **kwargs):
                 captured["command"] = command
@@ -570,7 +571,7 @@ class DirectRuntimeTests(unittest.TestCase):
                 captured["environment"] = kwargs["environment"]
                 options = Path(kwargs['environment']['XDG_CONFIG_HOME']) / 'StardewValley/default_options'
                 self.assertEqual(ET.parse(options).findtext('pauseWhenOutOfFocus'), 'false')
-                kwargs["on_started"](4242, 4242)
+                kwargs["on_started"](4242, 4242, started)
                 report = (
                     Path(fixture.request["isolatedRoot"])
                     / "Mods"
@@ -615,6 +616,8 @@ class DirectRuntimeTests(unittest.TestCase):
             self.assertEqual(outcome[:5], ("Completed", "PASS", 0, None, "Automated acceptance evidence finalized."))
             self.assertEqual(captured["command"], ["/game/StardewModdingAPI"])
             self.assertEqual(captured["working_directory"], Path("/game"))
+            process = DIRECT_RUNTIME._read_json(Path(fixture.request["artifactDirectory"]) / "process.json")
+            self.assertEqual(process["startedAtUtc"], DIRECT_RUNTIME._timestamp(started))
             self.assertFalse((Path(fixture.request['isolatedRoot']) / 'config/StardewValley/default_options').exists())
             self.assertEqual(
                 captured["environment"]["SMAPI_MODS_PATH"],
@@ -695,7 +698,7 @@ class DirectRuntimeTests(unittest.TestCase):
         DIRECT_RUNTIME._transition(active, fixture.request, "Accepted", "accepted")
 
         def run(_command, _working_directory, log_path, _timeout, _grace, **kwargs):
-            kwargs["on_started"](4343, 4343)
+            kwargs["on_started"](4343, 4343, DIRECT_RUNTIME._utc_now())
             Path(log_path).write_text(log_text, encoding="utf-8")
             kwargs["on_completed"](134, [])
             return 134
