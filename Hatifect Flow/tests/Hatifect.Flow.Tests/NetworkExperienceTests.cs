@@ -20,7 +20,7 @@ public sealed class NetworkExperienceTests
         for (int i = 2; i <= 27; i++) app.Fixture.AddBatch(i);
         app.Application.Refresh();
         using var view = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network"), app);
-        var history = Source<UiSelectableCollectionState<FlowParcelSnapshot>>(view, "Shipments");
+        var history = Source<FlowSelectionSource<FlowParcelSnapshot>>(view, "Shipments");
         Assert.Equal(12, history.Count);
         history.TrySelect(history.GetItem(0).Id);
         UiSymbolId selected = history.SelectedItemId!.Value;
@@ -33,7 +33,7 @@ public sealed class NetworkExperienceTests
         Action(view, "Previous page").TryExecute();
         Action(view, "Previous page").TryExecute();
         Assert.Equal(selected, history.SelectedItemId);
-        var query = Source<UiState<string>>(view, "Find shipments");
+        var query = Source<FlowTextSource>(view, "Find shipments");
         query.Value = "no matching cargo";
         Assert.Empty(history.Value);
         Assert.False(Action(view, "Cancel selected").CanExecute);
@@ -42,7 +42,7 @@ public sealed class NetworkExperienceTests
         Assert.Equal(selected, history.SelectedItemId);
         Assert.True(Action(view, "Cancel selected").TryExecute());
         Assert.Equal(Hatifect.Flow.Domain.Shipments.ParcelState.Cancelled, history.Value[0].State);
-        var filter = Source<UiSelectableCollectionState<string>>(view, "Shipment filter");
+        var filter = Source<FlowSelectionSource<string>>(view, "Shipment filter");
         filter.TrySelect(filter.GetItem(1).Id);
         Assert.DoesNotContain(history.Value, parcel => parcel.State == Hatifect.Flow.Domain.Shipments.ParcelState.Cancelled);
         filter.TrySelect(filter.GetItem(2).Id);
@@ -77,16 +77,16 @@ public sealed class NetworkExperienceTests
         var id = new UiSymbolId("Hatifect.Flow", "network");
         using var view = new NetworkExperience(id, app);
         var experience = view.Experience;
-        var history = Source<UiSelectableCollectionState<FlowParcelSnapshot>>(view, "Shipments");
+        var history = Source<FlowSelectionSource<FlowParcelSnapshot>>(view, "Shipments");
         var selection = Assert.IsType<UiSelectionSource>(experience.Sources.Single(source => source.Alias == "SelectedShipment").Source);
-        var details = Assert.IsType<UiState<FlowParcelSnapshot?>>(experience.Sources.Single(source => source.Alias == "ShipmentPayload").Source);
+        var details = Assert.IsType<UiPublishedState<FlowParcelSnapshot?>>(experience.Sources.Single(source => source.Alias == "ShipmentPayload").Source);
         Assert.True(history.TrySelect(history.GetItem(0).Id));
         Assert.Equal(history.SelectedItemId, selection.Value);
         Assert.Same(history.Value[0], details.Value);
         Assert.Equal(FlowUiDataTypes.Parcel.Descriptor.TypeId, experience.Graph.Nodes.Single(node => node.Id == id.Child("element/history")).DataType!.ItemType!.TypeId);
         Assert.DoesNotContain(experience.Elements, element => element.Id == id.Child("source/history-selection") || element.Id == id.Child("source/history-payload"));
         Assert.Contains(experience.Graph.Relations, relation => relation.Kind == UiRelationKind.Query && relation.TargetInput == id.Child("element/history/input/query"));
-        Source<UiState<string>>(view, "Find shipments").Value = "missing cargo";
+        Source<FlowTextSource>(view, "Find shipments").Value = "missing cargo";
         Assert.Empty(history.Value);
         Assert.Null(selection.Value);
         Assert.Null(details.Value);
@@ -107,8 +107,8 @@ public sealed class NetworkExperienceTests
         Assert.Equal(FlowNetworkAction.RegisterStation, app.NetworkCommand!.Action);
         Assert.Equal("Orchard", app.NetworkCommand.Name);
         Assert.Equal(app.Target, app.NetworkCommand.Target);
-        var source = Source<UiSelectableCollectionState<FlowStationDetails>>(view, "Source station");
-        var destination = Source<UiSelectableCollectionState<FlowStationDetails>>(view, "Destination station");
+        var source = Source<FlowSelectionSource<FlowStationDetails>>(view, "Source station");
+        var destination = Source<FlowSelectionSource<FlowStationDetails>>(view, "Destination station");
         Assert.DoesNotContain(source.GetItem(0).Id, destination.Value.Select((_, index) => destination.GetItem(index).Id));
         source.TrySelect(source.GetItem(0).Id);
         destination.TrySelect(destination.GetItem(1).Id);
@@ -124,11 +124,11 @@ public sealed class NetworkExperienceTests
     {
         using var app = new NetworkTestApplication();
         using var view = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network"), app);
-        var source = Source<UiSelectableCollectionState<FlowStationDetails>>(view, "Source station");
-        var destination = Source<UiSelectableCollectionState<FlowStationDetails>>(view, "Destination station");
+        var source = Source<FlowSelectionSource<FlowStationDetails>>(view, "Source station");
+        var destination = Source<FlowSelectionSource<FlowStationDetails>>(view, "Destination station");
         source.TrySelect(source.GetItem(0).Id);
         destination.TrySelect(destination.GetItem(1).Id);
-        var inventory = Source<UiSelectableCollectionState<FlowInventorySlot>>(view, "Source cargo");
+        var inventory = Source<FlowSelectionSource<FlowInventorySlot>>(view, "Source cargo");
         Assert.Equal(8, Assert.Single(inventory.Value).Quantity);
         inventory.TrySelect(inventory.GetItem(0).Id);
         UiActionDefinition send = Action(view, "Send whole stack");
@@ -155,11 +155,11 @@ public sealed class NetworkExperienceTests
         using var app = new NetworkTestApplication();
         using var view = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "quantity"), app, russian);
         T Element<T>(string suffix) => Assert.IsType<T>(view.Experience.Elements.Single(element => element.Id.LocalId.EndsWith(suffix, StringComparison.Ordinal)).Source);
-        var source = Element<UiSelectableCollectionState<FlowStationDetails>>("/source-station");
-        var destination = Element<UiSelectableCollectionState<FlowStationDetails>>("/destination-station");
+        var source = Element<FlowSelectionSource<FlowStationDetails>>("/source-station");
+        var destination = Element<FlowSelectionSource<FlowStationDetails>>("/destination-station");
         source.TrySelect(source.GetItem(0).Id);
         destination.TrySelect(destination.GetItem(1).Id);
-        var inventory = Element<UiSelectableCollectionState<FlowInventorySlot>>("/source-cargo");
+        var inventory = Element<FlowSelectionSource<FlowInventorySlot>>("/source-cargo");
         var form = Element<UiFormState>("/shipment-quantity");
         UiActionDefinition send = Assert.Single(view.Experience.Actions, action => action.Id.LocalId.EndsWith("/send-quantity", StringComparison.Ordinal));
         Assert.False(send.CanExecute);

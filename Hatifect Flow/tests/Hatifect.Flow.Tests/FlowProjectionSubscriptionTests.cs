@@ -35,7 +35,7 @@ public sealed class FlowProjectionSubscriptionTests
     {
         using var app = new PublishingApplication();
         using IFlowExperience view = Create(network, app);
-        UiState<string> status = Status(view, network);
+        IUiSemanticSource<string> status = Status(view, network);
         bool resume = true;
         bool reentered = false;
         status.Changed += () =>
@@ -110,8 +110,8 @@ public sealed class FlowProjectionSubscriptionTests
     private static IFlowExperience Create(bool network, IFlowNetworkApplication app)
         => network ? new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network"), app)
             : new ParcelExperience(new UiSymbolId("Hatifect.Flow", "parcel"), app, CheckpointFixture.Parcel.Value);
-    private static UiState<string> Status(IFlowExperience view, bool network)
-        => Assert.IsType<UiState<string>>(view.Experience.Elements.Single(element => element.Name == (network ? "Transport" : "State")).Source);
+    private static IUiSemanticSource<string> Status(IFlowExperience view, bool network)
+        => Assert.IsAssignableFrom<IUiSemanticSource<string>>(view.Experience.Elements.Single(element => element.Name == (network ? "Transport" : "State")).Source);
     private static string Paused(bool network) => network ? "Paused" : "Transport paused";
 
     // Adversarial owner boundary: a read returns its captured value while publishing a newer one.
