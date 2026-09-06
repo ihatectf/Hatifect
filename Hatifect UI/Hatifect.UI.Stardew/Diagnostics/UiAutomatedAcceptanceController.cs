@@ -75,7 +75,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             "semantic.inspector.reveal",
             "semantic.inspector.close"
         }),
-        new("semantic.overlay", AcceptanceScenarioKind.Ui, false, AcceptanceScenarioExecution.Overlay, false, new[]
+        new("semantic.overlay", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.Overlay, false, new[]
         {
             "semantic.overlay.visual",
             "semantic.overlay.context",
@@ -109,6 +109,10 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
     private readonly UiStardewAcceptanceRecorder _recorder = UiStardewAcceptanceRecorder.Shared;
     private readonly UiAutomatedAcceptanceCheckLedger _checkLedger = new();
     private readonly List<UiScaleAttempt> _uiScaleAttempts = new();
+    private readonly CompletedFrameCaptureComponent _captureComponent;
+    private string? _screenshotSource;
+    private int _screenshotWidth;
+    private int _screenshotHeight;
     private readonly string _scenario;
     private readonly string _runId;
     private readonly string _artifactDirectory;
@@ -146,6 +150,8 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         _scenario = scenario;
         _runId = runId;
         _artifactDirectory = artifactDirectory;
+        _captureComponent = new CompletedFrameCaptureComponent(GameRunner.instance, CaptureCompletedFrame);
+        _captureComponent.Game.Components.Add(_captureComponent);
         _helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
         _helper.Events.Display.Rendered += OnRendered;
     }
@@ -303,6 +309,8 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         _disposed = true;
         _helper.Events.GameLoop.UpdateTicked -= OnUpdateTicked;
         _helper.Events.Display.Rendered -= OnRendered;
+        _captureComponent.Game.Components.Remove(_captureComponent);
+        _captureComponent.Dispose();
     }
 
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
@@ -354,13 +362,17 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         }
         if (_awaitingWorld)
         {
-            if (!Context.IsWorldReady)
+            // The standalone HUD fixture needs the visible world, after its load transition.
+            bool awaitingOverlayFade = string.Equals(_scenario, "semantic.overlay", StringComparison.Ordinal)
+                && Game1.fadeToBlackAlpha > 0f;
+            if (!Context.IsWorldReady || awaitingOverlayFade)
             {
                 _worldWaitTicks++;
                 if (_worldWaitTicks == 1 || (_worldWaitTicks % 300) == 0)
                 {
                     _monitor.Log(
                         $"Awaiting world-ready: bootstrap={_bootstrapLifecycle}, worldReady={Context.IsWorldReady}, "
+                        + $"fadeAlpha={Game1.fadeToBlackAlpha}, "
                         + $"hasLoadedGame={Game1.hasLoadedGame}, "
                         + $"menu={Game1.activeClickableMenu?.GetType().FullName ?? "\u003Cnull\u003E"}, "
                         + $"location={Game1.currentLocation?.NameOrUniqueName ?? "\u003Cnull\u003E"}.",
@@ -416,13 +428,13 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
 
     private void OnRendered(object? sender, RenderedEventArgs e)
     {
-        if (_disposed) return;
-        if (_performanceActive)
-        {
+        if (!_disposed && _performanceActive)
             _performanceFrames++;
-            return;
-        }
-        if (!_capturePending) return;
+    }
+
+    private void CaptureCompletedFrame()
+    {
+        if (_disposed || _performanceActive || !_capturePending) return;
         _capturePending = false;
         try
         {
@@ -433,11 +445,19 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         catch (Exception error)
         {
             RetainTerminalFailure("HARNESS-EVIDENCE-CAPTURE-EXCEPTION", error);
-            WriteDiagnostics();
-            _exitPending = true;
+            try { WriteDiagnostics(); }
+            catch (Exception diagnosticsError)
+            {
+                _monitor.Log($"Could not persist capture failure diagnostics: {diagnosticsError}", LogLevel.Error);
+            }
             FailUnrecorded(_terminalFailure!.Reason);
         }
-        _exitPending = true;
+        finally
+        {
+            // A failed diagnostics write must not strand the completed capture or escape through
+            // the native draw callback before requesting the owned harness shutdown.
+            _exitPending = true;
+        }
     }
 
     private void Execute()
@@ -1110,31 +1130,43 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, _scenario.Replace('.', '-') + ".png");
         GraphicsDevice graphics = Game1.graphics.GraphicsDevice;
-        int width = graphics.PresentationParameters.BackBufferWidth;
-        int height = graphics.PresentationParameters.BackBufferHeight;
-        var data = new Color[checked(width * height)];
+        if (graphics.RenderTargetCount != 0)
+            throw new InvalidOperationException("Completed-frame capture requires the composed back buffer.");
+        _screenshotSource = "composed-back-buffer";
+        _screenshotWidth = graphics.PresentationParameters.BackBufferWidth;
+        _screenshotHeight = graphics.PresentationParameters.BackBufferHeight;
+        var data = new Color[checked(_screenshotWidth * _screenshotHeight)];
         graphics.GetBackBufferData(data);
-        FlipRowsInPlace(data, width, height);
-        using var texture = new Texture2D(graphics, width, height, false, SurfaceFormat.Color);
+        using var texture = new Texture2D(graphics, _screenshotWidth, _screenshotHeight, false, SurfaceFormat.Color);
         texture.SetData(data);
         using FileStream stream = File.Create(path);
-        texture.SaveAsPng(stream, width, height);
+        texture.SaveAsPng(stream, _screenshotWidth, _screenshotHeight);
         stream.Flush(flushToDisk: true);
+
+        // Retain the completed UI layer independently of native-window clipping/occlusion so
+        // layout pixels can be compared with the final window frame without changing game state.
+        if (Game1.game1.uiScreen is { IsDisposed: false } uiScreen)
+        {
+            string uiPath = Path.Combine(directory, _scenario.Replace('.', '-') + "-ui-layer.png");
+            using FileStream uiStream = File.Create(uiPath);
+            uiScreen.SaveAsPng(uiStream, uiScreen.Width, uiScreen.Height);
+            uiStream.Flush(flushToDisk: true);
+        }
     }
 
-    private static void FlipRowsInPlace(Color[] pixels, int width, int height)
+    private sealed class CompletedFrameCaptureComponent : DrawableGameComponent
     {
-        // Stardew's DesktopGL Texture2D PNG path reads the temporary texture in native bottom-up
-        // row order. Reverse the captured back-buffer rows before that round trip so the persisted
-        // acceptance artifact uses the conventional top-left image origin.
-        for (int top = 0, bottom = height - 1; top < bottom; top++, bottom--)
+        private readonly Action _capture;
+
+        public CompletedFrameCaptureComponent(Game game, Action capture) : base(game)
         {
-            int topOffset = top * width;
-            int bottomOffset = bottom * width;
-            for (int x = 0; x < width; x++)
-                (pixels[topOffset + x], pixels[bottomOffset + x]) =
-                    (pixels[bottomOffset + x], pixels[topOffset + x]);
+            _capture = capture;
+            DrawOrder = int.MaxValue;
         }
+
+        // GameRunner draws its components after each instance has composed world and UI buffers.
+        // SMAPI's Rendered event runs earlier, inside the instance's _draw method.
+        public override void Draw(GameTime gameTime) => _capture();
     }
 
     private void WriteDiagnostics()
@@ -1153,7 +1185,14 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             processId = Environment.ProcessId,
             terminalOpen = _dogfood.IsOpen,
             overlayVisible = _dogfood.IsOverlayVisible,
+            fadeToBlackAlpha = Game1.fadeToBlackAlpha,
             activeTheme = UiSemanticStardewTheme.Id,
+            screenshot = _screenshotSource == null ? null : new
+            {
+                source = _screenshotSource,
+                width = _screenshotWidth,
+                height = _screenshotHeight
+            },
             viewport = new
             {
                 width = Game1.uiViewport.Width,

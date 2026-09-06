@@ -372,7 +372,7 @@
     {
       "id": "semantic.overlay",
       "kind": "ui",
-      "requiresSave": false,
+      "requiresSave": true,
       "timeoutSeconds": 1800,
       "checks": [
         "semantic.overlay.visual",
