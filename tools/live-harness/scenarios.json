@@ -473,6 +473,27 @@
       "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
     },
     {
+      "id": "semantic.actions.terminal",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.actions.terminal.same.transition",
+        "semantic.actions.terminal.same.delivery",
+        "semantic.actions.terminal.route.transition",
+        "semantic.actions.terminal.route.delivery",
+        "semantic.actions.terminal.failed-open.transition",
+        "semantic.actions.terminal.failed-open.delivery",
+        "semantic.actions.terminal.failed-route.transition",
+        "semantic.actions.terminal.failed-route.delivery"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
       "id": "semantic.actions.pump",
       "kind": "ui",
       "requiresSave": true,

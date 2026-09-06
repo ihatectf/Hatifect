@@ -100,6 +100,17 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             "semantic.input.retired-overlay.keyboard",
             "semantic.input.retired-overlay.retry"
         }, includeInAggregate: false),
+        new("semantic.actions.terminal", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.TerminalGeneration, true, new[]
+        {
+            "semantic.actions.terminal.same.transition",
+            "semantic.actions.terminal.same.delivery",
+            "semantic.actions.terminal.route.transition",
+            "semantic.actions.terminal.route.delivery",
+            "semantic.actions.terminal.failed-open.transition",
+            "semantic.actions.terminal.failed-open.delivery",
+            "semantic.actions.terminal.failed-route.transition",
+            "semantic.actions.terminal.failed-route.delivery"
+        }, includeInAggregate: false),
         new("semantic.actions.pump", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.ActionPump, true, new[]
         {
             "semantic.actions.pump.menu",
@@ -329,6 +340,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        StopTerminalGeneration();
         StopActionPump();
         StopNativeInput();
         RestoreVisualSettingsAfterFailure();
@@ -434,6 +446,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             return;
         }
         if (_awaitingReturnedToTitle) return;
+        if (AdvanceTerminalGeneration()) return;
         if (AdvanceActionPump()) return;
         if (AdvanceNativeInput()) return;
         if (AdvanceVisualMatrix()) return;
@@ -519,6 +532,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         catch (Exception error)
         {
             RetainTerminalFailure("HARNESS-AUTOMATION-EXECUTION-EXCEPTION", error);
+            StopTerminalGeneration();
             StopActionPump();
             StopNativeInput();
             RestoreVisualSettingsAfterFailure();
@@ -591,6 +605,9 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             case AcceptanceScenarioExecution.RetiredOverlayInput:
                 ExecuteRetiredOverlayInput();
                 return false;
+            case AcceptanceScenarioExecution.TerminalGeneration:
+                BeginTerminalGeneration();
+                return true;
             case AcceptanceScenarioExecution.ActionPump:
                 BeginActionPump();
                 return true;
@@ -663,6 +680,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         _returnToTitleContribution = null;
         _verifyReturnToTitleContribution = false;
         RetainTerminalFailure("HARNESS-AUTOMATION-LIFECYCLE-EXCEPTION", error);
+        StopTerminalGeneration();
         StopActionPump();
         StopNativeInput();
         RestoreVisualSettingsAfterFailure();
@@ -1224,6 +1242,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             visualMatrix = _visualCaptures.ToArray(),
             visualMatrixRestored = _visualSettingsRestored,
             retiredOverlayInput = _retiredOverlayInput,
+            terminalGeneration = new { completed = _terminalGenerationCompleted, ownerThread = _generationOwnerThread, transitions = _terminalGenerationTransitions.ToArray(), actions = _terminalGenerationActions.ToArray() },
             actionPump = new { completed = _actionPumpCompleted, ownerThread = _actionOwnerThread, ticks = _actionTicks, probes = _actionProbes.ToArray() },
             nativeInput = new { completed = _nativeInputCompleted, expectedText = _nativeExpectedText, lastObservation = _nativeLastObservation, captures = _nativeCaptures.ToArray() },
             terminalError = _terminalFailure == null ? null : new
@@ -1255,6 +1274,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         Overlay,
         Input,
         NativeInput,
+        TerminalGeneration,
         ActionPump,
         RetiredOverlayInput,
         LocaleScaleTheme,
