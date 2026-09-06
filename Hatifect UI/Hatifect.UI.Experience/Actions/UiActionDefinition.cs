@@ -21,9 +21,16 @@ public sealed class UiActionDefinition
     public string Title { get; }
     public bool CanExecute => _canExecute();
 
-    public bool TryExecute()
+    public bool TryExecute() => TryExecute(null);
+
+    // Host input must recheck ownership after consumer availability, before the domain effect.
+    // A direct legacy invocation has no host owner and retains its existing behavior.
+    internal bool TryExecute(Action? ensureOwnerActive)
     {
-        if (!CanExecute) return false;
+        ensureOwnerActive?.Invoke();
+        bool available = CanExecute;
+        ensureOwnerActive?.Invoke();
+        if (!available) return false;
         _execute();
         return true;
     }

@@ -369,12 +369,173 @@ public sealed class PortalHostTests
             yield return descendant;
     }
 
+    [Fact]
+    public void DeactivatedHostRefusesRetainedRootInputBeforeEffects()
+    {
+        int invoked = 0;
+        UiScene root = Scene("retired-root", UiHostPolicies.Window, 1, () => invoked++);
+        var session = Host(root, new RecordingPlatform());
+        session.MoveFocus(Hatifect.UI.Runtime.Input.UiNavigationDirection.Next);
+        Assert.Equal(Assert.Single(Nodes(root.Root).OfType<UiButtonSceneNode>()).Id,
+            session.Root.Interactions.Snapshot.Focused);
+        var snapshot = session.Root.Interactions.Snapshot;
+
+        session.Deactivate();
+        session.Deactivate();
+
+        Assert.Throws<ObjectDisposedException>(() => session.Root.Interactions.Submit());
+        Assert.Equal(0, invoked);
+        Assert.Same(snapshot, session.Root.Interactions.Snapshot);
+    }
+
+    [Fact]
+    public void PresentCannotRegisterAfterOwnerRetirementDuringPreparation()
+    {
+        UiScene root = Scene("present-retired-root", UiHostPolicies.Window, 1);
+        UiScene popup = Scene("present-retired-popup", UiHostPolicies.Popup, 1);
+        var platform = new RecordingPlatform();
+        var session = Host(root, platform);
+        UiSymbolId owner = Assert.Single(Nodes(root.Root).OfType<UiButtonSceneNode>()).Id;
+        platform.OnMeasure = () => { platform.OnMeasure = null; session.Deactivate(); };
+
+        Assert.Throws<ObjectDisposedException>(() => session.Present(Request(
+            RegistryTests.Id("portal/retired-preparation"), owner, popup)));
+
+        Assert.Empty(session.ActivePortals);
+        Assert.Same(root, session.Root.Scene);
+    }
+
+    [Fact]
+    public void ClosedPortalCannotCommitItsPreparedUpdate()
+    {
+        UiScene root = Scene("update-retired-root", UiHostPolicies.Window, 1);
+        UiScene popup = Scene("update-retired-popup", UiHostPolicies.Popup, 1);
+        UiScene next = Scene("update-retired-popup", UiHostPolicies.Popup, 2);
+        var platform = new RecordingPlatform();
+        var session = Host(root, platform);
+        UiSymbolId owner = Assert.Single(Nodes(root.Root).OfType<UiButtonSceneNode>()).Id;
+        UiSymbolId id = RegistryTests.Id("portal/update-retirement");
+        using UiPortalHandle handle = session.Present(Request(id, owner, popup));
+        platform.OnMeasure = () => { platform.OnMeasure = null; handle.Dispose(); };
+
+        Assert.Throws<ObjectDisposedException>(() => session.UpdatePortal(id, next,
+            new UiHostPlacementContext(Viewport, pointer: new UiPoint(500, 300))));
+
+        Assert.Empty(session.ActivePortals);
+        Assert.Same(root, session.Root.Scene);
+    }
+
+    [Fact]
+    public void RetiredRootCannotUpdateRefreshOrDrawThroughRetainedReferences()
+    {
+        UiScene root = Scene("retired-root-operations", UiHostPolicies.Window, 1);
+        var platform = new RecordingPlatform();
+        var session = Host(root, platform);
+        UiSymbolId owner = Assert.Single(Nodes(root.Root).OfType<UiButtonSceneNode>()).Id;
+        UiScene popup = Scene("retired-root-child", UiHostPolicies.Popup, 1);
+        using var handle = session.Present(Request(RegistryTests.Id("portal/retired-root"), owner, popup));
+        var frame = session.Root.Frame;
+        session.Deactivate();
+
+        Assert.Empty(session.ActivePortals);
+        Assert.Throws<ObjectDisposedException>(() => session.Root.Update(root, Viewport));
+        Assert.Throws<ObjectDisposedException>(() => session.Root.RefreshInteractionVisuals());
+        Assert.Throws<ObjectDisposedException>(() => session.Root.RefreshTextEditingVisuals());
+        Assert.Throws<ObjectDisposedException>(() => session.Root.ScrollAt(new UiPoint(1, 1), 10));
+        Assert.Throws<ObjectDisposedException>(() => session.Present(Request(RegistryTests.Id("portal/new"), owner, popup)));
+        Assert.Throws<ObjectDisposedException>(() => session.UnhandledInput());
+        session.Root.Render();
+        session.Render();
+
+        Assert.Empty(platform.Drawn);
+        Assert.Same(frame, session.Root.Frame);
+    }
+
+    [Theory]
+    [InlineData("root-update")]
+    [InlineData("parent-reopen")]
+    [InlineData("duplicate")]
+    public void PresentCannotOverwriteAnOwnerOrRegistrationChangedByItsCallback(string change)
+    {
+        UiScene root = Scene("present-owner-change", UiHostPolicies.Window, 1);
+        UiScene popup = Scene("present-owner-popup", UiHostPolicies.Popup, 1);
+        var platform = new RecordingPlatform();
+        var session = Host(root, platform);
+        UiSymbolId owner = Assert.Single(Nodes(root.Root).OfType<UiButtonSceneNode>()).Id;
+        UiSymbolId parentId = RegistryTests.Id("portal/parent");
+        UiSymbolId candidateId = RegistryTests.Id("portal/candidate");
+        using UiPortalHandle parent = session.Present(Request(parentId, owner, popup));
+        UiPortalRequest request = change == "parent-reopen"
+            ? new UiPortalRequest(candidateId, new UiPortalOwner(popup.Root.Id, parentId), popup,
+                new UiHostPlacementContext(Viewport, pointer: new UiPoint(500, 300)))
+            : Request(candidateId, owner, popup);
+        UiPortalHandle? nested = null;
+        platform.OnMeasure = () =>
+        {
+            platform.OnMeasure = null;
+            if (change == "root-update") session.UpdateRoot(root,
+                new UiHostPlacementContext(new UiRect(0, 0, 1000, 700)));
+            else if (change == "parent-reopen")
+            {
+                parent.Dispose();
+                nested = session.Present(Request(parentId, owner, popup));
+            }
+            else nested = session.Present(request);
+        };
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => session.Present(request));
+
+            Assert.Contains(parentId, session.ActivePortals);
+            Assert.Equal(change == "duplicate", session.ActivePortals.Contains(candidateId));
+            Assert.Equal(change == "duplicate" ? 2 : 1, session.ActivePortals.Count);
+            using var retry = session.Present(Request(RegistryTests.Id("portal/retry"), owner, popup));
+            Assert.Contains(RegistryTests.Id("portal/retry"), session.ActivePortals);
+        }
+        finally { nested?.Dispose(); }
+    }
+
+    [Fact]
+    public void ClosingAParentFromANestedActionSkipsRetiredCompositionAndPreservesRootInput()
+    {
+        UiPortalHandle? parent = null;
+        int rootEffects = 0;
+        int childEffects = 0;
+        int childCompositions = 0;
+        UiScene root = Scene("action-retirement-root", UiHostPolicies.Window, 1, () => rootEffects++);
+        UiScene popup = Scene("action-retirement-parent", UiHostPolicies.Popup, 1);
+        UiScene child = Scene("action-retirement-child", UiHostPolicies.Context, 1,
+            () => { childEffects++; parent!.Dispose(); });
+        var session = Host(root, new RecordingPlatform());
+        UiSymbolId owner = Assert.Single(Nodes(root.Root).OfType<UiButtonSceneNode>()).Id;
+        UiSymbolId parentId = RegistryTests.Id("portal/action-parent");
+        using (parent = session.Present(Request(parentId, owner, popup)))
+        using (session.Present(new UiPortalRequest(RegistryTests.Id("portal/action-child"),
+            new UiPortalOwner(popup.Root.Id, parentId), child,
+            new UiHostPlacementContext(Viewport, pointer: new UiPoint(500, 300)),
+            _ => { childCompositions++; return child; })))
+        {
+            int before = childCompositions;
+            Assert.True(session.Submit().Interaction!.ActionInvoked);
+            Assert.Equal(1, childEffects);
+            Assert.Equal(before, childCompositions);
+            Assert.Empty(session.ActivePortals);
+            session.MoveFocus(Hatifect.UI.Runtime.Input.UiNavigationDirection.Next);
+            Assert.True(session.Submit().Interaction!.ActionInvoked);
+            Assert.Equal(1, rootEffects);
+        }
+    }
+
     private sealed class RecordingPlatform : IUiPlatformBridge
     {
         public List<UiSymbolId> Drawn { get; } = new();
+        public Action? OnMeasure { get; set; }
 
         public UiSize Measure(string text, UiTypography typography, float availableWidth, UiTextOverflow overflow)
-            => new(Math.Min(text.Length * typography.Size * 0.6f, availableWidth), typography.Size * typography.LineHeight);
+        {
+            OnMeasure?.Invoke();
+            return new(Math.Min(text.Length * typography.Size * 0.6f, availableWidth), typography.Size * typography.LineHeight);
+        }
 
         public void DrawSurface(UiSurfacePrimitive surface) => Drawn.Add(surface.Node);
         public void DrawText(UiTextPrimitive text) => Drawn.Add(text.Node);

@@ -112,7 +112,14 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     // An action can retire its host while dispatch is still unwinding. Stop post-action
     // composition before its owner and platform resources are released.
-    internal void Deactivate() => _active = false;
+    internal void Deactivate()
+    {
+        if (!_active) return;
+        _active = false;
+        Root.Deactivate();
+        foreach (PortalEntry portal in _portals) portal.Runtime.Deactivate();
+        _portals.Clear();
+    }
 
     public UiPortalHostSession(
         UiScene root,
@@ -157,12 +164,15 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     public UiPortalHandle Present(UiPortalRequest request)
     {
+        EnsureActive();
         ArgumentNullException.ThrowIfNull(request);
         if (_portals.Any(item => item.Request.Id == request.Id))
             throw new InvalidOperationException($"Portal '{request.Id}' is already active.");
         if (!OwnerExists(request.Owner))
             throw new InvalidOperationException(
                 $"Portal '{request.Id}' references missing owner node '{request.Owner.Node}'.");
+        UiHostRuntimeSession owner = OwnerRuntime(request.Owner)!;
+        long ownerVersion = owner.AcceptedVersion;
 
         long generation = ++_nextGeneration;
         var runtime = new UiHostRuntimeSession(
@@ -170,17 +180,37 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
             request.Placement,
             _platform,
             composeInteraction: request.ComposeInteraction);
-        if (request.Scene.Root.Policy.Focus is UiFocusScopePolicy.Contained or UiFocusScopePolicy.Trapped)
+        try
         {
-            UiInteractionUpdate focus = runtime.MoveFocus(UiNavigationDirection.Next);
-            Refresh(runtime, focus);
+            EnsureCurrentOwner();
+            if (request.Scene.Root.Policy.Focus is UiFocusScopePolicy.Contained or UiFocusScopePolicy.Trapped)
+            {
+                UiInteractionUpdate focus = runtime.MoveFocus(UiNavigationDirection.Next);
+                Refresh(runtime, focus);
+            }
+            EnsureCurrentOwner();
+            _portals.Add(new PortalEntry(request, runtime, generation));
+            return new UiPortalHandle(() => Close(request.Id, generation));
         }
-        _portals.Add(new PortalEntry(request, runtime, generation));
-        return new UiPortalHandle(() => Close(request.Id, generation));
+        catch
+        {
+            runtime.Deactivate();
+            throw;
+        }
+
+        void EnsureCurrentOwner()
+        {
+            EnsureActive();
+            if (!ReferenceEquals(owner, OwnerRuntime(request.Owner)) || !owner.IsActive ||
+                owner.AcceptedVersion != ownerVersion || !OwnerExists(request.Owner) ||
+                _portals.Any(item => item.Request.Id == request.Id))
+                throw new InvalidOperationException("The portal owner or registration changed during preparation.");
+        }
     }
 
     public UiHostUpdate UpdateRoot(UiScene scene, UiHostPlacementContext placement)
     {
+        EnsureActive();
         UiHostUpdate update = Root.Update(scene, placement);
         RetireOrphans();
         return update;
@@ -188,6 +218,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     public UiHostUpdate UpdatePortal(UiSymbolId id, UiScene scene, UiHostPlacementContext placement)
     {
+        EnsureActive();
         PortalEntry entry = Find(id);
         if (scene.Root.Policy.Kind is not (UiHostKind.Popup or UiHostKind.Context or
             UiHostKind.Sheet or UiHostKind.Overlay))
@@ -269,7 +300,10 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
     // Unmapped keys and secondary pointer buttons cross the same modal boundary, but must not
     // be translated into a primary action, focus change, or dismissal.
     public UiPortalDispatch UnhandledInput()
-        => new(HasModalInputBarrier(), _portals.Count == 0 ? null : _portals[^1].Request.Id, null);
+    {
+        EnsureActive();
+        return new(HasModalInputBarrier(), _portals.Count == 0 ? null : _portals[^1].Request.Id, null);
+    }
 
     public UiPortalDispatch Cancel()
     {
@@ -324,6 +358,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     public void Render()
     {
+        if (!_active) return;
         Root.Render();
         foreach (PortalEntry portal in _portals) portal.Runtime.Render();
     }
@@ -343,7 +378,12 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
                 changed |= retiring.Add(entry.Request.Id);
             }
         } while (changed);
-        _portals.RemoveAll(entry => retiring.Contains(entry.Request.Id));
+        _portals.RemoveAll(entry =>
+        {
+            if (!retiring.Contains(entry.Request.Id)) return false;
+            entry.Runtime.Deactivate();
+            return true;
+        });
         return true;
     }
 
@@ -371,10 +411,10 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     private void Refresh(UiHostRuntimeSession runtime, UiInteractionUpdate update)
     {
-        if (!_active) return;
+        if (!_active || !runtime.IsActive) return;
         if (update.StateChanged || update.TextChanged || update.ActionInvoked)
             runtime.RefreshInteractionVisuals(update.TextChanged);
-        if (update.TextEditingChanged && !update.TextChanged)
+        if (_active && runtime.IsActive && update.TextEditingChanged && !update.TextChanged)
             runtime.RefreshTextEditingVisuals();
     }
 
@@ -395,10 +435,18 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
     }
 
     private bool OwnerExists(UiPortalOwner owner)
+        => OwnerRuntime(owner)?.ContainsNode(owner.Node) == true;
+
+    private UiHostRuntimeSession? OwnerRuntime(UiPortalOwner owner)
     {
-        if (owner.Portal == null) return Root.ContainsNode(owner.Node);
+        if (owner.Portal == null) return Root;
         PortalEntry? portal = _portals.FirstOrDefault(item => item.Request.Id == owner.Portal.Value);
-        return portal != null && portal.Runtime.ContainsNode(owner.Node);
+        return portal?.Runtime;
+    }
+
+    private void EnsureActive()
+    {
+        if (!_active) throw new ObjectDisposedException(nameof(UiPortalHostSession));
     }
 
     private PortalEntry Find(UiSymbolId id)

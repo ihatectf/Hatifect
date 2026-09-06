@@ -762,6 +762,43 @@ The bounded alpha.40 scene-acceptance prerequisite and Q01 final-diagnostic corr
 Independent fresh-evidence review: **PASS**, no findings. Reviewer checked all three source identities, 99 indexed artifact hashes, actual late-only failure/first verdicts, aggregate27 host checks plus the performance budget, separate prelaunch BLOCKED and all18 CA distribution hashes. All32 non-Markdown candidate inputs remain unchanged after the final checks.
 
 
+## U03-b host retirement and validation fences
+
+Base `c1de257`, alpha.41. Runtime owns the new private active flag and accepted scene version. Retirement is idempotent, may occur during Update preparation and makes that candidate uncommittable. Layout/frame/accessibility phase boundaries check liveness; future retained root input/update/refresh refuses before effects and retired Render performs no platform work. Accepted snapshots remain inspectable. Portal Deactivate retires root and all children before clearing its stack; Close retires exact descendants, and an action closing its parent does not trigger post-action composition on a removed child. Present checks the original owner instance/version/node and duplicate registration after construction and initial focus callbacks; a successful nested registration is retained.
+
+Terminal captures the root's accepted version before composition and checks liveness/version before and after validation. Successful nested Open, same Cached reopen or Recompose wins over its outer stale candidate. Recompose/OpenSection/interaction/route paths use this fence. Construction failure deactivates a created host before releasing the shell. The existing Stardew host Retire path now calls Session.Deactivate before disposing its owner, matching its Dispose path. Public surface signatures and persistence remain unchanged; all17 package/version/consumer authorities advance together.
+
+Host input uses a private UiActionDefinition overload to check its owner before availability and again before Execute. This closes the reproduced case where CanExecute disposed the host but returned true. Public direct TryExecute and headless input retain their original behavior; this is not the typed legacy adapter or production async binding yet. Ordinary admitted actions may still close their host and return their domain result.
+
+| Requirement | Evidence |
+|---|---|
+| Validation disposal retains accepted scene/layout/frame/accessibility and retires retained root input | `ValidationDisposalCannotPublishThePreparedTerminalFrame` |
+| Nested same Cached / other section Open wins over outer validation | `ValidationCannotOverwriteANestedAcceptedTerminalFrame` (2 cases) |
+| Open, interaction refresh and route validation cannot publish after disposal | `ValidationRetirementFencesEveryTerminalEntryPoint` (3 cases) |
+| Nested Recompose remains accepted on those three entry paths; later retry works | `NestedRecompositionDuringValidationKeepsItsAcceptedFrame` (3 cases) |
+| Disposal during actual platform measurement prevents validated Update acceptance | `MeasurementDisposalCannotAcceptTheValidatedTerminalCandidate` |
+| CanExecute disposal prevents the legacy domain effect | `AvailabilityDisposalPreventsTheLegacyActionEffect` |
+| Idempotent retirement blocks retained root Submit without effects/snapshot replacement | `DeactivatedHostRefusesRetainedRootInputBeforeEffects` |
+| Present cannot register after owner retirement in preparation | `PresentCannotRegisterAfterOwnerRetirementDuringPreparation` |
+| Closing the exact portal during candidate measurement prevents Update commit | `ClosedPortalCannotCommitItsPreparedUpdate` |
+| Retired root update/refresh/scroll/Present/unhandled input refuse and Render is inert | `RetiredRootCannotUpdateRefreshOrDrawThroughRetainedReferences` |
+| Root Update, parent close/reopen or duplicate registration during Present preserves nested state and supports retry | `PresentCannotOverwriteAnOwnerOrRegistrationChangedByItsCallback` (3 cases) |
+| Nested action closes its parent/descendants, skips retired recomposition and preserves root input | `ClosingAParentFromANestedActionSkipsRetiredCompositionAndPreservesRootInput` |
+
+Original existing-API reproduction `run-okppoput`: **FAIL 6/347**,341 baseline PASS. Those six cases remain unchanged. First fix `run-rymyihaw`: **PASS 347**. Expanded regression `run-7gmz0_hf`: **FAIL 1/360**, exposing CanExecute-disposal followed by Execute. Final scoped command `./tools/hatifect-test ui --project 'Hatifect UI/tests/Hatifect.UI.Runtime.Tests/Hatifect.UI.Runtime.Tests.csproj'`, `run-uj1x9r24`: **PASS 360**,19 new cases and no failures/skips; actual counters and individual outcomes retained in `artifacts/u03-host-retirement/narrow-trx.json`. This scoped run precedes only the17 version authority updates. Full C/G/P and independent final review follow on alpha.41.
+
+Existing stock source pairing was reused for the five Experience/Runtime targets and established suites; it is a static heuristic, not executed coverage. The one-line Stardew retirement wiring is additionally checked by the full platform build and source review. Research/plan and the assertion/gap review are recorded in ignored `.testagent/`. Guard calls/version increments allocate no new steady input/Update storage; Present validation adds bounded cold checks and retirement traverses only its existing portal stack. The existing render-allocation regression is retained; no new allocation benchmark is claimed.
+
+Full U03 remains IN_PROGRESS. This slice fences retirement and Terminal validation; it does not make every input/scroll/draw callback a transaction, provide thread/generation ownership for all hosts, or wire typed actions, Update pump, publication/reload/save-switch lifecycle. Those remain subsequent U03/R01 work. Runtime/visual is NOT_APPLICABLE to this private prerequisite; the alpha.40 Q01 game runs retain their exact source/fingerprint and are not alpha.41 acceptance. Next ready UI step is per-host typed/legacy action binding with owning Update pump and retirement subscriptions.
+
+
+Final alpha.41 gates on unchanged implementation: C `./tools/hatifect-check`, `run-17yde5x5`, **PASS 1,381 .NET +355 Python**; G `./tools/hatifect-check --platform`, `run-bdp06td1`, **PASS 1,619 .NET +355 Python**. All17 actual TRX suites have consistent total/executed/passed and individually Passed outcomes with no failures/skips. P `./tools/hatifect-isolated-ui-ca --keep`, retained workspace `hatifect-ui-ca-isolated.m182hsyb`: **PASS 90**,44 exact projected files,8 alpha.41 package DLLs matching current producers,3 isolated consumer assets files and2 exact CA deployment DLLs without duplicate UI. Evidence/hashes are under `artifacts/u03-host-retirement/`; the documented explicit x64 SDK and command-local build GC workaround apply.
+
+Independent bounded review is **PASS**, no open findings: all28 candidate file hashes and patch postimages, the four actual scoped TRX runs and every new case were verified. This completes the bounded retirement/validation prerequisite; full U03 stays IN_PROGRESS. Runtime/visual and Codex host audit are NOT_APPLICABLE to this slice. Next is the prepared per-host action registration map, typed description binding, renderer/input/accessibility execution-state consumption, then Update/lifecycle wiring and isolated U03 acceptance.
+
+Implementation commit: [`8a45917`](https://github.com/ihatectf/Hatifect/commit/8a45917a040813a508ac70d4a3d71a73261468e8). Source/test/package authority bytes are the checked alpha.41 candidate; this subsequent change adds only its stable roadmap reference.
+
+
 ## Q01 native input and user-reported Search/Backspace defects
 
 Implementation [`14db772`](https://github.com/ihatectf/Hatifect/commit/14db7729ff0f28147d9ac6c6d1e5a7db97defba6), alpha.40 integration `fe5b10b`, and native empty-result correction [`edad4b1`](https://github.com/ihatectf/Hatifect/commit/edad4b1e89c11860290b21ad74b5f07314e892a8) are documented in [Q01_NATIVE_INPUT.md](Q01_NATIVE_INPUT.md). GQ owns common integration, harness and acceptance; subsequent product UI/Flowline slices stay with their respective tasks. These bounded UI fixes were requested directly during runtime observation.

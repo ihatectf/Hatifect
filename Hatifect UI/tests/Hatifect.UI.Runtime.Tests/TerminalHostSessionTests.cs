@@ -574,6 +574,228 @@ public sealed class TerminalHostSessionTests
         }
     }
 
+    [Fact]
+    public void ValidationDisposalCannotPublishThePreparedTerminalFrame()
+    {
+        UiTerminalHostSession? session = null;
+        bool close = false;
+        UiSymbolId section = Id("terminal-validation-disposal/section");
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(section, "Section", () => Section(section, "Section")).Freeze();
+        using (session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            new TestPlatform(), UiPresentationProfiles.Wide,
+            validateScene: _ => { if (close) { close = false; session!.Dispose(); } }))
+        {
+            UiScene scene = session.Host.Root.Scene;
+            UiLayoutSnapshot layout = session.Host.Root.Layout;
+            var frame = session.Host.Root.Frame;
+            var accessibility = session.Host.Root.Accessibility;
+            close = true;
+
+            Assert.Throws<ObjectDisposedException>(() => session.Recompose(UiPresentationProfiles.Compact, Placement));
+
+            Assert.Same(scene, session.Host.Root.Scene);
+            Assert.Same(layout, session.Host.Root.Layout);
+            Assert.Same(frame, session.Host.Root.Frame);
+            Assert.Same(accessibility, session.Host.Root.Accessibility);
+            Assert.Null(session.ActiveSection);
+            Assert.Throws<ObjectDisposedException>(() => session.Host.Root.Interactions.Submit());
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ValidationCannotOverwriteANestedAcceptedTerminalFrame(bool reopenSameCachedModel)
+    {
+        UiTerminalHostSession? session = null;
+        UiScene? nestedScene = null;
+        Hatifect.UI.Runtime.Invocation.UiInvocationResult? nestedInvocation = null;
+        bool open = false;
+        UiSymbolId first = Id("terminal-validation-reentry/first");
+        UiSymbolId second = Id("terminal-validation-reentry/second");
+        UiSymbolId target = reopenSameCachedModel ? first : second;
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(first, "First", () => Section(first, "First"))
+            .TerminalSection(second, "Second", () => Section(second, "Second")).Freeze();
+        using (session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            new TestPlatform(), UiPresentationProfiles.Wide, initialSection: first,
+            validateScene: _ =>
+            {
+                if (!open) return;
+                open = false;
+                session!.OpenSection(target);
+                nestedScene = session.Host.Root.Scene;
+                nestedInvocation = session.CurrentInvocation;
+            }))
+        {
+            open = true;
+
+            Assert.Throws<InvalidOperationException>(() => session.Recompose(UiPresentationProfiles.Compact, Placement));
+
+            Assert.NotNull(nestedScene);
+            Assert.NotNull(nestedInvocation);
+            Assert.Same(nestedScene, session.Host.Root.Scene);
+            Assert.Same(nestedInvocation, session.CurrentInvocation);
+            Assert.Equal(target, session.ActiveSection);
+            Assert.Equal(UiPresentationProfiles.Wide.Id, session.CurrentInvocation.Plan.Host.Profile);
+        }
+    }
+
+    [Theory]
+    [InlineData("open")]
+    [InlineData("interaction")]
+    [InlineData("follow")]
+    public void ValidationRetirementFencesEveryTerminalEntryPoint(string operation)
+    {
+        UiTerminalHostSession? session = null;
+        bool close = false;
+        UiScene? accepted = null;
+        UiLayoutSnapshot? layout = null;
+        UiRenderFrame? frame = null;
+        UiAccessibilitySnapshot? accessibility = null;
+        UiSymbolId first = Id("validation-entry/first");
+        UiSymbolId second = Id("validation-entry/second");
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(first, "First", () => Section(first, "First"))
+            .TerminalSection(second, "Second", () => Section(second, "Second")).Freeze();
+        using (session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            new TestPlatform(), UiPresentationProfiles.Wide, initialSection: first,
+            validateScene: scene =>
+            {
+                if (!close || operation == "follow" && scene.Experience != second) return;
+                close = false;
+                accepted = session!.Host.Root.Scene;
+                layout = session.Host.Root.Layout;
+                frame = session.Host.Root.Frame;
+                accessibility = session.Host.Root.Accessibility;
+                session.Dispose();
+            }))
+        {
+            UiPoint pointer = Center(Layout(session, Route(session.Host.Root.Scene, second).Id).Bounds);
+            if (operation == "follow") Assert.True(session.PressPointer(pointer).Consumed);
+            close = true;
+
+            Assert.Throws<ObjectDisposedException>(() =>
+            {
+                if (operation == "open") session.OpenSection(second);
+                else if (operation == "interaction") session.Host.Root.RefreshInteractionVisuals();
+                else session.ReleasePointer(pointer);
+            });
+
+            Assert.NotNull(accepted);
+            Assert.Same(accepted, session.Host.Root.Scene);
+            Assert.Same(layout, session.Host.Root.Layout);
+            Assert.Same(frame, session.Host.Root.Frame);
+            Assert.Same(accessibility, session.Host.Root.Accessibility);
+            Assert.Null(session.ActiveSection);
+        }
+    }
+
+    [Theory]
+    [InlineData("open")]
+    [InlineData("interaction")]
+    [InlineData("follow")]
+    public void NestedRecompositionDuringValidationKeepsItsAcceptedFrame(string operation)
+    {
+        UiTerminalHostSession? session = null;
+        bool recompose = false;
+        UiScene? nestedScene = null;
+        Hatifect.UI.Runtime.Invocation.UiInvocationResult? nestedInvocation = null;
+        UiSymbolId first = Id("validation-nested-recompose/first");
+        UiSymbolId second = Id("validation-nested-recompose/second");
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(first, "First", () => Section(first, "First"))
+            .TerminalSection(second, "Second", () => Section(second, "Second")).Freeze();
+        using (session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            new TestPlatform(), UiPresentationProfiles.Wide, initialSection: first,
+            validateScene: scene =>
+            {
+                if (!recompose || operation == "follow" && scene.Experience != second) return;
+                recompose = false;
+                session!.Recompose(UiPresentationProfiles.Compact, Placement);
+                nestedScene = session.Host.Root.Scene;
+                nestedInvocation = session.CurrentInvocation;
+            }))
+        {
+            UiPoint pointer = Center(Layout(session, Route(session.Host.Root.Scene, second).Id).Bounds);
+            if (operation == "follow") Assert.True(session.PressPointer(pointer).Consumed);
+            recompose = true;
+
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                if (operation == "open") session.OpenSection(second);
+                else if (operation == "interaction") session.Host.Root.RefreshInteractionVisuals();
+                else session.ReleasePointer(pointer);
+            });
+
+            Assert.NotNull(nestedScene);
+            Assert.Same(nestedScene, session.Host.Root.Scene);
+            Assert.Same(nestedInvocation, session.CurrentInvocation);
+            Assert.Equal(first, session.ActiveSection);
+            Assert.Equal(UiPresentationProfiles.Compact.Id, session.CurrentInvocation.Plan.Host.Profile);
+            session.Recompose(UiPresentationProfiles.Wide, Placement);
+            Assert.Equal(UiPresentationProfiles.Wide.Id, session.CurrentInvocation.Plan.Host.Profile);
+        }
+    }
+
+    [Fact]
+    public void MeasurementDisposalCannotAcceptTheValidatedTerminalCandidate()
+    {
+        UiSymbolId section = Id("terminal-measure-disposal/section");
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(section, "Section", () => Section(section, "Section")).Freeze();
+        var platform = new TestPlatform();
+        int validations = 0;
+        using var session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            platform, UiPresentationProfiles.Wide, validateScene: _ => validations++);
+        UiScene scene = session.Host.Root.Scene;
+        UiLayoutSnapshot layout = session.Host.Root.Layout;
+        var frame = session.Host.Root.Frame;
+        var accessibility = session.Host.Root.Accessibility;
+        int before = validations;
+        platform.OnMeasure = () => { platform.OnMeasure = null; session.Dispose(); };
+
+        Assert.Throws<ObjectDisposedException>(() => session.Recompose(UiPresentationProfiles.Compact,
+            new UiHostPlacementContext(new UiRect(0, 0, 700, 400))));
+
+        Assert.Equal(before + 1, validations);
+        Assert.Same(scene, session.Host.Root.Scene);
+        Assert.Same(layout, session.Host.Root.Layout);
+        Assert.Same(frame, session.Host.Root.Frame);
+        Assert.Same(accessibility, session.Host.Root.Accessibility);
+        Assert.Null(session.ActiveSection);
+    }
+
+    [Fact]
+    public void AvailabilityDisposalPreventsTheLegacyActionEffect()
+    {
+        UiTerminalHostSession? session = null;
+        bool close = false;
+        int effects = 0;
+        UiSymbolId section = Id("terminal-admission-disposal/section");
+        var action = new UiActionDefinition(section.Child("action/apply"), "Apply", () => effects++, () =>
+        {
+            if (close) { close = false; session!.Dispose(); }
+            return true;
+        });
+        UiExperienceDefinition model = new UiExperienceBuilder(section, "Section").Actions("Actions", action).Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder().TerminalSection(section, "Section", () => model).Freeze();
+        using (session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            new TestPlatform(), UiPresentationProfiles.Wide))
+        {
+            UiButtonSceneNode button = Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiButtonSceneNode>());
+            Assert.True(session.PressPointer(Center(Layout(session, button.Id).Bounds)).Consumed);
+            Assert.Equal(button.Id, session.Host.Root.Interactions.Snapshot.Focused);
+            close = true;
+
+            Assert.Throws<ObjectDisposedException>(() => session.Host.Root.Interactions.Submit());
+
+            Assert.Equal(0, effects);
+            Assert.Null(session.ActiveSection);
+        }
+    }
+
     private static IEnumerable<UiSceneNode> SceneNodes(UiSceneNode node)
     {
         yield return node;
@@ -673,9 +895,11 @@ public sealed class TerminalHostSessionTests
     {
         public bool FailOnFlowContent { get; set; }
         public bool FailOnStorageContent { get; set; }
+        public Action? OnMeasure { get; set; }
 
         public UiSize Measure(string text, UiTypography typography, float availableWidth, UiTextOverflow overflow)
         {
+            OnMeasure?.Invoke();
             if (FailOnFlowContent && text.Contains("Flow item", StringComparison.Ordinal))
                 throw new InvalidOperationException("Flow content measurement failed.");
             if (FailOnStorageContent && text.Contains("Storage item", StringComparison.Ordinal))

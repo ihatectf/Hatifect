@@ -70,6 +70,7 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
         }
         catch (Exception error)
         {
+            Host?.Deactivate();
             throw DisposeAfterFailure(
                 _shell,
                 error,
@@ -98,8 +99,9 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
         EnsureActive();
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(placement);
+        long version = Host.Root.AcceptedVersion;
         UiTerminalFrame frame = _shell.Recompose(profile, locale, Host.Root.Interactions.Snapshot);
-        ValidateScene(frame.Scene);
+        ValidatePreparedScene(frame.Scene, version);
         UiHostUpdate update = Host.UpdateRoot(frame.Scene, placement);
         _currentInvocation = frame.Invocation;
         _profile = profile;
@@ -156,12 +158,13 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
     internal UiHostUpdate OpenSection(UiSymbolId section)
     {
         EnsureActive();
+        long version = Host.Root.AcceptedVersion;
         UiTerminalFrame frame = _shell.ComposeOpen(
             section,
             _profile,
             _locale,
             Host.Root.Interactions.Snapshot);
-        ValidateScene(frame.Scene);
+        ValidatePreparedScene(frame.Scene, version);
         UiHostUpdate update = Host.UpdateRoot(frame.Scene, _placement);
         _shell.Commit(frame);
         _currentInvocation = frame.Invocation;
@@ -185,8 +188,9 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
     private UiScene ComposeInteraction(UiInteractionSnapshot interaction)
     {
         EnsureActive();
+        long version = Host.Root.AcceptedVersion;
         UiScene scene = _shell.Recompose(_profile, _locale, interaction).Scene;
-        ValidateScene(scene);
+        ValidatePreparedScene(scene, version);
         return scene;
     }
 
@@ -204,8 +208,10 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
         if (interaction.Route is not { } route)
             return dispatch;
 
+        long version = Host.Root.AcceptedVersion;
         _onRouteRequested?.Invoke(route);
         if (_disposed) return dispatch;
+        EnsureCurrentFrame(version);
         UiTerminalFrame? frame;
         try
         {
@@ -229,7 +235,7 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
 
         if (frame != null)
         {
-            ValidateScene(frame.Scene);
+            ValidatePreparedScene(frame.Scene, version);
             Host.UpdateRoot(frame.Scene, _placement);
             _shell.Commit(frame);
             _currentInvocation = frame.Invocation;
@@ -238,6 +244,20 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
     }
 
     private void ValidateScene(UiScene scene) => _validateScene?.Invoke(scene);
+
+    private void ValidatePreparedScene(UiScene scene, long version)
+    {
+        EnsureCurrentFrame(version);
+        ValidateScene(scene);
+        EnsureCurrentFrame(version);
+    }
+
+    private void EnsureCurrentFrame(long version)
+    {
+        EnsureActive();
+        if (Host.Root.AcceptedVersion != version)
+            throw new InvalidOperationException("The accepted Terminal frame changed during preparation.");
+    }
 
     private void EnsureActive()
     {
