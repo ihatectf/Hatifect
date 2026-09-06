@@ -111,12 +111,14 @@ internal sealed class UiInteractionSession
     private UiSymbolId[] _focusGroups;
     private CollectionFocus? _collectionFocus;
     private readonly IUiTextMetrics? _textMetrics;
+    private readonly Action? _beforeMutation;
 
     public UiInteractionSession(
         UiScene scene,
         UiLayoutSnapshot layout,
         UiInteractionSnapshot? snapshot = null,
-        IUiTextMetrics? textMetrics = null)
+        IUiTextMetrics? textMetrics = null,
+        Action? beforeMutation = null)
     {
         _scene = scene ?? throw new ArgumentNullException(nameof(scene));
         _layout = layout ?? throw new ArgumentNullException(nameof(layout));
@@ -125,6 +127,7 @@ internal sealed class UiInteractionSession
         _focusable = Focusable(scene, layout).ToArray();
         _focusGroups = FocusGroups(scene, _focusable).ToArray();
         _textMetrics = textMetrics;
+        _beforeMutation = beforeMutation;
         Snapshot = Reconcile(snapshot ?? new UiInteractionSnapshot());
     }
 
@@ -145,6 +148,33 @@ internal sealed class UiInteractionSession
 
     public void Reconcile(UiScene scene, UiLayoutSnapshot layout)
     {
+        _beforeMutation?.Invoke();
+        ReconcileCore(scene, layout);
+    }
+
+    internal UiInteractionSession PrepareReconcile(UiScene scene, UiLayoutSnapshot layout)
+    {
+        // Indexes are replaced, never changed in place. Preserve the offscreen focus hint as well
+        // as the immutable snapshot; candidate callbacks cannot mutate the accepted session.
+        var candidate = (UiInteractionSession)MemberwiseClone();
+        candidate.ReconcileCore(scene, layout);
+        return candidate;
+    }
+
+    internal void CommitReconcile(UiInteractionSession candidate)
+    {
+        _scene = candidate._scene;
+        _layout = candidate._layout;
+        _nodes = candidate._nodes;
+        _collectionItems = candidate._collectionItems;
+        _focusable = candidate._focusable;
+        _focusGroups = candidate._focusGroups;
+        _collectionFocus = candidate._collectionFocus;
+        Snapshot = candidate.Snapshot;
+    }
+
+    private void ReconcileCore(UiScene scene, UiLayoutSnapshot layout)
+    {
         // Retain the old index before replacing the visible window. An absent visible target
         // may still be a focused item in the full immutable collection.
         CollectionFocus? previous = Snapshot.Focused is { } focused &&
@@ -162,6 +192,7 @@ internal sealed class UiInteractionSession
 
     public UiInteractionUpdate MovePointer(UiPoint point)
     {
+        _beforeMutation?.Invoke();
         UiSymbolId? hit = HitTest(point);
         UiSymbolId? hovered = hit;
         if (hovered == Snapshot.Hovered) return new UiInteractionUpdate(hit != null, StateChanged: false);
@@ -171,6 +202,7 @@ internal sealed class UiInteractionSession
 
     public UiInteractionUpdate PressPointer(UiPoint point)
     {
+        _beforeMutation?.Invoke();
         UiSymbolId? hit = HitTest(point);
         if (hit == null)
         {
@@ -194,6 +226,7 @@ internal sealed class UiInteractionSession
 
     public UiInteractionUpdate ReleasePointer(UiPoint point)
     {
+        _beforeMutation?.Invoke();
         UiSymbolId? hit = HitTest(point);
         UiSymbolId? pressed = Snapshot.Pressed;
         bool activate = pressed != null && hit == pressed;
@@ -206,6 +239,7 @@ internal sealed class UiInteractionSession
 
     public UiInteractionUpdate MoveFocus(UiNavigationDirection direction)
     {
+        _beforeMutation?.Invoke();
         UiSymbolId? next = FindFocus(direction);
         if (next == null) return new UiInteractionUpdate(Consumed: false, StateChanged: false);
         bool changed = Snapshot.Focused != next;
@@ -239,6 +273,7 @@ internal sealed class UiInteractionSession
 
     public UiInteractionUpdate Submit()
     {
+        _beforeMutation?.Invoke();
         if (Snapshot.Focused is not { } id ||
             (!_nodes.ContainsKey(id) && !_collectionItems.ContainsKey(id)))
             return new UiInteractionUpdate(Consumed: false, StateChanged: false);
@@ -247,12 +282,14 @@ internal sealed class UiInteractionSession
 
     public UiInteractionUpdate Cancel()
     {
+        _beforeMutation?.Invoke();
         bool dismiss = _scene.Root.Policy.Dismiss is UiDismissPolicy.Escape or UiDismissPolicy.OutsideOrEscape;
         return new UiInteractionUpdate(dismiss, StateChanged: false, DismissRequested: dismiss);
     }
 
     public UiInteractionUpdate ReplaceText(string? text)
     {
+        _beforeMutation?.Invoke();
         if (Snapshot.Focused is not { } id ||
             !_nodes.TryGetValue(id, out UiSceneNode? node) ||
             node is not UiTextInputSceneNode input)
@@ -271,6 +308,7 @@ internal sealed class UiInteractionSession
 
     public UiInteractionUpdate InsertText(string? text)
     {
+        _beforeMutation?.Invoke();
         if (!TryGetFocusedTextInput(out UiSymbolId id, out UiTextInputSceneNode input))
             return new UiInteractionUpdate(false, false);
         string inserted = (text ?? string.Empty)
@@ -294,6 +332,7 @@ internal sealed class UiInteractionSession
 
     public UiInteractionUpdate EditText(UiTextEditAction action, bool extendSelection = false)
     {
+        _beforeMutation?.Invoke();
         if (!TryGetFocusedTextInput(out UiSymbolId id, out UiTextInputSceneNode input))
             return new UiInteractionUpdate(false, false);
         string text = input.CurrentText;

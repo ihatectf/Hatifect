@@ -1070,6 +1070,94 @@ def command_result(args: argparse.Namespace) -> int:
     return 0
 
 
+def validate_ui_runtime_diagnostics(
+    resolved: dict[str, Any], artifact_root: Path, run_id: str, started_at: float
+) -> None:
+    """A report's earlier check verdicts cannot attest final evidence publication."""
+    def require(condition: bool, message: str) -> None:
+        if not condition:
+            raise HarnessError(message)
+
+    def number(value: Any) -> bool:
+        return type(value) in (int, float) and math.isfinite(value)
+
+    try:
+        root = artifact_root.resolve()
+        path = root / "diagnostics" / "runtime.json"
+        require(path.resolve().is_relative_to(root) and path.is_file(),
+                "The published UI runtime diagnostics file is missing or invalid.")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        require(isinstance(payload, dict), "UI runtime diagnostics must be an object.")
+        require(type(payload.get("protocolVersion")) is int and payload["protocolVersion"] == PROTOCOL_VERSION,
+                "UI runtime diagnostics have an unsupported protocol version.")
+        require(payload.get("runId") == run_id and payload.get("scenario") == resolved["id"],
+                "UI runtime diagnostics belong to another request or scenario.")
+        require("terminalError" in payload and payload["terminalError"] is None,
+                "UI runtime diagnostics contain a terminal failure or omit its outcome.")
+        require(_parse_timestamp(payload.get("capturedAtUtc")) + 1 >= started_at,
+                "UI runtime diagnostics predate this request.")
+        require(type(payload.get("processId")) is int and payload["processId"] > 0,
+                "UI runtime diagnostics have no valid process identity.")
+        if "semantic.viewport.reflow" not in resolved["checks"]:
+            return
+
+        captures = payload.get("visualMatrix")
+        require(payload.get("visualMatrixRestored") is True,
+                "The rendered matrix did not confirm restored settings.")
+        require(isinstance(captures, list) and len(captures) == 8,
+                "The rendered matrix must retain all eight states.")
+        targets = [(locale, scale) for locale in ("en", "ru") for scale in (0.75, 1.0, 1.25, 1.5)]
+        previous_frame = 0
+        for capture, (locale, scale) in zip(captures, targets):
+            require(isinstance(capture, dict), "A rendered matrix capture is not an object.")
+            require(capture.get("Locale") == locale and number(capture.get("Scale"))
+                    and capture["Scale"] == scale, "The rendered matrix state order is incomplete or duplicated.")
+            frame = capture.get("CompletedFrame")
+            require(type(frame) is int and frame > previous_frame,
+                    "Rendered matrix captures must come from increasing completed frames.")
+            previous_frame = frame
+            require(isinstance(capture.get("ProbeText"), str) and bool(capture["ProbeText"].strip()),
+                    "A rendered matrix capture has no probe text.")
+            observation = capture.get("Observation")
+            require(isinstance(observation, dict), "A rendered matrix capture has no observation.")
+            require(observation.get("GameLocale") == locale and observation.get("SceneLocale") == locale
+                    and observation.get("Theme") == "Hatifect.UI/theme/Dark",
+                    "Rendered matrix locale or theme does not match the target.")
+            require(all(number(observation.get(key)) and abs(observation[key] - scale) < 0.0001
+                        for key in ("DesiredScale", "BaseScale")),
+                    "Rendered matrix desired and applied scale do not match the target.")
+            pixel_scale = observation.get("PixelScale")
+            require(number(pixel_scale) and pixel_scale > 0,
+                    "Rendered matrix pixel scale must be finite and positive.")
+            require(all(type(observation.get(key)) is int and observation[key] > 0 for key in (
+                "BackBufferWidth", "BackBufferHeight", "ViewportWidth", "ViewportHeight", "MenuWidth", "MenuHeight")),
+                "Rendered matrix geometry must be positive integers.")
+            require(all(type(observation.get(key)) is int and observation[key] == 0 for key in ("MenuX", "MenuY")),
+                    "Rendered matrix menu origin must match the viewport.")
+            for axis in ("Width", "Height"):
+                scaled = observation["BackBuffer" + axis] / pixel_scale
+                require(math.isfinite(scaled) and observation["Viewport" + axis] == math.ceil(scaled)
+                        and observation["Menu" + axis] == observation["Viewport" + axis],
+                        "Rendered matrix menu and scaled viewport disagree.")
+            require(all(observation.get(key) is True for key in ("HasValidTree", "HasProbeText", "LoadFadeFinished")),
+                    "Rendered matrix tree, probe or load-fade confirmation is absent.")
+            name = f"screenshots/matrix-{locale}-{int(scale * 100)}-dark"
+            for key, suffix in (("Screenshot", ".png"), ("UiLayerScreenshot", "-ui-layer.png")):
+                expected = name + suffix
+                require(capture.get(key) == expected, "A rendered matrix PNG has an unexpected path.")
+                screenshot = root / expected
+                require(screenshot.resolve().is_relative_to(root) and screenshot.is_file(),
+                        "A required rendered matrix PNG is missing or outside this request.")
+                with screenshot.open("rb") as stream:
+                    require(stream.read(8) == b"\x89PNG\r\n\x1a\n", "A rendered matrix capture is not a PNG.")
+    except (HarnessError, OSError, UnicodeError, ValueError, OverflowError, RecursionError) as error:
+        message = f"UI runtime diagnostics: {error}"
+        raise HarnessError(message, [_assertion(
+            "HARNESS-RUNTIME-DIAGNOSTICS", "FAIL", resolved["id"],
+            "Published request-owned diagnostics confirm completion without a terminal failure.", message,
+        )]) from error
+
+
 def command_finalize(args: argparse.Namespace) -> int:
     result_path = Path(args.result)
     duration_ms = max(0, int((time.time() - args.started_at) * 1000))
@@ -1079,6 +1167,8 @@ def command_finalize(args: argparse.Namespace) -> int:
         with Path(args.report).open("r", encoding="utf-8") as stream:
             report = json.load(stream)
         evidence = validate_report(resolved, report, args.started_at, expected_run_id=args.run_id)
+        if resolved["kind"] == "ui":
+            validate_ui_runtime_diagnostics(resolved, artifact_root, args.run_id or result_path.parent.name, args.started_at)
         write_result(
             result_path,
             "PASS",

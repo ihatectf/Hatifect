@@ -29,13 +29,14 @@ internal sealed class UiHostRuntimeSession
     private readonly UiAccessibilitySnapshotBuilder _accessibilityBuilder = new();
     private readonly UiCompositor _compositor = new();
     private readonly UiSceneReconciler _reconciler = new();
-    private readonly UiCollectionViewportState _collections = new();
+    private UiCollectionViewportState _collections = new();
     private readonly Func<UiInteractionSnapshot, UiScene>? _composeInteraction;
     private UiScene _scene;
     private UiHostPlacementContext _placement;
     private UiRenderFrame _frame;
     private long _layoutBuilds;
     private long _frameBuilds;
+    private bool _preparingUpdate;
 
     public UiHostRuntimeSession(
         UiScene scene,
@@ -59,7 +60,7 @@ internal sealed class UiHostRuntimeSession
         _layoutEngine = new UiSceneLayoutEngine(platform);
         Layout = BuildLayout(scene, placement);
         _collections.Synchronize(Layout);
-        Interactions = new UiInteractionSession(scene, Layout, interaction, platform);
+        Interactions = new UiInteractionSession(scene, Layout, interaction, platform, EnsureNotPreparing);
         _frame = BuildFrame(scene);
         Accessibility = _accessibilityBuilder.Build(scene, Layout, Interactions.Snapshot);
     }
@@ -105,30 +106,52 @@ internal sealed class UiHostRuntimeSession
 
     public UiHostUpdate Update(UiScene next, UiHostPlacementContext placement)
     {
+        EnsureNotPreparing();
         ArgumentNullException.ThrowIfNull(next);
         ArgumentNullException.ThrowIfNull(placement);
-        UiSceneDiff diff = _reconciler.Compare(_scene, next);
-        bool placementChanged = placement != _placement;
-        bool layoutChanged = placementChanged || diff.RequiresLayout;
-        if (layoutChanged)
+        _preparingUpdate = true;
+        bool attemptedLayout = false;
+        try
         {
-            Layout = BuildLayout(next, placement);
-            _collections.Synchronize(Layout);
-        }
-        Interactions.Reconcile(next, Layout);
+            UiSceneDiff diff = _reconciler.Compare(_scene, next);
+            bool layoutChanged = placement != _placement || diff.RequiresLayout;
+            attemptedLayout = layoutChanged;
+            UiLayoutSnapshot layout = layoutChanged ? BuildLayout(next, placement) : Layout;
+            UiInteractionSession interaction = Interactions.PrepareReconcile(next, layout);
+            bool frameChanged = layoutChanged || diff.RequiresRender;
+            UiRenderFrame frame = frameChanged ? BuildFrame(next, layout, interaction.Snapshot) : _frame;
+            UiAccessibilitySnapshot accessibility = _accessibilityBuilder.Build(next, layout, interaction.Snapshot);
+            UiCollectionViewportState collections = _collections;
+            if (layoutChanged)
+            {
+                collections = new UiCollectionViewportState();
+                collections.Synchronize(layout);
+            }
+            var update = new UiHostUpdate(layoutChanged, frameChanged, diff);
 
-        bool frameChanged = layoutChanged || diff.RequiresRender;
-        if (frameChanged) _frame = BuildFrame(next);
-        _scene = next;
-        _placement = placement;
-        Accessibility = _accessibilityBuilder.Build(next, Layout, Interactions.Snapshot);
-        var update = new UiHostUpdate(layoutChanged, frameChanged, diff);
-        LastUpdate = update;
-        return update;
+            // All callback-bearing work succeeded. Publish the prepared state without calling
+            // consumers between assignments, retaining the input session's existing identity.
+            Layout = layout;
+            Interactions.CommitReconcile(interaction);
+            _frame = frame;
+            Accessibility = accessibility;
+            _collections = collections;
+            _scene = next;
+            _placement = placement;
+            LastUpdate = update;
+            return update;
+        }
+        catch
+        {
+            if (attemptedLayout) _layoutEngine.RestoreCollectionTransitions(_scene);
+            throw;
+        }
+        finally { _preparingUpdate = false; }
     }
 
     public UiHostScrollUpdate ScrollCollection(UiSymbolId collection, float delta)
     {
+        EnsureNotPreparing();
         if (!float.IsFinite(delta)) throw new ArgumentOutOfRangeException(nameof(delta));
         if (!Layout.TryGetCollection(collection, out UiCollectionLayoutWindow? window) || window == null)
             return new UiHostScrollUpdate(false, false, false, 0);
@@ -157,6 +180,7 @@ internal sealed class UiHostRuntimeSession
 
     public UiHostScrollUpdate ScrollAt(UiPoint point, float delta)
     {
+        EnsureNotPreparing();
         foreach (UiCollectionLayoutWindow window in Layout.CollectionWindows)
         {
             if (!Layout.TryGetEntry(window.Collection, out UiLayoutEntry? entry) || entry == null ||
@@ -169,6 +193,7 @@ internal sealed class UiHostRuntimeSession
 
     public UiInteractionUpdate MoveFocus(UiNavigationDirection direction)
     {
+        EnsureNotPreparing();
         UiInteractionUpdate update = Interactions.MoveFocus(direction);
         if (!update.Consumed ||
             !Interactions.TryGetFocusedCollectionItem(out UiCollectionSceneNode collection, out UiSymbolId item, out int index) ||
@@ -204,6 +229,7 @@ internal sealed class UiHostRuntimeSession
 
     public UiHostUpdate? RefreshInteractionVisuals(bool textChanged = false)
     {
+        EnsureNotPreparing();
         var compose = _composeInteraction ?? _scene.RecomposePublication;
         if (compose == null)
         {
@@ -248,6 +274,7 @@ internal sealed class UiHostRuntimeSession
 
     public UiHostUpdate RefreshTextEditingVisuals()
     {
+        EnsureNotPreparing();
         _frame = BuildFrame(_scene);
         Accessibility = _accessibilityBuilder.Build(_scene, Layout, Interactions.Snapshot);
         UiSymbolId[] changed = Interactions.Snapshot.TextEditing is { } editing
@@ -271,9 +298,18 @@ internal sealed class UiHostRuntimeSession
     }
 
     private UiRenderFrame BuildFrame(UiScene scene)
+        => BuildFrame(scene, Layout, Interactions.Snapshot);
+
+    private UiRenderFrame BuildFrame(UiScene scene, UiLayoutSnapshot layout, UiInteractionSnapshot interaction)
     {
-        UiRenderFrame frame = _renderPlanner.Build(scene, Layout, Interactions.Snapshot, _platform);
+        UiRenderFrame frame = _renderPlanner.Build(scene, layout, interaction, _platform);
         _frameBuilds++;
         return frame;
+    }
+
+    private void EnsureNotPreparing()
+    {
+        if (_preparingUpdate)
+            throw new InvalidOperationException("The host cannot be mutated while a scene update is being prepared.");
     }
 }

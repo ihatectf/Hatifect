@@ -23,6 +23,44 @@ public sealed class CollectionPublicationInteractionTests
     private readonly ITestOutputHelper _output;
     public CollectionPublicationInteractionTests(ITestOutputHelper output) => _output = output;
 
+    [Theory]
+    [InlineData("Uniform", false)]
+    [InlineData("Adaptive", false)]
+    [InlineData("Uniform", true)]
+    [InlineData("Adaptive", true)]
+    public void RejectedCollectionCandidateCannotReplaceAcceptedPredecessorOrder(string sizing, bool removeCollection)
+    {
+        bool armed = false;
+        var error = new InvalidOperationException("Candidate availability failed.");
+        using var fixture = new Fixture(sizing, canExecute: () => armed ? throw error : true);
+        for (int step = 0; step < 10 && fixture.Runtime.Interactions.Snapshot.Focused != fixture.Item(3); step++)
+            Assert.True(fixture.Host.MoveFocus(UiNavigationDirection.Next).Consumed);
+        Assert.Equal(fixture.Item(3), fixture.Runtime.Interactions.Snapshot.Focused);
+        fixture.Runtime.ScrollCollection(fixture.Collection, 600);
+        UiScene accepted = fixture.Runtime.Scene;
+        var window = fixture.Window;
+        int anchored = Assert.Single(window.Items, item => item.Item.Id == window.Anchor!.Item).Index;
+        Assert.InRange(anchored, 2, 98);
+        UiInteractionSnapshot interaction = fixture.Runtime.Interactions.Snapshot;
+        UiScene rejected = removeCollection
+            ? fixture.PrepareWithoutCollection()
+            : fixture.Prepare(Enumerable.Range(0, 100).Reverse());
+        armed = true;
+
+        Assert.Same(error, Assert.Throws<InvalidOperationException>(() => fixture.Update(rejected)));
+
+        Assert.Same(accepted, fixture.Runtime.Scene);
+        Assert.Same(window, fixture.Window);
+        Assert.Same(interaction, fixture.Runtime.Interactions.Snapshot);
+        armed = false;
+        fixture.Replace(Enumerable.Range(0, 100).Where(value => value != anchored));
+        Assert.Equal(fixture.Item(anchored - 1), fixture.Window.Anchor!.Item);
+        Assert.Equal(fixture.Item(3), fixture.Runtime.Interactions.Snapshot.Focused);
+        Assert.Null(fixture.Source.SelectedItemId);
+        fixture.Refresh();
+        Assert.Equal(fixture.Item(anchored - 1), fixture.Window.Anchor!.Item);
+    }
+
     [Fact]
     public void LogicalAndVisibleFocusOrderUseTheSameActionEligibilityObservation()
     {
@@ -321,15 +359,22 @@ public sealed class CollectionPublicationInteractionTests
         private readonly UiPublication _publication = new(Owner);
         private readonly UiSceneComposer _composer;
         private readonly UiInvocationResult _invocation;
+        private readonly UiActionDefinition? _action;
 
-        public Fixture(string sizing, bool unindexed = false, string view = "List", int count = 100)
+        public Fixture(string sizing, bool unindexed = false, string view = "List", int count = 100, Func<bool>? canExecute = null)
         {
             Source = _publication.SelectableCollection(Owner.Child("rows"), Enumerable.Range(0, count).ToArray(),
                 UiSourceTypes.Scalar<int>(Owner.Child("type/int"), false), Item, value => "Item " + value,
                 supportingText: value => string.Join(" ", Enumerable.Repeat("Supporting", value % 3 + 1)));
             Unindexed = unindexed ? new UnindexedSource(Source) : null;
             IUiSemanticSource<IReadOnlyList<int>> presented = Unindexed is null ? Source : Unindexed;
-            var experience = new UiExperienceBuilder(Owner, "Collection").Select("Items", presented).Build();
+            var builder = new UiExperienceBuilder(Owner, "Collection").Select("Items", presented);
+            if (canExecute != null)
+            {
+                _action = new UiActionDefinition(Owner.Child("action"), "Run", () => { }, canExecute);
+                builder.Actions("Commands", _action);
+            }
+            var experience = builder.Build();
             var registry = new UiRegistryBuilder().Window(Owner, "Collection", () => experience).Freeze();
             var catalog = UiSemanticCatalog.CreateFoundation();
             var compilation = new UiCompiler(catalog).Compile(
@@ -377,6 +422,14 @@ public sealed class CollectionPublicationInteractionTests
         {
             Assert.Equal(UiPublicationStatus.Committed, _publication.BeginUpdate().Replace(Source, values.ToArray()).Commit().Status);
             return _composer.Compose(_invocation, interaction: Runtime.Interactions.Snapshot);
+        }
+
+        public UiScene PrepareWithoutCollection()
+        {
+            var experience = new UiExperienceBuilder(Owner, "Collection").Actions("Commands", _action!).Build();
+            var registry = new UiRegistryBuilder().Window(Owner, "Collection", () => experience).Freeze();
+            return new UiSceneComposer(UiThemePresets.Dark(), registry)
+                .Compose(new UiInvocationService(registry).Invoke(Owner, UiPresentationProfiles.Wide));
         }
 
         public void Update(UiScene scene) => Runtime.Update(scene, Viewport);
