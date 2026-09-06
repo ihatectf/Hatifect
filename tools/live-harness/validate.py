@@ -32,6 +32,8 @@ FLOW_PERFORMANCE_CHECKS = [
     )
 ]
 
+FLOW_RESOURCES = {'scenarioId': 'flow.chest.resources', 'shipments': 256, 'stations': 32, 'sourceChests': 8, 'routingQueries': 75, 'loads': 7, 'saves': 6, 'attempts': 16, 'warmupFrames': 120, 'measurementFrames': 600, 'maxOperationsPerTick': 64, 'maximumP95TickMs': 0.25, 'maximumP99TickMs': 1.0, 'maximumAllocatedBytesPerTick': 0}
+FLOW_RESOURCE_CHECKS = ['flow.chest.resources.loaded', 'flow.chest.resources.routing', 'flow.chest.resources.queues', 'flow.chest.resources.saving', 'flow.chest.resources.saved', 'flow.chest.resources.receipt-growth', 'flow.chest.resources.limits', 'flow.chest.resources.reload', 'flow.chest.resources.item-fidelity', 'flow.chest.resources.idle', 'flow.chest.resources.unchanged-files']
 
 class HarnessError(ValueError):
     def __init__(self, message: str, assertions: list[dict[str, Any]] | None = None):
@@ -69,6 +71,7 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, dict[str, Any]]:
             "includes",
             "performance",
             "flowPerformance",
+            "flowResources",
             "automation",
             "requiredMods",
             "includeInAll",
@@ -136,6 +139,13 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, dict[str, Any]]:
                     or checks != FLOW_PERFORMANCE_CHECKS or required_mods != ["Hatifect.Flow"]
                     or json.dumps(flow_performance, sort_keys=True) != json.dumps(FLOW_PERFORMANCE, sort_keys=True)):
                 raise HarnessError("Flow performance requires its fixed isolated workload and checked-in budgets.")
+        if scenario_id == FLOW_RESOURCES["scenarioId"] or "flowResources" in scenario:
+            if (scenario_id != FLOW_RESOURCES["scenarioId"] or kind != "smoke"
+                    or scenario["requiresSave"] is not True or scenario.get("includes")
+                    or scenario.get("includeInAll") is not False or "performance" in scenario or "flowPerformance" in scenario
+                    or checks != FLOW_RESOURCE_CHECKS or required_mods != ["Hatifect.Flow"]
+                    or json.dumps(scenario.get("flowResources"), sort_keys=True) != json.dumps(FLOW_RESOURCES, sort_keys=True)):
+                raise HarnessError("Flow resources require the fixed isolated scale, lifecycle and budgets.")
         scenarios[scenario_id] = scenario
 
     for scenario in scenarios.values():
@@ -207,7 +217,8 @@ def resolve_scenario(
             checks.append(check)
     performances = [item["performance"] for item in ordered if "performance" in item]
     flow_performances = [item["flowPerformance"] for item in ordered if "flowPerformance" in item]
-    if len(performances) + len(flow_performances) > 1:
+    flow_resources = [item["flowResources"] for item in ordered if "flowResources" in item]
+    if len(performances) + len(flow_performances) + len(flow_resources) > 1:
         raise HarnessError(f"Scenario '{scenario_id}' resolves multiple performance captures.")
     required_mods: list[str] = []
     seen_required_mods: set[str] = set()
@@ -224,6 +235,7 @@ def resolve_scenario(
         "checks": checks,
         "performance": performances[0] if performances else None,
         "flowPerformance": flow_performances[0] if flow_performances else None,
+        "flowResources": flow_resources[0] if flow_resources else None,
         "automation": root["automation"],
         "requiredMods": required_mods,
     }
@@ -569,6 +581,237 @@ def validate_flow_performance(report: dict[str, Any], expected_run_id: str | Non
     return captured
 
 
+
+def validate_flow_resources(report: dict[str, Any], expected_run_id: str | None) -> dict[str, Any]:
+    """Validate the fixed producer's measurements and cross-phase authority, not merely green checks."""
+    def require(condition: bool, message: str) -> None:
+        if not condition:
+            raise HarnessError("Flow resources: " + message)
+
+    def integer(value: Any) -> bool:
+        return type(value) is int and 0 <= value <= 2**63 - 1
+
+    def guid(value: Any) -> bool:
+        try:
+            return isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0
+        except (ValueError, AttributeError):
+            return False
+
+    def digest(value: Any) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) is not None
+
+    def obj(value: Any, message: str) -> dict[str, Any]:
+        require(isinstance(value, dict), message)
+        return value
+
+    def fixed(value: dict[str, Any], expected: dict[str, int]) -> None:
+        require(all(type(value.get(k)) is int and value[k] == v for k, v in expected.items()), "wrong fixed counts")
+
+    captured = obj(report.get("FlowResources"), "missing capture")
+    require(guid(expected_run_id) and captured.get("RunId") == expected_run_id
+            and captured.get("ScenarioId") == FLOW_RESOURCES["scenarioId"], "foreign request or scenario")
+    fixed(captured, dict(FormatVersion=1, WorldId=4242424242, Shipments=256, Stations=32, SourceChests=8,
+                        RoutingQueries=75, Loads=7, Titles=6, SavingEvents=6, SavedEvents=6,
+                        SendRefusals=2, RetryRefusals=256, ReturnRefusals=256))
+    require(digest(captured.get("RuntimeFingerprint")) and captured["RuntimeFingerprint"] == report.get("RuntimeFingerprint")
+            and report.get("RuntimeFingerprintAlgorithm") == "sha256-flow-runtime-v1", "foreign runtime")
+    require(integer(captured.get("ThreadId")) and captured["ThreadId"] > 0
+            and integer(captured.get("StopwatchFrequency")) and captured["StopwatchFrequency"] > 0, "invalid owner or timer")
+    require(captured.get("GcOverride") is False and type(captured.get("ServerGc")) is bool, "overridden or missing GC metadata")
+    require(all(isinstance(captured.get(k), str) and 0 < len(captured[k]) <= 1024
+                for k in ("Runtime", "OperatingSystem", "Architecture")) and digest(captured.get("SaveTreeHash")), "missing environment or save fingerprint")
+    station_roles = captured.get("StationIds")
+    require(isinstance(station_roles, list) and len(station_roles) == 32 and all(guid(v) for v in station_roles)
+            and len(set(station_roles)) == 32, "missing distinct fixed station roles")
+
+    def rows(key: str, count: int) -> list[dict[str, Any]]:
+        values = captured.get(key)
+        require(isinstance(values, list) and len(values) == count and all(isinstance(v, dict) for v in values), "incomplete " + key)
+        return values
+
+    def cost(value: Any) -> None:
+        value = obj(value, "missing operation measurement")
+        require(set(value) == {"ElapsedTicks", "AllocatedBytes"} and all(integer(v) for v in value.values()), "invalid operation measurement")
+
+    counter_keys = {"TickInvocations", "Now", "PendingOperations", "RouteSearches", "ProcessedOperations",
+                    "LastTickProcessedOperations", "RefreshRequests", "CheckpointCaptures", "PhysicalApplyCalls"}
+
+    def counters(value: Any) -> dict[str, int]:
+        value = obj(value, "missing owner counters")
+        require(set(value) == counter_keys and all(integer(v) for v in value.values())
+                and value["PendingOperations"] <= 256 and value["LastTickProcessedOperations"] <= 64
+                and value["CheckpointCaptures"] <= 1, "invalid or exceeded owner counters")
+        return value
+
+    def usage(value: Any, limit: int, used: int | None = None) -> dict[str, int]:
+        value = obj(value, "missing resource usage")
+        require(set(value) == {"Used", "Limit"} and all(integer(v) for v in value.values())
+                and value["Limit"] == limit and value["Used"] <= limit
+                and (used is None or value["Used"] == used), "invalid resource usage or capacity")
+        return value
+
+    def resources(value: Any, count: int, attempt: int, saving: bool = False, clean: bool = False) -> dict[str, Any]:
+        value = obj(value, "missing retained resources")
+        require(guid(value.get("SessionId")) and guid(value.get("NetworkId")), "invalid retained identity")
+        fixed(value, dict(SaveId=4242424242, State=3 if saving else 0, MaxCharactersPerPayload=65536,
+                          MaxCoreCheckpointBytes=64 * 1024 * 1024, MaximumObservedDeliveryAttempts=attempt,
+                          ParcelsAtAttemptLimit=count if attempt == 16 else 0))
+        require(integer(value.get("Revision")) and integer(value.get("Now")), "invalid retained clock/revision")
+        owner = counters(value.get("TickCounters"))
+        require(owner["Now"] == value["Now"], "resource and owner clocks differ")
+        runtime = obj(value.get("Runtime"), "missing runtime resources")
+        for key, limit in {"Stations": 32, "LifetimeLinks": 128, "Cargo": 256, "Shipments": 256, "Parcels": 256,
+                           "PendingOperations": 256, "RouteCache": 64, "Events": 256, "IssuedTransfers": 4352}.items():
+            expected = {"Stations": 0 if clean else 32, "LifetimeLinks": 0 if clean else 40,
+                        "Cargo": count, "Shipments": count, "Parcels": count, "PendingOperations": count if attempt == 0 else 0,
+                        "IssuedTransfers": count * (attempt + 1) if attempt else 0}.get(key)
+            usage(runtime.get(key), limit, expected)
+        fixed(runtime, dict(ActiveLinks=0 if clean else 40, RetiredTransfers=count * (attempt + 1) if attempt else 0,
+                            MaxRouteVisits=32, MaxOperationsPerAdvance=64, MaxDeliveryAttempts=16))
+        require(integer(runtime.get("RouteSearches")) and runtime["RouteSearches"] == owner["RouteSearches"]
+                and runtime["PendingOperations"]["Used"] == owner["PendingOperations"], "runtime counters disagree")
+        usage(value.get("Payloads"), 256, count)
+        chars = usage(value.get("PayloadCharacters"), 256 * 65536)["Used"]
+        require((count == 0 and chars == 0) or count <= chars <= count * 65536, "invalid item payload extent")
+        ports = value.get("Ports")
+        require(isinstance(ports, list) and len(ports) == (0 if clean else 32), "wrong port set")
+        ids = []
+        for row in ports:
+            row = obj(row, "invalid port row")
+            require(guid(row.get("StationId")), "invalid station identity")
+            ids.append(row["StationId"])
+            port = obj(row.get("Port"), "missing port usage")
+            require(row["StationId"] in station_roles, "foreign port station")
+            index = station_roles.index(row["StationId"])
+            group = 0 if index == 0 else index - 1
+            admitted = min(32, max(0, count - group * 32)) if index == 0 or 2 <= index <= 8 else 0
+            receipts = count * attempt if index == 1 else admitted if attempt else 0
+            usage(port.get("Receipts"), 4096, receipts)
+            usage(port.get("Custody"), 1024, admitted if not attempt else 0)
+        require(len(set(ids)) == len(ids), "duplicate station resources")
+        refusals = obj(value.get("AdmissionRejections"), "missing refusal counters")
+        require(set(refusals) == {"Stations", "LifetimeLinks", "RetainedCargo"} and all(integer(v) for v in refusals.values()), "invalid refusals")
+        return value
+
+    route_rows = rows("Routes", 75)
+    expected_routes = []
+    for stations in (2, 16, 32):
+        expected_routes.extend([(kind, stations, 0, stations - 1, stations - 1, delta) for kind, delta in (("cold", 1), ("hit", 0))])
+    pairs = [(a, b) for a in range(32) for b in range(a + 1, 32) if not (a == 0 and b in (1, 15, 31))][:65]
+    expected_routes += [("churn", 32, a, b, b - a, 1) for a, b in pairs]
+    expected_routes += [("evicted", 32, 0, 2, 2, 1), ("anchor", 32, 0, 31, 31, 1),
+                        ("independent", 32, 0, 31, 31, 0), ("dependent", 32, 0, 31, 1, 1)]
+    searches = 0
+    cache = 0
+    for row, (kind, stations, origin, destination, hops, delta) in zip(route_rows, expected_routes):
+        require(row.get("Kind") == kind, "wrong route profile sequence")
+        fixed(row, dict(Stations=stations, Origin=origin, Destination=destination, Hops=hops, SearchesBefore=searches, SearchesAfter=searches + delta))
+        if kind in ("cold", "churn", "evicted", "anchor"):
+            cache = min(64, cache + 1)
+        fixed(row, dict(CacheCount=cache)); cost(row.get("Cost")); searches += delta
+
+    saves, restores, waves = rows("Saves", 6), rows("Restores", 7), rows("Waves", 16)
+    counts, attempts = [32, 128, 256, 256, 256, 256], [0, 0, 0, 1, 8, 16]
+    sessions, network, station_ids = [], None, None
+    for index, row in enumerate(restores):
+        fixed(row, dict(Index=index + 1))
+        require(row.get("HasAggregate") is (index > 0), "wrong restore aggregate presence")
+        value = resources(row.get("Resources"), counts[index - 1] if index else 0, attempts[index - 1] if index else 0, clean=index == 0)
+        sessions.append(value["SessionId"])
+        network = network or value["NetworkId"]
+        require(value["NetworkId"] == network, "reload changed network identity")
+        require(all(value["TickCounters"][k] == 0 for k in counter_keys - {"Now", "PendingOperations"})
+                and value["Runtime"]["RouteCache"]["Used"] == 0, "restore performed work, search or capture")
+        if index:
+            previous = saves[index - 1]
+            require(integer(row.get("CheckpointBytes")) and row["CheckpointBytes"] > 0 and digest(row.get("CheckpointHash"))
+                    and row["CheckpointBytes"] == previous.get("CheckpointBytes") and row["CheckpointHash"] == previous.get("CheckpointHash"), "restore read a different checkpoint")
+            before = resources(previous.get("Resources"), counts[index - 1], attempts[index - 1], saving=True)
+            for key in ("Now", "Payloads", "PayloadCharacters", "Ports"):
+                require(value[key] == before[key], "restore changed retained " + key)
+            restored_runtime = dict(value["Runtime"])
+            restored_runtime["RouteSearches"] = before["Runtime"]["RouteSearches"]
+            restored_runtime["RouteCache"] = before["Runtime"]["RouteCache"]
+            require(restored_runtime == before["Runtime"], "restore changed retained runtime resources")
+        else:
+            fixed(row, dict(CheckpointBytes=0)); require(row.get("CheckpointHash") == "", "initial restore contains a checkpoint")
+        cost(row.get("Read")); cost(row.get("Restore"))
+    require(len(set(sessions)) == 7, "loads reused command authority")
+    for index, row in enumerate(saves):
+        fixed(row, dict(Index=index + 1))
+        value = resources(row.get("Resources"), counts[index], attempts[index], saving=True)
+        require(value["SessionId"] == sessions[index] and value["NetworkId"] == network, "save changed owner")
+        ids = [port["StationId"] for port in value["Ports"]]
+        station_ids = station_ids or ids
+        require(ids == station_ids, "save changed stations")
+        require(integer(row.get("CheckpointBytes")) and 0 < row["CheckpointBytes"] <= 64 * 1024 * 1024
+                and digest(row.get("CheckpointHash")), "missing bounded checkpoint")
+        if index:
+            require(row["CheckpointBytes"] > saves[index - 1]["CheckpointBytes"], "checkpoint did not retain additional cargo/receipts")
+        fixed(value["TickCounters"], dict(CheckpointCaptures=1))
+        if index < 3:
+            fixed(value["TickCounters"], dict(ProcessedOperations=0, PhysicalApplyCalls=0, RefreshRequests=0,
+                                               LastTickProcessedOperations=0, RouteSearches=[searches + 1, 3, 4][index]))
+            require(value["Now"] == restores[index]["Resources"]["Now"], "reserved queue advanced before dispatch")
+            usage(value["Runtime"]["RouteCache"], 64, [64, 3, 4][index])
+        fixed(value["AdmissionRejections"], dict(Stations=0, LifetimeLinks=0, RetainedCargo=0))
+        cost(row.get("Capture")); cost(row.get("Write"))
+
+    def timing(row: dict[str, Any]) -> list[float]:
+        times = [row.get(key) for key in ("P50TickMs", "P95TickMs", "P99TickMs", "MaxTickMs")]
+        require(all(type(v) in (int, float) and math.isfinite(v) and 0 <= v <= 1_000_000_000 for v in times)
+                and times == sorted(times), "invalid timing percentiles")
+        require(integer(row.get("AllocatedBytesTotal")) and integer(row.get("MaximumAllocatedBytesPerTick"))
+                and row["MaximumAllocatedBytesPerTick"] <= row["AllocatedBytesTotal"]
+                <= row["MaximumAllocatedBytesPerTick"] * row["Frames"], "invalid allocation measurements")
+        return times
+
+    for index, wave in enumerate(waves):
+        fixed(wave, dict(Attempt=index + 1, ThreadId=captured["ThreadId"], MaximumOperationsPerTick=64))
+        load_index = 3 if index == 0 else 4 if index < 8 else 5
+        require(wave.get("SessionId") == sessions[load_index], "wave crossed session authority")
+        require(integer(wave.get("Frames")) and 1 < wave["Frames"] <= 600
+                and integer(wave.get("WorkTicks")) and 1 < wave["WorkTicks"] <= wave["Frames"], "incomplete work frames")
+        start, end = counters(wave.get("Start")), counters(wave.get("End"))
+        operations, effects = (768, 512) if index == 0 else (256, 256)
+        require(start["PendingOperations"] == 256 and end["PendingOperations"] == 0 and 0 < end["LastTickProcessedOperations"] <= 64
+                and end["TickInvocations"] - start["TickInvocations"] == wave["Frames"]
+                and end["Now"] - start["Now"] == wave["Frames"]
+                and end["ProcessedOperations"] - start["ProcessedOperations"] == operations
+                and end["PhysicalApplyCalls"] - start["PhysicalApplyCalls"] == effects
+                and end["RefreshRequests"] - start["RefreshRequests"] == wave["WorkTicks"]
+                and start["CheckpointCaptures"] == end["CheckpointCaptures"] == 0
+                and start["RouteSearches"] == end["RouteSearches"] == 0, "wave operation/effect accounting differs")
+        last, work = end["LastTickProcessedOperations"], wave["WorkTicks"]
+        require(last + work - 1 + (63 if last < 64 else 0) <= operations <= last + (work - 1) * 64, "impossible bounded work counts")
+        previous = restores[load_index]["Resources"]["TickCounters"] if index in (0, 1, 8) else waves[index - 1]["End"]
+        require(all(start[key] == previous[key] for key in counter_keys - {"PendingOperations"}), "lost ticks or hidden work before wave")
+        if index in (0, 7, 15):
+            saved_counters = saves[{0: 3, 7: 4, 15: 5}[index]]["Resources"]["TickCounters"]
+            require(all(saved_counters[key] == end[key] for key in ("Now", "ProcessedOperations", "PhysicalApplyCalls", "RefreshRequests")), "save missed settled work")
+        timing(wave)
+
+    before, final = resources(captured.get("BeforeIdle"), 256, 16), resources(captured.get("Final"), 256, 16)
+    for value in (before, final):
+        require(value["SessionId"] == sessions[6] and value["NetworkId"] == network, "idle changed authority")
+        fixed(value["AdmissionRejections"], dict(Stations=0, LifetimeLinks=0, RetainedCargo=2))
+    require({k: v for k, v in before.items() if k not in ("Now", "TickCounters")}
+            == {k: v for k, v in final.items() if k not in ("Now", "TickCounters")}, "idle grew retained resources")
+    require(all(before[k] == restores[6]["Resources"][k] for k in ("Runtime", "Ports", "Payloads", "PayloadCharacters", "TickCounters")), "refusals changed authority or journal")
+    idle = obj(captured.get("Idle"), "missing idle window")
+    fixed(idle, dict(ThreadId=captured["ThreadId"], WarmupFrames=120, Frames=600, AllocatedBytesTotal=0, MaximumAllocatedBytesPerTick=0))
+    require(idle.get("SessionId") == sessions[6] and idle.get("TimePasses") is True and idle.get("CachedSnapshotUnchanged") is True, "invalid idle identity, clock or projection")
+    start, end = counters(idle.get("Start")), counters(idle.get("End"))
+    baseline = before["TickCounters"]
+    for value, delta in ((start, 120), (end, 720)):
+        require(value["Now"] == baseline["Now"] + delta and value["TickInvocations"] == baseline["TickInvocations"] + delta
+                and all(value[k] == baseline[k] for k in counter_keys - {"Now", "TickInvocations"}), "idle performed work or lost ticks")
+    require(final["TickCounters"] == end, "final diagnostics missed the idle boundary")
+    times = timing(idle)
+    require(times[1] <= 0.25 and times[2] <= 1.0, "idle exceeded checked-in latency budgets")
+    return captured
+
+
 def validate_report(
     resolved: dict[str, Any], report: dict[str, Any], started_at: float, *, expected_run_id: str | None = None
 ) -> dict[str, Any]:
@@ -766,6 +1009,14 @@ def validate_report(
             FLOW_PERFORMANCE["scenarioId"] + ".budget", "PASS", resolved["id"],
             "The fixed Flow workload satisfies all operation, allocation and latency budgets.",
             "600 paused and 600 idle ticks; bounded 80-parcel delivery completed.",
+        ))
+
+    if resolved.get("flowResources") is not None:
+        performance_evidence = validate_flow_resources(report, expected_run_id)
+        assertions.append(_assertion(
+            FLOW_RESOURCES["scenarioId"] + ".budget", "PASS", resolved["id"],
+            "The fixed resource scale, confirmed saves, receipt growth and idle budgets are satisfied.",
+            "256 parcels, 16 attempts, six confirmed saves and seven loads; 600 idle samples.",
         ))
 
     return {
