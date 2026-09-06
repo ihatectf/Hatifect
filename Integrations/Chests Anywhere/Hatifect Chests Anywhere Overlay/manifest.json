@@ -11,7 +11,7 @@
     {
       "UniqueID": "Hatifect.UI",
       "IsRequired": true,
-      "MinimumVersion": "1.0.0-alpha.33"
+      "MinimumVersion": "1.0.0-alpha.34"
     },
     {
       "UniqueID": "Pathoschild.ChestsAnywhere",

@@ -53,8 +53,9 @@ internal sealed class UiCompositor
     {
         ArgumentNullException.ThrowIfNull(frame);
         ArgumentNullException.ThrowIfNull(backend);
-        foreach (UiRenderPrimitive primitive in frame.Primitives)
+        for (int index = 0; index < frame.Primitives.Count; index++)
         {
+            UiRenderPrimitive primitive = frame.Primitives[index];
             switch (primitive)
             {
                 case UiSurfacePrimitive surface:

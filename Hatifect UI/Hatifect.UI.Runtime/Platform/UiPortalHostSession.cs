@@ -172,7 +172,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
             composeInteraction: request.ComposeInteraction);
         if (request.Scene.Root.Policy.Focus is UiFocusScopePolicy.Contained or UiFocusScopePolicy.Trapped)
         {
-            UiInteractionUpdate focus = runtime.Interactions.MoveFocus(UiNavigationDirection.Next);
+            UiInteractionUpdate focus = runtime.MoveFocus(UiNavigationDirection.Next);
             Refresh(runtime, focus);
         }
         _portals.Add(new PortalEntry(request, runtime, generation));
@@ -290,7 +290,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
     }
 
     public UiPortalDispatch MoveFocus(UiNavigationDirection direction)
-        => DispatchToKeyboardOwner(runtime => runtime.Interactions.MoveFocus(direction));
+        => DispatchToKeyboardOwner(runtime => runtime.MoveFocus(direction));
 
     public UiPortalDispatch Submit()
         => DispatchToKeyboardOwner(runtime => runtime.Interactions.Submit());

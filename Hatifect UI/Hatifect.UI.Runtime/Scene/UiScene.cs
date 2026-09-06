@@ -191,6 +191,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
     public UiVisualResolution SelectedItemVisual { get; }
     public UiSymbolId? SelectedItemId { get; }
     public bool IsSelectable => _selection != null;
+    internal bool HasCapturedItems => _captured;
     internal IReadOnlyDictionary<UiSymbolId, UiVisualResolution> ActiveItemVisuals => _activeItemVisuals;
 
     public UiSemanticCollectionItem ItemAt(int index)

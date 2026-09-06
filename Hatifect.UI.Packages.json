@@ -1,6 +1,6 @@
 {
   "FormatVersion": 1,
-  "Version": "1.0.0-alpha.33",
+  "Version": "1.0.0-alpha.34",
   "Packages": [
     {
       "Id": "Hatifect.UI.Language",
