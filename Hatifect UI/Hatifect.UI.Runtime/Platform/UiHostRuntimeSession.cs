@@ -27,7 +27,7 @@ internal readonly record struct UiHostRuntimePerformanceSnapshot(long LayoutBuil
 internal interface IUiHostSceneOwner
 {
     void BeginSceneUpdate();
-    void FenceAcceptedScene();
+    void FenceAcceptedScene(UiHostRuntimeSession runtime, bool renewedGeneration);
     void EndSceneUpdate();
 }
 
@@ -180,6 +180,12 @@ internal sealed class UiHostRuntimeSession
         => Update(next, new UiHostPlacementContext(viewport));
 
     public UiHostUpdate Update(UiScene next, UiHostPlacementContext placement)
+        => Update(next, placement, renewActionGeneration: false, acceptOwnerState: null);
+
+    // acceptOwnerState is framework-owned, callback-free metadata publication. All validation
+    // belongs before this call; it runs after scene acceptance and before retirement callbacks.
+    internal UiHostUpdate Update(UiScene next, UiHostPlacementContext placement,
+        bool renewActionGeneration, Action? acceptOwnerState)
     {
         EnsureNotPreparing();
         ArgumentNullException.ThrowIfNull(next);
@@ -190,7 +196,7 @@ internal sealed class UiHostRuntimeSession
         bool attemptedLayout = false;
         try
         {
-            using var actions = _actions.Prepare(next);
+            using var actions = _actions.Prepare(next, renewActionGeneration);
             UiSceneDiff diff = _reconciler.Compare(_scene, next, Interactions.Snapshot, _actions.Current, actions.Map);
             bool layoutChanged = placement != _placement || diff.RequiresLayout;
             attemptedLayout = layoutChanged;
@@ -224,7 +230,8 @@ internal sealed class UiHostRuntimeSession
             LastUpdate = update;
             AcceptedVersion++;
             _actionPresentationDirty = false;
-            sceneOwner?.FenceAcceptedScene();
+            sceneOwner?.FenceAcceptedScene(this, renewActionGeneration);
+            acceptOwnerState?.Invoke();
             return update;
         }
         catch

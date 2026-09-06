@@ -102,12 +102,13 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
         long version = Host.Root.AcceptedVersion;
         UiTerminalFrame frame = _shell.Recompose(profile, locale, Host.Root.Interactions.Snapshot);
         ValidatePreparedScene(frame.Scene, version);
-        UiHostUpdate update = Host.UpdateRoot(frame.Scene, placement);
-        _currentInvocation = frame.Invocation;
-        _profile = profile;
-        _placement = placement;
-        _locale = locale;
-        return update;
+        return Host.UpdateRoot(frame.Scene, placement, renewActionGeneration: false, acceptOwnerState: () =>
+        {
+            _currentInvocation = frame.Invocation;
+            _profile = profile;
+            _placement = placement;
+            _locale = locale;
+        });
     }
 
     public UiPortalDispatch PressPointer(UiPoint point)
@@ -165,10 +166,7 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
             _locale,
             Host.Root.Interactions.Snapshot);
         ValidatePreparedScene(frame.Scene, version);
-        UiHostUpdate update = Host.UpdateRoot(frame.Scene, _placement);
-        _shell.Commit(frame);
-        _currentInvocation = frame.Invocation;
-        return update;
+        return AcceptOpen(frame);
     }
 
     internal bool EvictSection(UiSymbolId section)
@@ -237,12 +235,19 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
         if (frame != null)
         {
             ValidatePreparedScene(frame.Scene, version);
-            Host.UpdateRoot(frame.Scene, _placement);
-            _shell.Commit(frame);
-            _currentInvocation = frame.Invocation;
+            AcceptOpen(frame);
         }
         return dispatch;
     }
+
+    private UiHostUpdate AcceptOpen(UiTerminalFrame frame)
+        => Host.UpdateRoot(frame.Scene, _placement, renewActionGeneration: true, acceptOwnerState: () =>
+        {
+            // The frame was validated before Runtime preparation. Commit only assigns shell
+            // metadata; it must finish before old action cancellation can dispose this owner.
+            _shell.Commit(frame);
+            _currentInvocation = frame.Invocation;
+        });
 
     private void ValidateScene(UiScene scene) => _validateScene?.Invoke(scene);
 
