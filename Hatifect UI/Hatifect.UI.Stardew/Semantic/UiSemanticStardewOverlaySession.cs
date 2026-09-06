@@ -541,7 +541,10 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
 
     private void SyncTextInputOwnership()
     {
-        bool needsText = Visible && OwnsCurrentMenuContext() && _input.IsTextEditing;
+        // Input callbacks may retire the overlay or switch screens. Failed event cleanup can
+        // leave Visible true, so eligibility must be checked again before acquiring a lease.
+        bool needsText = _events.IsCurrentScreen && !_retireRequested && Visible &&
+                         OwnsCurrentMenuContext() && _input.IsTextEditing;
         if (needsText) _keyboard.Acquire(); else _keyboard.Release();
     }
 
