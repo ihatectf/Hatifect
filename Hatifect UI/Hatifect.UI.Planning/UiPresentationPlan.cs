@@ -12,14 +12,35 @@ public enum UiPlanDecisionCode
     CapabilityPlacement,
     ExplicitPresentation,
     ProfileAdaptation,
-    CapabilityPresentation
+    CapabilityPresentation,
+    EnvironmentProfile,
+    EnvironmentFacet,
+    PresentationRejected,
+    CoverageFallback
 }
 
 public sealed record UiPlanDecision(
     UiPlanDecisionCode Code,
     UiSymbolId? Element,
     string Message,
-    UiSourceProvenance? Source);
+    UiSourceProvenance? Source)
+{
+    public UiSymbolId? Candidate { get; init; }
+}
+
+/// <summary>No partial plan is activated when an element's required semantics cannot be covered.</summary>
+public sealed class UiPlanningException : InvalidOperationException
+{
+    internal UiPlanningException(UiSymbolId element, UiPlanDecision[] decisions)
+        : base($"No permitted presentation covers all required capabilities of element '{element}'.")
+    {
+        Element = element;
+        Decisions = Array.AsReadOnly(decisions);
+    }
+
+    public UiSymbolId Element { get; }
+    public IReadOnlyList<UiPlanDecision> Decisions { get; }
+}
 
 public sealed record UiPlannedElement(
     UiSymbolId Element,
