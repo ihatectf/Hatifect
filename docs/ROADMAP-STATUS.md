@@ -56,7 +56,7 @@ Owner: Flow semantic consumer; existing application event/snapshot contract and 
 
 ## Current next slice
 
-F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`; F16-b `51eee23`, F16-c `c12261c` and F16-d have actual confirmed-save and unsaved-extraction process-crash evidence below. Continue F16-e with an InTransit save followed by unsaved delivery and crash, then the remaining F16/F17 failure and production save-isolation matrix. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
+F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`; F16-b `51eee23`, F16-c `c12261c`, F16-d `1a06fa3` and F16-e have actual confirmed-save and unsaved-effect process-crash evidence below. Continue F16-f with production cancellation/source-conflict acceptance, followed by rejection/retry/return and production A→B→A. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
 
 ## F11-b: owner-derived availability and rejection reasons
 
@@ -174,3 +174,17 @@ Owner: existing Flow game diagnostics and fixed harness policy. `flow.chest.cras
 - Package contract **PASS**,21 files/14 DLLs. Generated report bytes matched the preserved runtime artifact before removing the generated copy. Archive, hashes, inventory and full source/staged review are retained under `artifacts/flowline-f16-unsaved-extraction/`.
 
 This closes only unsaved extraction rollback. Full F16/F17 remain IN_PROGRESS; unsaved delivery, other confirmed custody boundaries, interrupted writes and production A→B→A remain distinct acceptance. Visual, UI package-boundary and settings/skills host-audit changes are NOT_APPLICABLE to this diagnostic increment.
+
+## F16-e: complete-save rollback after unsaved delivery
+
+Owner: existing Flow diagnostics and fixed harness policy. `flow.chest.crash-after-unsaved-delivery` saves both InTransit parcels, remainder8 and empty destination, then lets production deliver whole8/partial5 without another save. The marker requires Delivered in memory, unchanged saved bytes and fixed phase `saved-in-transit-unsaved-delivery` with exact1/1/1 counters. After owned SIGKILL, resume must load InTransit and empty destination before its first tick, set `unsaved-rollback`, then deliver once and finish the existing second save/third load/120-tick/repeated-command checks. Shared unsaved-effect hash handling preserves F16-d's distinct Reserved/source XML proof. No production transfer, public API, persistence format or request/marker field set changes.
+
+- `./tools/hatifect-test tools`: **PASS**,321 Python (`run-f538blak`). Two new tests cover rejection of saved-delivery/other rollback phases and a real two-process fixture for this exact scenario. Existing b/c/d behavior and authority tests remain intact.
+- `./tools/hatifect-check --platform`: **PASS**,1,203 .NET +321 Python (`run-98xrois1`); `./tools/hatifect-check`: **PASS**,1,016 .NET +321 Python (`run-kvtpidk3`). Flow659/Stardew92 remain included in G.
+- Fresh isolated deployment `run-mlflie31`: selected stages **PASS**; packaging tests explicitly SKIPPED and no RC promotion claimed.
+- `./tools/hatifect-smoke flow.chest.crash-after-unsaved-delivery`: **PASS10**, request `47df7d9b-722a-4866-86df-5ebe23369715`,32,830 ms, PID78634 signal9/raw-9 → PID78732 exit0. Marker1/1/1, final3 loads/2 Saving/Saved pairs/340 resume frames. Destination rolls back to empty, parcel custody resumes InTransit, final quantity remains21, and duplicate commands are rejected; errors/exceptions/teardown lists are empty.
+- Same-candidate `./tools/hatifect-smoke flow.chest.crash-after-delivery`: **PASS9**, request `8246ec99-dcc9-4780-bf90-4f82894c2998`,31,307 ms. Marker `saved-delivered`2/2/2, PID79007 raw-9 → PID79086 exit0, final3 loads/2 pairs/154 resume frames. Saved Delivered remains intact without new materialization. Both reports use fingerprint `9e9d04e70a6d890da67244deece400ffd6c29761606ea99608c87155a6184fdf`.
+- Independent source and actual evidence review found no actionable regression: final C/G, both request reports/process journals/SMAPI logs, deployed Flow fingerprint and cleanup verified. New unsaved-delivery logs contain one actual save per process; SavedDelivered has two in prepare and zero in resume.
+- Package contract **PASS**,21 files/14 DLLs. Generated report matched preserved runtime bytes before removal. Archive, inventory, hashes and final source/staged attestation: `artifacts/flowline-f16-unsaved-delivery/`.
+
+F16/F17 remain IN_PROGRESS. The next bounded family covers cancellation/source changes, then capacity refusal/retry/return and production save isolation. Unit fault injection, an actual process crash and an interrupted game-save write remain distinct evidence categories. Visual, UI package-boundary and settings/skills host-audit changes are NOT_APPLICABLE here.

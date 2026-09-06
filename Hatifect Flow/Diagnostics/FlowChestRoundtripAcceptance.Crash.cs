@@ -15,18 +15,22 @@ internal sealed partial class FlowChestRoundtripAcceptance
     internal const string CrashScenario = "flow.chest.crash-after-save";
     internal const string DeliveryCrashScenario = "flow.chest.crash-after-delivery";
     internal const string ExtractionCrashScenario = "flow.chest.crash-after-unsaved-extraction";
+    internal const string UnsavedDeliveryCrashScenario = "flow.chest.crash-after-unsaved-delivery";
     private string? _crashPhase;
-    private string? _confirmedReservedSaveHash;
+    private string? _confirmedEffectSaveHash;
     private bool CrashAfterDelivery => _scenario == DeliveryCrashScenario;
     private bool CrashAfterUnsavedExtraction => _scenario == ExtractionCrashScenario;
+    private bool CrashAfterUnsavedDelivery => _scenario == UnsavedDeliveryCrashScenario;
+    private bool CrashAfterUnsavedEffect => CrashAfterUnsavedExtraction || CrashAfterUnsavedDelivery;
     private int CrashSavedEvents => CrashAfterDelivery ? 2 : 1;
-    private string CrashMarkerPhase => CrashAfterUnsavedExtraction ? "saved-reserved-unsaved-extraction"
+    private string CrashMarkerPhase => CrashAfterUnsavedDelivery ? "saved-in-transit-unsaved-delivery"
+        : CrashAfterUnsavedExtraction ? "saved-reserved-unsaved-extraction"
         : CrashAfterDelivery ? "saved-delivered" : "saved-in-transit";
-    private ParcelState CrashParcelState => CrashAfterDelivery ? ParcelState.Delivered : ParcelState.InTransit;
+    private ParcelState CrashParcelState => CrashAfterDelivery || CrashAfterUnsavedDelivery ? ParcelState.Delivered : ParcelState.InTransit;
 
     private void InitializeCrash()
     {
-        if (_scenario is not (CrashScenario or DeliveryCrashScenario or ExtractionCrashScenario)) return;
+        if (_scenario is not (CrashScenario or DeliveryCrashScenario or ExtractionCrashScenario or UnsavedDeliveryCrashScenario)) return;
         _crashPhase = Environment.GetEnvironmentVariable("HATIFECT_TEST_CRASH_PHASE");
         Require(_crashPhase is "prepare" or "resume", "A controlled crash needs a fixed executor phase.");
         string markerPath = Path.Combine(_request.Artifact, "diagnostics", "flow-crash-ready.json");
@@ -84,8 +88,8 @@ internal sealed partial class FlowChestRoundtripAcceptance
             "Controlled crash did not reach the required confirmed save boundary.");
         VerifyCrashInventory();
         string saveHash = HashFile(Path.Combine(_request.SavePath, Path.GetFileName(_request.SavePath)));
-        if (CrashAfterUnsavedExtraction)
-            Require(_confirmedReservedSaveHash == saveHash, "Unsaved extraction changed the confirmed Reserved save bytes.");
+        if (CrashAfterUnsavedEffect)
+            Require(_confirmedEffectSaveHash == saveHash, "An unsaved effect changed the confirmed game save bytes.");
         // Saved has completed. Hold the existing host barrier so no new transport effect runs before SIGKILL.
         Session().BeginSave();
         _stage = Stage.AwaitCrash;
@@ -123,7 +127,7 @@ internal sealed partial class FlowChestRoundtripAcceptance
 
     private void VerifyCrashInventory()
     {
-        if (CrashAfterDelivery) VerifyDelivery();
+        if (CrashAfterDelivery || CrashAfterUnsavedDelivery) VerifyDelivery();
         else
         {
             VerifyRemainder();

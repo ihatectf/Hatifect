@@ -38,10 +38,12 @@ PRIVATE_FILE_MODE = 0o600
 SAVED_CRASH_SCENARIO = "flow.chest.crash-after-save"
 DELIVERED_CRASH_SCENARIO = "flow.chest.crash-after-delivery"
 UNSAVED_EXTRACTION_CRASH_SCENARIO = "flow.chest.crash-after-unsaved-extraction"
+UNSAVED_DELIVERY_CRASH_SCENARIO = "flow.chest.crash-after-unsaved-delivery"
 SAVED_CRASH_BOUNDARIES = {
     SAVED_CRASH_SCENARIO: ("saved-in-transit", 1),
     DELIVERED_CRASH_SCENARIO: ("saved-delivered", 2),
     UNSAVED_EXTRACTION_CRASH_SCENARIO: ("saved-reserved-unsaved-extraction", 1),
+    UNSAVED_DELIVERY_CRASH_SCENARIO: ("saved-in-transit-unsaved-delivery", 1),
 }
 LIFECYCLE_STATES = {
     "Accepted",

@@ -169,6 +169,27 @@
       "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
     },
     {
+      "id": "flow.chest.crash-after-unsaved-delivery",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": ["Hatifect.Flow"],
+      "checks": [
+        "flow.chest.crash-after-unsaved-delivery.loaded",
+        "flow.chest.crash-after-unsaved-delivery.custody",
+        "flow.chest.crash-after-unsaved-delivery.saving",
+        "flow.chest.crash-after-unsaved-delivery.saved",
+        "flow.chest.crash-after-unsaved-delivery.delivery",
+        "flow.chest.crash-after-unsaved-delivery.lifecycle",
+        "flow.chest.crash-after-unsaved-delivery.reload",
+        "flow.chest.crash-after-unsaved-delivery.no-duplication",
+        "flow.chest.crash-after-unsaved-delivery.process-restart",
+        "flow.chest.crash-after-unsaved-delivery.unsaved-rollback"
+      ],
+      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+    },
+    {
       "id": "semantic.lifecycle",
       "kind": "ui",
       "requiresSave": false,
