@@ -167,9 +167,45 @@ internal sealed class UiHostRuntimeSession
         return new UiHostScrollUpdate(false, false, false, 0);
     }
 
+    public UiInteractionUpdate MoveFocus(UiNavigationDirection direction)
+    {
+        UiInteractionUpdate update = Interactions.MoveFocus(direction);
+        if (!update.Consumed ||
+            !Interactions.TryGetFocusedCollectionItem(out UiCollectionSceneNode collection, out UiSymbolId item, out int index) ||
+            !Layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window) || window == null ||
+            !Layout.TryGetEntry(collection.Id, out UiLayoutEntry? entry) || entry == null)
+            return update;
+
+        foreach (UiVirtualizedItemLayout target in window.Items)
+        {
+            if (target.Item.Id != item) continue;
+            float top = Math.Max(entry.ContentBounds.Y, entry.Clip.Y);
+            float bottom = Math.Min(entry.ContentBounds.Bottom, entry.Clip.Bottom);
+            if (target.Bounds.Y >= top && target.Bounds.Bottom <= bottom) return update;
+            // An oversized row is revealed once at its top; repeated navigation cannot oscillate.
+            float delta = target.Bounds.Height > bottom - top || target.Bounds.Y < top
+                ? target.Bounds.Y - top : target.Bounds.Bottom - bottom;
+            _collections.SetOffset(collection.Id, Math.Max(0, window.ScrollOffset + delta));
+            return ReconcileRevealedFocus(update);
+        }
+        _collections.Reveal(collection.Id, item, index);
+        return ReconcileRevealedFocus(update);
+    }
+
+    private UiInteractionUpdate ReconcileRevealedFocus(UiInteractionUpdate update)
+    {
+        // Called only by explicit navigation. Passive wheel/scene updates retain focus without
+        // bringing it back into view. The portal's ordinary interaction refresh renders this layout.
+        Layout = BuildLayout(_scene, _placement);
+        _collections.Synchronize(Layout);
+        Interactions.Reconcile(_scene, Layout);
+        return update with { StateChanged = true };
+    }
+
     public UiHostUpdate? RefreshInteractionVisuals(bool textChanged = false)
     {
-        if (_composeInteraction == null)
+        var compose = _composeInteraction ?? _scene.RecomposePublication;
+        if (compose == null)
         {
             if (textChanged)
                 return RefreshLiveText();
@@ -185,7 +221,7 @@ internal sealed class UiHostRuntimeSession
             LastUpdate = directUpdate;
             return directUpdate;
         }
-        UiScene next = _composeInteraction(Interactions.Snapshot)
+        UiScene next = compose(Interactions.Snapshot)
             ?? throw new InvalidOperationException("The interaction scene composer returned null.");
         return Update(next, _placement);
     }

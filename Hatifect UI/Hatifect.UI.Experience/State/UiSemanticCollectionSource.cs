@@ -27,6 +27,28 @@ public sealed record UiSemanticCollectionItem
     public object? Value { get; }
     public string? SupportingText { get; }
     public long ContentVersion { get; }
+    /// <summary>Monotonic publication content revision, independent of the label measurement hash.
+    /// Includes payload, icon and text changes. Legacy sources use zero until their first change.</summary>
+    private long _itemRevision;
+    public long ItemRevision
+    {
+        get => _itemRevision;
+        init
+        {
+            if (value < 0) throw new ArgumentOutOfRangeException(nameof(value), "Item revision must be nonnegative.");
+            _itemRevision = value;
+        }
+    }
+    private UiSymbolId? _icon;
+    public UiSymbolId? Icon
+    {
+        get => _icon;
+        init
+        {
+            if (value is { IsValid: false }) throw new ArgumentException("An icon requires a stable asset ID.", nameof(value));
+            _icon = value;
+        }
+    }
 }
 
 /// <summary>Random-access semantic collection contract used by bounded runtime virtualization.</summary>
@@ -36,8 +58,12 @@ public interface IUiSemanticCollectionSource : IUiSemanticSource
     UiSemanticCollectionItem GetItem(int index);
 }
 
-/// <summary>Friend-assembly metadata for runtime invalidation and stable-ID anchor lookup.</summary>
-internal interface IUiCollectionRuntimeMetadata
+/// <summary>Optional capability required for adaptive virtualization of external sources.
+/// Revision is nonnegative and changes with content, order or count, but not selection alone.
+/// HasSupportingText describes the entire snapshot without enumeration. TryGetIndex uses stable IDs
+/// and must be bounded (constant or logarithmic time). Publish complete snapshots before Changed;
+/// do not mutate a source during a UI dispatch or layout pass.</summary>
+public interface IUiSemanticCollectionMetadata
 {
     long Revision { get; }
     bool HasSupportingText { get; }
@@ -57,35 +83,48 @@ public interface IUiSelectableCollectionSource : IUiSemanticCollectionSource
 /// <summary>Immutable collection source with explicit, stable item identity.</summary>
 public sealed class UiCollectionSource<T> :
     IUiSemanticSource<IReadOnlyList<T>>,
-    IUiSemanticCollectionSource,
-    IUiCollectionRuntimeMetadata
+    IUiVersionedSemanticSource,
+    IUiSemanticCollectionSnapshotSource,
+    IUiSemanticCollectionMetadata
 {
     private readonly ReadOnlyCollection<T> _values;
     private readonly ReadOnlyCollection<UiSemanticCollectionItem> _items;
     private readonly IReadOnlyDictionary<UiSymbolId, int> _indices;
     private readonly bool _hasSupportingText;
+    private readonly UiCollectionReadSnapshot<T> _readSnapshot;
 
     public UiCollectionSource(
         IReadOnlyList<T> values,
         Func<T, UiSymbolId> identify,
         Func<T, string>? label = null,
         Func<T, string?>? supportingText = null)
+        : this(values, identify, label, supportingText, null) { }
+
+    public UiCollectionSource(
+        IReadOnlyList<T> values,
+        Func<T, UiSymbolId> identify,
+        Func<T, string>? label,
+        Func<T, string?>? supportingText,
+        Func<T, UiSymbolId?>? icon)
     {
-        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText);
+        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText, icon);
         _values = snapshot.Values;
         _items = snapshot.Items;
         _indices = UiSemanticCollectionSnapshot.Indices(_items);
         _hasSupportingText = UiSemanticCollectionSnapshot.HasSupportingText(_items);
+        _readSnapshot = new(_values, _items, _indices, _hasSupportingText, 0);
     }
 
     public IReadOnlyList<T> Value => _values;
+    public long Version => 0;
     public Type ValueType => typeof(IReadOnlyList<T>);
     public object UntypedValue => _values;
     public int Count => _items.Count;
     public UiSemanticCollectionItem GetItem(int index) => _items[index];
-    long IUiCollectionRuntimeMetadata.Revision => 0;
-    bool IUiCollectionRuntimeMetadata.HasSupportingText => _hasSupportingText;
-    bool IUiCollectionRuntimeMetadata.TryGetIndex(UiSymbolId item, out int index)
+    public IUiSemanticCollectionSnapshot CaptureSnapshot() => _readSnapshot;
+    long IUiSemanticCollectionMetadata.Revision => 0;
+    bool IUiSemanticCollectionMetadata.HasSupportingText => _hasSupportingText;
+    bool IUiSemanticCollectionMetadata.TryGetIndex(UiSymbolId item, out int index)
         => _indices.TryGetValue(item, out index);
 
     public event Action? Changed
@@ -98,55 +137,73 @@ public sealed class UiCollectionSource<T> :
 /// <summary>Mutable semantic collection state; replacement raises one deterministic change signal.</summary>
 public sealed class UiCollectionState<T> :
     IUiSemanticSource<IReadOnlyList<T>>,
-    IUiSemanticCollectionSource,
-    IUiCollectionRuntimeMetadata
+    IUiVersionedSemanticSource,
+    IUiSemanticCollectionSnapshotSource,
+    IUiSemanticCollectionMetadata
 {
     private readonly Func<T, UiSymbolId> _identify;
     private readonly Func<T, string>? _label;
     private readonly Func<T, string?>? _supportingText;
+    private readonly Func<T, UiSymbolId?>? _icon;
     private ReadOnlyCollection<T> _values;
     private ReadOnlyCollection<UiSemanticCollectionItem> _items;
     private IReadOnlyDictionary<UiSymbolId, int> _indices;
     private bool _hasSupportingText;
     private long _revision;
+    private UiCollectionReadSnapshot<T> _readSnapshot;
 
     public UiCollectionState(
         IReadOnlyList<T> values,
         Func<T, UiSymbolId> identify,
         Func<T, string>? label = null,
         Func<T, string?>? supportingText = null)
+        : this(values, identify, label, supportingText, null) { }
+
+    public UiCollectionState(
+        IReadOnlyList<T> values,
+        Func<T, UiSymbolId> identify,
+        Func<T, string>? label,
+        Func<T, string?>? supportingText,
+        Func<T, UiSymbolId?>? icon)
     {
         _identify = identify ?? throw new ArgumentNullException(nameof(identify));
         _label = label;
         _supportingText = supportingText;
-        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText);
+        _icon = icon;
+        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText, icon);
         _values = snapshot.Values;
         _items = snapshot.Items;
         _indices = UiSemanticCollectionSnapshot.Indices(_items);
         _hasSupportingText = UiSemanticCollectionSnapshot.HasSupportingText(_items);
+        _readSnapshot = new(_values, _items, _indices, _hasSupportingText, 0);
     }
 
     public IReadOnlyList<T> Value => _values;
+    public long Version => _revision;
     public Type ValueType => typeof(IReadOnlyList<T>);
     public object UntypedValue => _values;
     public int Count => _items.Count;
     public UiSemanticCollectionItem GetItem(int index) => _items[index];
-    long IUiCollectionRuntimeMetadata.Revision => _revision;
-    bool IUiCollectionRuntimeMetadata.HasSupportingText => _hasSupportingText;
-    bool IUiCollectionRuntimeMetadata.TryGetIndex(UiSymbolId item, out int index)
+    public IUiSemanticCollectionSnapshot CaptureSnapshot() => _readSnapshot;
+    long IUiSemanticCollectionMetadata.Revision => _revision;
+    bool IUiSemanticCollectionMetadata.HasSupportingText => _hasSupportingText;
+    bool IUiSemanticCollectionMetadata.TryGetIndex(UiSymbolId item, out int index)
         => _indices.TryGetValue(item, out index);
     public event Action? Changed;
 
     public void Replace(IReadOnlyList<T> values)
     {
         (ReadOnlyCollection<T> nextValues, ReadOnlyCollection<UiSemanticCollectionItem> nextItems) =
-            UiSemanticCollectionSnapshot.Create(values, _identify, _label, _supportingText);
+            UiSemanticCollectionSnapshot.Create(values, _identify, _label, _supportingText, _icon);
         if (UiSemanticCollectionSnapshot.Equivalent(_items, nextItems)) return;
+        long revision = checked(_revision + 1);
+        nextItems = UiSemanticCollectionSnapshot.Revise(_items, _indices, nextItems, revision);
         _values = nextValues;
         _items = nextItems;
         _indices = UiSemanticCollectionSnapshot.Indices(_items);
         _hasSupportingText = UiSemanticCollectionSnapshot.HasSupportingText(_items);
-        _revision++;
+        _revision = revision;
+        _readSnapshot = new(_values, _items, _indices, _hasSupportingText, _revision);
         Changed?.Invoke();
     }
 }
@@ -157,19 +214,24 @@ public sealed class UiCollectionState<T> :
 /// </summary>
 public sealed class UiSelectableCollectionState<T> :
     IUiSemanticSource<IReadOnlyList<T>>,
+    IUiVersionedSemanticSource,
     IUiSelectableCollectionSource,
-    IUiCollectionRuntimeMetadata
+    IUiSemanticCollectionSnapshotSource,
+    IUiSemanticCollectionMetadata
 {
     private readonly Func<T, UiSymbolId> _identify;
     private readonly Func<T, string>? _label;
     private readonly Func<T, string?>? _supportingText;
+    private readonly Func<T, UiSymbolId?>? _icon;
     private ReadOnlyCollection<T> _values;
     private ReadOnlyCollection<UiSemanticCollectionItem> _items;
     private HashSet<UiSymbolId> _ids;
     private UiSymbolId? _selectedItemId;
     private IReadOnlyDictionary<UiSymbolId, int> _indices;
     private long _revision;
+    private long _version;
     private bool _hasSupportingText;
+    private UiCollectionReadSnapshot<T> _readSnapshot;
 
     public UiSelectableCollectionState(
         IReadOnlyList<T> values,
@@ -177,11 +239,21 @@ public sealed class UiSelectableCollectionState<T> :
         Func<T, string>? label = null,
         UiSymbolId? selectedItemId = null,
         Func<T, string?>? supportingText = null)
+        : this(values, identify, label, selectedItemId, supportingText, null) { }
+
+    public UiSelectableCollectionState(
+        IReadOnlyList<T> values,
+        Func<T, UiSymbolId> identify,
+        Func<T, string>? label,
+        UiSymbolId? selectedItemId,
+        Func<T, string?>? supportingText,
+        Func<T, UiSymbolId?>? icon)
     {
         _identify = identify ?? throw new ArgumentNullException(nameof(identify));
         _label = label;
         _supportingText = supportingText;
-        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText);
+        _icon = icon;
+        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText, icon);
         _values = snapshot.Values;
         _items = snapshot.Items;
         _ids = Ids(_items);
@@ -192,17 +264,20 @@ public sealed class UiSelectableCollectionState<T> :
                 $"Selected collection item '{selected}' is absent from the collection.",
                 nameof(selectedItemId));
         _selectedItemId = selectedItemId;
+        _readSnapshot = new(_values, _items, _indices, _hasSupportingText, 0, _selectedItemId);
     }
 
     public IReadOnlyList<T> Value => _values;
+    public long Version => _version;
     public Type ValueType => typeof(IReadOnlyList<T>);
     public object UntypedValue => _values;
     public int Count => _items.Count;
     public UiSymbolId? SelectedItemId => _selectedItemId;
     public UiSemanticCollectionItem GetItem(int index) => _items[index];
-    long IUiCollectionRuntimeMetadata.Revision => _revision;
-    bool IUiCollectionRuntimeMetadata.HasSupportingText => _hasSupportingText;
-    bool IUiCollectionRuntimeMetadata.TryGetIndex(UiSymbolId item, out int index)
+    public IUiSemanticCollectionSnapshot CaptureSnapshot() => _readSnapshot;
+    long IUiSemanticCollectionMetadata.Revision => _revision;
+    bool IUiSemanticCollectionMetadata.HasSupportingText => _hasSupportingText;
+    bool IUiSemanticCollectionMetadata.TryGetIndex(UiSymbolId item, out int index)
         => _indices.TryGetValue(item, out index);
     public event Action? Changed;
 
@@ -211,7 +286,10 @@ public sealed class UiSelectableCollectionState<T> :
         if (!item.IsValid) throw new ArgumentException("A stable semantic item ID is required.", nameof(item));
         if (!_ids.Contains(item)) return false;
         if (_selectedItemId == item) return true;
+        long version = checked(_version + 1);
         _selectedItemId = item;
+        _version = version;
+        _readSnapshot = new(_values, _items, _indices, _hasSupportingText, _revision, _selectedItemId, _version);
         Changed?.Invoke();
         return true;
     }
@@ -219,7 +297,10 @@ public sealed class UiSelectableCollectionState<T> :
     public bool ClearSelection()
     {
         if (_selectedItemId == null) return false;
+        long version = checked(_version + 1);
         _selectedItemId = null;
+        _version = version;
+        _readSnapshot = new(_values, _items, _indices, _hasSupportingText, _revision, version: _version);
         Changed?.Invoke();
         return true;
     }
@@ -227,20 +308,24 @@ public sealed class UiSelectableCollectionState<T> :
     public void Replace(IReadOnlyList<T> values)
     {
         (ReadOnlyCollection<T> nextValues, ReadOnlyCollection<UiSemanticCollectionItem> nextItems) =
-            UiSemanticCollectionSnapshot.Create(values, _identify, _label, _supportingText);
+            UiSemanticCollectionSnapshot.Create(values, _identify, _label, _supportingText, _icon);
         HashSet<UiSymbolId> nextIds = Ids(nextItems);
         UiSymbolId? nextSelection = _selectedItemId is { } selected && nextIds.Contains(selected)
             ? selected
             : null;
         if (UiSemanticCollectionSnapshot.Equivalent(_items, nextItems) && nextSelection == _selectedItemId)
             return;
+        long revision = checked(_revision + 1), version = checked(_version + 1);
+        nextItems = UiSemanticCollectionSnapshot.Revise(_items, _indices, nextItems, version);
         _values = nextValues;
         _items = nextItems;
         _ids = nextIds;
         _indices = UiSemanticCollectionSnapshot.Indices(_items);
         _hasSupportingText = UiSemanticCollectionSnapshot.HasSupportingText(_items);
         _selectedItemId = nextSelection;
-        _revision++;
+        _revision = revision;
+        _version = version;
+        _readSnapshot = new(_values, _items, _indices, _hasSupportingText, _revision, _selectedItemId, _version);
         Changed?.Invoke();
     }
 
@@ -256,7 +341,8 @@ internal static class UiSemanticCollectionSnapshot
         IReadOnlyList<T> values,
         Func<T, UiSymbolId> identify,
         Func<T, string>? label,
-        Func<T, string?>? supportingText)
+        Func<T, string?>? supportingText,
+        Func<T, UiSymbolId?>? icon = null)
     {
         ArgumentNullException.ThrowIfNull(values);
         ArgumentNullException.ThrowIfNull(identify);
@@ -279,7 +365,7 @@ internal static class UiSemanticCollectionSnapshot
                 display,
                 value,
                 supporting,
-                ContentVersion(display, supporting));
+                ContentVersion(display, supporting)) { Icon = icon?.Invoke(value) };
         }
         return (Array.AsReadOnly(valueSnapshot), Array.AsReadOnly(itemSnapshot));
     }
@@ -288,17 +374,31 @@ internal static class UiSemanticCollectionSnapshot
         IReadOnlyList<UiSemanticCollectionItem> left,
         IReadOnlyList<UiSemanticCollectionItem> right)
     {
+        if (ReferenceEquals(left, right)) return true;
         if (left.Count != right.Count) return false;
         for (int index = 0; index < left.Count; index++)
         {
-            if (left[index].Id != right[index].Id ||
-                !string.Equals(left[index].Label, right[index].Label, StringComparison.Ordinal) ||
-                !string.Equals(left[index].SupportingText, right[index].SupportingText, StringComparison.Ordinal) ||
-                left[index].ContentVersion != right[index].ContentVersion ||
-                !Equals(left[index].Value, right[index].Value))
-                return false;
+            if (!ItemEquivalent(left[index], right[index])) return false;
         }
         return true;
+    }
+
+    internal static bool ItemEquivalent(UiSemanticCollectionItem left, UiSemanticCollectionItem right)
+        => left.Id == right.Id && string.Equals(left.Label, right.Label, StringComparison.Ordinal)
+            && string.Equals(left.SupportingText, right.SupportingText, StringComparison.Ordinal)
+            && left.ContentVersion == right.ContentVersion && left.Icon == right.Icon && Equals(left.Value, right.Value);
+
+    internal static ReadOnlyCollection<UiSemanticCollectionItem> Revise(IReadOnlyList<UiSemanticCollectionItem> previous,
+        IReadOnlyDictionary<UiSymbolId, int> previousIndices, IReadOnlyList<UiSemanticCollectionItem> next, long version)
+    {
+        var result = new UiSemanticCollectionItem[next.Count];
+        for (int index = 0; index < next.Count; index++)
+        {
+            var item = next[index];
+            var old = previousIndices.TryGetValue(item.Id, out int oldIndex) ? previous[oldIndex] : null;
+            result[index] = old is not null && ItemEquivalent(old, item) ? old : item with { ItemRevision = version };
+        }
+        return Array.AsReadOnly(result);
     }
 
     public static IReadOnlyDictionary<UiSymbolId, int> Indices(

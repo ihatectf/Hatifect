@@ -91,6 +91,8 @@ def run(
     on_started: Callable[[int, int], None] | None = None,
     cancel_requested: Callable[[], bool] | None = None,
     on_completed: Callable[[int, list[str]], None] | None = None,
+    force_kill_requested: Callable[[], bool] | None = None,
+    on_forced_exit: Callable[[int, int, int], None] | None = None,
 ) -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     interrupted = threading.Event()
@@ -142,6 +144,8 @@ def run(
             pump.start()
             deadline = time.monotonic() + timeout_seconds
             outcome: int | None = None
+            forced = False
+            control_error: Exception | None = None
             teardown_errors: list[str] = []
             try:
                 while outcome is None:
@@ -158,6 +162,17 @@ def run(
                     if time.monotonic() >= deadline:
                         outcome = TIMEOUT_EXIT
                         break
+                    if not forced and force_kill_requested is not None:
+                        try:
+                            if force_kill_requested():
+                                error = _signal_group(process_group, signal.SIGKILL)
+                                if error:
+                                    raise RuntimeError(error)
+                                forced = True
+                        except Exception as error:
+                            control_error = error
+                            outcome = START_FAILURE_EXIT
+                            break
                     time.sleep(0.05)
             finally:
                 teardown_errors.extend(_retire_group(process_group, grace_seconds))
@@ -179,8 +194,15 @@ def run(
                     log.write(b"Owned process produced no stdout or stderr output.\n")
                 log.flush()
                 os.fsync(log.fileno())
-            if on_completed is not None:
-                on_completed(outcome, teardown_errors)
+            try:
+                if forced and on_forced_exit is not None:
+                    # Actual Popen return code, not the normalized/cancellation outcome.
+                    on_forced_exit(process.pid, process_group, process.returncode)
+            finally:
+                if on_completed is not None:
+                    on_completed(outcome, teardown_errors)
+            if control_error is not None:
+                raise control_error
             return TEARDOWN_FAILURE_EXIT if teardown_errors else outcome
     finally:
         for requested, previous in previous_handlers.items():

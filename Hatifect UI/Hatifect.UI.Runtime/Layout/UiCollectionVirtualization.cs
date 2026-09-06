@@ -20,7 +20,8 @@ internal readonly record struct UiVirtualizedItemLayout(
     UiTextOverflow SupportingOverflow,
     UiRect Clip,
     UiVisualResolution Visual,
-    bool Selected);
+    bool Selected,
+    UiRect? IconBounds = null);
 
 internal sealed record UiCollectionScrollAnchor(UiSymbolId Item, float LocalOffset);
 
@@ -99,6 +100,10 @@ internal sealed class UiCollectionViewportState
         return true;
     }
 
+    public void Reveal(UiSymbolId collection, UiSymbolId item, int index)
+        => _requests[collection] = new UiCollectionViewportRequest(
+            0, new UiCollectionScrollAnchor(item, 0), index);
+
     public void Synchronize(UiLayoutSnapshot layout)
     {
         ArgumentNullException.ThrowIfNull(layout);
@@ -106,7 +111,7 @@ internal sealed class UiCollectionViewportState
         foreach (UiCollectionLayoutWindow window in layout.CollectionWindows)
         {
             active.Add(window.Collection);
-            if (window.TotalCount == 0 || window.ScrollOffset <= 0.01f || window.Anchor == null)
+            if (window.TotalCount == 0 || window.Anchor == null)
                 _requests.Remove(window.Collection);
             else
                 _requests[window.Collection] = new UiCollectionViewportRequest(
@@ -156,7 +161,9 @@ internal sealed class UiCollectionVirtualizer
 
         int count = collection.Count;
         int columns = Columns(collection.Recipe, viewport.Width, preferredItemWidth, count);
-        return collection.Recipe.IsAdaptive
+        CollectionState state = StateFor(collection);
+        request = state.ResolveTransition(collection, request);
+        UiCollectionLayoutWindow window = collection.Recipe.IsAdaptive
             ? MaterializeAdaptive(
                 collection,
                 viewport,
@@ -174,8 +181,10 @@ internal sealed class UiCollectionVirtualizer
                 itemExtent,
                 lineHeight,
                 columns,
-                request.RequestedOffset,
+                request,
                 measurementContext);
+        state.Remember(collection);
+        return window;
     }
 
     public void Synchronize(IEnumerable<UiSymbolId> activeCollections)
@@ -192,12 +201,20 @@ internal sealed class UiCollectionVirtualizer
         float itemExtent,
         float lineHeight,
         int columns,
-        float requestedOffset,
+        UiCollectionViewportRequest request,
         UiSceneMeasurementContext measurementContext)
     {
         int count = collection.Count;
         int totalRows = Rows(count, columns);
         float totalExtent = totalRows * itemExtent;
+        float requestedOffset = request.RequestedOffset;
+        int retainedIndex = -1;
+        if (request.Anchor is { } stable &&
+            collection.TryGetIndex(stable.Item, request.AnchorIndexHint, out int stableIndex))
+        {
+            requestedOffset = stableIndex / columns * itemExtent + stable.LocalOffset;
+            retainedIndex = stableIndex;
+        }
         float offset = ClampOffset(requestedOffset, totalExtent, viewport.Height);
         if (count == 0 || viewport.Height <= 0)
             return Empty(collection.Id, count, itemExtent, columns, totalExtent, offset);
@@ -223,7 +240,7 @@ internal sealed class UiCollectionVirtualizer
             measureExactly: false,
             measurementContext,
             typography: null);
-        int anchorIndex = Math.Min(count - 1, firstVisibleRow * columns);
+        int anchorIndex = retainedIndex >= 0 ? retainedIndex : Math.Min(count - 1, firstVisibleRow * columns);
         UiSemanticCollectionItem anchorItem = collection.ItemAt(anchorIndex);
         return new UiCollectionLayoutWindow(
             collection.Id,
@@ -232,7 +249,7 @@ internal sealed class UiCollectionVirtualizer
             columns,
             totalExtent,
             offset,
-            new UiCollectionScrollAnchor(anchorItem.Id, offset - firstVisibleRow * itemExtent),
+            retainedIndex >= 0 ? request.Anchor : new UiCollectionScrollAnchor(anchorItem.Id, offset - firstVisibleRow * itemExtent),
             anchorIndex,
             items);
     }
@@ -381,6 +398,7 @@ internal sealed class UiCollectionVirtualizer
         var key = new MeasurementKey(
             item.Id,
             item.ContentVersion,
+            item.Icon != null,
             itemWidth,
             context.Profile,
             context.Locale,
@@ -391,7 +409,7 @@ internal sealed class UiCollectionVirtualizer
         if (state.Measurements.TryGetValue(key, out MeasuredItem measured)) return measured;
 
         RecipeMetrics recipe = Metrics(collection.Recipe, lineHeight, context.Profile, context.Locale);
-        float contentWidth = Math.Max(1, itemWidth - recipe.HorizontalPadding * 2);
+        float contentWidth = Math.Max(1, itemWidth - recipe.HorizontalPadding * 2 - (item.Icon != null ? lineHeight + 4 : 0));
         UiSize label = _textMetrics.Measure(item.Label, typography, contentWidth, UiTextOverflow.Ellipsis);
         float labelHeight = Math.Max(lineHeight, label.Height);
         float supportingHeight = 0;
@@ -462,10 +480,13 @@ internal sealed class UiCollectionVirtualizer
                     lineHeight,
                     typography!,
                     measurementContext);
+            float iconSpace = item.Icon != null ? lineHeight + 4 : 0;
+            UiRect? iconBounds = item.Icon != null ? new UiRect(bounds.X + content.HorizontalPadding,
+                bounds.Y + content.VerticalPadding, lineHeight, lineHeight) : null;
             var labelBounds = new UiRect(
-                bounds.X + content.HorizontalPadding,
+                bounds.X + content.HorizontalPadding + iconSpace,
                 bounds.Y + content.VerticalPadding,
-                Math.Max(0, bounds.Width - content.HorizontalPadding * 2),
+                Math.Max(0, bounds.Width - content.HorizontalPadding * 2 - iconSpace),
                 Math.Min(content.LabelHeight, Math.Max(0, bounds.Height - content.VerticalPadding * 2)));
             UiRect? supportingBounds = content.SupportingHeight > 0
                 ? new UiRect(
@@ -487,7 +508,7 @@ internal sealed class UiCollectionVirtualizer
                 collection.Recipe.IsAdaptive ? UiTextOverflow.Wrap : UiTextOverflow.Ellipsis,
                 UiRect.Intersect(clip, bounds),
                 collection.VisualFor(node, item.Id),
-                collection.IsSelected(item.Id));
+                collection.IsSelected(item.Id), iconBounds);
         }
         return items;
     }
@@ -625,6 +646,7 @@ internal sealed class UiCollectionVirtualizer
     private readonly record struct MeasurementKey(
         UiSymbolId Item,
         long ContentVersion,
+        bool HasIcon,
         float Width,
         UiSymbolId Profile,
         string Locale,
@@ -664,6 +686,9 @@ internal sealed class UiCollectionVirtualizer
         private object? _source;
         private long _sourceRevision;
         private HeightScope? _scope;
+        private UiCollectionSceneNode? _previous;
+        private UiCollectionViewportRequest? _removedAnchorRequest;
+        private UiCollectionViewportRequest? _fallbackRequest;
 
         public CollectionState(int measurementCapacity, int exactRowCapacity)
         {
@@ -675,6 +700,47 @@ internal sealed class UiCollectionVirtualizer
         public UiBoundedCache<MeasurementKey, MeasuredItem> Measurements { get; }
         public HashSet<UiSymbolId> MaterializedIds { get; } = new();
         public AdaptiveRowHeightIndex Heights { get; private set; }
+
+        public UiCollectionViewportRequest ResolveTransition(
+            UiCollectionSceneNode collection, UiCollectionViewportRequest request)
+        {
+            bool changed = _previous != null &&
+                (!ReferenceEquals(_previous.SourceIdentity, collection.SourceIdentity) ||
+                 _previous.SourceRevision != collection.SourceRevision || _previous.Count != collection.Count);
+            if (!changed)
+                return request == _removedAnchorRequest ? _fallbackRequest! : request;
+
+            _removedAnchorRequest = null;
+            _fallbackRequest = null;
+            if (collection.Count == 0 || request.Anchor is not { } anchor ||
+                collection.TryGetIndex(anchor.Item, request.AnchorIndexHint, out _))
+                return request;
+
+            // Only an immutable old capture can prove predecessor order after its owner changes.
+            // Walk at most one old snapshot on a revision transition, never during steady layout.
+            if (_previous is { HasCapturedItems: true } previous &&
+                previous.TryGetIndex(anchor.Item, request.AnchorIndexHint, out int oldIndex))
+            {
+                for (int index = oldIndex - 1; index >= 0; index--)
+                {
+                    UiSymbolId candidate = previous.ItemAt(index).Id;
+                    if (collection.TryGetIndex(candidate, -1, out int nextIndex))
+                        return RememberFallback(request, candidate, nextIndex, anchor.LocalOffset);
+                }
+            }
+            return RememberFallback(request, collection.ItemAt(0).Id, 0, 0);
+        }
+
+        public void Remember(UiCollectionSceneNode collection) => _previous = collection;
+
+        private UiCollectionViewportRequest RememberFallback(
+            UiCollectionViewportRequest request, UiSymbolId item, int index, float localOffset)
+        {
+            _removedAnchorRequest = request;
+            _fallbackRequest = new UiCollectionViewportRequest(
+                request.RequestedOffset, new UiCollectionScrollAnchor(item, localOffset), index);
+            return _fallbackRequest;
+        }
 
         public void Prepare(UiCollectionSceneNode collection, HeightScope scope)
         {

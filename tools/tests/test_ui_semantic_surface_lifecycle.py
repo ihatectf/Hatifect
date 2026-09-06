@@ -90,7 +90,7 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
         source = OVERLAY_SESSION.read_text(encoding="utf-8")
         route = _method_body(source, "private bool CanRouteInput()")
         retire = _method_body(source, "private void RetireLostMenuContext()")
-        hide = _method_body(source, "private void HideCore(bool notifyClosed)")
+        hide = _method_body(source, "private void HideCore(bool notifyClosed, bool restoreKeyboard = true)")
 
         self.assertRegex(
             route,
@@ -103,7 +103,7 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
             retire,
             re.compile(
                 r"_renderLayer == UiSemanticStardewOverlayRenderLayer\.ActiveMenu"
-                r"\)\s*\{\s*HideCore\(notifyClosed: true\);\s*return;\s*\}"
+                r"\)\s*\{\s*HideCore\(notifyClosed: true, restoreKeyboard: false\);\s*return;\s*\}"
             ),
         )
         self.assertNotIn("Game1.activeClickableMenu =", retire)
@@ -162,8 +162,10 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
         public_dispose = _method_body(source, "public void Dispose()")
         retire = _method_body(source, "internal void Retire()")
         dispose = _method_body(source, "private void DisposeCore()")
-        hide = _method_body(source, "private void HideCore(bool notifyClosed)")
-        unsubscribe = _method_body(source, "private void UnsubscribeEvents()")
+        hide = _method_body(source, "private void HideCore(bool notifyClosed, bool restoreKeyboard = true)")
+        binding = (ROOT / "Hatifect UI/Hatifect.UI.Stardew/Semantic/UiSemanticOverlayEventBinding.cs").read_text(encoding="utf-8")
+        unsubscribe = _method_body(binding, "public void Dispose()")
+        detach = _method_body(binding, "internal void Detach()")
 
         for body in (public_dispose, retire):
             self.assertLess(body.index("_retireRequested = true;"), body.index("DisposeCore();"))
@@ -179,12 +181,10 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
             hide.index('throw new AggregateException("Semantic Stardew overlay hide failed."'),
             hide.index("Visible = false;"),
         )
-        self.assertLess(
-            unsubscribe.index(
-                'throw new AggregateException("Semantic Stardew overlay event teardown failed."'
-            ),
-            unsubscribe.index("_subscribed = false;"),
-        )
+        self.assertIn("_events.Dispose();", hide)
+        self.assertLess(unsubscribe.index("_enabled = false;"), unsubscribe.index("subscription.Detach();"))
+        self.assertIn('throw new AggregateException("Semantic Stardew overlay event teardown failed."', unsubscribe)
+        self.assertLess(detach.index("_remove();"), detach.index("Attached = false;"))
 
     def test_closed_callback_cannot_reentrantly_show_same_session(self) -> None:
         overlay_source = OVERLAY_SESSION.read_text(encoding="utf-8")

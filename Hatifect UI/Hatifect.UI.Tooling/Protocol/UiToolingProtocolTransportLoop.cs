@@ -42,6 +42,7 @@ internal static class UiToolingProtocolTransportLoop
         if (session.ExitRequested)
             return new UiToolingProtocolLoopResult(UiToolingProtocolTermination.ExitRequested, 0);
 
+        session.ConfigurePayloadLimit(maximumPayloadBytes);
         var dispatcher = new UiLspJsonRpcDispatcher(messages, session.HandleAsync);
         int processed = 0;
         while (!session.ExitRequested)

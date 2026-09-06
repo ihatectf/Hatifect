@@ -55,6 +55,9 @@ internal sealed class UiSceneReconciler
             UiPropertyEffects nodeEffects = newNode.Visual.InvalidationFrom(oldNode.Node.Visual);
             if (!string.Equals(UiSceneLayoutEngine.Text(oldNode.Node), UiSceneLayoutEngine.Text(newNode), StringComparison.Ordinal))
                 nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
+            if (oldNode.Node is UiRouteButtonSceneNode oldRoute && newNode is UiRouteButtonSceneNode newRoute
+                && oldRoute.Icon != newRoute.Icon)
+                nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
             if (oldNode.Node is UiCollectionSceneNode oldCollection &&
                 newNode is UiCollectionSceneNode newCollection)
             {

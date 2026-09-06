@@ -1,46 +1,61 @@
 using System;
 using Microsoft.Xna.Framework.Input;
+using StardewModdingAPI;
 using StardewValley;
 
 namespace Hatifect.UI.Stardew.Semantic;
 
-/// <summary>Shared exact-restore lease over Stardew's borrowed keyboard subscriber slot.</summary>
+/// <summary>Exact-restore lease over the dispatcher captured at acquisition, even during foreign-screen cleanup.</summary>
 internal sealed class UiSemanticKeyboardSubscriberLease : IKeyboardSubscriber, IDisposable
 {
     private readonly Action<string> _textInput;
     private readonly Action<Keys> _specialInput;
+    private readonly Func<(Func<IKeyboardSubscriber?> Read, Action<IKeyboardSubscriber?> Write)> _capture;
+    private readonly Func<bool> _isCurrentScreen;
+    private Func<IKeyboardSubscriber?>? _read;
+    private Action<IKeyboardSubscriber?>? _write;
     private IKeyboardSubscriber? _previous;
     private bool _owns;
 
     public UiSemanticKeyboardSubscriberLease(Action<string> textInput, Action<Keys> specialInput)
+        : this(textInput, specialInput, CaptureDispatcher, ScreenGuard(Context.ScreenId)) { }
+
+    internal UiSemanticKeyboardSubscriberLease(
+        Action<string> textInput, Action<Keys> specialInput,
+        Func<(Func<IKeyboardSubscriber?> Read, Action<IKeyboardSubscriber?> Write)> capture,
+        Func<bool> isCurrentScreen)
     {
         _textInput = textInput ?? throw new ArgumentNullException(nameof(textInput));
         _specialInput = specialInput ?? throw new ArgumentNullException(nameof(specialInput));
+        _capture = capture ?? throw new ArgumentNullException(nameof(capture));
+        _isCurrentScreen = isCurrentScreen ?? throw new ArgumentNullException(nameof(isCurrentScreen));
     }
 
     public bool Selected { get; set; }
-    public bool OwnsSubscriber => _owns;
+    public bool OwnsSubscriber => _owns && ReferenceEquals(_read!(), this);
 
     public void Acquire()
     {
-        IKeyboardSubscriber? current = Game1.keyboardDispatcher.Subscriber;
-        if (_owns && ReferenceEquals(current, this)) return;
-        if (_owns)
-        {
-            _owns = false;
-            _previous = null;
-        }
-        _previous = current;
-        Game1.keyboardDispatcher.Subscriber = this;
+        if (!_isCurrentScreen())
+            throw new InvalidOperationException("Keyboard input can only be acquired on its owning screen.");
+        if (_owns && ReferenceEquals(_read!(), this)) return;
+        Release();
+        (_read, _write) = _capture();
+        _previous = _read();
+        // Preserve the captured slot if assignment throws after changing its subscriber.
         _owns = true;
+        _write(this);
     }
 
-    public void Release()
+    public void Release(bool restorePrevious = true)
     {
         if (!_owns) return;
-        if (ReferenceEquals(Game1.keyboardDispatcher.Subscriber, this))
-            Game1.keyboardDispatcher.Subscriber = _previous;
+        // A lost menu can never regain focus, including a later retry of a failed release.
+        if (!restorePrevious) _previous = null;
+        if (ReferenceEquals(_read!(), this)) _write!(_previous);
         _previous = null;
+        _read = null;
+        _write = null;
         _owns = false;
     }
 
@@ -48,18 +63,26 @@ internal sealed class UiSemanticKeyboardSubscriberLease : IKeyboardSubscriber, I
 
     public void RecieveTextInput(char inputChar)
     {
-        if (Selected) _textInput(inputChar.ToString());
+        if (CanReceive) _textInput(inputChar.ToString());
     }
 
     public void RecieveTextInput(string text)
     {
-        if (Selected) _textInput(text);
+        if (CanReceive) _textInput(text);
     }
 
     public void RecieveCommandInput(char command) { }
 
     public void RecieveSpecialInput(Keys key)
     {
-        if (Selected) _specialInput(key);
+        if (CanReceive) _specialInput(key);
+    }
+
+    private bool CanReceive => Selected && _isCurrentScreen() && OwnsSubscriber;
+    private static Func<bool> ScreenGuard(int screen) => () => Context.ScreenId == screen;
+    private static (Func<IKeyboardSubscriber?>, Action<IKeyboardSubscriber?>) CaptureDispatcher()
+    {
+        var dispatcher = Game1.keyboardDispatcher;
+        return (() => dispatcher.Subscriber, value => dispatcher.Subscriber = value);
     }
 }

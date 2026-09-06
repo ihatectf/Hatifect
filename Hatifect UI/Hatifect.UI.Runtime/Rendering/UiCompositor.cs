@@ -53,8 +53,9 @@ internal sealed class UiCompositor
     {
         ArgumentNullException.ThrowIfNull(frame);
         ArgumentNullException.ThrowIfNull(backend);
-        foreach (UiRenderPrimitive primitive in frame.Primitives)
+        for (int index = 0; index < frame.Primitives.Count; index++)
         {
+            UiRenderPrimitive primitive = frame.Primitives[index];
             switch (primitive)
             {
                 case UiSurfacePrimitive surface:
@@ -124,6 +125,16 @@ internal sealed class UiSceneRenderPlanner
                 UiRect textBounds = entry.ContentBounds;
                 UiRect textClip = entry.Clip;
                 UiTextOverflow overflow = entry.Overflow;
+                if (node is UiRouteButtonSceneNode { Icon: { } icon } route)
+                {
+                    float size = Math.Min(UiRouteButtonSceneNode.IconExtent, textBounds.Height);
+                    var iconBounds = new UiRect(textBounds.X, textBounds.Y + (textBounds.Height - size) / 2, size, size);
+                    primitives.Add(new UiSurfacePrimitive(node.Id, iconBounds, textClip,
+                        UiSurface.Texture(icon, new UiColor(255, 255, 255), pixelSnap: true),
+                        new UiCornerRadius(0), null, null, opacity, transform));
+                    textBounds = new UiRect(textBounds.X + route.IconSpace, textBounds.Y,
+                        Math.Max(0, textBounds.Width - route.IconSpace), textBounds.Height);
+                }
                 UiTextEditingSnapshot? editing = node is UiTextInputSceneNode &&
                     interaction.TextEditing is { } candidate && candidate.Input == node.Id
                         ? candidate
@@ -201,6 +212,10 @@ internal sealed class UiSceneRenderPlanner
                             itemOpacity,
                             itemTransform));
                     }
+                    if (item.Item.Icon is { } icon && item.IconBounds is { } iconBounds)
+                        primitives.Add(new UiSurfacePrimitive(item.Node, iconBounds, item.Clip,
+                            UiSurface.Texture(icon, new UiColor(255, 255, 255), pixelSnap: true),
+                            new UiCornerRadius(0), null, null, itemOpacity, itemTransform));
                     if (!TryValue(item.Visual, "foreground", out UiColor itemForeground) ||
                         !TryValue(item.Visual, "typography", out UiTypography itemTypography))
                         continue;

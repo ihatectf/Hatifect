@@ -57,7 +57,10 @@ internal sealed record UiPortalDispatch(
     bool Consumed,
     UiSymbolId? Portal,
     UiInteractionUpdate? Interaction,
-    bool PortalClosed = false);
+    bool PortalClosed = false)
+{
+    public bool RequestsRootDismissal => !Consumed || (Portal == null && Interaction?.DismissRequested == true);
+}
 
 internal sealed record UiPortalScrollDispatch(
     bool Consumed,
@@ -105,6 +108,11 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
     private readonly IUiPlatformBridge _platform;
     private readonly List<PortalEntry> _portals = new();
     private long _nextGeneration;
+    private bool _active = true;
+
+    // An action can retire its host while dispatch is still unwinding. Stop post-action
+    // composition before its owner and platform resources are released.
+    internal void Deactivate() => _active = false;
 
     public UiPortalHostSession(
         UiScene root,
@@ -164,7 +172,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
             composeInteraction: request.ComposeInteraction);
         if (request.Scene.Root.Policy.Focus is UiFocusScopePolicy.Contained or UiFocusScopePolicy.Trapped)
         {
-            UiInteractionUpdate focus = runtime.Interactions.MoveFocus(UiNavigationDirection.Next);
+            UiInteractionUpdate focus = runtime.MoveFocus(UiNavigationDirection.Next);
             Refresh(runtime, focus);
         }
         _portals.Add(new PortalEntry(request, runtime, generation));
@@ -282,7 +290,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
     }
 
     public UiPortalDispatch MoveFocus(UiNavigationDirection direction)
-        => DispatchToKeyboardOwner(runtime => runtime.Interactions.MoveFocus(direction));
+        => DispatchToKeyboardOwner(runtime => runtime.MoveFocus(direction));
 
     public UiPortalDispatch Submit()
         => DispatchToKeyboardOwner(runtime => runtime.Interactions.Submit());
@@ -361,8 +369,9 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
     private UiHostRuntimeSession KeyboardOwner()
         => _portals.Count == 0 ? Root : _portals[^1].Runtime;
 
-    private static void Refresh(UiHostRuntimeSession runtime, UiInteractionUpdate update)
+    private void Refresh(UiHostRuntimeSession runtime, UiInteractionUpdate update)
     {
+        if (!_active) return;
         if (update.StateChanged || update.TextChanged || update.ActionInvoked)
             runtime.RefreshInteractionVisuals(update.TextChanged);
         if (update.TextEditingChanged && !update.TextChanged)

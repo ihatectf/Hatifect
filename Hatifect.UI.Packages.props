@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <HatifectUiPackageVersion>1.0.0-alpha.29</HatifectUiPackageVersion>
+    <HatifectUiPackageVersion>1.0.0-alpha.34</HatifectUiPackageVersion>
     <HatifectUiLocalFeed Condition="'$(HatifectUiLocalFeed)' == ''">$(MSBuildThisFileDirectory)artifacts/ui-packages</HatifectUiLocalFeed>
   </PropertyGroup>
 

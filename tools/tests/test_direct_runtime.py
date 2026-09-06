@@ -20,6 +20,26 @@ SPEC.loader.exec_module(DIRECT_RUNTIME)
 
 
 class DirectRuntimeTests(unittest.TestCase):
+    def test_canonical_flow_save_is_cleaned_on_launch_failure_with_same_scenario_authority(self) -> None:
+        with _RequestFixture() as fixture:
+            fixture.request['scenarioId'] = 'flow.chest.roundtrip'
+            isolated = Path(fixture.request['isolatedRoot'])
+            path = isolated / ('HatifectHarness' + fixture.request['requestId'].replace('-', '') + '_4242424242')
+            path.mkdir()
+            fixture.request['savePath'] = str(path)
+            fixture.metadata['saveProvisionerExecutable'] = 'save.py'
+            provisioner = mock.Mock()
+            provisioner.validate_fixture.return_value = ({'runtimeId': 'runtime'}, None)
+            provisioner.prepare_working_copy.return_value = path
+            provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
+            with mock.patch.object(DIRECT_RUNTIME, '_load_module', return_value=provisioner):
+                with self.assertRaisesRegex(OSError, 'launch failed'):
+                    with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
+                        raise OSError('launch failed')
+            self.assertFalse(path.exists())
+            provisioner.prepare_flow_secondary.assert_not_called()
+            provisioner.cleanup_working_copy.assert_called_once_with(isolated, path, 'runtime', fixture.request['requestId'], 'flow.chest.roundtrip', role='primary')
+
     def test_flow_lifecycle_report_has_fixed_module_ownership(self) -> None:
         isolated = Path("/isolated")
         self.assertEqual(
@@ -30,6 +50,8 @@ class DirectRuntimeTests(unittest.TestCase):
             DIRECT_RUNTIME._acceptance_report_source(isolated, "flow.save.isolation"),
             isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json",
         )
+        self.assertEqual(DIRECT_RUNTIME._acceptance_report_source(isolated, 'flow.chest.roundtrip'),
+                         isolated / 'Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json')
         for scenario in ("runtime.boot", "semantic.terminal", "flow.route.unknown", "../escape"):
             with self.subTest(scenario=scenario):
                 self.assertEqual(
@@ -48,12 +70,13 @@ class DirectRuntimeTests(unittest.TestCase):
             provisioner.validate_fixture.return_value = ({"runtimeId": "runtime"}, None)
             provisioner.prepare_working_copy.return_value = primary
             provisioner.prepare_flow_secondary.side_effect = ValueError("foreign secondary collision")
-            provisioner.cleanup_working_copy.side_effect = lambda *args: args[1].rmdir()
+            provisioner._working_name.return_value = "secondary"
+            provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
             with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
                 with self.assertRaisesRegex(ValueError, "foreign secondary collision"):
                     DIRECT_RUNTIME._prepare_request_saves(fixture.request, fixture.metadata)
             self.assertFalse(primary.exists())
-            provisioner.cleanup_working_copy.assert_called_once_with(Path(fixture.request["isolatedRoot"]), primary, "runtime", fixture.request["requestId"])
+            provisioner.cleanup_working_copy.assert_called_once_with(Path(fixture.request["isolatedRoot"]), primary, "runtime", fixture.request["requestId"], 'flow.save.isolation', role='primary')
 
     def test_prepared_flow_copies_are_both_cleaned_on_launch_exception(self) -> None:
         with _RequestFixture() as fixture:
@@ -68,24 +91,55 @@ class DirectRuntimeTests(unittest.TestCase):
             provisioner.validate_fixture.return_value = ({"runtimeId": "runtime"}, None)
             provisioner.prepare_working_copy.return_value = primary
             provisioner.prepare_flow_secondary.return_value = secondary
+            provisioner._working_name.return_value = "secondary"
             provisioner.flow_secondary_run_id.return_value = "secondary-id"
-            provisioner.cleanup_working_copy.side_effect = lambda *args: args[1].rmdir()
+            provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
             with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
                 with self.assertRaisesRegex(OSError, "launch failed"):
                     with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
                         raise OSError("launch failed")
             self.assertFalse(primary.exists())
             self.assertFalse(secondary.exists())
-            self.assertEqual(provisioner.cleanup_working_copy.call_args_list, [mock.call(isolated, primary, "runtime", fixture.request["requestId"]), mock.call(isolated, secondary, "runtime", "secondary-id")])
+            self.assertEqual(provisioner.cleanup_working_copy.call_args_list, [mock.call(isolated, primary, "runtime", fixture.request["requestId"], 'flow.save.isolation', role='primary'), mock.call(isolated, secondary, "runtime", "secondary-id", 'flow.save.isolation', role='primary')])
+
+    def test_production_isolation_cleanup_retains_distinct_derived_copy_roles(self) -> None:
+        with _RequestFixture() as fixture:
+            fixture.request["scenarioId"] = "flow.chest.isolation"
+            isolated = Path(fixture.request["isolatedRoot"])
+            primary, secondary = isolated / "primary", isolated / "secondary"
+            primary.mkdir()
+            secondary.mkdir()
+            fixture.request["savePath"] = str(primary)
+            fixture.metadata["saveProvisionerExecutable"] = "save.py"
+            provisioner = mock.Mock()
+            provisioner.validate_fixture.return_value = ({"runtimeId": "runtime"}, None)
+            provisioner.prepare_working_copy.return_value = primary
+            provisioner.prepare_flow_secondary.return_value = secondary
+            provisioner.flow_secondary_run_id.return_value = "secondary-id"
+            provisioner._working_name.return_value = "secondary"
+            provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
+            expected = [(primary, fixture.request["requestId"], "primary"), (secondary, "secondary-id", "secondary")]
+            self.assertEqual(DIRECT_RUNTIME._request_save_copies(fixture.request, provisioner), expected)
+            with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
+                with self.assertRaisesRegex(OSError, "launch failed"):
+                    with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
+                        raise OSError("launch failed")
+            provisioner.prepare_flow_secondary.assert_called_once_with(isolated, Path(fixture.metadata["smapiPath"]),
+                                                                       fixture.request["requestId"], "flow.chest.isolation")
+            self.assertEqual(provisioner.cleanup_working_copy.call_args_list, [
+                mock.call(isolated, primary, "runtime", fixture.request["requestId"], "flow.chest.isolation", role="primary"),
+                mock.call(isolated, secondary, "runtime", "secondary-id", "flow.chest.isolation", role="secondary")])
+            self.assertFalse(primary.exists())
+            self.assertFalse(secondary.exists())
 
     def test_cleanup_attempts_both_owned_copies_after_first_failure(self) -> None:
         provisioner = mock.Mock()
         provisioner.SaveProvisioningError = lambda code, message: ValueError(message)
         provisioner.cleanup_working_copy.side_effect = [OSError("first locked"), None]
-        copies = [(Path("/isolated/A"), "A"), (Path("/isolated/B"), "B")]
+        copies = [(Path("/isolated/A"), "A", "primary"), (Path("/isolated/B"), "B", "primary")]
         with self.assertRaisesRegex(ValueError, "A: first locked"):
             DIRECT_RUNTIME._cleanup_owned_copies(provisioner, Path("/isolated"), "runtime", copies)
-        self.assertEqual(provisioner.cleanup_working_copy.call_args_list, [mock.call(Path("/isolated"), copies[0][0], "runtime", "A"), mock.call(Path("/isolated"), copies[1][0], "runtime", "B")])
+        self.assertEqual(provisioner.cleanup_working_copy.call_args_list, [mock.call(Path("/isolated"), copies[0][0], "runtime", "A", '', role='primary'), mock.call(Path("/isolated"), copies[1][0], "runtime", "B", '', role='primary')])
 
     def test_other_scenarios_never_prepare_secondary_copy(self) -> None:
         with _RequestFixture() as fixture:
@@ -97,7 +151,7 @@ class DirectRuntimeTests(unittest.TestCase):
             with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
                 prepared = DIRECT_RUNTIME._prepare_request_saves(fixture.request, fixture.metadata)
             provisioner.prepare_flow_secondary.assert_not_called()
-            self.assertEqual(prepared[2], [(Path(fixture.request["savePath"]), fixture.request["requestId"])])
+            self.assertEqual(prepared[2], [(Path(fixture.request["savePath"]), fixture.request["requestId"], "primary")])
 
     def test_checked_in_protocol_schemas_match_runtime_field_sets(self) -> None:
         schema_root = ROOT / "dev" / "Hatifect.TestHarness" / "schemas"

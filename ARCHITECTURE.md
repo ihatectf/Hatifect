@@ -9,6 +9,7 @@ flowchart LR
     Persistence[Flowline Persistence] --> Flow[Flowline Core]
     FlowHost[Flowline Stardew host] --> Flow
     FlowHost --> Persistence
+    FlowHost --> FlowView
     FlowView[Flowline semantic experience] --> Flow
     FlowView --> Experience[UI Experience]
     CA[CA Overlay adapter] --> CAView[CA semantic experience]
@@ -29,6 +30,10 @@ Consumer задаёт смысл, состояние, команды и возм
 
 Публичная граница игрового consumer — `IUiSemanticSurfaceApi` v1 в `Hatifect.UI.Experience`. Её текущий исходный контракт сохранён в `Hatifect UI/PUBLIC_API_BASELINE.json`; изменение требует явного review совместимости. Runtime Terminal hosts являются частью текущего семантического framework.
 
+`UiSemanticGraph` и `UiDataType` принадлежат Semantics: immutable identity/alias/label, nominal types/nullability, capabilities, projection inputs и семь relation kinds проверяются до activation. Experience связывает этот контракт с CLR sources и существующими action instances. `Sources` содержит все наблюдаемые источники, а `Elements` — только явно предъявленные planner элементы; auxiliary selection/filter/action metadata не создаёт виджет. Tooling сохраняет graph в schema v2 без зависимости от Experience и продолжает строгий v1 import/export для canonical legacy context. Runtime использует прежние planner/scene/host, а visual role разрешается по alias независимо от локализованного label. Graph не исполняет доменную projection; async lifecycle относится к U03.
+
+`UiPublication` в Experience хранит один committed набор typed sources. Consumer подготавливает batch, framework проверяет его и заменяет immutable view до notifications. Capture сохраняет source versions, collection order/selection и lookup; Runtime захватывает publication до построения сцены, включая nested form inputs. Selection requests продолжают обращаться к owning source, а draw/layout читают захваченные значения. Collection deltas ограничены 128 операциями и 64 retained batches; при пропущенной истории доступен полный Reset. CA публикует mode/category/status/handoff и обе collections атомарно, а request facades проверяют lifecycle/reentry до provider effects. Legacy UiState/collections сохраняют прежние setters и получают монотонные версии; их отдельные notifications не становятся общей транзакцией. Flow ParcelExperience использует ту же publication для backing snapshot и всех связанных полей; command result публикуется вместе с моделью на следующем Pump. NetworkExperience атомарно публикует полный read model, history/details, route/recovery, cached inventory и validation через request facades. Его supplementary reads проверяются по session/revision/state и notification epoch; pending ввод ограничен последним значением каждого из пяти полей. Runtime сохраняет focused item по stable ID вне viewport; удаление переносит focus по прежнему индексу, пустая selectable collection получает положительный focusable container, refill возвращает focus на первый item. Pointer press не переносится на замену. Uniform/adaptive scroll сохраняет stable anchor и local offset; удаление использует ближайшего surviving predecessor из одного retained immutable capture либо первый новый item. Явная navigation раскрывает logical target, passive wheel не возвращает focus в viewport. Поиск удалённого predecessor выполняется только на revision transition; draw использует готовый frame. Полный U02 остаётся незавершённым: measurements выявили повторную подготовку всей коллекции даже для одной delta, и этот update path требует оптимизации.
+
 CA Overlay получает UI через NuGet packages с точной версией из `Hatifect.UI.Packages.props`. `Hatifect.UI.Packages.json` задаёт состав и зависимости. Локальная проверка создаёт пакеты из текущих исходников, а проверка изоляции собирает consumer в каталоге без исходников UI. UI runtime DLL поставляются одним модулем UI; адаптер не распространяет собственные копии.
 
 ## Flowline
@@ -37,13 +42,15 @@ CA Overlay получает UI через NuGet packages с точной вер�
 
 Сохранены текущие десять инкрементов Flowline: модель, очереди и операции, deterministic execution с fake provider, восстановление и изоляция сейвов. Существующие версии envelope относятся к этой реализации и остаются частью совместимости persistence.
 
-`Hatifect.Flow.UI.Semantic` — отдельный read-only `ParcelExperience`. Он собирается в общем графе, но ещё не подключён к игровому host и не включён в runtime-пакет. Реальные inventory adapters, production transport session, multiplayer и полноценный UI управления перевозками требуют дальнейшей реализации.
+`Hatifect.Flow.UI.Semantic` содержит live `ParcelExperience` и владеет opaque surface session из UI Experience. Host открывает его над существующим игровым меню. Первый реальный адаптер поддерживает целые стопки и выбранное количество обычных объектов, а также обычные/большие сундуки одиночного игрока. NetworkExperience использует IFlowNetworkApplication для станций, связей, предпросмотра маршрутов, отправки, диагностики и страниц истории. Host владеет захваченным физическим target и проверкой fingerprint слота; Core остаётся независимым от игры. Multiplayer отключён и не входит в первый MVP утверждённой roadmap.
+
+`FlowGameSession` владеет игровыми item payloads и записывает station bindings + Core checkpoint + payloads в один aggregate через SMAPI WriteSaveData на Saving. Физические inventories сохраняются в том же поколении игрового сейва. `SaveBoundCargoPort` хранит логическую custody/journal проекцию, не восстанавливает историческое содержимое сундука. Неоднозначный physical callback сохраняет recovery fence и запрещает автоматический replay после reload. Независимый DurableFlowSession с fake-provider файлами остаётся отдельным диагностическим механизмом.
 
 ## Как развивать системы согласованно
 
 Изменение семантики проходит одним PR через owning layer, affected consumer и их контрактные тесты. Новая возможность UI становится доступной consumer через обновлённый общий контракт или пакет. Consumer явно использует эту возможность; Git не переносит код между подсистемами автоматически.
 
-Для связи Flowline с UI следующий шаг — явный application boundary: immutable snapshots для чтения, типизированные команды для действий и уведомление о новой revision состояния. UI перечитывает snapshot после revision; renderer не читает persistence и не изменяет Core напрямую. Домен и persistence сохраняют независимость от UI. Это план следующего этапа, а не уже работающий механизм синхронизации.
+Связь Flowline с UI реализует публичный `IFlowApplication` в Core: immutable cached snapshots, типизированные команды с session ID/expected revision и уведомления после изменения проекции. UI объединяет уведомления и перечитывает snapshot один раз за pump; renderer не читает persistence и не изменяет Core напрямую. Host обновляет проекцию после обработки операций, а не на пустых тиках; закрытые сессии отзывают команды. Общий owner-operation guard блокирует команды из inventory callbacks до первого побочного эффекта. Пауза/recovery сохраняют видимость груза и отключают обычные действия; reconciliation с Missing receipt запрещён на границе реального save host.
 
 Предлагаемая модернизация UI и последовательность интеграции описаны в [roadmap](docs/ROADMAP.md). Минимальный semantic-v2 и первый Flow consumer развиваются согласованно; будущие Quick/View/Exact authoring API, generations и transactional reload сохраняют направление к одному IR/runtime. Конкретная совместимость публичного API и границы Exact требуют решения в соответствующих задачах; roadmap не меняет действующие контракты.
 
@@ -53,4 +60,4 @@ CA Overlay получает UI через NuGet packages с точной вер�
 
 Общая логика CI и локальных проверок находится в `tools/validation.py`; GitHub Actions вызывает её. Проверяются замкнутость графа, направление зависимостей, отсутствие старых подсистем, публичная UI-граница, Python tooling tests и все выбранные .NET suites. Успешный exit code без выполненных тестов не принимается.
 
-`Hatifect.Release.json` задаёт три runtime-модуля: UI, Flowline, CA Overlay. Пакет содержит 13 DLL: 8 UI, 3 Flowline и 2 CA. Сборка архива проверяет состав, manifest, зависимости и единственного владельца UI DLL. Это не публикация и не runtime acceptance.
+`Hatifect.Release.json` задаёт три runtime-модуля: UI, Flowline, CA Overlay. Пакет содержит 14 DLL: 8 UI, 4 Flowline и 2 CA. Сборка архива проверяет состав, manifest, зависимости и единственного владельца UI DLL. Это не публикация и не runtime acceptance.

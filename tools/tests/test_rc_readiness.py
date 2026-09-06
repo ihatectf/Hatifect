@@ -26,7 +26,7 @@ class RcReadinessTests(unittest.TestCase):
             runtime_root = package_root / "Hatifect UI"
             runtime_root.mkdir(parents=True)
             (runtime_root / "manifest.json").write_text(
-                json.dumps({"Version": "1.0.0-alpha.29"}), encoding="utf-8"
+                json.dumps({"Version": "1.0.0-alpha.30"}), encoding="utf-8"
             )
             output = Path(directory) / "build-evidence.json"
             with (
@@ -58,7 +58,7 @@ class RcReadinessTests(unittest.TestCase):
             runtime_root = package_root / "Hatifect UI"
             runtime_root.mkdir(parents=True)
             (runtime_root / "manifest.json").write_text(
-                json.dumps({"Version": "1.0.0-alpha.29"}), encoding="utf-8"
+                json.dumps({"Version": "1.0.0-alpha.30"}), encoding="utf-8"
             )
             evidence_path = Path(directory) / "build-evidence.json"
             evidence_path.write_text(
@@ -66,7 +66,7 @@ class RcReadinessTests(unittest.TestCase):
                     {
                         "FormatVersion": RC.EVIDENCE_FORMAT_VERSION,
                         "CapturedAtUtc": "2026-09-02T00:00:00Z",
-                        "HatifectVersion": "1.0.0-alpha.29",
+                        "HatifectVersion": "1.0.0-alpha.30",
                         "RuntimeFingerprintAlgorithm": RC.ALGORITHM,
                         "RuntimeFingerprint": "runtime-value",
                         "CandidateFingerprintAlgorithm": RC.CANDIDATE_FINGERPRINT_ALGORITHM,

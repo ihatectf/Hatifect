@@ -95,7 +95,8 @@ internal sealed partial class FlowRuntime
         int index = System.Array.FindIndex(snapshot.Parcels, parcel => parcel.Id == transfer.Id.ParcelId.Value);
         ParcelCheckpoint parcel = snapshot.Parcels[index];
         int state = (int)(transfer.Kind == PortTransferKind.Extract
-            ? ParcelState.ExtractionUncertain : ParcelState.DeliveryUncertain);
+            ? ParcelState.ExtractionUncertain : transfer.StationId == _shipments[new ShipmentId(parcel.ShipmentId)].Origin
+                ? ParcelState.ReturnUncertain : ParcelState.DeliveryUncertain);
         snapshot.Parcels[index] = parcel with
         {
             State = state, Version = checked(parcel.Version + 1), PendingOperation = null

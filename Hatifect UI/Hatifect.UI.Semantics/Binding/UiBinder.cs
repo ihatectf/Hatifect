@@ -358,6 +358,11 @@ internal sealed class UiBinder
     private UiElementSymbol ResolveElement(string name, UiTextSpan span)
     {
         if (_context.TryGetElement(name, out UiElementSymbol? element) && element != null) return element;
+        if (_context.TryGetGraphNode(name, out UiSemanticNode? node) && node != null)
+        {
+            Report("UIG021", $"Graph node '{node.Id}' is auxiliary and cannot be a presentation target.", span);
+            return _context.CreateUndeclaredElement(name);
+        }
         if (_context.RequireDeclaredElements) Report("LUI2014", $"Unknown semantic element '{name}'.", span);
         return _context.CreateUndeclaredElement(name);
     }

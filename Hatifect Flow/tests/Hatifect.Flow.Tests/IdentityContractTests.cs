@@ -124,16 +124,45 @@ public sealed class IdentityContractTests
     }
 
     [Fact]
-    public void CoreAssembly_HasNoPlatformOrPresentationReferencesOrPublicExtensionTypes()
+    public void CoreAssembly_HasNoPlatformOrPresentationReferencesAndExportsOnlyApplicationContract()
     {
         var core = typeof(NetworkId).Assembly;
         string[] forbidden = { "Stardew", "SMAPI", "MonoGame", "Microsoft.Xna", "Hatifect.UI" };
-        foreach (var assembly in new[] { core, typeof(IdentityContractTests).Assembly })
-        {
-            Assert.DoesNotContain(assembly.GetReferencedAssemblies(), reference =>
-                forbidden.Any(prefix => reference.Name!.Contains(prefix, StringComparison.OrdinalIgnoreCase)));
-        }
+        Assert.DoesNotContain(core.GetReferencedAssemblies(), reference =>
+            forbidden.Any(prefix => reference.Name!.Contains(prefix, StringComparison.OrdinalIgnoreCase)));
+        string[] platform = { "Stardew", "SMAPI", "MonoGame", "Microsoft.Xna" };
+        Assert.DoesNotContain(typeof(IdentityContractTests).Assembly.GetReferencedAssemblies(), reference =>
+            platform.Any(prefix => reference.Name!.Contains(prefix, StringComparison.OrdinalIgnoreCase)));
         Assert.Equal("Hatifect.Flow.Core", core.GetName().Name);
-        Assert.Empty(core.GetExportedTypes());
+        string[] contract =
+        {
+            "Hatifect.Flow.Application.IFlowApplication",
+            "Hatifect.Flow.Application.IFlowNetworkApplication",
+            "Hatifect.Flow.Application.FlowNetworkAction",
+            "Hatifect.Flow.Application.FlowNetworkCommand",
+            "Hatifect.Flow.Application.FlowStationDetails",
+            "Hatifect.Flow.Application.FlowRoutePreview",
+            "Hatifect.Flow.Application.FlowNetworkSnapshot",
+            "Hatifect.Flow.Application.FlowInventorySlot",
+            "Hatifect.Flow.Application.FlowSendCommand",
+            "Hatifect.Flow.Application.FlowRecoveryIssue",
+            "Hatifect.Flow.Application.FlowRecoveryCommand",
+            "Hatifect.Flow.Application.FlowActionAvailability",
+            "Hatifect.Flow.Application.FlowActionAvailabilitySet",
+            "Hatifect.Flow.Application.FlowProviderMode",
+            "Hatifect.Flow.Application.FlowRejectionCode",
+            "Hatifect.Flow.Application.FlowApplicationState",
+            "Hatifect.Flow.Application.FlowParcelAction",
+            "Hatifect.Flow.Application.FlowCommandStatus",
+            "Hatifect.Flow.Application.FlowParcelActions",
+            "Hatifect.Flow.Application.FlowParcelCommand",
+            "Hatifect.Flow.Application.FlowCommandResult",
+            "Hatifect.Flow.Application.FlowStationSnapshot",
+            "Hatifect.Flow.Application.FlowLinkSnapshot",
+            "Hatifect.Flow.Application.FlowParcelSnapshot",
+            "Hatifect.Flow.Application.FlowSnapshot",
+            "Hatifect.Flow.Domain.Shipments.ParcelState"
+        };
+        Assert.Equal(contract.OrderBy(name => name), core.GetExportedTypes().Select(type => type.FullName).OrderBy(name => name));
     }
 }

@@ -10,6 +10,7 @@ using Hatifect.UI.Runtime.Registration;
 using Hatifect.UI.Runtime.Rendering;
 using Hatifect.UI.Runtime.Scene;
 using Hatifect.UI.Runtime.Visual.Theming;
+using Hatifect.UI.Semantics;
 using Xunit;
 
 namespace Hatifect.UI.Runtime.Tests;
@@ -120,6 +121,30 @@ public sealed class SceneCompositionTests
         Assert.Contains(frame.Primitives, primitive => primitive is UiSurfacePrimitive);
         Assert.Contains(frame.Primitives, primitive => primitive is UiTextPrimitive text && text.Text == "Take");
         Assert.Equal(frame.Primitives.Count, backend.Drawn.Count);
+    }
+
+    [Theory]
+    [InlineData("Status")]
+    [InlineData("Состояние")]
+    public void TypedGraphUsesAliasForRoleAndLabelForPresentationWithoutRenderingAuxiliarySources(string label)
+    {
+        UiSymbolId owner = RegistryTests.Id("localized-window");
+        UiSymbolId role = owner.Child("visual/status");
+        var auxiliary = new UiState<bool>(true);
+        var experience = new UiExperienceBuilder(owner, "View")
+            .Element(owner.Child("stable/status"), "Status", label, new UiState<string>("Ready"), UiSourceTypes.String, UiCapabilities.Monitor)
+            .Source(owner.Child("source/internal"), "Internal", "Internal", auxiliary, UiSourceTypes.Boolean, UiCapabilities.Filter)
+            .VisualRole(role, "Status")
+            .Build();
+        var registry = new UiRegistryBuilder().Window(owner, "View", () => experience).Freeze();
+        var scene = new UiSceneComposer(UiThemePresets.Dark(), registry).Compose(
+            new UiInvocationService(registry).Invoke(owner, UiPresentationProfiles.Wide));
+
+        UiSourceSceneNode visible = Assert.Single(Nodes(scene.Root).OfType<UiSourceSceneNode>());
+        Assert.Equal(role, visible.Role);
+        Assert.Equal(label, visible.SemanticName);
+        Assert.Equal("Ready", visible.DisplayText);
+        Assert.DoesNotContain(Nodes(scene.Root).OfType<UiSourceSceneNode>(), node => ReferenceEquals(node.Source, auxiliary));
     }
 
     private static UiExperienceDefinition Experience(

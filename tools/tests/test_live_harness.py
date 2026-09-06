@@ -655,6 +655,62 @@ class LiveHarnessTests(unittest.TestCase):
                     HARNESS.validate_report(resolved, report, started_at=0)
                 check["Passed"] = True
 
+    def test_cancellation_requires_each_fresh_flow_lifecycle_and_source_check(self) -> None:
+        resolved = HARNESS.resolve_scenario(self.scenarios, "flow.chest.cancellation", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.Flow"])
+        self.assertNotIn("flow.chest.cancellation", self.scenarios["all"]["includes"])
+        self.assertTrue({"flow.chest.cancellation.cancellation", "flow.chest.cancellation.source-conflict",
+                         "flow.chest.cancellation.re-admission", "flow.chest.cancellation.no-late-effect"}
+                        .issubset(resolved["checks"]))
+        self._verify_each_flow_check_is_required(resolved)
+
+    def test_return_requires_each_capacity_retry_custody_and_taken_item_check(self) -> None:
+        resolved = HARNESS.resolve_scenario(self.scenarios, "flow.chest.return", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.Flow"])
+        self.assertNotIn("flow.chest.return", self.scenarios["all"]["includes"])
+        self.assertTrue({"flow.chest.return.capacity", "flow.chest.return.delivery-retry", "flow.chest.return.return-requested",
+                         "flow.chest.return.return-rejected", "flow.chest.return.returned", "flow.chest.return.no-auto-retry",
+                         "flow.chest.return.taken-items"}.issubset(resolved["checks"]))
+        self._verify_each_flow_check_is_required(resolved)
+
+    def test_returned_crash_requires_restart_and_all_return_family_checks(self) -> None:
+        scenario = "flow.chest.crash-after-return"
+        resolved = HARNESS.resolve_scenario(self.scenarios, scenario, "smoke")
+        ordinary = HARNESS.resolve_scenario(self.scenarios, "flow.chest.return", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.Flow"])
+        self.assertNotIn(scenario, self.scenarios["all"]["includes"])
+        self.assertEqual(set(resolved["checks"]),
+                         {check.replace("flow.chest.return.", scenario + ".") for check in ordinary["checks"]}
+                         | {scenario + ".process-restart"})
+        self._verify_each_flow_check_is_required(resolved)
+
+    def test_production_isolation_requires_every_world_session_and_file_check(self) -> None:
+        scenario = "flow.chest.isolation"
+        resolved = HARNESS.resolve_scenario(self.scenarios, scenario, "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.Flow"])
+        self.assertNotIn(scenario, self.scenarios["all"]["includes"])
+        self.assertTrue({scenario + ".save-isolation", scenario + ".session-fencing", scenario + ".inactive-files",
+                         scenario + ".item-fidelity", scenario + ".no-duplication"}.issubset(resolved["checks"]))
+        self._verify_each_flow_check_is_required(resolved)
+
+    def _verify_each_flow_check_is_required(self, resolved) -> None:
+        report = self._report(resolved)
+        self.assertEqual(report["Scenarios"], [])
+        HARNESS.validate_report(resolved, report, started_at=0)
+        for index, check in enumerate(report["HostChecks"]):
+            with self.subTest(check=check["Id"]):
+                check["Passed"] = False
+                with self.assertRaises(HARNESS.HarnessError):
+                    HARNESS.validate_report(resolved, report, started_at=0)
+                check["Passed"] = True
+                missing = dict(report, HostChecks=report["HostChecks"][:index] + report["HostChecks"][index + 1:])
+                with self.assertRaises(HARNESS.HarnessError):
+                    HARNESS.validate_report(resolved, missing, started_at=0)
+
     def test_fresh_complete_semantic_report_passes(self) -> None:
         resolved = HARNESS.resolve_scenario(self.scenarios, "semantic.performance", "ui")
         report = self._report(resolved)

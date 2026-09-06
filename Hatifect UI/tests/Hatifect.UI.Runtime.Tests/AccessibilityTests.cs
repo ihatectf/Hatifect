@@ -23,6 +23,25 @@ public sealed class AccessibilityTests
     private static readonly UiRect Viewport = new(0, 0, 480, 260);
 
     [Fact]
+    public void FormValidationAppearsWithGeometryAndDisablesApplyUntilCorrected()
+    {
+        var id = RegistryTests.Id("accessibility/validation");
+        var error = new UiState<string?>("Name already exists");
+        using var form = new UiFormState(new UiSemanticFormField(id.Child("name"), "Name", new UiState<string>("Farm"), error));
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Station")
+            .Configure("Details", form)
+            .Actions("Actions", new UiActionDefinition(id.Child("apply"), "Apply", () => { }, () => form.IsValid)).Build();
+        var host = new UiPortalHostSession(Scene(experience, UiHostPolicies.Window), new UiHostPlacementContext(Viewport), new TestPlatform());
+        UiAccessibilityNodeSnapshot message = Assert.Single(Nodes(host.Accessibility.Root.Root), node => node.Name == "Name already exists");
+        Assert.True(message.Bounds.Width > 0 && message.Bounds.Height > 0);
+        Assert.False(Assert.Single(Nodes(host.Accessibility.Root.Root), node => node.Name == "Apply").Enabled);
+        error.Value = null;
+        var corrected = new UiPortalHostSession(Scene(experience, UiHostPolicies.Window), new UiHostPlacementContext(Viewport), new TestPlatform());
+        Assert.DoesNotContain(Nodes(corrected.Accessibility.Root.Root), node => node.Name == "Name already exists");
+        Assert.True(Assert.Single(Nodes(corrected.Accessibility.Root.Root), node => node.Name == "Apply").Enabled);
+    }
+
+    [Fact]
     public void SnapshotUsesSemanticNamesStateAndArrangedGeometry()
     {
         UiSymbolId id = RegistryTests.Id("accessibility/window");

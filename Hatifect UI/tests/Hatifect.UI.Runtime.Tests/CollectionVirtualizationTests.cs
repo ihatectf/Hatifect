@@ -117,6 +117,83 @@ public sealed class CollectionVirtualizationTests
     }
 
     [Fact]
+    public void OldSceneScrollReadsItsCapturedCollectionAfterTheLiveSourceShrinks()
+    {
+        UiSymbolId id = RegistryTests.Id("captured-scroll");
+        var source = new UiSelectableCollectionState<int>(Enumerable.Range(0, 100).ToArray(), value => id.Child("item/" + value));
+        var experience = new UiExperienceBuilder(id, "Capture").Select("Items", source).Build();
+        var registry = new UiRegistryBuilder().Window(id, "Capture", () => experience).Freeze();
+        var composer = new UiSceneComposer(UiThemePresets.Dark(), registry);
+        var invocation = new UiInvocationService(registry).Invoke(id, UiPresentationProfiles.Wide);
+        var oldScene = composer.Compose(invocation);
+        var oldCollection = Assert.Single(Nodes(oldScene.Root).OfType<UiCollectionSceneNode>());
+        var runtime = new UiHostRuntimeSession(oldScene, new UiRect(0, 0, 400, 240), new CountingPlatform());
+
+        source.Replace(new[] { 99 });
+        var current = Assert.Single(Nodes(composer.Compose(invocation).Root).OfType<UiCollectionSceneNode>());
+        runtime.ScrollCollection(oldCollection.Id, 100_000);
+
+        Assert.True(runtime.Layout.TryGetCollection(oldCollection.Id, out var oldWindow));
+        Assert.Equal(100, oldWindow!.TotalCount);
+        Assert.Equal(0, oldCollection.ItemAt(0).Value);
+        Assert.Equal(99, oldCollection.ItemAt(99).Value);
+        Assert.True(oldCollection.TryGetIndex(id.Child("item/50"), -1, out int oldIndex));
+        Assert.Equal(50, oldIndex);
+        Assert.Equal(1, current.Count);
+        Assert.Equal(99, current.ItemAt(0).Value);
+        Assert.Same(source, oldCollection.SourceIdentity);
+        Assert.Same(oldCollection.SourceIdentity, current.SourceIdentity);
+        Assert.False(oldCollection.TrySelect(id.Child("item/0")));
+        Assert.True(oldCollection.TrySelect(id.Child("item/99")));
+        Assert.Equal(id.Child("item/99"), source.SelectedItemId);
+        Assert.Null(oldCollection.SelectedItemId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExternalSourceWithoutCaptureRejectsOldSceneReadsBeforeCallingLiveGetters(bool changeCount)
+    {
+        UiSymbolId id = RegistryTests.Id("external-version-change");
+        var source = new MutableExternalSource(id);
+        var experience = new UiExperienceBuilder(id, "External").Browse("Items", source).Build();
+        var registry = new UiRegistryBuilder().Window(id, "External", () => experience).Freeze();
+        var composer = new UiSceneComposer(UiThemePresets.Dark(), registry);
+        var invocation = new UiInvocationService(registry).Invoke(id, UiPresentationProfiles.Wide);
+        var old = Assert.Single(Nodes(composer.Compose(invocation).Root).OfType<UiCollectionSceneNode>());
+        source.Replace(changeCount ? new[] { 9 } : new[] { 9, 8 });
+        int itemsRead = source.ItemsRead, lookups = source.Lookups;
+
+        Assert.Contains("changed after scene capture", Assert.Throws<InvalidOperationException>(() => old.ItemAt(0)).Message);
+        Assert.Throws<InvalidOperationException>(() => old.TryGetIndex(id.Child("item/9"), -1, out _));
+        Assert.Equal(itemsRead, source.ItemsRead);
+        Assert.Equal(lookups, source.Lookups);
+        var current = Assert.Single(Nodes(composer.Compose(invocation).Root).OfType<UiCollectionSceneNode>());
+        Assert.Equal(9, current.ItemAt(0).Value);
+        Assert.True(current.TryGetIndex(id.Child("item/9"), -1, out int index));
+        Assert.Equal(0, index);
+    }
+
+    private sealed class MutableExternalSource : IUiSemanticSource<IReadOnlyList<int>>, IUiSemanticCollectionSource, IUiSemanticCollectionMetadata
+    {
+        private readonly UiCollectionState<int> _state;
+        private IUiSemanticCollectionMetadata Metadata => _state;
+        public MutableExternalSource(UiSymbolId id) => _state = new(new[] { 1, 2 }, value => id.Child("item/" + value));
+        public int ItemsRead { get; private set; }
+        public int Lookups { get; private set; }
+        public IReadOnlyList<int> Value => _state.Value;
+        public Type ValueType => _state.ValueType;
+        public object UntypedValue => Value;
+        public int Count => _state.Count;
+        public long Revision => Metadata.Revision;
+        public bool HasSupportingText => Metadata.HasSupportingText;
+        public UiSemanticCollectionItem GetItem(int index) { ItemsRead++; return _state.GetItem(index); }
+        public bool TryGetIndex(UiSymbolId id, out int index) { Lookups++; return Metadata.TryGetIndex(id, out index); }
+        public void Replace(int[] values) => _state.Replace(values);
+        public event Action? Changed { add => _state.Changed += value; remove => _state.Changed -= value; }
+    }
+
+    [Fact]
     public void CollectionStateSignalsOnlySemanticReplacement()
     {
         UiSymbolId owner = RegistryTests.Id("stateful-collection");
@@ -513,6 +590,36 @@ Items@Checked
         Assert.True(diff.RequiresRender);
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(100)]
+    [InlineData(1)]
+    public void ExternalLookupCannotRedirectAnAnchorToAnotherOrMissingItem(int returnedIndex)
+    {
+        UiSymbolId owner = RegistryTests.Id("external-corrupt");
+        var source = new CorruptLookupSource(owner, returnedIndex);
+        var fixture = ListFixture(source, "Adaptive", owner);
+        var collection = Assert.Single(Nodes(fixture.Scene.Root).OfType<UiCollectionSceneNode>());
+        Assert.Throws<InvalidOperationException>(() => collection.TryGetIndex(owner.Child("0"), -1, out _));
+    }
+
+    private sealed class CorruptLookupSource : IUiSemanticCollectionSource,
+        IUiSemanticSource<IReadOnlyList<int>>, IUiSemanticCollectionMetadata
+    {
+        private readonly UiSymbolId _owner;
+        private readonly int _index;
+        internal CorruptLookupSource(UiSymbolId owner, int index) { _owner = owner; _index = index; }
+        public int Count => 2;
+        public long Revision => 1;
+        public bool HasSupportingText => true;
+        public IReadOnlyList<int> Value => Array.Empty<int>();
+        public Type ValueType => typeof(IReadOnlyList<int>);
+        public object UntypedValue => Value;
+        public event Action? Changed { add { } remove { } }
+        public UiSemanticCollectionItem GetItem(int index) => new(_owner.Child(index.ToString()), "Item", index);
+        public bool TryGetIndex(UiSymbolId item, out int index) { index = _index; return true; }
+    }
+
     private static UiScene Scene(IEnumerable<int> values)
     {
         UiSymbolId id = RegistryTests.Id("virtualized-window");
@@ -601,7 +708,7 @@ Items
     private sealed class CountingCollectionSource :
         IUiSemanticCollectionSource,
         IUiSemanticSource<IReadOnlyList<int>>,
-        IUiCollectionRuntimeMetadata
+        IUiSemanticCollectionMetadata
     {
         private readonly UiSymbolId _owner;
 
@@ -616,8 +723,8 @@ Items
         public IReadOnlyList<int> Value => Array.Empty<int>();
         public Type ValueType => typeof(IReadOnlyList<int>);
         public object UntypedValue => Value;
-        long IUiCollectionRuntimeMetadata.Revision => 0;
-        bool IUiCollectionRuntimeMetadata.HasSupportingText => true;
+        long IUiSemanticCollectionMetadata.Revision => 0;
+        bool IUiSemanticCollectionMetadata.HasSupportingText => true;
         public event Action? Changed
         {
             add { }
@@ -635,7 +742,7 @@ Items
                 index);
         }
 
-        bool IUiCollectionRuntimeMetadata.TryGetIndex(UiSymbolId item, out int index)
+        bool IUiSemanticCollectionMetadata.TryGetIndex(UiSymbolId item, out int index)
         {
             string prefix = _owner.LocalId + "/item/";
             if (string.Equals(item.Scope, _owner.Scope, StringComparison.Ordinal) &&

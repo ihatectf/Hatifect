@@ -108,6 +108,8 @@ internal sealed class UiInteractionSession
     private Dictionary<UiSymbolId, UiSceneNode> _nodes;
     private Dictionary<UiSymbolId, UiCollectionItemTarget> _collectionItems;
     private UiSymbolId[] _focusable;
+    private UiSymbolId[] _focusGroups;
+    private CollectionFocus? _collectionFocus;
     private readonly IUiTextMetrics? _textMetrics;
 
     public UiInteractionSession(
@@ -121,6 +123,7 @@ internal sealed class UiInteractionSession
         _nodes = Index(scene);
         _collectionItems = IndexCollectionItems(_nodes, layout);
         _focusable = Focusable(scene, layout).ToArray();
+        _focusGroups = FocusGroups(scene, _focusable).ToArray();
         _textMetrics = textMetrics;
         Snapshot = Reconcile(snapshot ?? new UiInteractionSnapshot());
     }
@@ -142,12 +145,19 @@ internal sealed class UiInteractionSession
 
     public void Reconcile(UiScene scene, UiLayoutSnapshot layout)
     {
+        // Retain the old index before replacing the visible window. An absent visible target
+        // may still be a focused item in the full immutable collection.
+        CollectionFocus? previous = Snapshot.Focused is { } focused &&
+            _collectionItems.TryGetValue(focused, out UiCollectionItemTarget? target)
+                ? new CollectionFocus(target.Collection.Id, focused, target.Item.Index)
+                : _collectionFocus;
         _scene = scene ?? throw new ArgumentNullException(nameof(scene));
         _layout = layout ?? throw new ArgumentNullException(nameof(layout));
         _nodes = Index(scene);
         _collectionItems = IndexCollectionItems(_nodes, layout);
         _focusable = Focusable(scene, layout).ToArray();
-        Snapshot = Reconcile(Snapshot);
+        _focusGroups = FocusGroups(scene, _focusable).ToArray();
+        Snapshot = Reconcile(Snapshot, previous);
     }
 
     public UiInteractionUpdate MovePointer(UiPoint point)
@@ -178,6 +188,7 @@ internal sealed class UiInteractionSession
             Focused = hit,
             TextEditing = TextEditingForPointer(hit.Value, point)
         };
+        _collectionFocus = LocateCollectionFocus(hit);
         return new UiInteractionUpdate(Consumed: true, StateChanged: stateChanged);
     }
 
@@ -204,7 +215,26 @@ internal sealed class UiInteractionSession
             Pressed = null,
             TextEditing = TextEditingForFocus(next.Value)
         };
+        _collectionFocus = LocateCollectionFocus(next);
         return new UiInteractionUpdate(Consumed: true, StateChanged: changed);
+    }
+
+    internal bool TryGetFocusedCollectionItem(
+        out UiCollectionSceneNode collection, out UiSymbolId item, out int index)
+    {
+        CollectionFocus? focus = LocateCollectionFocus(Snapshot.Focused);
+        if (focus is { Item: { } stable } &&
+            _nodes.TryGetValue(focus.Collection, out UiSceneNode? node) && node is UiCollectionSceneNode found)
+        {
+            collection = found;
+            item = stable;
+            index = focus.Index;
+            return true;
+        }
+        collection = null!;
+        item = default;
+        index = -1;
+        return false;
     }
 
     public UiInteractionUpdate Submit()
@@ -355,13 +385,27 @@ internal sealed class UiInteractionSession
 
     private UiSymbolId? FindFocus(UiNavigationDirection direction)
     {
-        if (_focusable.Length == 0) return null;
+        if (_focusGroups.Length == 0) return null;
+        if (direction is UiNavigationDirection.Next or UiNavigationDirection.Previous)
+            return Sequential(direction);
+        if (TryGetFocusedCollectionItem(out UiCollectionSceneNode collection, out _, out int index) &&
+            _layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window) && window != null)
+        {
+            int next = direction switch
+            {
+                UiNavigationDirection.Up => index - window.Columns,
+                UiNavigationDirection.Down => index + window.Columns,
+                UiNavigationDirection.Left when index % window.Columns > 0 => index - 1,
+                UiNavigationDirection.Right when index % window.Columns < window.Columns - 1 => index + 1,
+                _ => -1
+            };
+            if ((uint)next < (uint)collection.Count) return FocusItem(collection, next);
+        }
         int current = Snapshot.Focused is { } id
             ? Array.FindIndex(_focusable, node => node == id)
             : -1;
-        if (direction is UiNavigationDirection.Next or UiNavigationDirection.Previous)
-            return Sequential(direction, current);
-        if (current < 0) return _focusable[0];
+        if (current < 0) return Sequential(direction is UiNavigationDirection.Left or UiNavigationDirection.Up
+            ? UiNavigationDirection.Previous : UiNavigationDirection.Next);
 
         UiSymbolId origin = _focusable[current];
         if (!TryGetBounds(origin, out UiRect originBounds)) return null;
@@ -386,23 +430,59 @@ internal sealed class UiInteractionSession
         return winner ?? (_scene.Root.Policy.Focus == UiFocusScopePolicy.Trapped
             ? Sequential(direction is UiNavigationDirection.Left or UiNavigationDirection.Up
                 ? UiNavigationDirection.Previous
-                : UiNavigationDirection.Next, current)
+                : UiNavigationDirection.Next)
             : null);
     }
 
-    private UiSymbolId? Sequential(UiNavigationDirection direction, int current)
+    private UiSymbolId? Sequential(UiNavigationDirection direction)
     {
-        int next = direction == UiNavigationDirection.Next ? current + 1 : current - 1;
-        if (current < 0) next = direction == UiNavigationDirection.Next ? 0 : _focusable.Length - 1;
-        if (next >= 0 && next < _focusable.Length) return _focusable[next];
-        return _scene.Root.Policy.Focus == UiFocusScopePolicy.Trapped
-            ? _focusable[direction == UiNavigationDirection.Next ? 0 : _focusable.Length - 1]
-            : null;
+        bool forward = direction == UiNavigationDirection.Next;
+        int step = forward ? 1 : -1;
+        CollectionFocus? focus = LocateCollectionFocus(Snapshot.Focused);
+        UiSymbolId? group = focus?.Collection ?? Snapshot.Focused;
+        if (focus is { Item: not null } && _nodes[focus.Collection] is UiCollectionSceneNode collection)
+        {
+            int itemIndex = focus.Index + step;
+            if ((uint)itemIndex < (uint)collection.Count) return FocusItem(collection, itemIndex);
+        }
+        int current = group is { } id ? Array.IndexOf(_focusGroups, id) : -1;
+        int next = current < 0 ? (forward ? 0 : _focusGroups.Length - 1) : current + step;
+        if (next < 0 || next >= _focusGroups.Length)
+        {
+            if (_scene.Root.Policy.Focus != UiFocusScopePolicy.Trapped) return null;
+            next = forward ? 0 : _focusGroups.Length - 1;
+        }
+        if (_focusGroups.Length == 0) return null;
+        UiSymbolId candidate = _focusGroups[next];
+        return _nodes[candidate] is UiCollectionSceneNode { Count: > 0 } items
+            ? FocusItem(items, forward ? 0 : items.Count - 1)
+            : candidate;
     }
 
-    private UiInteractionSnapshot Reconcile(UiInteractionSnapshot snapshot)
+    private UiSymbolId FocusItem(UiCollectionSceneNode collection, int index)
+    {
+        UiSymbolId item = collection.ItemAt(index).Id;
+        // Uniform external sources may have random access without a reverse-ID index.
+        // Keep the index already proved by navigation for lookup and viewport reveal.
+        _collectionFocus = new CollectionFocus(collection.Id, item, index);
+        return item;
+    }
+
+    private UiInteractionSnapshot Reconcile(UiInteractionSnapshot snapshot, CollectionFocus? previous = null)
     {
         UiSymbolId? focused = Retain(snapshot.Focused, focusableOnly: true);
+        if (previous != null &&
+            _nodes.TryGetValue(previous.Collection, out UiSceneNode? owner) &&
+            owner is UiCollectionSceneNode { IsSelectable: true } collection)
+        {
+            focused = previous.Item is { } item && collection.TryGetIndex(item, previous.Index, out _)
+                ? item
+                : collection.Count == 0 ? collection.Id
+                : FocusItem(collection, Math.Min(previous.Index, collection.Count - 1));
+        }
+        else if (focused == null && LocateCollectionFocus(snapshot.Focused) is { Item: { } retained })
+            focused = retained;
+        _collectionFocus = LocateCollectionFocus(focused);
         UiTextEditingSnapshot? editing = focused is { } id &&
             _nodes.TryGetValue(id, out UiSceneNode? node) &&
             node is UiTextInputSceneNode input
@@ -667,8 +747,40 @@ internal sealed class UiInteractionSession
             UiButtonSceneNode button => button.Action.CanExecute,
             UiRouteButtonSceneNode => true,
             UiTextInputSceneNode => true,
+            UiCollectionSceneNode { IsSelectable: true, Count: 0 } => true,
             _ => false
         };
+
+    private static IEnumerable<UiSymbolId> FocusGroups(UiScene scene, UiSymbolId[] focusable)
+    {
+        // Reuse the resolved eligibility; asking CanExecute again could observe another owner
+        // state and disagree with this same reconciliation's visible focus order.
+        var eligible = new HashSet<UiSymbolId>(focusable);
+        foreach (UiSceneNode node in Nodes(scene.Root))
+            if (node is UiCollectionSceneNode { IsSelectable: true } || eligible.Contains(node.Id))
+                yield return node.Id;
+    }
+
+    private CollectionFocus? LocateCollectionFocus(UiSymbolId? id)
+    {
+        if (id is not { } stable) return null;
+        if (_nodes.TryGetValue(stable, out UiSceneNode? owner) &&
+            owner is UiCollectionSceneNode { IsSelectable: true, Count: 0 })
+            return new CollectionFocus(stable, null, 0);
+        if (_collectionItems.TryGetValue(stable, out UiCollectionItemTarget? visible))
+            return new CollectionFocus(visible.Collection.Id, stable, visible.Item.Index);
+        foreach (UiSceneNode node in _nodes.Values)
+        {
+            if (node is not UiCollectionSceneNode { IsSelectable: true } collection) continue;
+            int hint = _collectionFocus is { } old && old.Collection == collection.Id && old.Item == stable
+                ? old.Index : -1;
+            if (collection.TryGetIndex(stable, hint, out int index))
+                return new CollectionFocus(collection.Id, stable, index);
+        }
+        return null;
+    }
+
+    private sealed record CollectionFocus(UiSymbolId Collection, UiSymbolId? Item, int Index);
 
     private static IEnumerable<UiSceneNode> Nodes(UiSceneNode node)
     {

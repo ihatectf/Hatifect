@@ -48,6 +48,22 @@ class _FakeDirect:
 
 
 class UserSessionRuntimeTests(unittest.TestCase):
+    def test_roundtrip_request_rejects_legacy_and_other_run_save_names(self) -> None:
+        save_root = self.isolated / 'config/StardewValley/Saves'
+        save_root.mkdir(parents=True)
+        self.request['scenarioId'] = 'flow.chest.roundtrip'
+        self.validator.resolve_scenario.return_value['requiresSave'] = True
+        spec = importlib.util.spec_from_file_location('test_real_save_naming', ROOT / 'tools/live-harness/save_provisioning.py')
+        provisioner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(provisioner)
+        self.direct._load_module = lambda *_: provisioner
+        for name in (f'HatifectHarness_{uuid.UUID(self.request_id).hex}', 'HatifectHarness' + uuid.uuid4().hex + '_4242424242'):
+            self.request['savePath'] = str(save_root / name)
+            with self.assertRaisesRegex(RUNTIME.UserSessionRuntimeError, 'planned isolated working copy'):
+                RUNTIME._validate_request(self.request, self.repository)
+        self.request['savePath'] = str(save_root / provisioner._working_name(self.request_id, 'flow.chest.roundtrip'))
+        self.assertEqual(self.request, RUNTIME._validate_request(self.request, self.repository))
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="hatifect-user-session-test.")
         self.repository = Path(self.temporary.name) / "repository"

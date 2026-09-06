@@ -1,5 +1,9 @@
 # Разработка и проверка
 
+UI authoring: [подключение language server, экспорт метаданных, операции редактора и ограничения](UI_AUTHORING.md).
+
+Последовательность развития и acceptance criteria — в [утверждённой roadmap](ROADMAP.md). После каждого среза обновляются его статус, commit/evidence и следующий готовый шаг; переходы в рамках утверждённой задачи не требуют повторного согласования.
+
 ## Инструменты
 
 `global.json` задаёт SDK .NET 8; проекты сохраняют `net6.0`. Для выполнения тестов нужен .NET 6 runtime. Предупреждение SDK `NETSDK1138` о завершении поддержки net6 остаётся видимым: целевой runtime сохранён для совместимости с игрой. Каноническая сборка не повышает только это предупреждение до ошибки; compiler/analyzer warnings и ошибки аудита NuGet по-прежнему блокируют её. Python tooling использует стандартную библиотеку Python 3.11+ (`tomllib` для конфигурации Codex). На Apple Silicon для тестов игрового графа нужен совместимый x64 .NET SDK/runtime. Явные пути задаются через `HATIFECT_DOTNET`, `HATIFECT_TEST_DOTNET` и, при необходимости, `HATIFECT_GAME_PATH`.
@@ -13,7 +17,8 @@
 | `./tools/hatifect-check` | Статика, Python tests, build и все .NET suites без игры |
 | `./tools/hatifect-check --platform` | Те же проверки плюс игровые проекты и CA tests |
 | `./tools/hatifect-test ui` | Текущие семантические UI suites |
-| `./tools/hatifect-test flow` | Core/Persistence Flowline tests |
+| `./tools/hatifect-test flow` | Core/Persistence/application/semantic Flowline tests |
+| `./tools/hatifect-test flow --platform` | Дополнительно реальные Item/Chest и игровая session save/reload модель, без запуска игры |
 | `./tools/hatifect-test ca --platform` | CA consumer tests с игровыми references |
 | `./tools/hatifect-test tools` | Python tooling tests |
 | `./tools/hatifect-agent-check` | Переносимая проверка config, roles, skill routing и instruction budget |
@@ -57,7 +62,7 @@ GitHub Actions запускает текущую статическую пров
 
 Сначала определи владельца состояния и публичный capability/application contract. Затем добавь проекты и test project в `Hatifect.slnx`, зафиксируй разрешённые зависимости в architecture checker и напиши короткий README с текущей готовностью и командой проверки. Добавляй локальный AGENTS только для новых специфичных правил. Если новая область требует отдельного выбора инструкций/skills, добавь маршрут в `routing.json`; переносимая проверка отклонит битые пути, дубликаты и превышение бюджета маршрута. Она проверяет файлы и размеры, но не доказывает качество текста или соблюдение инструкции агентом.
 
-UI consumer читает контракт своего subsystem; изменения application state доходят через явно реализованный boundary. Git/CI обеспечивают согласованное изменение кода и обратную связь о несовместимости. Автоматическое редактирование кода соседней системы после каждого изменения не является механизмом runtime-синхронизации. Для Flowline текущий следующий шаг — snapshots, команды и revision-уведомления, описанные в ARCHITECTURE.
+UI consumer читает контракт своего subsystem; изменения application state доходят через явно реализованный boundary. Git/CI обеспечивают согласованное изменение кода и обратную связь о несовместимости. Автоматическое редактирование кода соседней системы после каждого изменения не является механизмом runtime-синхронизации. Flowline использует IFlowApplication: cached snapshots, команды с session/revision и уведомления после commit. IFlowNetworkApplication добавляет управление сетью, fingerprint отправки, возврат, recovery и холодные inventory queries. Semantic DLL входит в Flow runtime; UI assemblies остаются только в UI module.
 
 ## Переход на имя Hatifect
 
@@ -67,6 +72,6 @@ UI consumer читает контракт своего subsystem; изменен
 
 ## Runtime harness
 
-Runtime transport и JSON schemas сохранены для дальнейшей acceptance-проверки. Каталог сценариев — `tools/live-harness/scenarios.json`; результаты имеют статусы PASS/FAIL/BLOCKED/NOT_APPLICABLE. Сценарии `flow.route.basic` и `flow.save.isolation` проверяют диагностический fake-provider маршрут и lifecycle Flowline. UI aggregate `all` проверяет текущие семантические поверхности и совместимый CA Overlay; отрицательные конфигурации CA запускаются отдельно.
+Runtime transport и JSON schemas сохранены для дальнейшей acceptance-проверки. Каталог сценариев — `tools/live-harness/scenarios.json`; результаты имеют статусы PASS/FAIL/BLOCKED/NOT_APPLICABLE. Сценарии `flow.route.basic` и `flow.save.isolation` проверяют диагностический fake-provider маршрут и lifecycle Flowline. Отдельный `flow.chest.roundtrip` проверяет production-сессию и настоящую запись/загрузку request-owned сейва. `flow.chest.crash-after-save` завершает принадлежащий executor процесс через SIGKILL после подтверждённого Saved и запускает новый SMAPI с той же копией; это одна фиксированная crash/reload граница, а не вся failure matrix. Оба chest-сценария запускаются отдельно от aggregate. UI aggregate `all` проверяет текущие семантические поверхности и совместимый CA Overlay; отрицательные конфигурации CA запускаются отдельно.
 
 Когда задача или выбранный срез roadmap требует runtime-проверки, Codex самостоятельно запускает канонический executor в терминале текущего worktree без повторного вопроса о разрешении. Порядок подготовки, проверки singleton/Ready, владения терминалом и завершения процесса описан в [руководстве runtime-тестов](RUNTIME.md). Там же указаны узкое проектное правило Codex для команды `serve`, его проверка и условия загрузки.

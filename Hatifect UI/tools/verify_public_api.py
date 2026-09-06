@@ -19,6 +19,7 @@ SEMANTIC_SURFACE_TYPES = (
     'UiAutomatedAcceptanceScenario',
     'IUiSemanticSurfaceAutomation',
 )
+FORM_AUTHORING_TYPES = ('UiSemanticFormField', 'UiFormState')
 
 
 def _project_version(project: Path) -> str:
@@ -34,6 +35,12 @@ def make_baseline(root: Path = ROOT) -> dict:
     relative = 'Hosting/UiSemanticSurfaceContracts.cs'
     return {
         'FormatVersion': 1,
+        'FormAuthoring': {
+            'Assembly': 'Hatifect.UI.Experience',
+            'PublicTypes': list(FORM_AUTHORING_TYPES),
+            'Files': [{'Path': path, 'Sha256': hashlib.sha256((experience / path).read_bytes()).hexdigest()}
+                      for path in ('State/UiSemanticFormSource.cs', 'UiExperienceBuilder.cs')],
+        },
         'SemanticSurface': {
             'Assembly': 'Hatifect.UI.Experience',
             'ContractVersion': _project_version(experience / 'Hatifect.UI.Experience.csproj'),
@@ -72,6 +79,10 @@ def verify(root: Path = ROOT) -> list[str]:
         for name in SEMANTIC_SURFACE_TYPES:
             if not re.search(rf'\bpublic\s+(?:sealed\s+)?(?:record|class|interface|enum)\s+{re.escape(name)}\b', source):
                 errors.append(f'public API baseline: missing semantic public type {name}')
+        form = _scrub_comments((root / 'Hatifect.UI.Experience/State/UiSemanticFormSource.cs').read_text(encoding='utf-8'))
+        for name in FORM_AUTHORING_TYPES:
+            if not re.search(rf'\bpublic\s+(?:sealed\s+)?(?:record|class)\s+{re.escape(name)}\b', form):
+                errors.append(f'public API baseline: missing form public type {name}')
         implementation = _scrub_comments(
             (root / 'Hatifect.UI.Stardew/Hosting/UiSemanticSurfaceService.cs').read_text(encoding='utf-8')
         )

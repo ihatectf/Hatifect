@@ -400,14 +400,20 @@ def _is_acceptance_storage(document: Any) -> bool:
     )
 
 
-def _working_name(run_id: str) -> str:
-    return f"HatifectHarness_{uuid.UUID(_canonical_run_id(run_id)).hex}"
+def _working_name(run_id: str, scenario_id: str = "", *, role: str = "primary") -> str:
+    token = uuid.UUID(_canonical_run_id(run_id)).hex
+    if role not in ("primary", "secondary") or (role == "secondary" and scenario_id != "flow.chest.isolation"):
+        raise SaveProvisioningError("HARNESS-SAVE-PATH", "Secondary role is reserved for production Flow isolation.")
+    if scenario_id == "flow.chest.isolation":
+        return f"HatifectHarness{token}_{4242424243 if role == 'secondary' else 4242424242}"
+    # Stardew loads the base before '_' and saves base + '_' + world identity.
+    return f"HatifectHarness{token}_4242424242" if scenario_id in {"flow.chest.roundtrip", "flow.chest.crash-after-save", "flow.chest.crash-after-delivery", "flow.chest.crash-after-unsaved-extraction", "flow.chest.crash-after-unsaved-delivery", "flow.chest.cancellation", "flow.chest.return", "flow.chest.crash-after-return"} else f"HatifectHarness_{token}"
 
 
-def plan_working_copy(isolated_root: Path, smapi_path: Path, run_id: str) -> Path:
+def plan_working_copy(isolated_root: Path, smapi_path: Path, run_id: str, scenario_id: str = "", *, role: str = "primary") -> Path:
     run_id = _canonical_run_id(run_id)
     manifest, _ = validate_fixture(isolated_root, smapi_path)
-    destination = _save_root(isolated_root) / _working_name(run_id)
+    destination = _save_root(isolated_root) / _working_name(run_id, scenario_id, role=role)
     if destination.exists():
         try:
             _validate_owner(
@@ -462,11 +468,11 @@ def _validate_owner(
     return document
 
 
-def prepare_working_copy(isolated_root: Path, smapi_path: Path, run_id: str) -> Path:
+def prepare_working_copy(isolated_root: Path, smapi_path: Path, run_id: str, scenario_id: str = "", *, role: str = "primary") -> Path:
     run_id = _canonical_run_id(run_id)
     manifest, source = validate_fixture(isolated_root, smapi_path)
     root = _save_root(isolated_root)
-    destination = plan_working_copy(isolated_root, smapi_path, run_id)
+    destination = plan_working_copy(isolated_root, smapi_path, run_id, scenario_id, role=role)
     source_before = _inventory(source)
     try:
         destination.mkdir(mode=PRIVATE_DIRECTORY_MODE)
@@ -507,16 +513,16 @@ def prepare_working_copy(isolated_root: Path, smapi_path: Path, run_id: str) -> 
         raise
     if _inventory(source) != source_before:
         raise SaveProvisioningError("HARNESS-SAVE-IMMUTABILITY", "Golden save changed during provisioning.")
-    validate_working_copy(isolated_root, destination, manifest["runtimeId"], run_id)
+    validate_working_copy(isolated_root, destination, manifest["runtimeId"], run_id, scenario_id, role=role)
     return destination
 
 
 def validate_working_copy(
-    isolated_root: Path, save_path: Path, runtime_id: str, run_id: str
+    isolated_root: Path, save_path: Path, runtime_id: str, run_id: str, scenario_id: str = "", *, role: str = "primary"
 ) -> Path:
     root = _save_root(isolated_root)
     candidate = _contained(root, save_path)
-    if candidate.parent != root or candidate.name != _working_name(run_id):
+    if candidate.parent != root or candidate.name != _working_name(run_id, scenario_id, role=role):
         raise SaveProvisioningError("HARNESS-SAVE-PATH", "Working save is not this run's direct isolated child.")
     candidate = _real_directory(candidate)
     _validate_owner(candidate, runtime_id, run_id)
@@ -524,12 +530,12 @@ def validate_working_copy(
 
 
 def flow_secondary_run_id(run_id: str) -> str:
-    """Fixed second-copy identity for flow.save.isolation; no new request authority."""
+    """Fixed second-copy identity for Flow isolation; no new request authority."""
     return str(uuid.UUID(int=uuid.UUID(_canonical_run_id(run_id)).int ^ 1))
 
 
-def _reseed_flow_secondary(isolated_root: Path, save: Path, runtime_id: str, run_id: str) -> None:
-    candidate = validate_working_copy(isolated_root, save, runtime_id, run_id)
+def _reseed_flow_secondary(isolated_root: Path, save: Path, runtime_id: str, run_id: str, scenario_id: str = "", *, role: str = "primary") -> None:
+    candidate = validate_working_copy(isolated_root, save, runtime_id, run_id, scenario_id, role=role)
     primary = candidate / candidate.name
     info = primary.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid() or info.st_size > 16 * 1024 * 1024:
@@ -565,24 +571,27 @@ def _reseed_flow_secondary(isolated_root: Path, save: Path, runtime_id: str, run
             os.unlink(temporary)
 
 
-def prepare_flow_secondary(isolated_root: Path, smapi_path: Path, parent_run_id: str) -> Path:
+def prepare_flow_secondary(isolated_root: Path, smapi_path: Path, parent_run_id: str, scenario_id: str = "flow.save.isolation") -> Path:
+    if scenario_id not in ("flow.save.isolation", "flow.chest.isolation"):
+        raise SaveProvisioningError("HARNESS-SAVE-PATH", "Secondary preparation needs an exact isolation scenario.")
+    role = "secondary" if scenario_id == "flow.chest.isolation" else "primary"
     run_id = flow_secondary_run_id(parent_run_id)
     manifest, _ = validate_fixture(isolated_root, smapi_path)
     # A collision fails before we acquire cleanup authority over this path.
-    destination = prepare_working_copy(isolated_root, smapi_path, run_id)
+    destination = prepare_working_copy(isolated_root, smapi_path, run_id, scenario_id, role=role)
     try:
-        _reseed_flow_secondary(isolated_root, destination, manifest["runtimeId"], run_id)
+        _reseed_flow_secondary(isolated_root, destination, manifest["runtimeId"], run_id, scenario_id, role=role)
     except BaseException as error:
         try:
-            cleanup_working_copy(isolated_root, destination, manifest["runtimeId"], run_id)
+            cleanup_working_copy(isolated_root, destination, manifest["runtimeId"], run_id, scenario_id, role=role)
         except Exception as cleanup_error:
             raise SaveProvisioningError("HARNESS-SAVE-CLEANUP", f"Secondary preparation failed: {error}; cleanup failed: {cleanup_error}") from error
         raise
     return destination
 
 
-def cleanup_working_copy(isolated_root: Path, save_path: Path, runtime_id: str, run_id: str) -> None:
-    candidate = validate_working_copy(isolated_root, save_path, runtime_id, run_id)
+def cleanup_working_copy(isolated_root: Path, save_path: Path, runtime_id: str, run_id: str, scenario_id: str = "", *, role: str = "primary") -> None:
+    candidate = validate_working_copy(isolated_root, save_path, runtime_id, run_id, scenario_id, role=role)
     shutil.rmtree(candidate)
     if candidate.exists():
         raise SaveProvisioningError("HARNESS-SAVE-CLEANUP", f"Owned working save was not removed: {candidate}")
@@ -898,9 +907,9 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         if args.command == "plan":
-            print(plan_working_copy(Path(args.isolated_root), Path(args.smapi_path), args.run_id))
+            print(plan_working_copy(Path(args.isolated_root), Path(args.smapi_path), args.run_id, args.scenario))
         elif args.command == "prepare":
-            print(prepare_working_copy(Path(args.isolated_root), Path(args.smapi_path), args.run_id))
+            print(prepare_working_copy(Path(args.isolated_root), Path(args.smapi_path), args.run_id, args.scenario))
         elif args.command == "bootstrap-preflight":
             target = bootstrap_preflight(Path(args.isolated_root), Path(args.smapi_path), args.run_id)
             if target is None:
