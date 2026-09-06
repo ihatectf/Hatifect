@@ -239,15 +239,15 @@ public sealed partial class ModEntry
                         + "\n" + string.Join("\n", snapshot.Parcels.Select(value => $"{value.Id}: {value.ItemKey} × {value.Quantity}, {value.State}")), LogLevel.Info);
                     break;
                 case "show" when args.Length is 1 or 2:
-                    Guid selected = args.Length == 2 ? Guid.Parse(args[1]) : _selectedParcel ?? throw new ArgumentException("Provide a parcel ID from hatifect_flow list.");
+                    Guid? selected = args.Length == 2 ? Guid.Parse(args[1])
+                        : _selectedParcel ?? session.Application.ReadSnapshot().Parcels.FirstOrDefault()?.Id;
                     if (_flowUi is null || _flowUi.ApiVersion < 1 || Game1.activeClickableMenu is null)
                         throw new InvalidOperationException("Open a game menu; the Hatifect UI surface API must be available.");
-                    if (!session.Application.ReadSnapshot().Parcels.Any(value => value.Id == selected))
-                        throw new ArgumentException("This session has no such shipment.");
-                    CloseParcelSurface();
                     var experience = new ParcelExperience(new UiSymbolId("Hatifect.Flow", "parcel"), session.Application, selected,
                         LocalizedContentManager.CurrentLanguageCode == LocalizedContentManager.LanguageCode.ru,
                         session.StationName, key => ItemRegistry.GetDataOrErrorItem(key).DisplayName);
+                    try { CloseParcelSurface(); }
+                    catch { experience.Dispose(); throw; }
                     _parcelSurface = new ParcelSurface(experience);
                     _parcelSurface.Show(_flowUi);
                     break;

@@ -7,7 +7,7 @@ namespace Hatifect.Flow.UI.Semantic;
 internal sealed class ParcelExperience : IFlowExperience
 {
     private readonly IFlowApplication _application;
-    private readonly Guid _parcelId;
+    private readonly Guid? _parcelId;
     private readonly bool _russianFallback;
     private readonly Func<Guid, string>? _stationName;
     private readonly Func<string, string> _itemName;
@@ -25,7 +25,7 @@ internal sealed class ParcelExperience : IFlowExperience
     private bool _subscribed;
     private bool _pumping;
 
-    internal ParcelExperience(UiSymbolId id, IFlowApplication application, Guid parcelId,
+    internal ParcelExperience(UiSymbolId id, IFlowApplication application, Guid? parcelId = null,
         bool russian = false, Func<Guid, string>? stationName = null, Func<string, string>? itemName = null,
         Func<string, UiLocalizedText>? localizedItemName = null)
     {
@@ -46,7 +46,7 @@ internal sealed class ParcelExperience : IFlowExperience
             application.RevisionChanged += OnRevision;
             _dirty = false;
             FlowSnapshot snapshot = application.ReadSnapshot();
-            var initial = new ParcelPresentationSnapshot(snapshot, null);
+            var initial = new ParcelPresentationSnapshot(snapshot, null, HasSelection: parcelId.HasValue);
             var textType = UiSourceTypes.Scalar<ParcelTextValue>(new("Hatifect.Flow", "data/parcel-text"), false);
             UiPublishedState<ParcelTextValue> State(string key, ParcelTextPart part)
                 => _publication.State(id.Child("source/" + key), new ParcelTextValue(initial, part, russian), textType);
@@ -176,9 +176,9 @@ internal sealed class ParcelExperience : IFlowExperience
         _requesting = true;
         try
         {
-            if (!CurrentAllows(action)) return;
+            if (_parcelId is not { } parcelId || !CurrentAllows(action)) return;
             FlowSnapshot snapshot = Snapshot;
-            FlowCommandResult result = _application.Execute(new FlowParcelCommand(snapshot.SessionId, snapshot.Revision, _parcelId, action));
+            FlowCommandResult result = _application.Execute(new FlowParcelCommand(snapshot.SessionId, snapshot.Revision, parcelId, action));
             if (_disposed || _publication.IsDisposed) return;
             _pendingResult = result;
             // Preserve the existing coalesced contract: the next Pump publishes the result and model together.
@@ -189,7 +189,8 @@ internal sealed class ParcelExperience : IFlowExperience
 
     private bool Project(FlowSnapshot snapshot)
     {
-        FlowParcelSnapshot? parcel = snapshot.Parcels.FirstOrDefault(value => value.Id == _parcelId);
+        FlowParcelSnapshot? parcel = _parcelId is { } parcelId
+            ? snapshot.Parcels.FirstOrDefault(value => value.Id == parcelId) : null;
         bool unavailable = snapshot.State is FlowApplicationState.Closed or FlowApplicationState.Faulted || parcel is null;
         UiLocalizedText? localizedItem = null;
         string itemName = string.Empty;
@@ -209,7 +210,7 @@ internal sealed class ParcelExperience : IFlowExperience
         string? destination = unavailable ? string.Empty : _stationName?.Invoke(parcel!.Destination);
         if (_disposed || _publication.IsDisposed) return false;
         var facts = new ParcelPresentationSnapshot(snapshot, parcel, itemName, origin, destination,
-            _pendingResult ?? _projection.Value.Result, localizedItem);
+            _pendingResult ?? _projection.Value.Result, localizedItem, _parcelId.HasValue);
         UiPublicationResult result = _publication.BeginUpdate()
             .Set(_projection, facts)
             .Set(_cargo, Value(ParcelTextPart.Cargo)).Set(_route, Value(ParcelTextPart.Route))
