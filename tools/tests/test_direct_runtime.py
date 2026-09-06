@@ -21,7 +21,7 @@ SPEC.loader.exec_module(DIRECT_RUNTIME)
 
 class DirectRuntimeTests(unittest.TestCase):
     def test_canonical_flow_save_is_cleaned_on_launch_failure_with_same_scenario_authority(self) -> None:
-        for scenario in ('flow.chest.roundtrip', 'flow.chest.performance'):
+        for scenario in ('flow.chest.roundtrip', 'flow.chest.performance', 'flow.chest.resources'):
             with self.subTest(scenario=scenario):
                 with _RequestFixture() as fixture:
                     fixture.request['scenarioId'] = scenario

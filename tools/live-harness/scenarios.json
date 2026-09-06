@@ -340,6 +340,49 @@
       ]
     },
     {
+      "id": "flow.chest.resources",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 600,
+      "includeInAll": false,
+      "checks": [
+        "flow.chest.resources.loaded",
+        "flow.chest.resources.routing",
+        "flow.chest.resources.queues",
+        "flow.chest.resources.saving",
+        "flow.chest.resources.saved",
+        "flow.chest.resources.receipt-growth",
+        "flow.chest.resources.limits",
+        "flow.chest.resources.reload",
+        "flow.chest.resources.item-fidelity",
+        "flow.chest.resources.idle",
+        "flow.chest.resources.unchanged-files"
+      ],
+      "flowResources": {
+        "scenarioId": "flow.chest.resources",
+        "shipments": 256,
+        "stations": 32,
+        "sourceChests": 8,
+        "routingQueries": 75,
+        "loads": 7,
+        "saves": 6,
+        "attempts": 16,
+        "warmupFrames": 120,
+        "measurementFrames": 600,
+        "maxOperationsPerTick": 64,
+        "maximumP95TickMs": 0.25,
+        "maximumP99TickMs": 1.0,
+        "maximumAllocatedBytesPerTick": 0
+      },
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      },
+      "requiredMods": [
+        "Hatifect.Flow"
+      ]
+    },
+    {
       "id": "semantic.lifecycle",
       "kind": "ui",
       "requiresSave": false,
