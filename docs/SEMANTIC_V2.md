@@ -140,6 +140,8 @@ Pending submissions получают terminal Cancelled при отмене/reti
 
 U03-b, alpha.38: обычная перекомпоновка Terminal сохраняет committed Experience, включая Transient. Focus/text/profile/locale/theme и обновление assets заново планируют и рисуют ту же модель; фабрика вызывается при явном открытии. Новый раздел заменяет активную модель только после принятого host update. Недоступность раздела проверяется заново, неуспешный переход сохраняет прежнюю модель, Dispose освобождает ссылку на неё; ownership Cached/Singleton и публичная Transient activation policy не меняются. Это предпосылка сохранения per-host action execution между UI updates, а не уже подключённый async binding.
 
+U03-b, alpha.39: Runtime execution можно отдельно retire без закрытия sibling actions. Его non-pumping RefreshAvailability готовит причины доступности и CanInvoke с учётом concurrency/queue capacity; disabled и availability-fault recovery восстанавливают доступность. InvokeCaptured вызывает request factory один раз после admission guards и до queue/start, наблюдает исходную ошибку подготовки, проверяет retirement/reentry и сохраняет snapshot до queued start. Capture не выполняется для unavailable/busy/full/retired input. Это private seam для production host binding; сам binding и Update pump/lifecycle wiring ещё не подключены.
+
 R01 оформляет ownership manifest generation, R02–R04 — bundle/migration/multi-host transaction. U03 не обещает готовность полного multi-host reload: он обязан предоставить fencing и fault-observation primitives, которые будут использовать R01/R04.
 
 ## Первый Flow example и независимый F11
