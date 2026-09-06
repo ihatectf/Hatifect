@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Diagnostics;
 using System.Linq;
 using Microsoft.Xna.Framework;
 using Hatifect.Flow.Application;
@@ -83,7 +84,17 @@ public sealed partial class ModEntry
 
     private void TickGameSession(UpdateTickedEventArgs e)
     {
-        _gameSession?.Tick(Game1.shouldTimePass());
+        FlowGameSession? session = _gameSession;
+        if (session is not null && _performanceAcceptance is not null)
+        {
+            bool timePasses = Game1.shouldTimePass();
+            long allocated = GC.GetAllocatedBytesForCurrentThread(), started = Stopwatch.GetTimestamp();
+            session.Tick(timePasses);
+            long elapsed = Stopwatch.GetTimestamp() - started;
+            allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+            _performanceAcceptance.ObserveTick(session, timePasses, elapsed, allocated);
+        }
+        else session?.Tick(Game1.shouldTimePass());
         if (_parcelSurface is not null && (!_parcelSurface.IsClosed || e.IsOneSecond))
         {
             try { _parcelSurface.Pump(); }

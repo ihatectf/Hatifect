@@ -40,6 +40,8 @@ internal sealed partial class FlowGameSession : IDisposable
     private bool _closed;
     private bool _faulted;
     private bool _hostOperation;
+    private long _tickInvocations, _processedOperations, _tickRefreshRequests, _checkpointCaptures, _physicalApplyCalls;
+    private int _lastTickProcessedOperations;
 
     internal FlowGameSession(ulong saveId, long playerId, Func<bool> canMutate,
         Func<StationBinding, Chest?> resolve, Action<Exception> report, FlowGameSave? saved = null, FlowChestLocks? locks = null)
@@ -79,6 +81,9 @@ internal sealed partial class FlowGameSession : IDisposable
     internal long Now => _runtime.Now;
     internal bool IsSaving => _saving;
     internal bool IsFaulted => _faulted;
+    internal FlowTickCounters TickCounters => new(_tickInvocations, _runtime.Now, _runtime.PendingOperationCount,
+        _runtime.RouteSearchCount, _processedOperations, _lastTickProcessedOperations, _tickRefreshRequests,
+        _checkpointCaptures, _physicalApplyCalls);
     internal void FencePeerFailure(Exception error)
     {
         RequireOwnerIdle();
@@ -188,6 +193,8 @@ internal sealed partial class FlowGameSession : IDisposable
     internal void Tick(bool timePasses)
     {
         RequireOwnerIdle();
+        _tickInvocations++;
+        _lastTickProcessedOperations = 0;
         if (_closed) return;
         UpdateAvailability();
         if (!timePasses || !CanMutate()) return;
@@ -197,7 +204,13 @@ internal sealed partial class FlowGameSession : IDisposable
             // No scans, snapshots, serialization or I/O on idle ticks. Queue work is bounded by 64 operations.
             try
             {
-                if (_runtime.AdvanceTo(checked(_runtime.Now + 1), canAccessPort: _portReady) > 0) Application.Refresh();
+                _lastTickProcessedOperations = _runtime.AdvanceTo(checked(_runtime.Now + 1), canAccessPort: _portReady);
+                _processedOperations += _lastTickProcessedOperations;
+                if (_lastTickProcessedOperations > 0)
+                {
+                    _tickRefreshRequests++;
+                    Application.Refresh();
+                }
             }
             finally { _inventory.EndPortAccess(); }
         }
@@ -216,8 +229,10 @@ internal sealed partial class FlowGameSession : IDisposable
         _saving = true;
         UpdateAvailability();
         // Faulted transfers remain saveable. Reload retains the journal AND the recovery fence.
-        return new FlowGameSave(2, _saveId, CheckpointCodec.Encode(new CheckpointImage(0, _runtime.CaptureCheckpoint())),
+        var saved = new FlowGameSave(2, _saveId, CheckpointCodec.Encode(new CheckpointImage(0, _runtime.CaptureCheckpoint())),
             _stations.Values.OrderBy(station => station.Id).ToArray(), _payloads.Values.OrderBy(payload => payload.Id).ToArray(), _faulted);
+        _checkpointCaptures++;
+        return saved;
     }
 
     internal void EndSave() { RequireOwnerIdle(); if (!_closed) { _saving = false; UpdateAvailability(); } }
@@ -244,6 +259,7 @@ internal sealed partial class FlowGameSession : IDisposable
         var port = new SaveBoundCargoPort(transfer =>
         {
             CargoPayload payload = _payloads[transfer.CargoId.Value];
+            _physicalApplyCalls++;
             return _inventory.Apply(transfer, payload.Xml, payload.SourceQuantity);
         }, checkpoint);
         _ports.Add(station, port);

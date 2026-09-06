@@ -170,7 +170,8 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             || string.Equals(scenario, "flow.chest.cancellation", StringComparison.Ordinal)
             || string.Equals(scenario, "flow.chest.return", StringComparison.Ordinal)
             || string.Equals(scenario, "flow.chest.crash-after-return", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.isolation", StringComparison.Ordinal))
+            || string.Equals(scenario, "flow.chest.isolation", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.chest.performance", StringComparison.Ordinal))
         {
             return null;
         }
