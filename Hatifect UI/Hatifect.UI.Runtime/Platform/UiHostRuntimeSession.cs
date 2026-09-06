@@ -337,8 +337,14 @@ internal sealed class UiHostRuntimeSession
             LastUpdate = directUpdate;
             return directUpdate;
         }
+        long version = AcceptedVersion;
         UiScene next = compose(Interactions.Snapshot)
             ?? throw new InvalidOperationException("The interaction scene composer returned null.");
+        EnsureNotPreparing();
+        // Composition may accept a nested update. Keep that accepted frame and reject
+        // this obsolete result, including when the nested update reused the same model.
+        if (AcceptedVersion != version)
+            throw new InvalidOperationException("The accepted host changed during interaction composition.");
         return Update(next, _placement);
     }
 
