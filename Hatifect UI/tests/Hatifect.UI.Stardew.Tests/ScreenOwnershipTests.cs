@@ -290,18 +290,49 @@ public sealed class ScreenOwnershipTests
         Assert.True(lease.OwnsSubscriber);
         lease.RecieveTextInput('a');
         lease.RecieveTextInput("bc");
-        lease.RecieveSpecialInput(Keys.Enter);
-        Assert.Equal(new[] { "a", "bc", "Enter" }, received);
+        lease.RecieveSpecialInput(Keys.Left);
+        Assert.Equal(new[] { "a", "bc", "Left" }, received);
         screen = 4;
         lease.RecieveTextInput('x');
         lease.RecieveTextInput("foreign");
         lease.RecieveSpecialInput(Keys.Escape);
+        lease.RecieveCommandInput('\b');
         Assert.Equal(3, received.Count);
         Assert.Throws<InvalidOperationException>(() => lease.Acquire());
         lease.Dispose();
         Assert.Same(previous, a.Value);
         Assert.Same(other, b.Value);
         Assert.False(lease.OwnsSubscriber);
+    }
+
+    [Theory]
+    [InlineData('\b', Keys.Back)]
+    [InlineData('\t', Keys.Tab)]
+    [InlineData('\r', Keys.Enter)]
+    public void KeyboardCommandCharactersDispatchExactlyOnceAndRespectOwnership(char command, Keys key)
+    {
+        var slot = new KeyboardSlot();
+        bool currentScreen = true;
+        var keys = new List<Keys>();
+        var text = new List<string>();
+        using var lease = new UiSemanticKeyboardSubscriberLease(text.Add, keys.Add, slot.Capture, () => currentScreen);
+        lease.Acquire();
+        lease.RecieveCommandInput(command);
+        Assert.Equal(new[] { key }, keys);
+        // The legacy dispatcher may deliver both callbacks for the same physical key.
+        lease.RecieveSpecialInput(key);
+        Assert.Equal(new[] { key }, keys);
+        lease.RecieveCommandInput('x');
+        Assert.Empty(text);
+        Assert.Equal(new[] { key }, keys);
+
+        currentScreen = false;
+        lease.RecieveCommandInput(command);
+        Assert.Equal(new[] { key }, keys);
+        currentScreen = true;
+        slot.Value = new Subscriber();
+        lease.RecieveCommandInput(command);
+        Assert.Equal(new[] { key }, keys);
     }
 
     [Fact]

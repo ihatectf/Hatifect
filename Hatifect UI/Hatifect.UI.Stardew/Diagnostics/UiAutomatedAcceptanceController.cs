@@ -88,6 +88,13 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             "semantic.input.controller",
             "semantic.input.text"
         }),
+        new("semantic.input.native", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.NativeInput, true, new[]
+        {
+            "semantic.input.native.pointer",
+            "semantic.input.native.keyboard",
+            "semantic.input.native.text",
+            "semantic.input.native.backspace"
+        }, includeInAggregate: false),
         new("semantic.locale-scale-theme", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.LocaleScaleTheme, true, new[]
         {
             "semantic.locale.en",
@@ -217,6 +224,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         {
             AddScenario(scenarios, checkOwners, scenario);
             if (scenario.Kind == AcceptanceScenarioKind.Ui
+                && scenario.IncludeInAggregate
                 && scenario.Execution != AcceptanceScenarioExecution.Performance)
             {
                 allChecks.AddRange(scenario.Checks);
@@ -309,6 +317,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        StopNativeInput();
         RestoreVisualSettingsAfterFailure();
         _helper.Events.GameLoop.UpdateTicked -= OnUpdateTicked;
         _helper.Events.Display.Rendered -= OnRendered;
@@ -412,6 +421,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             return;
         }
         if (_awaitingReturnedToTitle) return;
+        if (AdvanceNativeInput()) return;
         if (AdvanceVisualMatrix()) return;
         if (_performanceActive
             && _performanceFrames > 0
@@ -438,6 +448,12 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
 
     private void CaptureCompletedFrame()
     {
+        if (!_disposed && _nativeInputGate != null)
+        {
+            try { ObserveNativeInputFrame(); }
+            catch (Exception error) { FailNativeInputCapture(error); }
+            return;
+        }
         if (!_disposed && _visualGate != null)
         {
             try { ObserveVisualMatrixFrame(); }
@@ -489,6 +505,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         catch (Exception error)
         {
             RetainTerminalFailure("HARNESS-AUTOMATION-EXECUTION-EXCEPTION", error);
+            StopNativeInput();
             RestoreVisualSettingsAfterFailure();
             WriteDiagnostics();
             _capturePending = true;
@@ -556,6 +573,9 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             case AcceptanceScenarioExecution.LocaleScaleTheme:
                 BeginVisualMatrix();
                 return true;
+            case AcceptanceScenarioExecution.NativeInput:
+                BeginNativeInput();
+                return true;
             case AcceptanceScenarioExecution.Performance:
                 BeginPerformance();
                 return true;
@@ -622,6 +642,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         _returnToTitleContribution = null;
         _verifyReturnToTitleContribution = false;
         RetainTerminalFailure("HARNESS-AUTOMATION-LIFECYCLE-EXCEPTION", error);
+        StopNativeInput();
         RestoreVisualSettingsAfterFailure();
         (_saveEnumerator as IDisposable)?.Dispose();
         _saveEnumerator = null;
@@ -1180,6 +1201,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             },
             visualMatrix = _visualCaptures.ToArray(),
             visualMatrixRestored = _visualSettingsRestored,
+            nativeInput = new { completed = _nativeInputCompleted, expectedText = _nativeExpectedText, lastObservation = _nativeLastObservation, captures = _nativeCaptures.ToArray() },
             terminalError = _terminalFailure == null ? null : new
             {
                 reason = _terminalFailure.Reason,
@@ -1208,6 +1230,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         Inspector,
         Overlay,
         Input,
+        NativeInput,
         LocaleScaleTheme,
         Performance,
         Contribution
@@ -1221,13 +1244,15 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             bool requiresWorld,
             AcceptanceScenarioExecution execution,
             bool completesAsynchronously,
-            string[] checks)
+            string[] checks,
+            bool includeInAggregate = true)
         {
             Id = id;
             Kind = kind;
             RequiresWorld = requiresWorld;
             Execution = execution;
             CompletesAsynchronously = completesAsynchronously;
+            IncludeInAggregate = includeInAggregate;
             Checks = Array.AsReadOnly((string[])checks.Clone());
         }
 
@@ -1240,6 +1265,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             Execution = AcceptanceScenarioExecution.Contribution;
             CompletesAsynchronously = false;
             Checks = contribution.Checks;
+            IncludeInAggregate = contribution.IncludeInAggregate;
             Contribution = contribution;
         }
 
@@ -1261,6 +1287,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         public bool RequiresWorld { get; }
         public AcceptanceScenarioExecution Execution { get; }
         public bool CompletesAsynchronously { get; }
+        public bool IncludeInAggregate { get; }
         public IReadOnlyList<string> Checks { get; }
         public UiAutomatedAcceptanceScenarioDescriptor? Contribution { get; }
     }

@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -601,6 +602,122 @@ def _record_started_process(
         _transition(active_path, request, "Running", "SMAPI process group started.")
 
 
+def _game_options_directory(isolated: Path) -> Path:
+    return _ensure_private_directory(_ensure_private_directory(isolated / "config") / "StardewValley")
+
+
+def _game_options_file_info(path: Path) -> os.stat_result | None:
+    info = _lstat(path)
+    if info is not None and (
+        not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid()
+        or info.st_size > MAX_DOCUMENT_BYTES
+    ):
+        raise DirectRuntimeError(f"Game options must be a bounded, owned regular file without links: {path}")
+    return info
+
+
+def _replace_game_options(path: Path, content: bytes, mode: int) -> None:
+    _game_options_file_info(path)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+@contextlib.contextmanager
+def _background_game_options(request: dict[str, Any]):
+    """Lease only isolated game preferences while the owned process group runs."""
+    isolated = Path(request["isolatedRoot"]).resolve(strict=True)
+    root = _game_options_directory(isolated)
+    plans = []
+    # Validate both documents before the first mutation. Missing documents use the
+    # game's serializer roots; absent properties keep their game defaults.
+    for name, root_name, parent_name in (
+        ("startup_preferences", "StartupPreferences", "clientOptions"),
+        ("default_options", "Options", None),
+    ):
+        path = root / name
+        info = _game_options_file_info(path)
+        original = path.read_bytes() if info is not None else None
+        try:
+            document = ET.fromstring(original, parser=ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))) if original is not None else ET.Element(root_name)
+        except ET.ParseError as error:
+            raise DirectRuntimeError(f"Invalid isolated game options XML: {path}: {error}") from error
+        if document.tag != root_name:
+            raise DirectRuntimeError(f"Unexpected isolated game options root: {path}")
+        parents = document.findall(parent_name) if parent_name else [document]
+        if len(parents) > 1:
+            raise DirectRuntimeError(f"Ambiguous isolated game options parent: {path}")
+        parent = parents[0] if parents else ET.SubElement(document, parent_name)
+        fields = parent.findall("pauseWhenOutOfFocus")
+        if len(fields) > 1 or (fields and (list(fields[0]) or fields[0].attrib)):
+            raise DirectRuntimeError(f"Ambiguous isolated pauseWhenOutOfFocus option: {path}")
+        field = fields[0] if fields else ET.SubElement(parent, "pauseWhenOutOfFocus")
+        field.text = "false"
+        effective = ET.tostring(document, encoding="utf-8", xml_declaration=True)
+        plans.append((path, original, effective, stat.S_IMODE(info.st_mode) if info else PRIVATE_FILE_MODE))
+
+    diagnostics = Path(request["artifactDirectory"]) / "diagnostics"
+    evidence_path = diagnostics / "runtime-options.json"
+    evidence = {
+        "policy": "background-progress-v1", "requestId": request["requestId"],
+        "pauseWhenOutOfFocus": False, "state": "Prepared", "files": [],
+    }
+    for path, original, effective, _mode in plans:
+        if original is not None:
+            backup = diagnostics / "runtime-options-originals" / path.name
+            backup.parent.mkdir(parents=True, exist_ok=True, mode=PRIVATE_DIRECTORY_MODE)
+            with backup.open("xb") as stream:
+                os.fchmod(stream.fileno(), PRIVATE_FILE_MODE)
+                stream.write(original)
+                stream.flush()
+                os.fsync(stream.fileno())
+        evidence["files"].append({
+            "path": path.relative_to(isolated).as_posix(),
+            "originalSha256": hashlib.sha256(original).hexdigest() if original is not None else None,
+            "effectiveSha256": hashlib.sha256(effective).hexdigest(), "restored": True,
+        })
+    _atomic_write_json(evidence_path, evidence)
+    modified = []
+    try:
+        for index, (path, original, effective, mode) in enumerate(plans):
+            _game_options_directory(isolated)
+            modified.append(index)
+            evidence["files"][index]["restored"] = False
+            _replace_game_options(path, effective, mode)
+        evidence["state"] = "Active"
+        _atomic_write_json(evidence_path, evidence, replace=True)
+        yield
+    finally:
+        errors = []
+        for index in reversed(modified):
+            path, original, _effective, mode = plans[index]
+            try:
+                _game_options_directory(isolated)
+                _game_options_file_info(path)
+                if original is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    _replace_game_options(path, original, mode)
+                    if path.read_bytes() != original:
+                        raise DirectRuntimeError(f"Isolated game options restoration mismatch: {path}")
+                evidence["files"][index]["restored"] = True
+            except (OSError, DirectRuntimeError) as error:
+                errors.append(f"{path.name}: {error}")
+        evidence["state"] = "RestoreFailed" if errors else "Restored"
+        evidence["errors"] = errors
+        _atomic_write_json(evidence_path, evidence, replace=True)
+        if errors:
+            raise DirectRuntimeError("Isolated game options restoration failed: " + "; ".join(errors))
+
+
 def _minimal_environment(request: dict[str, Any], metadata: dict[str, Any]) -> dict[str, str]:
     isolated = Path(request["isolatedRoot"])
     artifact = Path(request["artifactDirectory"])
@@ -1079,32 +1196,33 @@ def _execute_request(
         process_document["teardownErrors"] = list(errors)
         _atomic_write_json(process_path, process_document, replace=True)
 
-    try:
-        if request["scenarioId"] in SAVED_CRASH_BOUNDARIES:
-            exit_code = _run_saved_crash(request, metadata, run_process, active_path, cancellation_path, on_started, on_completed)
-        else:
-            exit_code = run_process.run(
-                [str(smapi)],
-                smapi_directory,
-                artifact / "smapi.log",
-                request["timeoutSeconds"],
-                5.0,
-                environment=_minimal_environment(request, metadata),
-                on_started=on_started,
-                cancel_requested=cancellation_path.exists,
-                on_completed=on_completed,
-            )
-    except DirectRuntimeError as error:
-        if request["scenarioId"] not in SAVED_CRASH_BOUNDARIES:
-            raise
-        _copy_smapi_logs(isolated, artifact)
-        if report_source.is_file():
-            shutil.copy2(report_source, report_artifact)
-        _complete_save_lifecycle(request, metadata, process_succeeded=False, report_exists=False)
-        message = f"Controlled saved-crash evidence failed: {error}"
-        _write_harness_result(metadata, request, "FAIL", message, "HARNESS-CRASH-EVIDENCE", started_at, exception_type="CrashEvidence")
-        _write_transport_diagnostics(request, metadata, phase="completed", status="FAIL")
-        return "Failed", "FAIL", 1, "ScenarioFailure", message, False
+    with _background_game_options(request):
+        try:
+            if request["scenarioId"] in SAVED_CRASH_BOUNDARIES:
+                exit_code = _run_saved_crash(request, metadata, run_process, active_path, cancellation_path, on_started, on_completed)
+            else:
+                exit_code = run_process.run(
+                    [str(smapi)],
+                    smapi_directory,
+                    artifact / "smapi.log",
+                    request["timeoutSeconds"],
+                    5.0,
+                    environment=_minimal_environment(request, metadata),
+                    on_started=on_started,
+                    cancel_requested=cancellation_path.exists,
+                    on_completed=on_completed,
+                )
+        except DirectRuntimeError as error:
+            if request["scenarioId"] not in SAVED_CRASH_BOUNDARIES:
+                raise
+            _copy_smapi_logs(isolated, artifact)
+            if report_source.is_file():
+                shutil.copy2(report_source, report_artifact)
+            _complete_save_lifecycle(request, metadata, process_succeeded=False, report_exists=False)
+            message = f"Controlled saved-crash evidence failed: {error}"
+            _write_harness_result(metadata, request, "FAIL", message, "HARNESS-CRASH-EVIDENCE", started_at, exception_type="CrashEvidence")
+            _write_transport_diagnostics(request, metadata, phase="completed", status="FAIL")
+            return "Failed", "FAIL", 1, "ScenarioFailure", message, False
     _copy_smapi_logs(isolated, artifact)
     if report_source.is_file():
         shutil.copy2(report_source, report_artifact)

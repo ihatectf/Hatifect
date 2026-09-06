@@ -33,12 +33,15 @@ internal sealed class UiInspectorExperienceSession : IDisposable
         _close = close ?? (() => { });
         _revealSource = revealSource ?? (_ => { });
         UiSymbolId id = experienceId ?? snapshot.Experience.Child("devtools/inspector");
+        // An inspection entry represents a captured node; it is not that live scene node.
+        // Reusing its ID aliases Terminal navigation/focus with a row of this collection.
+        UiSymbolId RowId(UiInspectorNodeSnapshot node) => id.Child("entry/" + node.Id);
         UiInspectorNodeSnapshot[] initial = snapshot.Nodes.ToArray();
         _nodes = new UiSelectableCollectionState<UiInspectorNodeSnapshot>(
             initial,
-            node => node.Id,
+            RowId,
             NodeLabel,
-            initial.Length == 0 ? null : initial[0].Id,
+            initial.Length == 0 ? null : RowId(initial[0]),
             NodeSupportingText);
         _query.Changed += OnQueryChanged;
         _nodes.Changed += OnSelectionChanged;
@@ -80,7 +83,8 @@ internal sealed class UiInspectorExperienceSession : IDisposable
 
     private UiInspectorNodeSnapshot? SelectedNode
         => _nodes.SelectedItemId is { } selected
-            ? _snapshot.Nodes.FirstOrDefault(node => node.Id == selected)
+            && ((IUiSemanticCollectionMetadata)_nodes).TryGetIndex(selected, out int index)
+            ? _nodes.Value[index]
             : null;
 
     private UiSourceInspectionEntry? SelectedSource
@@ -97,7 +101,7 @@ internal sealed class UiInspectorExperienceSession : IDisposable
             : _snapshot.Nodes.Where(node => Matches(node, query)).ToArray();
         _nodes.Replace(filtered);
         if (_nodes.SelectedItemId == null && filtered.Length > 0)
-            _nodes.TrySelect(filtered[0].Id);
+            _nodes.TrySelect(_nodes.GetItem(0).Id);
         else
             SynchronizeDetails();
     }

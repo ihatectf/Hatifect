@@ -215,6 +215,41 @@ public sealed class AccessibilityTests
     }
 
     [Fact]
+    public void EmptyTextFieldShowsItsNameWithoutInsertingHintIntoEditableState()
+    {
+        UiSymbolId id = RegistryTests.Id("accessibility/empty-search");
+        var query = new UiState<string>(string.Empty);
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Search fixture")
+            .Search("Search", query).Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder().Window(id, experience.DisplayName, () => experience).Freeze();
+        UiInvocationResult invocation = new UiInvocationService(registry).Invoke(id, UiPresentationProfiles.Wide);
+        var composer = new UiSceneComposer(UiThemePresets.Dark(), registry);
+        UiScene Compose(UiInteractionSnapshot? interaction = null) => composer.Compose(invocation, interaction: interaction);
+        var host = new UiPortalHostSession(Compose(), new UiHostPlacementContext(Viewport), new TestPlatform(),
+            composeInteraction: interaction => Compose(interaction));
+        UiTextInputSceneNode field = Assert.Single(SceneNodes(host.Root.Scene.Root).OfType<UiTextInputSceneNode>());
+        UiTextPrimitive DrawnText() => Assert.Single(host.Root.Frame.Primitives.OfType<UiTextPrimitive>(), text => text.Node == field.Id);
+
+        Assert.Equal("Search", DrawnText().Text);
+        Assert.True(DrawnText().Bounds.Width > 0 && DrawnText().Bounds.Height > 0);
+        Assert.True(host.MoveFocus(UiNavigationDirection.Next).Consumed);
+        Assert.Equal("Search", DrawnText().Text);
+        Assert.Equal(0, host.FocusedTextEditing?.Caret);
+        Assert.Equal(string.Empty, query.Value);
+        Assert.Equal(string.Empty, Assert.Single(Nodes(host.Accessibility.Root.Root), node => node.Id == field.Id).Value);
+        Assert.Contains(host.Root.Frame.Primitives.OfType<UiSurfacePrimitive>(), surface => surface.Node == field.Id && surface.Bounds.Width == 1);
+
+        Assert.True(host.InsertText("Ore").Interaction?.TextChanged);
+        Assert.Equal("Ore", DrawnText().Text);
+        Assert.Equal("Ore", query.Value);
+        Assert.Equal(3, host.FocusedTextEditing?.Caret);
+        Assert.True(host.ReplaceText(string.Empty).Interaction?.TextChanged);
+        Assert.Equal("Search", DrawnText().Text);
+        Assert.Equal(string.Empty, query.Value);
+        Assert.Equal(0, host.FocusedTextEditing?.Caret);
+    }
+
+    [Fact]
     public void DirectHostTextEditingRefreshesLiveTextAndScrolledPointerGeometry()
     {
         UiSymbolId id = RegistryTests.Id("accessibility/direct-text-editing");
