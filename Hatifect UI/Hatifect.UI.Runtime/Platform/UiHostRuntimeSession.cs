@@ -61,7 +61,7 @@ internal sealed class UiHostRuntimeSession
         _layoutEngine = new UiSceneLayoutEngine(platform);
         Layout = BuildLayout(scene, placement);
         _collections.Synchronize(Layout);
-        Interactions = new UiInteractionSession(scene, Layout, interaction, platform, EnsureNotPreparing);
+        Interactions = new UiInteractionSession(scene, Layout, interaction, platform, CaptureInputOwnerVersion);
         _frame = BuildFrame(scene);
         Accessibility = BuildAccessibility(scene, Layout, Interactions.Snapshot);
     }
@@ -328,6 +328,12 @@ internal sealed class UiHostRuntimeSession
         UiAccessibilitySnapshot snapshot = _accessibilityBuilder.Build(scene, layout, interaction);
         EnsureActive();
         return snapshot;
+    }
+
+    private long CaptureInputOwnerVersion()
+    {
+        EnsureNotPreparing();
+        return AcceptedVersion;
     }
 
     private void EnsureNotPreparing()

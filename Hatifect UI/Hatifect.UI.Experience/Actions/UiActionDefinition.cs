@@ -25,11 +25,12 @@ public sealed class UiActionDefinition
 
     // Host input must recheck ownership after consumer availability, before the domain effect.
     // A direct legacy invocation has no host owner and retains its existing behavior.
-    internal bool TryExecute(Action? ensureOwnerActive)
+    internal bool TryExecute(Func<long>? captureOwnerVersion)
     {
-        ensureOwnerActive?.Invoke();
+        long? ownerVersion = captureOwnerVersion?.Invoke();
         bool available = CanExecute;
-        ensureOwnerActive?.Invoke();
+        if (captureOwnerVersion?.Invoke() != ownerVersion)
+            throw new InvalidOperationException("The action's host scene changed while availability was being checked.");
         if (!available) return false;
         _execute();
         return true;

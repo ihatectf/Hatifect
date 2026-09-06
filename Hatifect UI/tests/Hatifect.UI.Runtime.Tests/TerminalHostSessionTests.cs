@@ -796,6 +796,60 @@ public sealed class TerminalHostSessionTests
         }
     }
 
+    [Theory]
+    [InlineData("other-section")]
+    [InlineData("same-section")]
+    [InlineData("recompose")]
+    public void AvailabilitySceneReplacementPreventsTheLegacyActionEffect(string replacement)
+    {
+        UiTerminalHostSession? session = null;
+        bool replace = false;
+        int effects = 0;
+        UiScene? acceptedScene = null;
+        UiSymbolId first = Id("terminal-admission-replacement/first");
+        UiSymbolId second = Id("terminal-admission-replacement/second");
+        var action = new UiActionDefinition(first.Child("action/apply"), "Apply", () => effects++, () =>
+        {
+            if (replace)
+            {
+                replace = false;
+                if (replacement == "recompose") session!.Recompose(UiPresentationProfiles.Compact, Placement);
+                else session!.OpenSection(replacement == "other-section" ? second : first);
+                acceptedScene = session!.Host.Root.Scene;
+            }
+            return true;
+        });
+        UiExperienceDefinition model = new UiExperienceBuilder(first, "First").Actions("Actions", action).Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(first, "First", () => model)
+            .TerminalSection(second, "Second", () => Section(second, "Second")).Freeze();
+        using (session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            new TestPlatform(), UiPresentationProfiles.Wide, initialSection: first))
+        {
+            UiButtonSceneNode button = Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiButtonSceneNode>());
+            Assert.True(session.PressPointer(Center(Layout(session, button.Id).Bounds)).Consumed);
+            Assert.Equal(button.Id, session.Host.Root.Interactions.Snapshot.Focused);
+            var retainedInput = session.Host.Root.Interactions;
+            UiScene previousScene = session.Host.Root.Scene;
+            replace = true;
+
+            Exception? error = Record.Exception(() => retainedInput.Submit());
+
+            Assert.NotNull(acceptedScene);
+            Assert.NotSame(previousScene, acceptedScene);
+            Assert.Same(acceptedScene, session.Host.Root.Scene);
+            Assert.Equal(replacement == "other-section" ? second : first, session.ActiveSection);
+            Assert.Equal(0, effects);
+            Assert.IsType<InvalidOperationException>(error);
+
+            session.OpenSection(first);
+            button = Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiButtonSceneNode>());
+            Assert.True(session.PressPointer(Center(Layout(session, button.Id).Bounds)).Consumed);
+            Assert.True(session.Host.Root.Interactions.Submit().ActionInvoked);
+            Assert.Equal(1, effects);
+        }
+    }
+
     private static IEnumerable<UiSceneNode> SceneNodes(UiSceneNode node)
     {
         yield return node;

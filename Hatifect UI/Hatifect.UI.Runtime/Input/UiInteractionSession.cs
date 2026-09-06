@@ -111,14 +111,14 @@ internal sealed class UiInteractionSession
     private UiSymbolId[] _focusGroups;
     private CollectionFocus? _collectionFocus;
     private readonly IUiTextMetrics? _textMetrics;
-    private readonly Action? _beforeMutation;
+    private readonly Func<long>? _beforeMutation;
 
     public UiInteractionSession(
         UiScene scene,
         UiLayoutSnapshot layout,
         UiInteractionSnapshot? snapshot = null,
         IUiTextMetrics? textMetrics = null,
-        Action? beforeMutation = null)
+        Func<long>? beforeMutation = null)
     {
         _scene = scene ?? throw new ArgumentNullException(nameof(scene));
         _layout = layout ?? throw new ArgumentNullException(nameof(layout));
