@@ -103,8 +103,9 @@ internal sealed class ParcelExperience : IFlowExperience
 
     public UiExperienceDefinition Experience { get; }
     internal UiPublication Publication => _publication;
+    // Empty or faulted data remains visible until the owning session/surface retires.
     public bool IsActive => !_disposed && !_publication.IsDisposed
-        && Snapshot.State is not (FlowApplicationState.Closed or FlowApplicationState.Faulted) && Parcel is not null;
+        && Snapshot.State != FlowApplicationState.Closed;
     private bool CanRequest => !_disposed && !_publication.IsDisposed && !_publication.IsPublishing && !_pumping && !_requesting;
 
     // Coalesces domain notifications into one complete projection per pump.
@@ -159,7 +160,8 @@ internal sealed class ParcelExperience : IFlowExperience
 
     private bool CurrentAllows(FlowParcelAction action)
     {
-        if (!IsActive || !Parcel!.Availability[action].Available) return false;
+        if (!IsActive || Snapshot.State != FlowApplicationState.Active || Parcel is not { } parcel
+            || !parcel.Availability[action].Available) return false;
         FlowSnapshot expected = Snapshot;
         long epoch = _notificationEpoch;
         FlowSnapshot current = _application.ReadSnapshot();

@@ -20,14 +20,18 @@ internal sealed record ParcelTextValue(ParcelPresentationSnapshot Facts, ParcelT
         FlowSnapshot snapshot = Facts.Snapshot;
         FlowParcelSnapshot? parcel = Facts.Parcel;
         bool unavailable = snapshot.State is FlowApplicationState.Closed or FlowApplicationState.Faulted || parcel is null;
+        FlowRejectionCode missingCode = snapshot.State is FlowApplicationState.Closed or FlowApplicationState.Faulted
+            ? snapshot.Code : FlowRejectionCode.ParcelNotFound;
         return Part switch
         {
             ParcelTextPart.Cargo => unavailable ? string.Empty
                 : (Facts.LocalizedItemName?.Resolve(locale) ?? Facts.ItemName) + " × " + parcel!.Quantity.ToString(CultureInfo.InvariantCulture),
             ParcelTextPart.Route => unavailable ? string.Empty
                 : (Facts.Origin ?? Text("Station", "Станция")) + " → " + (Facts.Destination ?? Text("Station", "Станция")),
-            ParcelTextPart.State => unavailable ? Text("Session closed", "Сессия закрыта") : DescribeState(snapshot, parcel!, russian),
-            ParcelTextPart.Availability => unavailable ? FlowReasonText.Describe(snapshot.Code, snapshot.ReasonKey, russian)
+            ParcelTextPart.State => unavailable ? FlowReasonText.Describe(missingCode, string.Empty, russian)
+                : DescribeState(snapshot, parcel!, russian),
+            ParcelTextPart.Availability => unavailable ? FlowReasonText.Describe(
+                    snapshot.Code == FlowRejectionCode.None ? missingCode : snapshot.Code, string.Empty, russian)
                 : FlowReasonText.UnavailableActions(parcel!.Availability, russian),
             ParcelTextPart.Result => Facts.Result is null ? string.Empty
                 : Facts.Result.Status == FlowCommandStatus.Applied ? Text("Command completed", "Команда выполнена")

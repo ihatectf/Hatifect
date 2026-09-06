@@ -158,14 +158,16 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
     private void Close(FlowApplicationState state)
     {
         RequireIdle();
-        if (_snapshot.State is FlowApplicationState.Closed or FlowApplicationState.Faulted)
+        if (_snapshot.State == FlowApplicationState.Closed
+            || _snapshot.State == FlowApplicationState.Faulted && state != FlowApplicationState.Closed)
         {
             return;
         }
         _snapshot = new FlowSnapshot(_snapshot.SessionId, _snapshot.NetworkId, checked(_snapshot.Revision + 1), state,
             Array.Empty<FlowStationSnapshot>(), Array.Empty<FlowLinkSnapshot>(), Array.Empty<FlowParcelSnapshot>(), _providerMode, _supportedOperations);
         Notify();
-        RevisionChanged = null;
+        // A fault stops operations; owner disposal is the final lifetime notification for retained projections.
+        if (state == FlowApplicationState.Closed) RevisionChanged = null;
     }
 
     private void Notify()
