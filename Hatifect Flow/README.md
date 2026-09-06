@@ -8,7 +8,7 @@ Flowline — транспортная подсистема Hatifect. `Hatifect.F
 
 ## Первый игровой маршрут
 
-Нужны Hatifect Flow и Hatifect UI 1.0.0-alpha.31 или новее. В одиночном загруженном сейве доступны команды консоли SMAPI:
+Нужны совместимые Hatifect Flow и Hatifect UI из одной проверенной поставки; точная минимальная версия UI указана в `manifest.json`. В одиночном загруженном сейве доступны команды консоли SMAPI:
 
 1. Наведи курсор на обычный сундук игрока: `hatifect_flow station source`. Так же зарегистрируй второй сундук как `destination`. Имена: до 32 букв, цифр, `_` или `-`.
 2. `hatifect_flow link source destination` создаёт направленную связь с capacity 999 и временем 180 игровых update ticks. Необязательные два последних аргумента меняют capacity (1..999) и ticks (1..36000).
@@ -77,6 +77,14 @@ Reservation availability shares the owning admission check with `TryReserve`: st
 `FlowCommandResult` preserves status/revision and adds `Code` plus `ReasonKey` for refusals. Successful results have `None` and an empty key. Domain reasons use `flow.reason.<Code>`; the semantic consumer falls back to the code when a translation key is unknown. Extended network/recovery commands retain the same rejection envelope. Persistence envelopes, cargo custody and game-save format do not change for these UI fields. The internal disabled peer projection carries the new values and rejects contradictory action masks/reasons on decode.
 
 The five public action entries remain Reserve, Cancel, RetryDelivery, ReconcileTransfer and ReturnToSource. Provider capabilities can explicitly disable an operation. Pause/recovery blocks ordinary commands; known-outcome recovery remains a separate typed host command.
+
+## Retained parcel text (F12 prerequisite)
+
+`ParcelExperience` publishes immutable domain facts, captured station/item names and the original `FlowCommandResult` in one `UiPublication`. Five stable presented sources use `ParcelTextValue`; U04 `FormatText<T>` materializes their text for the scene's captured locale. Labels and action titles use `UiLocalizedText`. Replanning the same model in EN/RU preserves source/action identities and the last command's meaning without replaying it or incrementing the publication/domain revision. Text formatters do not call the application or name adapters; ordinary action availability checks still read the current cached application snapshot.
+
+The explicit supported locale keys are `en`, `en-US`, `ru` and `ru-RU`, compared ordinally. Unknown/invariant locales use the original constructor-selected fallback; no parent-culture inference occurs. Integer cargo quantity uses invariant formatting. The source's `ToString()` retains fallback text for inspection, while scene composition supplies the actual locale. Existing graph IDs, aliases and fallback labels remain stable; the internal presented source payload changes from `string` to typed captured facts.
+
+The optional `localizedItemName` callback captures an immutable `UiLocalizedText` catalog for an item during model preparation. It is exclusive with the legacy `itemName` callback. Failure retains the accepted publication and pending result for retry; retirement stops subsequent callbacks. The legacy callback still captures one string, so the current native `ItemRegistry` callsite must migrate before live game item translation can be claimed. Native environment propagation, meaningful empty/faulted states and the actual F12 input/scale/save lifecycle matrix remain required. This consumer checkpoint requires its matching U04 text contract; the combined release version is assigned by integration after alpha.46.
 
 ## Partial-stack custody (F16)
 
