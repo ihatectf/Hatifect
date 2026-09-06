@@ -12,7 +12,9 @@ Consumer описывает смысл интерфейса и действия.
 
 `UiSemanticFormField` также принимает внешний `ValidationMessage`: непустое сообщение блокирует `UiFormState.Apply`, отображается и входит в accessibility tree. Типизированные Text/Number/Toggle/Choice и `Apply/Reset` сохраняются. Владелец формы вызывает `Dispose`; при ошибке снятия подписки повторный `Dispose` завершает очистку, а закрытая форма уже не уведомляет observers. Источники остаются собственностью consumer.
 
-Overloads `UiExperienceBuilder` с явным `UiSymbolId` сохраняют ID элемента при смене локализованного имени, включая пробелы. Старые overloads сохраняют прежнее формирование ID из имени. Полный перенос независимого ID через compiler binding и metadata реализуется в U01; одного builder overload для этого недостаточно.
+Overloads `UiExperienceBuilder` с явным `UiSymbolId` сохраняют ID элемента независимо от локализованного имени, включая пробелы. `UiSemanticGraph` переносит отдельные IDs, aliases и fallback labels через binding и metadata; Runtime разрешает visual role по alias. Старые overloads сохраняют прежнее формирование ID из имени.
+
+[Локализованный текст на сохранённом Experience](../docs/UI_TEXT_PROJECTION.md): `UiLocalizedText`, `LocalizeDisplayName/Element/Action` и typed `FormatText<T>` позволяют повторно составить подписи и read-only значения из одного captured locale/publication snapshot. Исходные labels остаются authoring fallback, action/source identities сохраняются. Игровое переключение языка и Flow consumer migration имеют отдельную приёмку U04/F12.
 
 Из корня репозитория: `./tools/hatifect-test ui`, затем `./tools/hatifect-check --platform` для изменений Stardew host. Бюджеты реальных кадров находятся в `PERFORMANCE_BUDGETS.json`, требования к runtime-отчёту — в `HOST_ACCEPTANCE_REQUIREMENTS.json`. Статические тесты не заменяют измерения в игре.
 
