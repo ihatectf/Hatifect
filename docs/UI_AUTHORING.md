@@ -33,6 +33,10 @@ UiBindingContext context = UiBindingContextJson.Import(utf8);
 
 Reference the exact `Hatifect.UI.Tooling` package from the repository's current UI feed. Its dependency graph remains Language + Semantics. Public export preserves IDs, capabilities, strictness flags and deterministic ordering; subsequent changes to the original context do not modify exported bytes. `Import` rejects unsupported schemas, duplicate declarations and conflicting identities.
 
+With alpha.32, explicit identity, localized labels and typed relations use binding metadata schema v2. Canonical legacy contexts still export the same schema-v1 bytes; both versions import strictly. The server advertises `[1, 2]` in `capabilities.experimental.hatifectUi.bindingMetadataVersions` during initialization. A client that only understands v1 must report unsupported v2 metadata instead of regenerating IDs from names. V1 and v2 contexts can coexist in one session.
+
+Schema v2 contains `graph.nodes`, `graph.relations`, `graph.presentedNodes` and `graph.roles`. Nodes preserve their independent `id`, authoring `alias`, display `label`, nullable data descriptor, capabilities and typed input slots. Relations preserve endpoint IDs, the target input ID, explicit submission mapping and provenance. `presentedNodes` is the ordered subset available to presentation DSL; auxiliary data/action nodes are retained in metadata but cannot be placed as widgets. Export the actual context with the API above rather than constructing this graph from displayed labels. Failed imports and binding updates retain the previous complete document/binding snapshots and revision.
+
 The existing Examples assembly also exercises export without friend access:
 
 ```sh
@@ -63,7 +67,7 @@ Use your configured .NET executable in place of `dotnet` if it is not on PATH. P
 
 `bindingMetadata` is the default for open documents. Optional `documentBindings` entries have `{ "uri": "file:///path/Asset.hatifect", "bindingMetadata": <exported object> }` and override that exact URI. Different Experience owners can share a server; names resolve through stable IDs in each context.
 
-Optional `declarations` entries contain `symbolId`, an absolute `uri`, and an LSP `range` with zero-based UTF-16 `start`/`end`. The ID must identify an element or role in one of the supplied contexts. These coordinates come from the consumer's generator or editor adapter. Go to definition uses them exactly. Built-in catalog symbols and consumer symbols without provenance return an empty definition result; the server does not invent C# locations.
+Optional `declarations` entries contain `symbolId`, an absolute `uri`, and an LSP `range` with zero-based UTF-16 `start`/`end`. The ID must identify an element or role in one of the supplied contexts, or a v2 graph node, input slot or relation. These coordinates come from the consumer's generator or editor adapter. Go to definition uses them exactly. Built-in catalog symbols and consumer symbols without provenance return an empty definition result; the server does not invent C# locations.
 
 After rebuilding consumer metadata, send `hatifect/updateBindings` with the same complete options shape and an increasing `bindingRevision`. This replaces all bindings and provenance atomically, recompiles open documents, and returns `{ "bindingRevision": n, "documentsReanalyzed": count }`. Omitted overrides/declarations are removed. Text versions stay unchanged; diagnostic result IDs change. Pull diagnostics again after a successful update.
 
@@ -86,7 +90,7 @@ For versioned code-action edits, advertise both `capabilities.workspace.workspac
 
 ## Bounds and ownership
 
-The default session retains at most 64 open documents and 1,048,576 UTF-16 units per document. Overflowing the open-document limit is rejected without evicting synchronized text. A change notification contains 1–128 edits. A context has at most 4,096 symbols and 64 capabilities per element; the session allows 16,384 symbols across contexts, 4,096 source declarations and 64 document overrides. Binding names are limited to 512 characters, configured URIs to 8,192.
+The default session retains at most 64 open documents and 1,048,576 UTF-16 units per document. Overflowing the open-document limit is rejected without evicting synchronized text. A change notification contains 1–128 edits. A context has at most 4,096 symbols and 64 capabilities per element; the session allows 16,384 symbols across contexts, 4,096 source declarations and 64 document overrides. For v2, symbol budgets count every node, input slot, relation and role, including auxiliary declarations. Binding names are limited to 512 characters, configured URIs to 8,192. Descriptor nesting is limited to 16 edges; graph validation and descriptor equality/hash reuse shared branches. Wire export rejects more than 65,536 expanded non-null descriptor entries, preventing a small shared descriptor graph from expanding into unbounded JSON. Import retains the existing JSON depth limit of 32.
 
 Snapshots retain recovery syntax, frozen bindings, line offsets and symbol indexes. Queries reuse them. Qualified-name analysis is linear in token count. Quick-fix processing examines at most 32 relevant diagnostics and compiles at most 16 candidates; the diagnostic multiset is built once. Large results stop at a serialization budget derived from the actual transport payload limit and escaped request ID. A rejected result returns an error and the session can serve the next request; no partial response frame is written. The framing/dispatcher layer still fails closed on malformed or oversized transport data.
 

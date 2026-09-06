@@ -2,12 +2,45 @@ using Hatifect.ChestsAnywhereOverlay.Integration;
 using Hatifect.ChestsAnywhereOverlay.UI.Semantic;
 using Hatifect.UI;
 using Hatifect.UI.Experience;
+using Hatifect.UI.Semantics;
+using Hatifect.UI.Tooling.Metadata;
+using System.Text;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Hatifect.ChestsAnywhereOverlay.Tests;
 
 public sealed class ChestsAnywhereOverlayExperienceTests
 {
+    [Fact]
+    public void ExactPackageNavigatorGraphPreservesTwoFilterInputsSelectionAndActionTargets()
+    {
+        var id = Id("graph");
+        using var session = new ChestsAnywhereNavigatorExperienceSession(id, new RecordingPort(Snapshot(
+            categories: new[] { new ChestsAnywhereCategorySnapshot("farm", "Farm") },
+            storages: new[] { Storage("chest", "Storage", "farm", 1) }, selectedCategory: "farm", current: "chest")));
+        byte[] wire = UiBindingContextJson.Export(session.Experience.CreateBindingContext());
+        UiBindingContext imported = UiBindingContextJson.Import(wire);
+        Assert.Equal(wire, UiBindingContextJson.Export(imported));
+        UiSemanticGraph graph = imported.Graph!;
+        Assert.Empty(UiGraphBinder.Validate(graph));
+        var slots = graph.Nodes.Single(node => node.Alias == "Storages").Inputs;
+        Assert.Equal(2, slots.Count);
+        Assert.NotEqual(slots[0].AcceptedType, slots[1].AcceptedType);
+        Assert.Equal(2, graph.Relations.Count(relation => relation.Kind == UiRelationKind.Filter));
+        Assert.Equal(2, graph.Relations.Count(relation => relation.Kind == UiRelationKind.Selection));
+        Assert.Equal(2, graph.Relations.Count(relation => relation.Kind == UiRelationKind.ActionTarget && relation.Target == id.Child("source/selected-storage")));
+        Assert.False(imported.TryGetElement("SelectedStorage", out _));
+        Assert.True(new UiCompiler().Compile("presentation Navigator\nStorages -> Primary\nCategories -> Secondary\n", imported).IsValid);
+        var selected = Assert.IsType<UiSelectionSource>(session.Experience.Sources.Single(source => source.Alias == "SelectedStorage").Source);
+        Assert.Equal(session.Storages.SelectedItemId, selected.Value);
+
+        JsonNode damaged = JsonNode.Parse(wire)!;
+        JsonArray relations = damaged["graph"]!["relations"]!.AsArray();
+        relations.Remove(relations.Single(relation => relation!["id"]!.GetValue<string>() == id.Child("relation/category-filter").ToString()));
+        Assert.Contains("UIG018", Assert.Throws<InvalidDataException>(() => UiBindingContextJson.Import(Encoding.UTF8.GetBytes(damaged.ToJsonString()))).Message);
+    }
+
     [Fact]
     public void ProjectionCopiesInputsAndNormalizesStableIdentityAndOrdering()
     {

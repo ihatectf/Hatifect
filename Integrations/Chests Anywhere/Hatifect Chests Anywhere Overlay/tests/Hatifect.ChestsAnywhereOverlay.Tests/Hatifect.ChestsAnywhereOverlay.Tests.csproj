@@ -19,6 +19,10 @@
                       Version="[$(HatifectUiPackageVersion)]"
                       IncludeAssets="compile;runtime"
                       PrivateAssets="all" />
+    <PackageReference Include="Hatifect.UI.Tooling"
+                      Version="[$(HatifectUiPackageVersion)]"
+                      IncludeAssets="compile;runtime"
+                      PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../Hatifect.ChestsAnywhereOverlay.UI.Semantic/Hatifect.ChestsAnywhereOverlay.UI.Semantic.csproj" />

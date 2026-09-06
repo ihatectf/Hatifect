@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Text;
 using Hatifect.UI;
 using Hatifect.UI.Experience;
+using Hatifect.UI.Semantics;
 
 namespace Hatifect.ChestsAnywhereOverlay.UI.Semantic;
 
@@ -143,21 +144,48 @@ internal sealed class ChestsAnywhereNavigatorExperienceSession : IDisposable
             storage => storage.Name,
             SelectInitialStorageId(_projection, _projection.Mode, _projection.SelectedCategoryKey),
             StorageSupportingText);
-        _categories.Changed += OnCategorySelectionChanged;
-
-        Experience = new UiExperienceBuilder(id, Text("navigator.title", _projection.Title))
+        var categoryType = UiSourceTypes.Scalar<ChestsAnywhereNavigatorCategory>(new("Hatifect.ChestsAnywhereOverlay", "data/category"), false);
+        var storageType = UiSourceTypes.Scalar<ChestsAnywhereNavigatorStorage>(new("Hatifect.ChestsAnywhereOverlay", "data/storage"), false);
+        var modeType = UiSourceTypes.Scalar<ChestsAnywhereNavigatorMode>(new("Hatifect.ChestsAnywhereOverlay", "data/mode"), false);
+        UiSymbolId categories = id.Child("element/Categories"), storages = id.Child("element/Storages");
+        UiSymbolId mode = id.Child("source/mode"), category = id.Child("source/selected-category"), storage = id.Child("source/selected-storage");
+        UiActionDefinition[] actions = CreateActions(id);
+        var builder = new UiExperienceBuilder(id, Text("navigator.title", _projection.Title))
+            // Retain the existing passive mode display until the authoring/catalog migration.
             .Select("Mode", _mode)
-            .Navigate("Categories", _categories)
-            .Element("Storages", _storages, UiCapabilities.Browse, UiCapabilities.Select)
-            .Monitor("Status", _status)
-            .Monitor("Handoff", _handoff)
-            .Actions("Actions", CreateActions(id))
+            .Source(mode, "ModeInput", "Mode input", _mode, modeType, UiCapabilities.Filter)
+            .Element(categories, "Categories", Text("navigator.categories", "Categories"), _categories,
+                UiSourceTypes.Collection(categoryType), UiCapabilities.Navigate)
+            .Source(category, "SelectedCategory", "Selected category", new UiSelectionSource(_categories),
+                UiSourceTypes.Selection(categoryType), UiCapabilities.Select, UiCapabilities.Filter)
+            .Element(storages, "Storages", Text("navigator.storages", "Storages"), _storages,
+                UiSourceTypes.Collection(storageType), UiCapabilities.Browse, UiCapabilities.Select)
+            .Source(storage, "SelectedStorage", "Selected storage", new UiSelectionSource(_storages),
+                UiSourceTypes.Selection(storageType), UiCapabilities.Select)
+            .Element(id.Child("element/Status"), "Status", "Status", _status, UiSourceTypes.String, UiCapabilities.Monitor)
+            .Element(id.Child("element/Handoff"), "Handoff", "Handoff", _handoff,
+                UiSourceTypes.Scalar<ChestsAnywhereStorageHandoff?>(new("Hatifect.ChestsAnywhereOverlay", "data/handoff"), true), UiCapabilities.Monitor)
+            .Actions("Actions", actions)
+            .Input(storages, new(storages.Child("input/mode"), "Mode", modeType.Descriptor, true))
+            .Input(storages, new(storages.Child("input/category"), "Category", UiSourceTypes.Selection(categoryType).Descriptor, true))
+            .Relation(new(id.Child("relation/category-selection"), UiRelationKind.Selection, categories, category))
+            .Relation(new(id.Child("relation/storage-selection"), UiRelationKind.Selection, storages, storage))
+            .Relation(new(id.Child("relation/mode-filter"), UiRelationKind.Filter, mode, storages, storages.Child("input/mode")))
+            .Relation(new(id.Child("relation/category-filter"), UiRelationKind.Filter, category, storages, storages.Child("input/category")))
             .VisualRole("StorageCategory")
             .VisualRole("Storage")
             .VisualRole("Storage.Current")
             .VisualRole("Status")
-            .VisualRole("Action.Primary")
-            .Build();
+            .VisualRole("Action.Primary");
+        foreach (UiActionDefinition action in actions.Where(action => action.Id == id.Child("action/open") || action.Id == id.Child("action/toggle-favorite")))
+        {
+            builder.Action(action, action.Id == id.Child("action/open") ? "OpenStorage" : "FavoriteStorage",
+                    UiDataTypes.Action(action.Id.Child("contract"), UiDataTypes.Unit, UiDataTypes.Unit,
+                        UiSourceTypes.Selection(storageType).Descriptor, UiCapabilities.Select.Id))
+                .Relation(new(action.Id.Child("target"), UiRelationKind.ActionTarget, action.Id, storage));
+        }
+        Experience = builder.Build();
+        _categories.Changed += OnCategorySelectionChanged;
     }
 
     public UiExperienceDefinition Experience { get; }

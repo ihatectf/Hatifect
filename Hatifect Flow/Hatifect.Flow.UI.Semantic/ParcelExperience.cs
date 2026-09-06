@@ -43,12 +43,12 @@ internal sealed class ParcelExperience : IFlowExperience
             Project();
             Experience = new UiExperienceBuilder(id, Text("Flowline shipment", "Отправление Flowline")
                 + (_snapshot.ProviderMode == FlowProviderMode.DiagnosticFake ? Text(" · diagnostic", " · диагностика") : ""))
-                .Inspect(Text("Cargo", "Груз"), _cargo)
-                .Inspect(Text("Route", "Маршрут"), _route)
-                .Monitor(Text("State", "Состояние"), _state)
-                .Monitor(Text("Result", "Результат"), _result)
-                .Monitor(id.Child("element/availability"), Text("Availability", "Доступность"), _availability)
-                .Actions(Text("Actions", "Действия"),
+                .Element(id.Child("element/cargo"), "Cargo", Text("Cargo", "Груз"), _cargo, UiSourceTypes.String, UiCapabilities.Inspect)
+                .Element(id.Child("element/route"), "Route", Text("Route", "Маршрут"), _route, UiSourceTypes.String, UiCapabilities.Inspect)
+                .Element(id.Child("element/state"), "State", Text("State", "Состояние"), _state, UiSourceTypes.String, UiCapabilities.Monitor)
+                .Element(id.Child("element/result"), "Result", Text("Result", "Результат"), _result, UiSourceTypes.String, UiCapabilities.Monitor)
+                .Element(id.Child("element/availability"), "Availability", Text("Availability", "Доступность"), _availability, UiSourceTypes.String, UiCapabilities.Monitor)
+                .Actions(id.Child("element/actions"), "Actions", Text("Actions", "Действия"),
                     Action(id, "reserve", FlowParcelAction.Reserve, Text("Dispatch", "Отправить")),
                     Action(id, "cancel", FlowParcelAction.Cancel, Text("Cancel", "Отменить")),
                     Action(id, "retry", FlowParcelAction.RetryDelivery, Text("Retry delivery", "Повторить доставку")),

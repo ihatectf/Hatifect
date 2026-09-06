@@ -58,6 +58,33 @@ Schema-v1 import остаётся строгим: canonical `owner/element/name`
 
 Обязательные U01 regression paths: explicit element и role ID → смена alias → Export/Import → Compile → тот же ID в IR; прежний canonical v1 byte round trip; прежние v1 conflicts/duplicates; unknown schema; неверный/cross-owner ID; valid Flow и package-only CA graph fixtures; все negative relations до activation. Минимальная v2 wire часть входит в U01, иначе новый публичный Export был бы сломан до T01. Полный planner trace/editor feedback остаётся T01.
 
+### Реализация U01: alpha.32
+
+Публичный builder получил отдельные `Element(id, alias, label, source, type, capabilities)`, `Source(...)`, `Input(nodeId, slot)`, `Relation(...)`, `Action(existingAction, alias, descriptor)` и `VisualRole(id, alias)`. `Element` запрашивает presentation, `Source` добавляет только наблюдаемый graph source. `UiSelectionSource` читает selected ID из существующего `IUiSelectableCollectionSource` и не создаёт второго владельца selection. Typed action metadata ссылается на тот же экземпляр `UiActionDefinition`, который передан в Actions group; подмена экземпляра с таким же ID отвергается до activation.
+
+```csharp
+var owner = new UiSymbolId("Example", "catalog");
+var rows = new UiSelectableCollectionState<string>(
+    new[] { "wood" }, value => owner.Child("item/" + value));
+var selected = new UiSelectionSource(rows);
+var experience = new UiExperienceBuilder(owner, "Catalog")
+    .Element(owner.Child("items"), "Items", "Предметы", rows,
+        UiSourceTypes.Collection(UiSourceTypes.String), UiCapabilities.Browse, UiCapabilities.Select)
+    .Source(owner.Child("selected"), "Selected", "Выбранный предмет", selected,
+        UiSourceTypes.Selection(UiSourceTypes.String), UiCapabilities.Select)
+    .Relation(new(owner.Child("relation/selection"), UiRelationKind.Selection,
+        owner.Child("items"), owner.Child("selected")))
+    .Build();
+```
+
+Существующий `UiFormState` экспортирует `IReadOnlyList<UiSemanticFormField>`; `UiSourceTypes.Form(schema)` проверяет именно этот контракт. `UiValidationResult` хранит immutable schema/messages. `Submission.Mapping` явно описывает output consumer adapter; U01 не исполняет этот adapter и не добавляет вымышленный `UiFormSnapshot` или async dispatch. Их дальнейший контракт относится к U02/U03. Новые typed enum/record filters являются auxiliary sources до появления подходящего editable presentation; предъявленный Filter должен иметь поддержанный string source.
+
+Flow Network использует независимые ID/alias/локализованные labels, typed immutable parcel collection, owner selection, nullable details payload и query/filter slots. Добавление Browse для Query/Filter включает действующую framework policy: History выбирает Gallery в Wide/Medium, List в Compact/Controller, generated Network pattern становится MasterDetail. CA объявляет Mode и Category как разные required inputs Storages, две owner selection relations и Open/Favorite ActionTarget. Пассивное старое CA Mode presentation пока использует совместимый opaque overload; private bridge удаляется в U07/I01 после появления typed choice authoring. Последовательные consumer уведомления ещё не являются atomic publication U02.
+
+Legacy canonical opaque names, включая ранее допустимые `0`, `A/B`, `A..B`, сохраняют ID и v1 wire. Новые explicit aliases используют dotted identifier grammar. Для независимых IDs, labels или graph metadata exporter выбирает v2; `[1,2]` объявляется tooling server до работы с документами. Неправильный graph не заменяет прежние bindings при refresh. Подробнее: [UI_AUTHORING.md](UI_AUTHORING.md).
+
+Graph binder использует индексы и итеративный DAG pass; shared descriptor branches не обходятся экспоненциально при validation/equality/hash. Предельная глубина descriptor — 16 edges, wire expansion — 65 536 ненулевых entries, JSON depth — 32; превышение даёт явную ошибку. Tooling считает все nodes/inputs/relations/roles в пределах 4 096 symbols/context и 16 384/session. На draw/layout/dispatch новые graph обходы не добавлены. Результаты проверок и ограничения фиксируются отдельно в [ROADMAP-STATUS.md](ROADMAP-STATUS.md).
+
 ## Согласованное состояние (U02)
 
 Три идентичности различаются: `Flow SessionId + Revision` у домена; `UiPublicationId + Version` у projection; `UiGenerationId` у runtime. Новая игровая session создаёт новую publication owner. UI reload может заменить generation, сохраняя publication/domain session; save switch никогда не переносит save-specific data.

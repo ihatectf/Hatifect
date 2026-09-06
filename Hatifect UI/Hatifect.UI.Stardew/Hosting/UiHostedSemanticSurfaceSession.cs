@@ -303,7 +303,7 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
 
     private void CollectSources(UiExperienceDefinition experience)
     {
-        foreach (UiSemanticElementDefinition element in experience.Elements) _sources.Add(element.Source);
+        foreach (UiSemanticElementDefinition source in experience.Sources) _sources.Add(source.Source);
     }
 
     private void Subscribe()

@@ -68,14 +68,16 @@ internal sealed partial class UiToolingProtocolSession
         if (OptionalProperty(options, "declarations") is not { } values) return declarations;
         if (values.ValueKind != JsonValueKind.Array || values.GetArrayLength() > 4096)
             throw new InvalidDataException("declarations must be an array of at most 4096 entries.");
-        var known = contexts.SelectMany(context => context.Elements.Select(e => e.Id)
-            .Concat(context.Roles.Select(r => r.Id))).ToHashSet();
+        var known = contexts.SelectMany(context => context.Graph is { } graph
+            ? graph.Nodes.Select(node => node.Id).Concat(graph.Nodes.SelectMany(node => node.Inputs.Select(input => input.Id)))
+                .Concat(graph.Relations.Select(relation => relation.Id)).Concat(graph.Roles.Select(role => role.Id))
+            : context.Elements.Select(e => e.Id).Concat(context.Roles.Select(r => r.Id))).ToHashSet();
         foreach (JsonElement value in values.EnumerateArray())
         {
             JsonElement entry = RequiredObject(value, "declaration");
             string name = RequiredString(entry, "symbolId");
             if (!UiSymbolId.TryParse(name, out UiSymbolId id) || !known.Contains(id))
-                throw new InvalidDataException("A declaration must identify a declared binding element or role.");
+                throw new InvalidDataException("A declaration must identify a declared binding symbol.");
             string uri = RequiredString(entry, "uri");
             if (uri.Length > 8192 || !Uri.TryCreate(uri, UriKind.Absolute, out _))
                 throw new InvalidDataException("A declaration URI must be absolute and at most 8192 characters.");

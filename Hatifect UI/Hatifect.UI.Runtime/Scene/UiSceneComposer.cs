@@ -196,7 +196,7 @@ internal sealed class UiSceneComposer
         UiSymbolId fallbackRole)
     {
         UiSymbolId nodeId = element.Id.Child("scene/component");
-        UiSymbolId role = Role(invocation.Experience, element.Name, fallbackRole);
+        UiSymbolId role = Role(invocation.Experience, element.Alias, fallbackRole);
         return new UiSourceSceneNode(
             nodeId, kind, role,
             Resolve(role, kind, nodeId, invocation, visual, interaction), element.Name, element.Source);
@@ -213,7 +213,7 @@ internal sealed class UiSceneComposer
             throw new InvalidOperationException(
                 $"Collection element '{element.Id}' requires an IUiSemanticCollectionSource with stable item IDs.");
         UiSymbolId nodeId = element.Id.Child("scene/collection");
-        UiSymbolId role = Role(invocation.Experience, element.Name, UiSceneRoles.Collection);
+        UiSymbolId role = Role(invocation.Experience, element.Alias, UiSceneRoles.Collection);
         EnsureCollectionStateRecipesAreRenderOnly(role, visual);
         UiCollectionPresentationRecipe recipe = CollectionRecipe(
             planned.Presentation,
@@ -272,7 +272,7 @@ internal sealed class UiSceneComposer
         UiVisualDefinition? visual,
         UiInteractionSnapshot? interaction)
     {
-        UiSymbolId role = Role(invocation.Experience, element.Name, UiSceneRoles.TextInput);
+        UiSymbolId role = Role(invocation.Experience, element.Alias, UiSceneRoles.TextInput);
         UiSymbolId nodeId = element.Id.Child("scene/input");
         return new UiTextInputSceneNode(
             nodeId, role,
@@ -332,7 +332,7 @@ internal sealed class UiSceneComposer
         }
 
         UiSymbolId formId = element.Id.Child("scene/form");
-        UiSymbolId formRole = Role(invocation.Experience, element.Name, UiSceneRoles.Form);
+        UiSymbolId formRole = Role(invocation.Experience, element.Alias, UiSceneRoles.Form);
         return new UiContainerSceneNode(
             formId,
             UiSceneNodeKind.Form,
@@ -358,7 +358,7 @@ internal sealed class UiSceneComposer
                 nodeId, buttonRole,
                 Resolve(buttonRole, UiSceneNodeKind.Button, nodeId, invocation, visual, interaction, action.CanExecute), action);
         }).ToArray();
-        UiSymbolId barRole = Role(invocation.Experience, element.Name, UiSceneRoles.ActionBar);
+        UiSymbolId barRole = Role(invocation.Experience, element.Alias, UiSceneRoles.ActionBar);
         UiSymbolId barId = element.Id.Child("scene/action-bar");
         return new UiContainerSceneNode(
             barId, UiSceneNodeKind.ActionBar, barRole,

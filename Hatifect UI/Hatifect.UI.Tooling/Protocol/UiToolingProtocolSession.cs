@@ -140,6 +140,7 @@ internal sealed partial class UiToolingProtocolSession
             {
                 capabilities = new
                 {
+                    experimental = new { hatifectUi = new { bindingMetadataVersions = new[] { 1, 2 } } },
                     positionEncoding = "utf-16",
                     textDocumentSync = new { openClose = true, change = 2 },
                     diagnosticProvider = new

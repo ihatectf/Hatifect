@@ -5,6 +5,7 @@ using Hatifect.Flow.Application;
 using Hatifect.Flow.UI.Semantic;
 using Hatifect.UI;
 using Hatifect.UI.Experience;
+using Hatifect.UI.Semantics;
 using Xunit;
 
 namespace Hatifect.Flow.Tests;
@@ -57,6 +58,38 @@ public sealed class NetworkExperienceTests
         using var russian = new NetworkExperience(id, app, russian: true);
         Assert.Equal(english.Experience.Elements.Select(element => element.Id), russian.Experience.Elements.Select(element => element.Id));
         Assert.Contains(russian.Experience.Elements, element => element.Name == "Станция отправления");
+        Assert.Equal(english.Experience.Elements.Select(element => element.Alias), russian.Experience.Elements.Select(element => element.Alias));
+        foreach (var experience in new[] { english.Experience, russian.Experience })
+        {
+            UiBindingContext context = experience.CreateBindingContext();
+            UiCompilationResult result = new UiCompiler().Compile("presentation Network\nSourceStation -> Primary\nHistory -> Secondary\n", context);
+            Assert.True(result.IsValid, string.Join("; ", result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+            var definition = Assert.IsType<UiPresentationDefinition>(result.Definition);
+            Assert.Equal(new[] { id.Child("element/source-station"), id.Child("element/history") }, definition.Placements.Select(placement => placement.Element));
+            Assert.Empty(UiGraphBinder.Validate(experience.Graph));
+        }
+    }
+
+    [Fact]
+    public void ImmutableFlowReadModelFeedsTypedCollectionSelectionDetailsAndQueryGraph()
+    {
+        using var app = new NetworkTestApplication();
+        var id = new UiSymbolId("Hatifect.Flow", "network");
+        using var view = new NetworkExperience(id, app);
+        var experience = view.Experience;
+        var history = Source<UiSelectableCollectionState<FlowParcelSnapshot>>(view, "Shipments");
+        var selection = Assert.IsType<UiSelectionSource>(experience.Sources.Single(source => source.Alias == "SelectedShipment").Source);
+        var details = Assert.IsType<UiState<FlowParcelSnapshot?>>(experience.Sources.Single(source => source.Alias == "ShipmentPayload").Source);
+        Assert.True(history.TrySelect(history.GetItem(0).Id));
+        Assert.Equal(history.SelectedItemId, selection.Value);
+        Assert.Same(history.Value[0], details.Value);
+        Assert.Equal(FlowUiDataTypes.Parcel.Descriptor.TypeId, experience.Graph.Nodes.Single(node => node.Id == id.Child("element/history")).DataType!.ItemType!.TypeId);
+        Assert.DoesNotContain(experience.Elements, element => element.Id == id.Child("source/history-selection") || element.Id == id.Child("source/history-payload"));
+        Assert.Contains(experience.Graph.Relations, relation => relation.Kind == UiRelationKind.Query && relation.TargetInput == id.Child("element/history/input/query"));
+        Source<UiState<string>>(view, "Find shipments").Value = "missing cargo";
+        Assert.Empty(history.Value);
+        Assert.Null(selection.Value);
+        Assert.Null(details.Value);
     }
 
     [Fact]

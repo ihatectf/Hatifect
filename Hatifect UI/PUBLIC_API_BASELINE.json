@@ -13,13 +13,13 @@
       },
       {
         "Path": "UiExperienceBuilder.cs",
-        "Sha256": "ac8c395e0c06ae975eb3d047676f004ec56978622d6fd9d87857763cf6a30cd4"
+        "Sha256": "18b93e9a02aaed7d5d2ec991f248b4245eaf682276e758057d4d5f0044ff4322"
       }
     ]
   },
   "SemanticSurface": {
     "Assembly": "Hatifect.UI.Experience",
-    "ContractVersion": "1.0.0-alpha.31",
+    "ContractVersion": "1.0.0-alpha.32",
     "ApiVersion": 1,
     "Policy": "consumer-source-freeze",
     "PublicTypes": [

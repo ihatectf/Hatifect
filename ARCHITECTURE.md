@@ -30,6 +30,8 @@ Consumer задаёт смысл, состояние, команды и возм
 
 Публичная граница игрового consumer — `IUiSemanticSurfaceApi` v1 в `Hatifect.UI.Experience`. Её текущий исходный контракт сохранён в `Hatifect UI/PUBLIC_API_BASELINE.json`; изменение требует явного review совместимости. Runtime Terminal hosts являются частью текущего семантического framework.
 
+`UiSemanticGraph` и `UiDataType` принадлежат Semantics: immutable identity/alias/label, nominal types/nullability, capabilities, projection inputs и семь relation kinds проверяются до activation. Experience связывает этот контракт с CLR sources и существующими action instances. `Sources` содержит все наблюдаемые источники, а `Elements` — только явно предъявленные planner элементы; auxiliary selection/filter/action metadata не создаёт виджет. Tooling сохраняет graph в schema v2 без зависимости от Experience и продолжает строгий v1 import/export для canonical legacy context. Runtime использует прежние planner/scene/host, а visual role разрешается по alias независимо от локализованного label. Graph не исполняет доменную projection; atomic publication и async lifecycle относятся к следующим U02/U03.
+
 CA Overlay получает UI через NuGet packages с точной версией из `Hatifect.UI.Packages.props`. `Hatifect.UI.Packages.json` задаёт состав и зависимости. Локальная проверка создаёт пакеты из текущих исходников, а проверка изоляции собирает consumer в каталоге без исходников UI. UI runtime DLL поставляются одним модулем UI; адаптер не распространяет собственные копии.
 
 ## Flowline

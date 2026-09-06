@@ -2,6 +2,7 @@ using Hatifect.Flow.Application;
 using Hatifect.Flow.Domain.Shipments;
 using Hatifect.UI;
 using Hatifect.UI.Experience;
+using Hatifect.UI.Semantics;
 
 namespace Hatifect.Flow.UI.Semantic;
 
@@ -12,6 +13,7 @@ internal sealed partial class NetworkExperience
     private readonly UiState<string> _historyPage = new("");
     private readonly UiState<string> _historyAvailability = new("");
     private readonly UiState<string> _historyDetails = new("");
+    private readonly UiState<FlowParcelSnapshot?> _historySelectedParcel = new(null);
     private UiSelectableCollectionState<string> _historyFilter = null!;
     private UiSelectableCollectionState<FlowParcelSnapshot> _history = null!;
     private Func<string, string> _historyItemName = null!;
@@ -36,20 +38,37 @@ internal sealed partial class NetworkExperience
 
     private void AppendHistory(UiExperienceBuilder builder, UiSymbolId id)
     {
-        builder.Element(id.Child("element/history-search"), Text("Find shipments", "Поиск отправлений"), _historyQuery, UiCapabilities.Search)
-            .Select(id.Child("element/history-filter"), Text("Shipment filter", "Фильтр отправлений"), _historyFilter)
-            .Select(id.Child("element/history"), Text("Shipments", "Отправления"), _history)
-            .Monitor(id.Child("element/history-page"), Text("Page", "Страница"), _historyPage)
-            .Inspect(id.Child("element/history-detail"), Text("Selected shipment", "Выбранное отправление"), _historyDetails)
-            .Monitor(id.Child("element/history-availability"), Text("Availability", "Доступность"), _historyAvailability)
-            .Actions(id.Child("element/history-navigation"), Text("History navigation", "Навигация истории"),
+        UiSymbolId history = id.Child("element/history");
+        UiSymbolId selected = id.Child("source/history-selection");
+        UiSymbolId filter = id.Child("source/history-filter");
+        UiSymbolId details = id.Child("source/history-payload");
+        builder.Source(selected, "SelectedShipment", "Selected shipment ID", new UiSelectionSource(_history),
+                UiSourceTypes.Selection(FlowUiDataTypes.Parcel), UiCapabilities.Select)
+            .Source(filter, "SelectedHistoryFilter", "Selected filter", new UiSelectionSource(_historyFilter),
+                UiSourceTypes.Selection(UiSourceTypes.String), UiCapabilities.Select, UiCapabilities.Filter)
+            .Source(details, "ShipmentPayload", "Shipment payload", _historySelectedParcel,
+                new UiSourceType<FlowParcelSnapshot?>(FlowUiDataTypes.Parcel.Descriptor with { Nullable = true }), UiCapabilities.Inspect);
+        builder.Element(id.Child("element/history-search"), "HistorySearch", Text("Find shipments", "Поиск отправлений"), _historyQuery, UiSourceTypes.String, UiCapabilities.Search)
+            .Element(id.Child("element/history-filter"), "HistoryFilter", Text("Shipment filter", "Фильтр отправлений"), _historyFilter, UiSourceTypes.Collection(UiSourceTypes.String), UiCapabilities.Select)
+            .Element(id.Child("element/history"), "History", Text("Shipments", "Отправления"), _history, UiSourceTypes.Collection(FlowUiDataTypes.Parcel), UiCapabilities.Select, UiCapabilities.Browse)
+            .Element(id.Child("element/history-page"), "HistoryPage", Text("Page", "Страница"), _historyPage, UiSourceTypes.String, UiCapabilities.Monitor)
+            .Element(id.Child("element/history-detail"), "HistoryDetail", Text("Selected shipment", "Выбранное отправление"), _historyDetails, UiSourceTypes.String, UiCapabilities.Inspect)
+            .Element(id.Child("element/history-availability"), "HistoryAvailability", Text("Availability", "Доступность"), _historyAvailability, UiSourceTypes.String, UiCapabilities.Monitor)
+            .Actions(id.Child("element/history-navigation"), "HistoryNavigation", Text("History navigation", "Навигация истории"),
                 new UiActionDefinition(id.Child("action/previous-page"), Text("Previous page", "Предыдущая страница"), () => { _page--; ProjectHistory(); }, () => IsActive && _page > 0),
                 new UiActionDefinition(id.Child("action/next-page"), Text("Next page", "Следующая страница"), () => { _page++; ProjectHistory(); }, () => IsActive && (_page + 1) * HistoryPageSize < _historyCount))
-            .Actions(id.Child("element/history-actions"), Text("Selected shipment actions", "Действия с отправлением"),
+            .Actions(id.Child("element/history-actions"), "HistoryActions", Text("Selected shipment actions", "Действия с отправлением"),
                 HistoryAction(id, "reserve", Text("Dispatch selected", "Отправить выбранное"), FlowParcelAction.Reserve),
                 HistoryAction(id, "cancel", Text("Cancel selected", "Отменить выбранное"), FlowParcelAction.Cancel),
                 HistoryAction(id, "retry", Text("Retry selected delivery", "Повторить выбранную доставку"), FlowParcelAction.RetryDelivery),
-                HistoryAction(id, "return", Text("Return selected cargo to source", "Вернуть выбранный груз в источник"), FlowParcelAction.ReturnToSource));
+                HistoryAction(id, "return", Text("Return selected cargo to source", "Вернуть выбранный груз в источник"), FlowParcelAction.ReturnToSource))
+            .Input(history, new(history.Child("input/query"), "Query", UiSourceTypes.String.Descriptor, true))
+            .Input(history, new(history.Child("input/filter"), "Filter", UiSourceTypes.Selection(UiSourceTypes.String).Descriptor, true))
+            .Relation(new(id.Child("relation/history-selection"), UiRelationKind.Selection, history, selected))
+            .Relation(new(id.Child("relation/history-details"), UiRelationKind.Details, selected, details))
+            .Relation(new(id.Child("relation/history-query"), UiRelationKind.Query, id.Child("element/history-search"), history, history.Child("input/query")))
+            .Relation(new(id.Child("relation/history-filter"), UiRelationKind.Filter, filter, history, history.Child("input/filter")))
+            .Relation(new(id.Child("relation/history-filter-selection"), UiRelationKind.Selection, id.Child("element/history-filter"), filter));
     }
 
     private UiActionDefinition HistoryAction(UiSymbolId id, string key, string title, FlowParcelAction action)
@@ -106,6 +125,7 @@ internal sealed partial class NetworkExperience
     private void ProjectHistoryDetails()
     {
         FlowParcelSnapshot? parcel = Selected(_history);
+        _historySelectedParcel.Value = parcel;
         _historyAvailability.Value = parcel is null ? "" : FlowReasonText.UnavailableActions(parcel.Availability, _russian);
         _historyDetails.Value = parcel is null ? Text("Select a shipment", "Выберите отправление")
             : $"{parcel.Id} · {Describe(parcel.State)} · " + Text("attempts: ", "попыток: ") + parcel.DeliveryAttempts;
