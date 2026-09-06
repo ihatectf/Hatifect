@@ -454,6 +454,98 @@ class UserSessionRuntimeTests(unittest.TestCase):
         ):
             RUNTIME._validate_state(changed, self.repository, require_live=False)
 
+    def test_doctor_accepts_ready_executor_without_vscode_configuration(self) -> None:
+        state_path = self.repository / ".smapi-test" / "user-session-runtime" / "state.json"
+        state = RUNTIME._state_document(
+            self.repository, str(uuid.uuid4()), RUNTIME._timestamp(), "Ready", "ready"
+        )
+        RUNTIME._atomic_write_json(state_path, state, replace=True)
+        self.direct._direct_metadata = mock.Mock()
+        args = SimpleNamespace(
+            repository_root=str(self.repository),
+            isolated_root=str(self.isolated),
+            smapi_path="/game/StardewModdingAPI",
+        )
+        task_path = self.repository / ".vscode" / "tasks.json"
+
+        for task_content in (None, "invalid JSON", '{"tasks": []}'):
+            with self.subTest(task_content=task_content):
+                if task_content is not None:
+                    task_path.parent.mkdir(exist_ok=True)
+                    task_path.write_text(task_content, encoding="utf-8")
+                self.direct._direct_metadata.reset_mock()
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                    exit_code = RUNTIME.doctor(args)
+
+                self.assertEqual(exit_code, 0, output.getvalue())
+                self.assertIn("RESULT: PASS", output.getvalue())
+                self.assertIn("executor is live and ready", output.getvalue())
+                self.direct._direct_metadata.assert_called_once_with(
+                    self.repository.resolve(), self.isolated, Path(args.smapi_path)
+                )
+
+    def test_doctor_rejects_invalid_transport_for_ready_executor(self) -> None:
+        state_path = self.repository / ".smapi-test" / "user-session-runtime" / "state.json"
+        state = RUNTIME._state_document(
+            self.repository, str(uuid.uuid4()), RUNTIME._timestamp(), "Ready", "ready"
+        )
+        RUNTIME._atomic_write_json(state_path, state, replace=True)
+        self.direct._direct_metadata = mock.Mock(side_effect=ValueError("Invalid transport metadata"))
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            exit_code = RUNTIME.doctor(SimpleNamespace(
+                repository_root=str(self.repository),
+                isolated_root=str(self.isolated),
+                smapi_path="/game/StardewModdingAPI",
+            ))
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("BLOCKED: Invalid transport metadata", output.getvalue())
+        self.assertIn("executor is live and ready", output.getvalue())
+        self.assertNotIn("RESULT: PASS", output.getvalue())
+
+    def test_doctor_rejects_unavailable_executor_with_valid_transport(self) -> None:
+        state_path = self.repository / ".smapi-test" / "user-session-runtime" / "state.json"
+        self.direct._direct_metadata = mock.Mock()
+        for lifecycle in (None, "Ready", "Stopped", "Running"):
+            with self.subTest(lifecycle=lifecycle):
+                if lifecycle is not None:
+                    state = RUNTIME._state_document(
+                        self.repository, str(uuid.uuid4()), RUNTIME._timestamp(), lifecycle, "unavailable"
+                    )
+                    if lifecycle == "Ready":
+                        state["heartbeatAtUtc"] = RUNTIME._timestamp(
+                            dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=1)
+                        )
+                    RUNTIME._atomic_write_json(state_path, state, replace=True)
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                    exit_code = RUNTIME.doctor(SimpleNamespace(
+                        repository_root=str(self.repository),
+                        isolated_root=str(self.isolated),
+                        smapi_path="/game/StardewModdingAPI",
+                    ))
+
+                self.assertEqual(exit_code, 2)
+                self.assertIn("PASS: canonical direct-process transport", output.getvalue())
+                self.assertIn("RESULT: BLOCKED", output.getvalue())
+                self.assertNotIn("executor is live and ready", output.getvalue())
+
+    def test_submit_without_executor_reports_direct_terminal_command(self) -> None:
+        output = io.StringIO()
+        with mock.patch.object(RUNTIME, "_build_request", return_value=self.request), \
+             mock.patch.object(RUNTIME.time, "monotonic", side_effect=[0, RUNTIME.READY_WAIT_SECONDS]), \
+             contextlib.redirect_stderr(output):
+            exit_code = RUNTIME.submit(SimpleNamespace(repository_root=str(self.repository)))
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("rtk proxy ./tools/hatifect-runtime-executor serve", output.getvalue())
+        self.assertNotIn("VS Code", output.getvalue())
+        state_root = self.repository / ".smapi-test" / "user-session-runtime"
+        self.assertFalse((state_root / "request.json").exists())
+
     def test_vscode_task_is_explicit_process_singleton(self) -> None:
         task_document = json.loads(
             (ROOT / ".vscode" / "tasks.json").read_text(encoding="utf-8")
