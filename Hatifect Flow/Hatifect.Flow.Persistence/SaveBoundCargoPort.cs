@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Hatifect.Flow.Diagnostics;
 using Hatifect.Flow.Domain.Checkpoints;
 using Hatifect.Flow.Domain.Identity;
 using Hatifect.Flow.Domain.Ports;
@@ -115,6 +116,12 @@ internal sealed class SaveBoundCargoPort : ICheckpointCargoPort
                 CheckpointValues.Capture(item.Value))).ToArray(),
             _receipts.OrderBy(item => item.Key.ParcelId).ThenBy(item => item.Key.Kind).ThenBy(item => item.Key.Attempt)
                 .Select(item => new ReceiptCheckpoint(item.Key, (int)item.Value)).ToArray());
+    }
+
+    internal FlowPortResources ReadResources()
+    {
+        RequireIdle();
+        return new FlowPortResources(new(_inventory.Count, _maxCargo), new(_receipts.Count, _maxReceipts));
     }
 
     private void Validate(PortTransfer transfer)

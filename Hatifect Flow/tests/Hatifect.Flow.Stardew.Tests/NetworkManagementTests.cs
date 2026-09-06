@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Hatifect.Flow.Application;
+using Hatifect.Flow.Diagnostics;
 using Hatifect.Flow.Sessions;
 using Xunit;
 
@@ -66,11 +67,16 @@ public sealed class NetworkManagementTests
             Assert.Equal(FlowCommandStatus.Applied, session.Execute(new FlowNetworkCommand(snapshot.SessionId, snapshot.Revision, FlowNetworkAction.RemoveLink, Target: link)).Status);
             if (i < FlowGameSession.MaxLinks - 1) session.Link("source", "destination");
         }
-        Assert.Throws<ArgumentException>(() => session.Link("source", "destination"));
+        FlowResourceLimitException error = Assert.Throws<FlowResourceLimitException>(() => session.Link("source", "destination"));
+        Assert.Equal(FlowAdmissionResource.LifetimeLinks, error.Resource);
+        Assert.Equal(new FlowResourceUsage(128, 128), session.ReadResources().Runtime.LifetimeLinks);
+        Assert.Equal(0, session.ReadResources().Runtime.ActiveLinks);
+        Assert.Equal(new FlowAdmissionRejections(0, 1, 0), session.ReadResources().AdmissionRejections);
         Assert.False(session.IsFaulted);
         Assert.Empty(session.ReadSnapshot().Links);
         FlowGameSave saved = GameSessionWorld.Clone(session.BeginSave());
         using FlowGameSession restored = world.Clone().Open(saved);
-        Assert.Throws<ArgumentException>(() => restored.Link("source", "destination"));
+        Assert.Throws<FlowResourceLimitException>(() => restored.Link("source", "destination"));
+        Assert.Equal(new FlowResourceUsage(128, 128), restored.ReadResources().Runtime.LifetimeLinks);
     }
 }

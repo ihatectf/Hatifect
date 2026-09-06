@@ -26,6 +26,8 @@ internal sealed class NetworkGraph
     internal long Revision(StationId station) => _revisions[station];
     internal IEnumerable<Link> Outgoing(StationId station) => _outgoing[station].Values;
     internal IEnumerable<Link> History => _history.Values;
+    internal int ActiveLinkCount => _links.Count;
+    internal int LifetimeLinkCount => _history.Count;
     internal bool IsActive(LinkId id) => _links.ContainsKey(id);
     internal Link HistoricalLink(LinkId id) => _history[id];
 
