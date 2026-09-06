@@ -23,6 +23,7 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
     private UiActionOperation<TResult>? _operation;
     private Pending? _active;
     private bool _dispatching;
+    private bool _retired;
     private UiActionResult<TResult>? _availabilityFailure;
     internal UiActionExecution(UiActionDispatcher owner, UiAction<TRequest, TResult> action,
         Action<TRequest, UiActionResult<TResult>>? completed)
@@ -33,24 +34,55 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
     internal UiActionResult<TResult>? LastResult { get; private set; }
     internal Exception? LastObserverError { get; private set; }
     internal int WaitingCount => _waiting.Count;
+    internal bool IsRetired => _retired || _owner.IsDisposed;
+    internal bool CanInvoke => !IsRetired && Availability.CanExecute &&
+        (_operation is null || _action.Concurrency.Kind != UiActionConcurrencyKind.RejectWhileRunning) &&
+        (_action.Concurrency.Kind != UiActionConcurrencyKind.Queue ||
+         _waiting.Count < _action.Concurrency.Capacity);
 
     internal UiActionSubmission<TResult> Invoke(TRequest request)
+        => InvokeCore(request, capture: null);
+
+    internal UiActionSubmission<TResult> InvokeCaptured(Func<TRequest> capture)
+    {
+        ArgumentNullException.ThrowIfNull(capture);
+        return InvokeCore(default!, capture);
+    }
+
+    private UiActionSubmission<TResult> InvokeCore(TRequest request, Func<TRequest>? capture)
     {
         _owner.RequireOwner();
-        if (_owner.IsDisposed) return Reject("UIA001", "The action owner has retired.");
+        if (IsRetired) return Reject("UIA001", "The action owner has retired.");
         if (_dispatching) return Reject("UIA002", "Reentrant action dispatch is unavailable.");
         _dispatching = true;
         try
         {
-            if (!ReadAvailability()) return _owner.IsDisposed
+            if (!ReadAvailability()) return IsRetired
                 ? Reject("UIA001", "The action owner has retired.")
                 : new(false, _owner.SessionId, _owner.GenerationId, UnavailableResult());
-            if (_owner.IsDisposed) return Reject("UIA001", "The action owner has retired.");
+            if (IsRetired) return Reject("UIA001", "The action owner has retired.");
             if (_operation is not null && _action.Concurrency.Kind == UiActionConcurrencyKind.RejectWhileRunning)
                 return Reject("UIA003", "The action is already running.");
             if ((_operation is not null || _waiting.Count != 0) && _action.Concurrency.Kind == UiActionConcurrencyKind.Queue
                 && _waiting.Count >= _action.Concurrency.Capacity)
                 return Reject("UIA004", "The action queue is full.");
+            // Capture only admitted input, under the same reentry/owner fence as execution.
+            // Queued starts retain this request instead of reading a later UI draft.
+            if (capture is not null)
+            {
+                try { request = capture(); }
+                catch (Exception error)
+                {
+                    var failure = UiActionResult<TResult>.Failure(error);
+                    if (!IsRetired)
+                    {
+                        LastResult = failure;
+                        if (_operation is null) State = UiActionState.Failed;
+                    }
+                    return new(false, _owner.SessionId, _owner.GenerationId, failure);
+                }
+                if (IsRetired) return Reject("UIA001", "The action owner has retired.");
+            }
             var submission = new UiActionSubmission<TResult>(true, _owner.SessionId, _owner.GenerationId);
             var pending = new Pending(request, submission);
             if (_operation is null && _waiting.Count == 0) { Start(pending); ObserveCompletion(); }
@@ -61,7 +93,7 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
                     CancelWaiting(UiActionCancellationReason.Superseded);
                     _active!.Submission.Complete(UiActionResult<TResult>.Cancelled(UiActionCancellationReason.Superseded));
                     RecordCancellationError(_operation?.Cancel());
-                    if (_owner.IsDisposed)
+                    if (IsRetired)
                     { submission.Complete(UiActionResult<TResult>.Cancelled(UiActionCancellationReason.OwnerRetired)); return submission; }
                 }
                 _waiting.Enqueue(pending);
@@ -71,19 +103,39 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
         finally { _dispatching = false; }
     }
 
+    // Presentation may refresh eligibility without delivering a completion or starting a queue.
+    internal bool RefreshAvailability()
+    {
+        _owner.RequireOwner();
+        if (IsRetired || _dispatching) return false;
+        UiActionAvailability before = Availability;
+        UiActionState state = State;
+        bool enabled = CanInvoke;
+        _dispatching = true;
+        try
+        {
+            ReadAvailability();
+            return enabled != CanInvoke || state != State ||
+                before.Reason?.Code != Availability.Reason?.Code ||
+                before.Reason?.Message != Availability.Reason?.Message ||
+                before.Reason?.Field != Availability.Reason?.Field;
+        }
+        finally { _dispatching = false; }
+    }
+
     public bool Pump()
     {
         _owner.RequireOwner();
-        if (_owner.IsDisposed || _dispatching) return false;
+        if (IsRetired || _dispatching) return false;
         _dispatching = true;
         try
         {
             bool changed = ObserveCompletion();
-            if (_owner.IsDisposed) return changed;
+            if (IsRetired) return changed;
             if (_operation is null && _waiting.TryDequeue(out Pending? pending))
             {
-                if (ReadAvailability() && !_owner.IsDisposed) Start(pending);
-                else if (!_owner.IsDisposed)
+                if (ReadAvailability() && !IsRetired) Start(pending);
+                else if (!IsRetired)
                 {
                     Complete(pending, UnavailableResult());
                 }
@@ -100,7 +152,7 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
     internal void Cancel()
     {
         _owner.RequireOwner();
-        if (_owner.IsDisposed || _dispatching) return;
+        if (IsRetired || _dispatching) return;
         _dispatching = true;
         try { CancelWaiting(UiActionCancellationReason.Requested); RecordCancellationError(_operation?.Cancel()); }
         finally { _dispatching = false; }
@@ -109,6 +161,8 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
     public void Retire()
     {
         _owner.RequireOwner();
+        if (_retired) return;
+        _retired = true;
         _completed = null;
         CancelWaiting(UiActionCancellationReason.OwnerRetired);
         _active?.Submission.Complete(UiActionResult<TResult>.Cancelled(UiActionCancellationReason.OwnerRetired));
@@ -120,22 +174,25 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
 
     private bool ReadAvailability()
     {
+        bool recovering = _availabilityFailure is not null;
         _availabilityFailure = null;
         try
         {
             UiActionAvailability availability = _action.ReadAvailability();
-            if (_owner.IsDisposed) return false;
+            if (IsRetired) return false;
             Availability = availability;
         }
         catch (Exception error)
         {
-            if (_owner.IsDisposed) return false;
+            if (IsRetired) return false;
             _availabilityFailure = LastResult = UiActionResult<TResult>.Failure(error);
             Availability = UiActionAvailability.Disabled(new("UIA005", "Action availability failed."));
             if (_operation is null) State = UiActionState.Failed;
             return false;
         }
         if (_operation is null && !Availability.CanExecute) State = UiActionState.Disabled;
+        else if (_operation is null && (State == UiActionState.Disabled || recovering))
+            State = UiActionState.Available;
         return Availability.CanExecute;
     }
 

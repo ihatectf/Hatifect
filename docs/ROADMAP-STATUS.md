@@ -652,3 +652,30 @@ UI checkpoint [`8a3545d`](https://github.com/ihatectf/Hatifect/commit/8a3545d) i
 - Independent bounded source review: **PASS**, including all32 candidate hashes. Changed viewport can recompose before Draw; no action Pump or Execute was added there. Future action completion dispatch must remain a separate Update operation. Existing shell return fencing is not a claim of transactional validation/platform callbacks.
 
 This integration starts no game and makes no new runtime/visual claim. The Q01 native-window and runtime observations belong to the original alpha.36/37 candidates documented above. Full U03/Q01 remain IN_PROGRESS. Next UI step: guarded action request admission and independently retired binding, followed by production host/input/legacy binding and isolated U03 RUNTIME; U04 remains available by dependency but unimplemented.
+
+
+## U03-b action admission and independent retirement
+
+Base `44505c6`, alpha.39. Owning implementation is private Runtime/Actions/UiActionExecution; immutable public descriptions, existing legacy TryExecute and frozen surface signatures are unchanged. A binding can now retire independently before cancellation callbacks, clearing active/queued submissions and its result subscriber exactly once; its live siblings continue. Every admission, availability and Pump path checks both binding and dispatcher retirement. Retired entries remain bounded by the existing4096 dispatcher capacity until the host owner is disposed; no new history or registration mutation during Pump.
+
+`InvokeCaptured` performs refusal guards before reading a request snapshot, captures once on the owning thread, checks retirement after the callback, then admits the immutable snapshot. Capture failure returns the original typed Failure without domain effects or a completion callback; it retains an earlier active operation and FIFO. The existing direct Invoke path allocates no capture closure. `RefreshAvailability` only reads eligibility and compares state/reason fields; it cannot deliver a completion or start queued work. CanInvoke uses captured domain availability plus actual concurrency/capacity. Equivalent newly allocated domain reasons do not falsely invalidate visuals. Recovery from disabled/availability failure restores Available, while ordinary domain terminal state remains observable.
+
+Focused tests extend only ActionExecutionTests, using existing real dispatcher/task helpers. No new test dependency/scaffolding or weakened baseline assertions.
+
+| Requirement | Evidence |
+|---|---|
+| One binding retires idempotently, refuses future effects and preserves sibling actions | `RetiringOneBindingBlocksItsEffectsWithoutRetiringOtherActions` |
+| Presentation gets reason/code/field and disabled/fault recovery without effects | `AvailabilityRefreshReportsReasonsAndRecoversWithoutDomainEffects` |
+| Availability refresh cannot deliver an already completed background task | `AvailabilityRefreshDoesNotDeliverBackgroundCompletion` |
+| Unavailable, busy, full and retired admission never captures a request; all three concurrency policies | `RequestCaptureRunsOnlyForAdmittedInput` (three cases) |
+| FIFO request uses the admitted draft, not a later form value | `QueuedRequestRetainsExactlyOneAdmissionSnapshot` |
+| Capture error is observable and preserves an existing active operation | `RequestCaptureFailureIsObservedWithoutReplacingAnActiveOperation` (idle/running) |
+| Capture callback cannot bypass retirement/reentry guards | `RequestCaptureCannotBypassRetirementOrReentry` (two cases) |
+| Availability callback retiring binding or dispatcher cannot publish enabled state | `AvailabilityRefreshCannotPublishAfterBindingOrDispatcherRetirement` (two cases) |
+
+Original existing-API regression `run-ivilw1u2`: **FAIL1/303**,302 baseline PASS; a separately retired binding accepted a new Invoke. Corrected scoped command `./tools/hatifect-test ui --project 'Hatifect UI/tests/Hatifect.UI.Runtime.Tests/Hatifect.UI.Runtime.Tests.csproj'`, `run-j4ur_lil`: **PASS315/315**,13 new cases. Commands use the documented explicit x64 SDK and command-local build GC workaround. Final source review and C/G/P follow on the version-aligned candidate.
+
+Full U03 remains IN_PROGRESS. Production scene/input/legacy binding, owning Update pump, per-publication retirement subscriptions, successful reload/explicit reopen/save-switch fencing and isolated RUNTIME acceptance remain next. Runtime/visual is NOT_APPLICABLE to this private execution seam; no alpha.39 game run or broad host lifecycle completion is claimed.
+
+
+Final alpha.39 evidence on unchanged compiled sources: C `./tools/hatifect-check`, `run-_0iw7xvr`, **PASS1336 .NET +351 Python**; G `./tools/hatifect-check --platform`, `run-gmofyltu`, **PASS1574 .NET +351 Python**. All actual TRX counters and individual outcomes agree, with zero failures/skips. P `./tools/hatifect-isolated-ui-ca --keep`: **PASS90**,44 exact projection files,8 alpha.39 producer DLLs,3 isolated assets files and2 exact CA deployment DLLs without UI duplication. Retained workspace `hatifect-ui-ca-isolated.p2zhc5rp`; log and hashes: `artifacts/u03-action-admission/`. Independent source/actual narrow TRX/22-file hash review is **PASS**, no open finding. The newly added guards do not allocate on the stable path by source inspection; no new allocation benchmark is claimed. Next: prepare/accept host scene state before committing action ownership, then production binding and isolated U03 RUNTIME.

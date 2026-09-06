@@ -7,6 +7,261 @@ namespace Hatifect.UI.Runtime.Tests;
 public sealed class ActionExecutionTests
 {
     [Fact]
+    public void AvailabilityRefreshReportsReasonsAndRecoversWithoutDomainEffects()
+    {
+        int mode = 0, effects = 0;
+        var error = new InvalidOperationException("availability refresh");
+        using var owner = Dispatcher();
+        var execution = owner.Bind(Action((_, _) => { effects++; return new(UiActionResult<int>.Success(1)); },
+            availability: () => mode switch
+            {
+                0 => UiActionAvailability.Disabled(new("domain.field", "Choose a target.", Id("target"))),
+                1 => throw error,
+                _ => UiActionAvailability.Available
+            }));
+
+        Assert.True(execution.RefreshAvailability());
+        Assert.False(execution.CanInvoke);
+        Assert.Equal(UiActionState.Disabled, execution.State);
+        Assert.Equal("domain.field", execution.Availability.Reason!.Code);
+        Assert.Equal("Choose a target.", execution.Availability.Reason.Message);
+        Assert.Equal(Id("target"), execution.Availability.Reason.Field);
+        Assert.False(execution.RefreshAvailability());
+        mode = 1;
+        Assert.True(execution.RefreshAvailability());
+        Assert.False(execution.CanInvoke);
+        Assert.Equal(UiActionState.Failed, execution.State);
+        Assert.Same(error, execution.LastResult!.Error);
+        mode = 2;
+        Assert.True(execution.RefreshAvailability());
+        Assert.True(execution.CanInvoke);
+        Assert.Equal(UiActionState.Available, execution.State);
+        Assert.Null(execution.Availability.Reason);
+        Assert.False(execution.RefreshAvailability());
+        Assert.Equal(0, effects);
+    }
+
+    [Fact]
+    public void AvailabilityRefreshDoesNotDeliverBackgroundCompletion()
+    {
+        var pending = Completion();
+        int callbacks = 0, callbackThread = 0;
+        int owningThread = Environment.CurrentManagedThreadId;
+        using var owner = Dispatcher();
+        var execution = owner.Bind(Action((_, _) => new(pending.Task)), (_, _) =>
+        { callbacks++; callbackThread = Environment.CurrentManagedThreadId; });
+        var submission = execution.Invoke(1);
+        OnWorker(() => pending.SetResult(UiActionResult<int>.Success(31)));
+
+        Assert.False(execution.RefreshAvailability());
+        Assert.False(execution.CanInvoke);
+        Assert.Equal(UiActionState.Running, execution.State);
+        Assert.Null(submission.Result);
+        Assert.Equal(0, callbacks);
+        PumpCompletion(owner);
+        Assert.Equal(31, submission.Result!.Value);
+        Assert.Equal(1, callbacks);
+        Assert.Equal(owningThread, callbackThread);
+        Assert.True(execution.CanInvoke);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void RequestCaptureRunsOnlyForAdmittedInput(int policy)
+    {
+        bool enabled = false;
+        int captures = 0, effects = 0;
+        var pending = Completion();
+        var concurrency = policy switch
+        {
+            0 => UiActionConcurrency.RejectWhileRunning,
+            1 => UiActionConcurrency.Queue(1),
+            _ => UiActionConcurrency.RestartLatest
+        };
+        using var owner = Dispatcher();
+        var execution = owner.Bind(Action((_, _) => { effects++; return new(pending.Task); }, concurrency,
+            () => enabled ? UiActionAvailability.Available : UiActionAvailability.Disabled(new("domain.disabled", "Disabled."))));
+        int Capture() => ++captures;
+
+        Assert.False(execution.InvokeCaptured(Capture).Accepted);
+        Assert.Equal(0, captures);
+        enabled = true;
+        Assert.True(execution.InvokeCaptured(Capture).Accepted);
+        Assert.Equal(policy != 0, execution.CanInvoke);
+        var next = execution.InvokeCaptured(Capture);
+        Assert.Equal(policy != 0, next.Accepted);
+        Assert.Equal(policy == 0 ? 1 : 2, captures);
+        var third = execution.InvokeCaptured(Capture);
+        Assert.Equal(policy == 2, third.Accepted);
+        Assert.Equal(policy == 0 ? 1 : policy == 1 ? 2 : 3, captures);
+        Assert.Equal(policy == 2, execution.CanInvoke);
+        if (policy < 2) Assert.Equal(policy == 0 ? "UIA003" : "UIA004", third.Result!.Rejection!.Code);
+        Assert.Equal(1, effects);
+        execution.Retire();
+        int before = captures;
+        Assert.False(execution.InvokeCaptured(Capture).Accepted);
+        Assert.Equal(before, captures);
+        Assert.False(execution.CanInvoke);
+        pending.SetResult(UiActionResult<int>.Success(1));
+        Assert.False(owner.Pump());
+    }
+
+    [Fact]
+    public void QueuedRequestRetainsExactlyOneAdmissionSnapshot()
+    {
+        var pending = Completion();
+        int draft = 11, captures = 0;
+        var started = new List<int>();
+        using var owner = Dispatcher();
+        var execution = owner.Bind(Action((request, _) =>
+        {
+            started.Add(request);
+            return started.Count == 1 ? new(pending.Task) : new(UiActionResult<int>.Success(request));
+        }, UiActionConcurrency.Queue(1)));
+        int Capture() { captures++; return draft; }
+        var active = execution.InvokeCaptured(Capture);
+        draft = 22;
+        var queued = execution.InvokeCaptured(Capture);
+        draft = 99;
+        pending.SetResult(UiActionResult<int>.Success(11));
+
+        PumpCompletion(owner);
+
+        Assert.Equal(new[] { 11, 22 }, started);
+        Assert.Equal(11, active.Result!.Value);
+        Assert.Equal(22, queued.Result!.Value);
+        Assert.Equal(2, captures);
+        Assert.Equal(0, execution.WaitingCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RequestCaptureFailureIsObservedWithoutReplacingAnActiveOperation(bool running)
+    {
+        var pending = Completion();
+        var error = new InvalidOperationException("request snapshot");
+        int effects = 0, callbacks = 0;
+        using var owner = Dispatcher();
+        var execution = owner.Bind(Action((request, _) =>
+        {
+            effects++;
+            return request == 1 ? new(pending.Task) : new(UiActionResult<int>.Success(request));
+        }, UiActionConcurrency.Queue(1)), (_, _) => callbacks++);
+        var active = running ? execution.Invoke(1) : null;
+
+        var failed = execution.InvokeCaptured(() => throw error);
+
+        Assert.False(failed.Accepted);
+        Assert.Same(error, failed.Result!.Error);
+        Assert.Same(failed.Result, execution.LastResult);
+        Assert.Equal(running ? UiActionState.Running : UiActionState.Failed, execution.State);
+        Assert.Equal(running ? 1 : 0, effects);
+        Assert.Equal(0, callbacks);
+        Assert.Equal(0, execution.WaitingCount);
+        if (running)
+        {
+            Assert.Null(active!.Result);
+            pending.SetResult(UiActionResult<int>.Success(41));
+            PumpCompletion(owner);
+            Assert.Equal(41, active.Result!.Value);
+            Assert.Equal(1, callbacks);
+        }
+        Assert.Equal(7, execution.InvokeCaptured(() => 7).Result!.Value);
+        Assert.Equal(running ? 2 : 1, effects);
+        Assert.Equal(running ? 2 : 1, callbacks);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RequestCaptureCannotBypassRetirementOrReentry(bool retire)
+    {
+        int effects = 0, captures = 0;
+        using var owner = Dispatcher();
+        var execution = owner.Bind(Action((request, _) => { effects++; return new(UiActionResult<int>.Success(request)); }));
+        UiActionSubmission<int>? nested = null;
+
+        var submission = execution.InvokeCaptured(() =>
+        {
+            if (retire) execution.Retire();
+            nested = execution.InvokeCaptured(() => { captures++; return 99; });
+            return 5;
+        });
+
+        Assert.NotNull(nested);
+        Assert.False(nested.Accepted);
+        Assert.Equal(retire ? "UIA001" : "UIA002", nested.Result!.Rejection!.Code);
+        Assert.Equal(0, captures);
+        Assert.Equal(!retire, submission.Accepted);
+        Assert.Equal(retire ? 0 : 1, effects);
+        if (retire) Assert.Equal("UIA001", submission.Result!.Rejection!.Code);
+        else Assert.Equal(5, submission.Result!.Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AvailabilityRefreshCannotPublishAfterBindingOrDispatcherRetirement(bool retireDispatcher)
+    {
+        int calls = 0;
+        using var owner = Dispatcher();
+        UiActionExecution<int, int>? execution = null;
+        execution = owner.Bind(Action((request, _) => new(UiActionResult<int>.Success(request)), availability: () =>
+        {
+            calls++;
+            if (retireDispatcher) owner.Dispose();
+            else execution!.Retire();
+            return UiActionAvailability.Available;
+        }));
+
+        Assert.True(execution.RefreshAvailability());
+        Assert.False(execution.CanInvoke);
+        Assert.Equal(UiActionState.Cancelled, execution.State);
+        Assert.False(execution.RefreshAvailability());
+        Assert.False(execution.InvokeCaptured(() => throw new InvalidOperationException("must not capture")).Accepted);
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void RetiringOneBindingBlocksItsEffectsWithoutRetiringOtherActions()
+    {
+        var pending = Completion();
+        int effects = 0, callbacks = 0;
+        CancellationToken token = default;
+        using var owner = Dispatcher();
+        var execution = owner.Bind(Action((_, cancellation) =>
+        {
+            effects++;
+            token = cancellation;
+            return new(pending.Task);
+        }, UiActionConcurrency.Queue(1)), (_, _) => callbacks++);
+        var independent = owner.Bind(new UiAction<int, int>(Id("independent"), "Independent",
+            (value, _) => new(UiActionResult<int>.Success(value)), UiActionConcurrency.RejectWhileRunning));
+        var active = execution.Invoke(1);
+        var queued = execution.Invoke(2);
+
+        execution.Retire();
+        execution.Retire();
+        var stale = execution.Invoke(3);
+
+        Assert.False(owner.IsDisposed);
+        Assert.False(stale.Accepted);
+        Assert.Equal("UIA001", stale.Result!.Rejection!.Code);
+        Assert.True(token.IsCancellationRequested);
+        Assert.Equal(UiActionCancellationReason.OwnerRetired, active.Result!.Cancellation);
+        Assert.Equal(UiActionCancellationReason.OwnerRetired, queued.Result!.Cancellation);
+        Assert.Equal(1, effects);
+        Assert.Equal(77, independent.Invoke(77).Result!.Value);
+        OnWorker(() => pending.SetException(new InvalidOperationException("retired binding")));
+        Assert.False(owner.Pump());
+        Assert.Equal(0, callbacks);
+        Assert.Equal(UiActionState.Cancelled, execution.State);
+    }
+
+    [Fact]
     public void SharedDescriptionHasIndependentHostStateAndSynchronousTypedResults()
     {
         var action = Action((request, _) => new(UiActionResult<int>.Success(request * 2)));
