@@ -2,7 +2,7 @@
 
 Assessed on 2026-09-06 after Flow F20 implementation `a0520d20ea89422c06a929a6f3fca20557eb1bfe` and evidence `db7acd697b204a8b1d80d73f1060e4ad965ec63f`. The independent source review compared this Flow candidate with published develop `54e14e74a3f8bc9d40d71e7e7521c4ddf74e770d`. This is a source and acceptance assessment, not a new runtime result or an API specification for U04.
 
-F12 depends on F11, U02 and U04 in [ROADMAP.md](ROADMAP.md). F11 is complete. U02 implementation `356e52e` / alpha.36 is published in that develop candidate. U04 remains PLANNED. The Flow task branch still has its separately verified alpha.35 package baseline; U02's published completion does not certify a new combined build. The UI owner integrates the published Flow work and owns the U04 contract. No dependency-ready F12 implementation stage is claimed here.
+F12 depends on F11, U02 and U04 in [ROADMAP.md](ROADMAP.md). F11 and U02 are complete with separately recorded evidence. U04 is now **IN_PROGRESS**: checkpoint `b89c792` implements environment facets, complete capability coverage, bounded trace and Runtime Invocation over the tested alpha.43 base `f2f5a03`. The Flow task owns this bounded framework slice by coordination with the UI owner; UI retains existing host/Terminal/reload integration and the shared package version authority. C1489+365/G1731+365/P90 are attributed in [ROADMAP-STATUS.md](ROADMAP-STATUS.md#u04-a-environment-planning-and-invocation-foundation). Native environment propagation is still required; no dependency-ready F12 implementation stage is claimed here. The original alpha.35/alpha.36 comparison below remains historical evidence for its named sources.
 
 ## Existing consumer and evidence
 
@@ -31,9 +31,9 @@ The following gaps belong to the UI framework. Flow should consume the completed
 
 | UI seam | Current behavior | Required U04 result |
 | --- | --- | --- |
-| [UiHostContext](../Hatifect%20UI/Hatifect.UI.Planning/UiHostContext.cs) | `HostKind` and `Profile` only. | The approved viewport, scale, input, locale, theme and necessary accessibility facets. Exact new types remain the UI owner's implementation decision. |
-| [UiPresentationPlanner](../Hatifect%20UI/Hatifect.UI.Planning/UiPresentationPlanner.cs) and [UiBinder](../Hatifect%20UI/Hatifect.UI.Semantics/Binding/UiBinder.cs) | Explicit/preferred/default selection; `LUI2009` checks whether capabilities overlap at all. | Coverage of all required semantics for the selected environment. Any overlap alone does not establish complete coverage. |
-| [UiPresentationPlan](../Hatifect%20UI/Hatifect.UI.Planning/UiPresentationPlan.cs) | Selected decision, message and provenance. | Bounded explanations of alternatives/rejections and an explicit diagnostic or fallback result for impossible combinations. |
+| [UiHostContext](../Hatifect%20UI/Hatifect.UI.Planning/UiHostContext.cs) | Named `InEnvironment` captures validated logical viewport, scale, input, locale, theme and accessibility preferences; original profile constructors remain. | Deliver actual platform values with their origins through live hosts. |
+| [UiPresentationPlanner](../Hatifect%20UI/Hatifect.UI.Planning/UiPresentationPlanner.cs) and [UiBinder](../Hatifect%20UI/Hatifect.UI.Semantics/Binding/UiBinder.cs) | `LUI2009` and direct-IR planning now require complete capability coverage; generated alternatives are deterministic and identity mismatches reject. | Verify this policy with the actual host/consumer environment matrix. |
+| [UiPresentationPlan](../Hatifect%20UI/Hatifect.UI.Planning/UiPresentationPlan.cs) | Six facet explanations and a profile rule per plan; bounded candidate rejections/fallback, addressable `UiPlanningException` without a partial plan. | Connect diagnostics to the actual host pipeline; planner-only PERF does not establish native frame cost. |
 | [UiSemanticSurfaceService](../Hatifect%20UI/Hatifect.UI.Stardew/Hosting/UiSemanticSurfaceService.cs) and [UiHostedSemanticSurfaceSession](../Hatifect%20UI/Hatifect.UI.Stardew/Hosting/UiHostedSemanticSurfaceSession.cs) | Controller/width select profiles; compositor locale is synchronized separately. | Deliver environment changes through the same supported planning/hosting pipeline. |
 
 ## Acceptance after U04 is ready
