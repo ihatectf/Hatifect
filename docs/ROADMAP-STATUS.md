@@ -4,7 +4,7 @@ Date: 2026-09-06. Working branch: `codex/flowline-next-ten-slices`; source basel
 
 The authoritative scope is [ROADMAP.md](ROADMAP.md), restored verbatim from commit `1e741ef` because this task branch predates that documentation commit. The earlier exploratory Flow multiplayer/adapters/policies list is superseded as an execution plan; no new product work outside the approved roadmap is being added. It does not replace U01–U10, R01–R04, T01–T03 or their acceptance. The Flow foundation is committed and published in task branch as `cdf9d2e86e90f0174251243147f8a2f9480d14e8`; its integration with the verified UI SDK/editor/D01 is owned by the UI task. The full roadmap IDs remain incomplete until all their acceptance and integration evidence are present.
 
-This report preserves separate evidence for Flow foundation `cdf9d2e`, F11 `e31c1ef`/`ff43d0b`, F16-a `54c5af5`, and the combined UI foundation. Flow artifact paths belong to `${HOME}/Developer/Hatifect`; the UI integration section names its own worktree. Earlier checks do not certify a later combined candidate. Shared B01/B02 statuses and D01 are authoritative in [ROADMAP.md](ROADMAP.md) and [SEMANTIC_V2.md](SEMANTIC_V2.md).
+This report preserves separate evidence for Flow foundation `cdf9d2e`, F11 `e31c1ef`/`ff43d0b`, F16-a `54c5af5`, F16-b `51eee23`, and the combined UI foundation. Flow artifact paths belong to `${HOME}/Developer/Hatifect`; the UI integration section names its own worktree. Earlier checks do not certify a later combined candidate. Shared B01/B02 statuses and D01 are authoritative in [ROADMAP.md](ROADMAP.md) and [SEMANTIC_V2.md](SEMANTIC_V2.md).
 
 ## Flow owner implementation status
 
@@ -56,7 +56,7 @@ Owner: Flow semantic consumer; existing application event/snapshot contract and 
 
 ## Current next slice
 
-F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`; F16-b now has actual Saved/InTransit process-crash evidence below. Continue F16-c with the confirmed-delivery crash boundary, then the remaining F16/F17 failure and production save-isolation matrix. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
+F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`; F16-b `51eee23` and F16-c have actual Saved/InTransit and Saved/Delivered process-crash evidence below. Continue F16-d with a queued save followed by an unsaved extraction and crash, then the remaining F16/F17 failure and production save-isolation matrix. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
 
 ## F11-b: owner-derived availability and rejection reasons
 
@@ -132,7 +132,7 @@ Combined with the published UI foundation `3f11e5d` in `/private/tmp/hatifect-ui
 
 ## F16-b: actual process crash after a confirmed in-flight save
 
-Owner: fixed scenario orchestration in the live harness and production Flow diagnostics. `flow.chest.crash-after-save` uses one request-owned canonical save and exactly two fixed SMAPI launches under one timeout. After actual Saved the first process holds the existing save barrier; the executor validates the bounded marker against request/PID/save owner/saved bytes/Flow DLL fingerprint, sends SIGKILL only to its owned group and requires the observed raw exit `-9`. The second process validates the saved marker and distinct process/session identity before continuing. No intermediate save provisioning or cleanup occurs; old child IDs are retired before a failed second launch can leave stale ownership. Public Flow/UI APIs, request schema, Core/Persistence and save formats are unchanged.
+Published commit: `51eee23`. Owner: fixed scenario orchestration in the live harness and production Flow diagnostics. `flow.chest.crash-after-save` uses one request-owned canonical save and exactly two fixed SMAPI launches under one timeout. After actual Saved the first process holds the existing save barrier; the executor validates the bounded marker against request/PID/save owner/saved bytes/Flow DLL fingerprint, sends SIGKILL only to its owned group and requires the observed raw exit `-9`. The second process validates the saved marker and distinct process/session identity before continuing. No intermediate save provisioning or cleanup occurs; old child IDs are retired before a failed second launch can leave stale ownership. Public Flow/UI APIs, request schema, Core/Persistence and save formats are unchanged.
 
 - `./tools/hatifect-test flow --platform`: **PASS**, 659 Flow + 92 Stardew (`run-pkii1yop`).
 - Final `./tools/hatifect-check --platform`: **PASS**, 1,203 .NET + 315 Python (`run-t3t1h105`), including the final UI host handoff condition and current exact-package CA tests.
@@ -146,3 +146,17 @@ Owner: fixed scenario orchestration in the live harness and production Flow diag
 - Earlier attempt `b444bf17-e31c-4c1d-9357-9ce0b5469b47` is **FAIL**: the generic UI automation controller did not delegate the new Flow scenario and exited before the crash boundary. The fixed handoff is covered by the fresh runs above. Initial `run-29d150qg` failed on an incorrectly precreated test fixture journal; production overwrite protection was retained. `run-8u5pt1fz` stopped on NuGet signature-source access and `run-jfq8ex7w` on concurrent package-feed preparation; fresh sequential checks/deployment passed without disabling validation.
 
 This closes only the bounded Saved/InTransit crash increment. Other confirmed custody states, unsaved/interrupted save boundaries, production A→B→A and full F16/F17 acceptance remain open. Separate visual and UI package-boundary changes are NOT_APPLICABLE here; UI graph/schema/version remain unchanged. The existing actual G and package-consumer checks cover the private harness handoff.
+
+## F16-c: confirmed delivery survives a process crash
+
+Owner: the existing Flow diagnostic driver and fixed live-harness scenario policy. `flow.chest.crash-after-delivery` follows the normal first save/reload, delivers both parcels and saves again. Only `saved-delivered` with loads2/Saving2/Saved2 permits the owned SIGKILL; a first-save marker cannot satisfy this scenario. The new process must load a fresh session with both parcels Delivered, retain exact destination items/remainder for 120 update ticks and reject both repeat-delivery commands. The existing InTransit boundary remains separate. No public API, request/marker field set, save format or Core/Persistence change.
+
+- `./tools/hatifect-test tools`: **PASS**, 317 Python (`run-_rwp5bay`). Added delivered phase/counter rejection and a real two-subprocess fixture for the second fixed scenario; existing first-boundary tests and manifest checks remain.
+- `./tools/hatifect-check --platform`: **PASS**, 1,203 .NET +317 Python (`run-xetndbxq`), including 659 Flow, 92 Stardew and 80 exact-package CA tests. `./tools/hatifect-check`: **PASS**, 1,016 .NET +317 Python (`run-yw5xa814`).
+- Fresh isolated deployment: `run-3o3qkopf`. Canonical packaging tests remain SKIPPED; the separate gates above are test evidence, without RC promotion.
+- `./tools/hatifect-smoke flow.chest.crash-after-delivery`: **PASS**, request `db552b12-1f5a-4313-a3c8-95fe71728eae`, all 9 assertions, no errors/exceptions, 29,135 ms. Marker requires the second actual Saved; prepare PID70870 receives signal9/raw-9, resume PID71073 exits0, both teardown lists empty. Final diagnostics: 3 loads, 2 Saving/Saved pairs, 154 resume frames including the 120-tick quantity/fidelity/repeat-delivery check.
+- Same-candidate `./tools/hatifect-smoke flow.chest.crash-after-save`: **PASS**, request `e6e12955-dbb0-4df8-95a4-1a863c4096b9`, 9 assertions, PID71439 raw-9 → PID71602 exit0, 3 loads, 2 Saving/Saved pairs and no errors. Both scenarios conserve whole8 plus partial13→5+8 and use Flow fingerprint `f7fc744de7f9b6004f5fea897e71221d71923600c5c7e07cb22ee180b4408bca`.
+- Independent review found no actionable regression and verified final C/G, both real request artifacts, deployed DLL hashes and the archive. SMAPI logs show two save traces in Delivered prepare and none in resume, versus one per process for InTransit. Root second-pass review matched the final source and staged files.
+- Package verification **PASS**, 21 files /14 DLLs; generated reports were byte-matched to retained evidence before cleanup. Archive, inventory and source/staged review: `artifacts/flowline-f16-delivered-crash/`.
+
+Full F16/F17 remain IN_PROGRESS. Saved Delivered is now covered by an actual process restart; unsaved effects, interrupted writes, other custody boundaries and production A→B→A remain separate acceptance work. Visual, new UI package boundary and settings/skills host-audit changes are NOT_APPLICABLE to this increment.

@@ -36,6 +36,11 @@ MAX_DOCUMENT_BYTES = 256 * 1024
 PRIVATE_DIRECTORY_MODE = 0o700
 PRIVATE_FILE_MODE = 0o600
 SAVED_CRASH_SCENARIO = "flow.chest.crash-after-save"
+DELIVERED_CRASH_SCENARIO = "flow.chest.crash-after-delivery"
+SAVED_CRASH_BOUNDARIES = {
+    SAVED_CRASH_SCENARIO: ("saved-in-transit", 1),
+    DELIVERED_CRASH_SCENARIO: ("saved-delivered", 2),
+}
 LIFECYCLE_STATES = {
     "Accepted",
     "Launching",
@@ -578,7 +583,7 @@ def _record_started_process(
     continuation: bool = False,
 ) -> None:
     active = dict(_read_json(active_path))
-    if continuation and (request["scenarioId"] != SAVED_CRASH_SCENARIO or active.get("lifecycleState") != "Running"):
+    if continuation and (request["scenarioId"] not in SAVED_CRASH_BOUNDARIES or active.get("lifecycleState") != "Running"):
         raise DirectRuntimeError("Only the validated saved-crash continuation may replace a running child.")
     active["smapiPid"] = pid
     active["smapiProcessGroup"] = process_group
@@ -832,7 +837,7 @@ def _prepared_request_saves(request: dict[str, Any], metadata: dict[str, Any]):
 def _acceptance_report_source(isolated: Path, scenario_id: str) -> Path:
     # Fixed ownership for the allowlisted asynchronous Flow lifecycle scenario.
     # The request cannot supply an arbitrary report path or module name.
-    module = "Hatifect Flow" if scenario_id in {"flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip", SAVED_CRASH_SCENARIO} else "Hatifect UI"
+    module = "Hatifect Flow" if scenario_id in {"flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip", *SAVED_CRASH_BOUNDARIES} else "Hatifect UI"
     return isolated / "Mods" / "Hatifect" / module / ".acceptance" / "host-acceptance-report.json"
 
 
@@ -856,8 +861,9 @@ def _saved_crash_marker(request: dict[str, Any], metadata: dict[str, Any], proce
 
 
 def _validate_saved_crash_marker(request: dict[str, Any], metadata: dict[str, Any], process: dict[str, Any]) -> dict[str, Any] | None:
-    if request["scenarioId"] != SAVED_CRASH_SCENARIO:
+    if request["scenarioId"] not in SAVED_CRASH_BOUNDARIES:
         raise DirectRuntimeError("Saved-crash marker is not available to this scenario.")
+    expected_phase, expected_saves = SAVED_CRASH_BOUNDARIES[request["scenarioId"]]
     artifact = Path(request["artifactDirectory"])
     path = artifact / "diagnostics" / "flow-crash-ready.json"
     info = _lstat(path)
@@ -872,8 +878,8 @@ def _validate_saved_crash_marker(request: dict[str, Any], metadata: dict[str, An
     if not isinstance(marker, dict) or set(marker) != fields:
         raise DirectRuntimeError("Saved-crash marker has an invalid field set.")
     if (type(marker["formatVersion"]) is not int or marker["formatVersion"] != 1
-            or marker["runId"] != request["requestId"] or marker["scenarioId"] != SAVED_CRASH_SCENARIO
-            or marker["phase"] != "saved-in-transit"
+            or marker["runId"] != request["requestId"] or marker["scenarioId"] != request["scenarioId"]
+            or marker["phase"] != expected_phase
             or type(marker["pid"]) is not int or marker["pid"] != process.get("pid")
             or type(marker["saveId"]) is not int or marker["saveId"] != 4242424242):
         raise DirectRuntimeError("Saved-crash marker has a foreign request, process or save identity.")
@@ -892,8 +898,8 @@ def _validate_saved_crash_marker(request: dict[str, Any], metadata: dict[str, An
             raise DirectRuntimeError("Saved-crash marker has invalid station coordinates.")
     if (marker["sourceX"], marker["sourceY"]) == (marker["destinationX"], marker["destinationY"]):
         raise DirectRuntimeError("Saved-crash marker aliases its source and destination.")
-    if any(type(marker[key]) is not int or marker[key] != 1 for key in ("loads", "savingEvents", "savedEvents")):
-        raise DirectRuntimeError("Saved-crash marker does not prove one confirmed save boundary.")
+    if any(type(marker[key]) is not int or marker[key] != expected_saves for key in ("loads", "savingEvents", "savedEvents")):
+        raise DirectRuntimeError("Saved-crash marker does not prove this scenario's confirmed save boundary.")
     if not isinstance(marker["remainderXml"], str) or not 0 < len(marker["remainderXml"]) <= 32768:
         raise DirectRuntimeError("Saved-crash remainder evidence exceeds its bound.")
     captured = _parse_timestamp(marker["capturedAtUtc"])
@@ -925,7 +931,7 @@ def _run_saved_crash(request, metadata, runner, active_path, cancellation_path, 
 
     def forced_exit(pid: int, group: int, raw_exit: int) -> None:
         nonlocal forced
-        forced = {"formatVersion": 1, "requestId": request["requestId"], "scenarioId": SAVED_CRASH_SCENARIO,
+        forced = {"formatVersion": 1, "requestId": request["requestId"], "scenarioId": request["scenarioId"],
                   "pid": pid, "processGroup": group, "requestedSignal": int(signal.SIGKILL), "rawExitCode": raw_exit,
                   "observedAtUtc": _timestamp()}
         _atomic_write_json(artifact / "diagnostics" / "flow-crash-termination.json", forced)
@@ -1055,7 +1061,7 @@ def _execute_request(
         _atomic_write_json(process_path, process_document, replace=True)
 
     try:
-        if request["scenarioId"] == SAVED_CRASH_SCENARIO:
+        if request["scenarioId"] in SAVED_CRASH_BOUNDARIES:
             exit_code = _run_saved_crash(request, metadata, run_process, active_path, cancellation_path, on_started, on_completed)
         else:
             exit_code = run_process.run(
@@ -1070,7 +1076,7 @@ def _execute_request(
                 on_completed=on_completed,
             )
     except DirectRuntimeError as error:
-        if request["scenarioId"] != SAVED_CRASH_SCENARIO:
+        if request["scenarioId"] not in SAVED_CRASH_BOUNDARIES:
             raise
         _copy_smapi_logs(isolated, artifact)
         if report_source.is_file():

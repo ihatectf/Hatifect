@@ -109,6 +109,27 @@ class SavedCrashTests(unittest.TestCase):
     def run_crash(self, runner):
         return DIRECT._run_saved_crash(self.request, self.metadata, runner, self.active, self.cancel, self.started, self.completed)
 
+    def use_delivery_boundary(self):
+        SAVE.cleanup_working_copy(self.isolated, self.save, self.runtime_id, self.run_id, self.request["scenarioId"])
+        self.request["scenarioId"] = DIRECT.DELIVERED_CRASH_SCENARIO
+        self.save = SAVE.prepare_working_copy(self.isolated, self.smapi, self.run_id, self.request["scenarioId"])
+        self.marker.update(scenarioId=DIRECT.DELIVERED_CRASH_SCENARIO, phase="saved-delivered", loads=2, savingEvents=2, savedEvents=2)
+
+    def test_delivery_marker_requires_delivered_phase_and_exact_second_save(self):
+        self.use_delivery_boundary()
+        self.write_marker()
+        self.assertEqual(self.marker, DIRECT._saved_crash_marker(self.request, self.metadata, self.process))
+        for changes in ({"phase": "saved-in-transit"}, {"scenarioId": DIRECT.SAVED_CRASH_SCENARIO},
+                        {"loads": 1}, {"savingEvents": 1}, {"savedEvents": 1}, {"savedEvents": True}, {"savedEvents": 3}):
+            with self.subTest(changes=changes):
+                self.write_marker(changes)
+                with self.assertRaises(DIRECT.DirectRuntimeError):
+                    DIRECT._saved_crash_marker(self.request, self.metadata, self.process)
+        self.request["scenarioId"] = DIRECT.SAVED_CRASH_SCENARIO
+        self.write_marker()
+        with self.assertRaises(DIRECT.DirectRuntimeError):
+            DIRECT._saved_crash_marker(self.request, self.metadata, self.process)
+
     def test_marker_requires_current_process_save_bytes_and_actual_fixture_owner(self):
         self.assertIsNone(DIRECT._saved_crash_marker(self.request, self.metadata, self.process))
         self.write_marker()
@@ -163,6 +184,13 @@ class SavedCrashTests(unittest.TestCase):
         self.assertEqual(DIRECT._read_json(self.active)["smapiPid"], 4242)
 
     def test_real_sigkill_then_distinct_process_uses_same_owned_saved_bytes(self):
+        self.verify_real_two_processes()
+
+    def test_real_delivered_boundary_restarts_with_its_fixed_scenario_and_saved_bytes(self):
+        self.use_delivery_boundary()
+        self.verify_real_two_processes()
+
+    def verify_real_two_processes(self):
         template = self.artifact / "marker-template.json"
         template.write_text(json.dumps(self.marker))
         self.smapi.write_text(f"#!{sys.executable}\n" + '''import datetime,json,os,pathlib,time
@@ -189,6 +217,7 @@ else:
         resume = DIRECT._read_json(self.artifact / "diagnostics/process-resume.json")
         proof = DIRECT._read_json(self.artifact / "diagnostics/flow-crash-termination.json")
         self.assertEqual((prepare["observedExitCode"], resume["observedExitCode"], proof["rawExitCode"]), (137, 0, -9))
+        self.assertEqual(proof["scenarioId"], self.request["scenarioId"])
         self.assertNotEqual(prepare["pid"], resume["pid"])
         self.assertEqual(proof["pid"], prepare["pid"])
         self.assertEqual((proof["requestedSignal"], proof["processGroup"]), (9, prepare["pid"]))
@@ -197,7 +226,7 @@ else:
         self.assertEqual((prepare["teardownErrors"], resume["teardownErrors"]), ([], []))
         self.assertIn("prepared confirmed saved bytes", (self.artifact / "smapi-prepare.log").read_text())
         self.assertIn("resumed same saved bytes", (self.artifact / "smapi.log").read_text())
-        SAVE.cleanup_working_copy(self.isolated, self.save, self.runtime_id, self.run_id, DIRECT.SAVED_CRASH_SCENARIO)
+        SAVE.cleanup_working_copy(self.isolated, self.save, self.runtime_id, self.run_id, self.request["scenarioId"])
         self.assertFalse(self.save.exists())
         SAVE.validate_fixture(self.isolated, self.smapi)
 
@@ -313,14 +342,16 @@ time.sleep(30)
 
     def test_manifest_keeps_crash_out_of_aggregate_and_uses_fixed_flow_report(self):
         validator = _load("validate")
-        scenario = validator.load_manifest()[DIRECT.SAVED_CRASH_SCENARIO]
-        self.assertFalse(scenario["includeInAll"])
-        self.assertTrue(scenario["requiresSave"])
-        self.assertEqual(scenario["requiredMods"], ["Hatifect.Flow"])
-        self.assertEqual(len(scenario["checks"]), 9)
-        self.assertIn(DIRECT.SAVED_CRASH_SCENARIO + ".process-restart", scenario["checks"])
-        self.assertEqual(DIRECT._acceptance_report_source(self.isolated, DIRECT.SAVED_CRASH_SCENARIO),
-                         self.isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")
+        for scenario_id in (DIRECT.SAVED_CRASH_SCENARIO, DIRECT.DELIVERED_CRASH_SCENARIO):
+            with self.subTest(scenario=scenario_id):
+                scenario = validator.load_manifest()[scenario_id]
+                self.assertFalse(scenario["includeInAll"])
+                self.assertTrue(scenario["requiresSave"])
+                self.assertEqual(scenario["requiredMods"], ["Hatifect.Flow"])
+                self.assertEqual(len(scenario["checks"]), 9)
+                self.assertIn(scenario_id + ".process-restart", scenario["checks"])
+                self.assertEqual(DIRECT._acceptance_report_source(self.isolated, scenario_id),
+                                 self.isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")
 
 
 class ForcedProcessTests(unittest.TestCase):

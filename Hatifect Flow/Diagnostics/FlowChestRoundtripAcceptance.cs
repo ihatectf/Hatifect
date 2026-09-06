@@ -64,7 +64,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
     {
         string? scenario = Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO");
         return Environment.GetEnvironmentVariable("HATIFECT_TEST_MODE") == "1" && Environment.GetEnvironmentVariable("HATIFECT_TEST_AUTOMATED") == "1"
-            && scenario is Scenario or CrashScenario ? new(helper, monitor, current, scenario) : null;
+            && scenario is Scenario or CrashScenario or DeliveryCrashScenario ? new(helper, monitor, current, scenario) : null;
     }
 
     internal void OnSaveLoaded()
@@ -75,7 +75,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             ValidateLoadedSave();
             FlowGameSession session = Session();
             Require(!session.IsFaulted && session.ReadSnapshot().SessionId != _sessionId, "SaveLoaded did not create a fresh production session.");
-            if (_crashPhase == "resume" && _loads == 1) _passed.Add("process-restart");
+            if (_crashPhase == "resume" && _loads == CrashSavedEvents) _passed.Add("process-restart");
             _sessionId = session.ReadSnapshot().SessionId;
             _loads++;
             if (_loads == 1)
@@ -178,8 +178,8 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                     _stage = Stage.Exit;
                     break;
                 case Stage.AwaitCrash:
-                    Require(Session().IsSaving && BothAt(ParcelState.InTransit), "The saved crash boundary advanced before termination.");
-                    VerifyRemainder();
+                    Require(Session().IsSaving && BothAt(CrashParcelState), "The saved crash boundary advanced before termination.");
+                    VerifyCrashInventory();
                     break;
             }
         }
@@ -233,7 +233,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             Require(_saveHash != HashFile(Path.Combine(_request.SavePath, Path.GetFileName(_request.SavePath))), "Saved event did not update the owned on-disk game save.");
             _saves++;
             _passed.Add("saved");
-            if (_crashPhase == "prepare" && _stage == Stage.SavingTransit)
+            if (_crashPhase == "prepare" && _stage == (CrashAfterDelivery ? Stage.SavingDelivered : Stage.SavingTransit))
             {
                 PrepareCrashBoundary();
                 return;
