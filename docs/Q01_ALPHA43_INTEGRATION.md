@@ -2,7 +2,7 @@
 
 Ограниченная общая приёмка alpha.43 — **PASS**. P2 повторного захвата keyboard lease после неуспешного Hide подтверждён нативным RED→GREEN и исправлен. Итоговый source commit — [`6c30713`](https://github.com/ihatectf/Hatifect/commit/6c307137287a9a5634c4383d9773cc873bf1a068). Полные U03 и Q01 остаются **IN_PROGRESS**.
 
-Публикация отчёта `dc79fc7` выявила отдельный CI race общего harness. Исправление [`3043c67`](https://github.com/ihatectf/Hatifect/commit/3043c67) прошло локальные tools/C и свежий игровой crash/restart; CI исправленной публикации ещё ожидается. Первоначальный failed run сохранён ниже.
+Публикация отчёта `dc79fc7` выявила отдельный CI race общего harness. Исправление [`3043c67`](https://github.com/ihatectf/Hatifect/commit/3043c67) прошло локальные tools/C и свежий игровой crash/restart; exact CI исправленной публикации `f035f4c`, [run34049870307](https://github.com/ihatectf/Hatifect/actions/runs/34049870307), — **SUCCESS**, все10 jobs завершены успешно. Первоначальный failed run сохранён ниже.
 
 ## Исходники и границы
 
@@ -90,4 +90,4 @@ Exact CI [`34048617203`](https://github.com/ihatectf/Hatifect/actions/runs/34048
 
 Перед этим запросом прежний idle supervisor отказался загружать worker: source digest изменился между его вычислением и загрузкой исходников. Worker log содержит точный `Worker source digest does not match the supervisor launch contract.` Диагностика сохранена в `ci-race-executor-fault.json` / `ci-race-executor-worker14.log`; протокол не менялся. Проверенный supervisor29126 без active request и worker штатно завершён SIGTERM, затем канонический `rtk proxy ./tools/hatifect-runtime-executor serve` создал supervisor29043 / worker29051 и подтвердил Ready. Lock не удалялся; процессы других worktree не затронуты.
 
-Повторный source/caller/diff review GQ не выявил открытых замечаний в этом исправлении. G/P и VISUAL/PERF product baseline выше сохраняют прежнюю точную привязку: они не объявляются новыми прогонами Python correction. Следующий шаг — завершить CI новой публикации и затем интегрировать immutable alpha.44; полные U03/Q01 остаются IN_PROGRESS.
+Повторный source/caller/diff review GQ не выявил открытых замечаний в этом исправлении. Exact CI публикации `f035f4c` завершён **SUCCESS**: architecture/tooling, build, семь test jobs и CI Gate прошли; terminal snapshot сохранён в `ci-f035f4c.json`. G/P и VISUAL/PERF product baseline выше сохраняют прежнюю точную привязку: они не объявляются новыми прогонами Python correction. Следующий шаг — общая приёмка immutable alpha.44; полные U03/Q01 остаются IN_PROGRESS.
