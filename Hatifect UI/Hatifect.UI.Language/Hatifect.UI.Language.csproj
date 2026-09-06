@@ -3,7 +3,7 @@
     <AssemblyName>Hatifect.UI.Language</AssemblyName>
     <RootNamespace>Hatifect.UI.Language</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.0.0-alpha.40</Version>
+    <Version>1.0.0-alpha.41</Version>
   </PropertyGroup>
   <PropertyGroup><HatifectUiPackageProducer>true</HatifectUiPackageProducer></PropertyGroup>
   <Import Project="../../Hatifect.UI.Packages.props" />

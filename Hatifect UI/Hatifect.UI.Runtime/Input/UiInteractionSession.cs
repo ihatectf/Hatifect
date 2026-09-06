@@ -385,9 +385,9 @@ internal sealed class UiInteractionSession
         };
     }
 
-    private static UiInteractionUpdate ActivateButton(UiButtonSceneNode button, bool stateChanged)
+    private UiInteractionUpdate ActivateButton(UiButtonSceneNode button, bool stateChanged)
     {
-        bool invoked = button.Invoke();
+        bool invoked = button.Action.TryExecute(_beforeMutation);
         return new UiInteractionUpdate(invoked, StateChanged: stateChanged, ActionInvoked: invoked);
     }
 

@@ -37,6 +37,7 @@ internal sealed class UiHostRuntimeSession
     private long _layoutBuilds;
     private long _frameBuilds;
     private bool _preparingUpdate;
+    private bool _active = true;
 
     public UiHostRuntimeSession(
         UiScene scene,
@@ -62,7 +63,7 @@ internal sealed class UiHostRuntimeSession
         _collections.Synchronize(Layout);
         Interactions = new UiInteractionSession(scene, Layout, interaction, platform, EnsureNotPreparing);
         _frame = BuildFrame(scene);
-        Accessibility = _accessibilityBuilder.Build(scene, Layout, Interactions.Snapshot);
+        Accessibility = BuildAccessibility(scene, Layout, Interactions.Snapshot);
     }
 
     public UiLayoutSnapshot Layout { get; private set; }
@@ -72,6 +73,9 @@ internal sealed class UiHostRuntimeSession
     public UiHostPolicy Policy => _scene.Root.Policy;
     internal UiScene Scene => _scene;
     internal UiHostUpdate? LastUpdate { get; private set; }
+    internal bool IsActive => _active;
+    internal long AcceptedVersion { get; private set; }
+    internal void Deactivate() => _active = false;
     internal UiHostRuntimePerformanceSnapshot Performance
         => new(_layoutBuilds, _frameBuilds);
 
@@ -118,9 +122,10 @@ internal sealed class UiHostRuntimeSession
             attemptedLayout = layoutChanged;
             UiLayoutSnapshot layout = layoutChanged ? BuildLayout(next, placement) : Layout;
             UiInteractionSession interaction = Interactions.PrepareReconcile(next, layout);
+            EnsureActive();
             bool frameChanged = layoutChanged || diff.RequiresRender;
             UiRenderFrame frame = frameChanged ? BuildFrame(next, layout, interaction.Snapshot) : _frame;
-            UiAccessibilitySnapshot accessibility = _accessibilityBuilder.Build(next, layout, interaction.Snapshot);
+            UiAccessibilitySnapshot accessibility = BuildAccessibility(next, layout, interaction.Snapshot);
             UiCollectionViewportState collections = _collections;
             if (layoutChanged)
             {
@@ -128,6 +133,7 @@ internal sealed class UiHostRuntimeSession
                 collections.Synchronize(layout);
             }
             var update = new UiHostUpdate(layoutChanged, frameChanged, diff);
+            EnsureActive();
 
             // All callback-bearing work succeeded. Publish the prepared state without calling
             // consumers between assignments, retaining the input session's existing identity.
@@ -139,6 +145,7 @@ internal sealed class UiHostRuntimeSession
             _scene = next;
             _placement = placement;
             LastUpdate = update;
+            AcceptedVersion++;
             return update;
         }
         catch
@@ -167,7 +174,7 @@ internal sealed class UiHostRuntimeSession
         _collections.Synchronize(Layout);
         Interactions.Reconcile(_scene, Layout);
         _frame = BuildFrame(_scene);
-        Accessibility = _accessibilityBuilder.Build(_scene, Layout, Interactions.Snapshot);
+        Accessibility = BuildAccessibility(_scene, Layout, Interactions.Snapshot);
         LastUpdate = new UiHostUpdate(
             LayoutChanged: true,
             FrameChanged: true,
@@ -236,7 +243,7 @@ internal sealed class UiHostRuntimeSession
             if (textChanged)
                 return RefreshLiveText();
             _frame = BuildFrame(_scene);
-            Accessibility = _accessibilityBuilder.Build(_scene, Layout, Interactions.Snapshot);
+            Accessibility = BuildAccessibility(_scene, Layout, Interactions.Snapshot);
             UiSymbolId[] changed = Interactions.Snapshot.Focused is { } focused
                 ? new[] { focused }
                 : Array.Empty<UiSymbolId>();
@@ -258,7 +265,7 @@ internal sealed class UiHostRuntimeSession
         _collections.Synchronize(Layout);
         Interactions.Reconcile(_scene, Layout);
         _frame = BuildFrame(_scene);
-        Accessibility = _accessibilityBuilder.Build(_scene, Layout, Interactions.Snapshot);
+        Accessibility = BuildAccessibility(_scene, Layout, Interactions.Snapshot);
         UiSymbolId[] changed = Interactions.Snapshot.TextEditing is { } editing
             ? new[] { editing.Input }
             : Array.Empty<UiSymbolId>();
@@ -276,7 +283,7 @@ internal sealed class UiHostRuntimeSession
     {
         EnsureNotPreparing();
         _frame = BuildFrame(_scene);
-        Accessibility = _accessibilityBuilder.Build(_scene, Layout, Interactions.Snapshot);
+        Accessibility = BuildAccessibility(_scene, Layout, Interactions.Snapshot);
         UiSymbolId[] changed = Interactions.Snapshot.TextEditing is { } editing
             ? new[] { editing.Input }
             : Array.Empty<UiSymbolId>();
@@ -288,11 +295,16 @@ internal sealed class UiHostRuntimeSession
         return update;
     }
 
-    public void Render() => _compositor.Render(_frame, _platform);
+    public void Render()
+    {
+        if (_active) _compositor.Render(_frame, _platform);
+    }
 
     private UiLayoutSnapshot BuildLayout(UiScene scene, UiHostPlacementContext placement)
     {
+        EnsureActive();
         UiLayoutSnapshot layout = _layoutEngine.Build(scene, placement, _collections.Snapshot());
+        EnsureActive();
         _layoutBuilds++;
         return layout;
     }
@@ -302,14 +314,31 @@ internal sealed class UiHostRuntimeSession
 
     private UiRenderFrame BuildFrame(UiScene scene, UiLayoutSnapshot layout, UiInteractionSnapshot interaction)
     {
+        EnsureActive();
         UiRenderFrame frame = _renderPlanner.Build(scene, layout, interaction, _platform);
+        EnsureActive();
         _frameBuilds++;
         return frame;
     }
 
+    private UiAccessibilitySnapshot BuildAccessibility(
+        UiScene scene, UiLayoutSnapshot layout, UiInteractionSnapshot interaction)
+    {
+        EnsureActive();
+        UiAccessibilitySnapshot snapshot = _accessibilityBuilder.Build(scene, layout, interaction);
+        EnsureActive();
+        return snapshot;
+    }
+
     private void EnsureNotPreparing()
     {
+        EnsureActive();
         if (_preparingUpdate)
             throw new InvalidOperationException("The host cannot be mutated while a scene update is being prepared.");
+    }
+
+    private void EnsureActive()
+    {
+        if (!_active) throw new ObjectDisposedException(nameof(UiHostRuntimeSession));
     }
 }

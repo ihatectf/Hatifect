@@ -467,6 +467,7 @@ internal sealed class UiSemanticStardewHost : IDisposable
     {
         if (_retiring) return;
         _retireRequested = true;
+        Session.Deactivate();
         _retiring = true;
         try
         {
