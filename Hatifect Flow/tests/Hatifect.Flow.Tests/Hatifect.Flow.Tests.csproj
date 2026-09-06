@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\Hatifect.Flow.Core\Hatifect.Flow.Core.csproj" />
     <ProjectReference Include="..\..\Hatifect.Flow.Persistence\Hatifect.Flow.Persistence.csproj" />
     <ProjectReference Include="..\..\Hatifect.Flow.UI.Semantic\Hatifect.Flow.UI.Semantic.csproj" />
+    <ProjectReference Include="..\..\..\Hatifect UI\tests\Hatifect.UI.Runtime.Tests\Hatifect.UI.Runtime.Tests.csproj" />
   </ItemGroup>
 
 </Project>

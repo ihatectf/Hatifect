@@ -114,7 +114,7 @@ public sealed class ParcelExperienceTests
             id => id == CheckpointFixture.Origin.Value ? "Mine" : "Farm", _ => "Copper ore");
 
     private static object? Value(ParcelExperience view, string name)
-        => view.Experience.Elements.Single(element => element.Name == name).Source.UntypedValue;
+        => view.Experience.Elements.Single(element => element.Name == name).Source.UntypedValue?.ToString();
 
     private sealed class SurfaceApi : IUiSemanticSurfaceApi
     {

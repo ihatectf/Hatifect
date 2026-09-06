@@ -639,6 +639,22 @@ class LiveHarnessTests(unittest.TestCase):
                     HARNESS.validate_report(resolved, report, started_at=0)
                 check["Passed"] = True
 
+    def test_flow_names_requires_every_native_capture_check_and_a_world(self) -> None:
+        resolved = HARNESS.resolve_scenario(self.scenarios, "flow.ui.names", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.Flow"])
+        self.assertNotIn("flow.ui.names", self.scenarios["all"]["includes"])
+        self.assertEqual(resolved["checks"], ["flow.ui.names." + suffix for suffix in
+                         ("loaded", "english", "russian", "capture-state", "retained", "restored", "read-only")])
+        report = self._report(resolved)
+        HARNESS.validate_report(resolved, report, started_at=0)
+        for check in report["HostChecks"]:
+            with self.subTest(check=check["Id"]):
+                check["Passed"] = False
+                with self.assertRaises(HARNESS.HarnessError):
+                    HARNESS.validate_report(resolved, report, started_at=0)
+                check["Passed"] = True
+
     def test_save_isolation_preserves_lifecycle_checks_and_requires_separate_save_check(self) -> None:
         resolved = HARNESS.resolve_scenario(self.scenarios, "flow.save.isolation", "smoke")
         self.assertTrue(resolved["requiresSave"])

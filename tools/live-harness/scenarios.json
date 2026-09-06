@@ -62,6 +62,29 @@
       }
     },
     {
+      "id": "flow.ui.names",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 600,
+      "includeInAll": false,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.names.loaded",
+        "flow.ui.names.english",
+        "flow.ui.names.russian",
+        "flow.ui.names.capture-state",
+        "flow.ui.names.retained",
+        "flow.ui.names.restored",
+        "flow.ui.names.read-only"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
       "id": "flow.save.isolation",
       "kind": "smoke",
       "requiresSave": true,

@@ -18,6 +18,7 @@ public sealed partial class ModEntry : Mod
     private FlowChestIsolationAcceptance? _isolationAcceptance;
     private FlowGamePerformanceAcceptance? _performanceAcceptance;
     private FlowGameResourceAcceptance? _resourceAcceptance;
+    private FlowItemNamesAcceptance? _itemNamesAcceptance;
     private bool _attached;
     private bool _startupFailed;
 
@@ -37,6 +38,7 @@ public sealed partial class ModEntry : Mod
     {
         try
         {
+            _itemNamesAcceptance = FlowItemNamesAcceptance.TryCreate(Helper, Monitor);
             _acceptance = FlowHostAcceptance.TryCreate(Helper, Monitor);
             _chestAcceptance = FlowChestRoundtripAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
             _cancellationAcceptance = FlowChestCancellationAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
@@ -56,6 +58,16 @@ public sealed partial class ModEntry : Mod
 
     private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
     {
+        if (_itemNamesAcceptance is not null)
+        {
+            try
+            {
+                RequireReadOnlyNamesSession();
+                _itemNamesAcceptance.OnSaveLoaded();
+            }
+            catch (Exception error) { ReportFailure(error); }
+            return;
+        }
         if (_acceptance is null)
         {
             OpenGameSession();
@@ -89,6 +101,12 @@ public sealed partial class ModEntry : Mod
         }
         try
         {
+            if (_itemNamesAcceptance is not null)
+            {
+                RequireReadOnlyNamesSession();
+                _itemNamesAcceptance.Tick();
+                return;
+            }
             TickGameSession(e);
             if (_host?.State == DurableFlowHostState.Active)
                 _host.Tick(!Context.IsWorldReady || !Context.IsMainPlayer || !Game1.shouldTimePass());
@@ -105,6 +123,7 @@ public sealed partial class ModEntry : Mod
 
     private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
     {
+        if (RejectNamesLifecycle("ReturnedToTitle")) return;
         try
         {
             CloseGameSession();
@@ -153,13 +172,28 @@ public sealed partial class ModEntry : Mod
                 }
             }
         }
-        finally { base.Dispose(disposing); }
+        finally
+        {
+            try { if (disposing) _itemNamesAcceptance?.Dispose(); }
+            finally { base.Dispose(disposing); }
+        }
     }
 
     private void CloseHost()
     {
         try { _host?.Dispose(); }
         finally { _host = null; }
+    }
+
+    private void RequireReadOnlyNamesSession()
+        => FlowHostAcceptance.Require(_host is null && _gameSession is null && _parcelSurface is null,
+            "Read-only name acceptance unexpectedly retained transport or a Flow surface.");
+
+    private bool RejectNamesLifecycle(string lifecycle)
+    {
+        if (_itemNamesAcceptance is null) return false;
+        _itemNamesAcceptance.Fail(new InvalidOperationException("Unexpected read-only name acceptance lifecycle: " + lifecycle));
+        return true;
     }
 
     private void ReportFailure(Exception error)
@@ -174,5 +208,6 @@ public sealed partial class ModEntry : Mod
         _isolationAcceptance?.Fail(error);
         _performanceAcceptance?.Fail(error);
         _resourceAcceptance?.Fail(error);
+        _itemNamesAcceptance?.Fail(error);
     }
 }

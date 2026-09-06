@@ -107,7 +107,8 @@ internal sealed class UiSourceSceneNode : UiSceneNode
         UiSymbolId role,
         UiVisualResolution visual,
         string semanticName,
-        IUiSemanticSource source)
+        IUiSemanticSource source,
+        string? displayText = null)
         : base(id, kind, role, visual)
     {
         if (string.IsNullOrWhiteSpace(semanticName))
@@ -115,7 +116,7 @@ internal sealed class UiSourceSceneNode : UiSceneNode
         Source = source ?? throw new ArgumentNullException(nameof(source));
         SemanticName = semanticName;
         DisplayText = kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form
-            ? source.UntypedValue?.ToString() ?? string.Empty
+            ? displayText ?? source.UntypedValue?.ToString() ?? string.Empty
             : string.Empty;
     }
 
@@ -280,12 +281,18 @@ internal sealed class UiButtonSceneNode : UiSceneNode
 {
     private readonly UiButtonStateVisuals? _stateVisuals;
     public UiButtonSceneNode(UiSymbolId id, UiSymbolId role, UiVisualResolution visual, UiActionDefinition action,
-        UiButtonStateVisuals? stateVisuals = null)
+        UiButtonStateVisuals? stateVisuals = null, string? label = null)
         : base(id, UiSceneNodeKind.Button, role, visual)
-    { Action = action ?? throw new ArgumentNullException(nameof(action)); _stateVisuals = stateVisuals; }
+    {
+        Action = action ?? throw new ArgumentNullException(nameof(action));
+        _stateVisuals = stateVisuals;
+        if (label is not null && string.IsNullOrWhiteSpace(label))
+            throw new ArgumentException("An action label must not be blank.", nameof(label));
+        Label = label ?? action.Title;
+    }
 
     public UiActionDefinition Action { get; }
-    public string Label => Action.Title;
+    public string Label { get; }
     public bool Invoke() => Action.TryExecute();
     internal UiVisualResolution VisualFor(bool enabled, UiInteractionSnapshot? interaction)
         => _stateVisuals?.ForHost(enabled, interaction, Visual) ?? Visual;

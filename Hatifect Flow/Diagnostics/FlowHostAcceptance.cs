@@ -102,7 +102,7 @@ internal sealed class FlowHostAcceptance : IDisposable
 
     internal static AcceptanceRequest ReadAcceptanceRequest(IModHelper helper, string scenarioId)
     {
-        Require(scenarioId is "flow.route.basic" or "flow.save.isolation" or "flow.chest.roundtrip" or "flow.chest.crash-after-save" or "flow.chest.crash-after-delivery" or "flow.chest.crash-after-unsaved-extraction" or "flow.chest.crash-after-unsaved-delivery" or "flow.chest.cancellation" or "flow.chest.return" or "flow.chest.crash-after-return" or "flow.chest.isolation" or "flow.chest.performance" or "flow.chest.resources", "Unknown Flow acceptance scenario.");
+        Require(scenarioId is "flow.ui.names" or "flow.route.basic" or "flow.save.isolation" or "flow.chest.roundtrip" or "flow.chest.crash-after-save" or "flow.chest.crash-after-delivery" or "flow.chest.crash-after-unsaved-extraction" or "flow.chest.crash-after-unsaved-delivery" or "flow.chest.cancellation" or "flow.chest.return" or "flow.chest.crash-after-return" or "flow.chest.isolation" or "flow.chest.performance" or "flow.chest.resources", "Unknown Flow acceptance scenario.");
         Require(Required("HATIFECT_TEST_PROTOCOL_VERSION") == "1", "Unsupported harness protocol.");
         string runId = Required("HATIFECT_TEST_RUN_ID");
         Require(Guid.TryParseExact(runId, "D", out Guid parsed) && parsed.ToString("D") == runId,
