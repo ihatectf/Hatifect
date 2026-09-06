@@ -15,9 +15,9 @@ internal sealed partial class NetworkExperience
 
     private void AppendShipping(UiExperienceBuilder builder, UiSymbolId id)
     {
-        builder.Select(id.Child("element/source-cargo"), Text("Source cargo", "Груз в источнике"), _inventory)
-            .Configure(id.Child("element/shipment-quantity"), Text("Quantity", "Количество"), _shipmentForm)
-            .Actions(id.Child("element/shipment-actions"), Text("Shipment actions", "Действия с грузом"),
+        builder.Element(id.Child("element/source-cargo"), "SourceCargo", Text("Source cargo", "Груз в источнике"), _inventory, UiSourceTypes.Collection(FlowUiDataTypes.InventorySlot), UiCapabilities.Select)
+            .Element(id.Child("element/shipment-quantity"), "ShipmentQuantity", Text("Quantity", "Количество"), _shipmentForm, FlowUiDataTypes.ShipmentForm, UiCapabilities.Configure)
+            .Actions(id.Child("element/shipment-actions"), "ShipmentActions", Text("Shipment actions", "Действия с грузом"),
                 Action(id, "send", Text("Send whole stack", "Отправить весь стек"), () => Send(null),
                     () => Source is not null && Destination is not null && Source.Id != Destination.Id && Selected(_inventory) is not null),
                 Action(id, "send-quantity", Text("Send selected quantity", "Отправить указанное количество"),

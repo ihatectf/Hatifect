@@ -12,7 +12,7 @@ namespace Hatifect.UI.Tooling.Metadata;
 /// Internal deterministic schema-v1 wire contract. Discovery remains an embedding concern: callers
 /// pass this snapshot explicitly through tooling initialization rather than scanning C# or files.
 /// </summary>
-internal static class UiBindingContextMetadataWire
+internal static partial class UiBindingContextMetadataWire
 {
     public const int SchemaVersion = 1;
     private const int MaximumJsonDepth = 32;
@@ -20,6 +20,7 @@ internal static class UiBindingContextMetadataWire
     public static byte[] Serialize(UiBindingContextMetadata metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);
+        if (metadata.Graph is not null) return SerializeV2(metadata);
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
@@ -68,6 +69,10 @@ internal static class UiBindingContextMetadataWire
             MaxDepth = MaximumJsonDepth
         };
         using JsonDocument document = JsonDocument.Parse(utf8Json.ToArray(), options);
+        if (document.RootElement.ValueKind == JsonValueKind.Object
+            && document.RootElement.TryGetProperty("schemaVersion", out JsonElement version)
+            && version.ValueKind == JsonValueKind.Number && version.TryGetInt32(out int number) && number == 2)
+            return DeserializeV2(document.RootElement);
         IReadOnlyDictionary<string, JsonElement> root = ReadObject(
             document.RootElement,
             "binding metadata",
@@ -155,6 +160,11 @@ internal static class UiBindingContextMetadataWire
     public static UiBindingContext CreateBindingContext(UiBindingContextMetadata metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);
+        if (metadata.Graph is { } graph) return new UiBindingContext(graph)
+        {
+            RequireDeclaredElements = metadata.RequireDeclaredElements,
+            RequireDeclaredRoles = metadata.RequireDeclaredRoles
+        };
         var context = new UiBindingContext(metadata.OwnerId)
         {
             RequireDeclaredElements = metadata.RequireDeclaredElements,
@@ -194,7 +204,7 @@ internal static class UiBindingContextMetadataWire
             : throw new InvalidDataException($"Binding metadata is missing required property '{name}'.");
 
     private static int RequiredInt32(IReadOnlyDictionary<string, JsonElement> values, string name)
-        => Required(values, name).TryGetInt32(out int value)
+        => Required(values, name) is { ValueKind: JsonValueKind.Number } element && element.TryGetInt32(out int value)
             ? value
             : throw new InvalidDataException($"Binding metadata property '{name}' must be an integer.");
 

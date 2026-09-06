@@ -34,7 +34,10 @@ public sealed record UiElementSymbol(
     UiSymbolId Id,
     string Name,
     IReadOnlySet<UiSymbolId> Capabilities)
-    : UiSymbol(Id, Name, UiSymbolKind.SemanticElement);
+    : UiSymbol(Id, Name, UiSymbolKind.SemanticElement)
+{
+    public string Label { get; init; } = Name;
+}
 
 public sealed record UiPresentationSymbol(
     UiSymbolId Id,

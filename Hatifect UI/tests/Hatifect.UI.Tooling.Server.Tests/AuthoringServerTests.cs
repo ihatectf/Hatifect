@@ -9,12 +9,17 @@ namespace Hatifect.UI.Tooling.Server.Tests;
 
 public sealed class AuthoringServerTests
 {
-    [Fact]
-    public async Task PublicMetadataDrivesCompleteAuthoringTranscriptThroughFramedStdio()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PublicMetadataDrivesCompleteAuthoringTranscriptThroughFramedStdio(bool independentIdentity)
     {
         const string uri = "file:///Storage.hatifect";
-        var binding = new UiBindingContext(new UiSymbolId("External.Author", "storage")).DeclareRole("Item");
+        var binding = new UiBindingContext(new UiSymbolId("External.Author", "storage"));
+        UiSymbolId roleId = binding.OwnerId.Child(independentIdentity ? "stable/row" : "role/Item");
+        binding.DeclareRole(roleId, "Item");
         using var metadata = JsonDocument.Parse(UiBindingContextJson.Export(binding));
+        Assert.Equal(independentIdentity ? 2 : 1, metadata.RootElement.GetProperty("schemaVersion").GetInt32());
         using var input = new MemoryStream();
         using (var frames = new UiLspMessageStream(Stream.Null, input))
         {
@@ -28,7 +33,7 @@ public sealed class AuthoringServerTests
                 },
                 initializationOptions = new { bindingMetadata = metadata.RootElement.Clone(), declarations = new[]
                 {
-                    new { symbolId = binding.OwnerId.Child("role/Item").ToString(), uri = "file:///StorageExperience.cs",
+                    new { symbolId = roleId.ToString(), uri = "file:///StorageExperience.cs",
                         range = new { start = new { line = 12, character = 4 }, end = new { line = 12, character = 8 } } }
                 } }
             });
