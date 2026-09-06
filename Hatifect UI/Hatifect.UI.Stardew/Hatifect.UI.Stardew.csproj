@@ -8,7 +8,7 @@
     <ModFolderName>Hatifect UI</ModFolderName>
     <HatifectInstallRelativePath>Hatifect UI</HatifectInstallRelativePath>
     <HatifectModuleContentRoot>$(MSBuildProjectDirectory)/..</HatifectModuleContentRoot>
-    <Version>1.0.0-alpha.34</Version>
+    <Version>1.0.0-alpha.35</Version>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Hatifect.UI.Stardew.Tests" />
