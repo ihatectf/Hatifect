@@ -239,9 +239,13 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession, IUiHostScen
     }
 
     public UiHostUpdate UpdateRoot(UiScene scene, UiHostPlacementContext placement)
+        => UpdateRoot(scene, placement, renewActionGeneration: false, acceptOwnerState: null);
+
+    internal UiHostUpdate UpdateRoot(UiScene scene, UiHostPlacementContext placement,
+        bool renewActionGeneration, Action? acceptOwnerState)
     {
         EnsureActive();
-        return Root.Update(scene, placement);
+        return Root.Update(scene, placement, renewActionGeneration, acceptOwnerState);
     }
 
     public UiHostUpdate UpdatePortal(UiSymbolId id, UiScene scene, UiHostPlacementContext placement)
@@ -263,7 +267,8 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession, IUiHostScen
         _updating = true;
     }
 
-    void IUiHostSceneOwner.FenceAcceptedScene() => _updateRetirements = DetachOrphans();
+    void IUiHostSceneOwner.FenceAcceptedScene(UiHostRuntimeSession runtime, bool renewedGeneration)
+        => _updateRetirements = DetachOrphans(renewedGeneration ? runtime : null);
 
     void IUiHostSceneOwner.EndSceneUpdate()
     {
@@ -469,12 +474,17 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession, IUiHostScen
             runtime.RefreshTextEditingVisuals();
     }
 
-    private PortalEntry[] DetachOrphans()
+    private PortalEntry[] DetachOrphans(UiHostRuntimeSession? renewedOwner = null)
     {
+        bool rootRenewed = ReferenceEquals(renewedOwner, Root);
+        UiSymbolId? renewedPortal = renewedOwner == null || rootRenewed ? null
+            : _portals.FirstOrDefault(entry => ReferenceEquals(entry.Runtime, renewedOwner))?.Request.Id;
         HashSet<UiSymbolId>? retiring = null;
         foreach (PortalEntry entry in _portalSnapshot)
         {
-            if (OwnerExists(entry.Request.Owner)) continue;
+            UiSymbolId? owner = entry.Request.Owner.Portal;
+            bool ownerRenewed = rootRenewed && owner == null || renewedPortal != null && owner == renewedPortal;
+            if (!ownerRenewed && OwnerExists(entry.Request.Owner)) continue;
             (retiring ??= new HashSet<UiSymbolId>()).Add(entry.Request.Id);
         }
         return retiring == null ? Array.Empty<PortalEntry>() : DetachPortals(retiring);
