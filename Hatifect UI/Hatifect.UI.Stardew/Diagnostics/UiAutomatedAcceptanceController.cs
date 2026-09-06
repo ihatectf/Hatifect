@@ -1178,6 +1178,13 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             terminalOpen = _dogfood.IsOpen,
             overlayVisible = _dogfood.IsOverlayVisible,
             fadeToBlackAlpha = Game1.fadeToBlackAlpha,
+            menuBounds = _dogfood.AutomationMenu is { } menu ? new
+            {
+                x = menu.xPositionOnScreen,
+                y = menu.yPositionOnScreen,
+                width = menu.width,
+                height = menu.height
+            } : null,
             activeTheme = UiSemanticStardewTheme.Id,
             screenshot = _screenshotSource == null ? null : new
             {
