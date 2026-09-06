@@ -77,4 +77,4 @@ Both fake Flow reports use `sha256-flow-runtime-v1`, fingerprint `24750ff64fc5d2
 
 ## Next ready Q01 work
 
-Physical input and the rendered EN/RU × scale/theme matrix remain unverified. The next ready step is to capture stable rendered states for each supported combination in the isolated windowed environment, then record native input separately. The macOS borderless clipping remains an explicit environment limitation. These pending conditions prevent full Q01 from being marked DONE.
+The subsequent [rendered-matrix checkpoint](Q01_RENDERED_MATRIX.md) captures and verifies EN/RU × 75/100/125/150% × the implemented Dark preset on its own alpha.39 candidate. It also fixes the full-viewport resize callback and tests matrix I/O failure shutdown. Native/physical input remains separate and unverified. The macOS borderless clipping remains an explicit environment limitation; full Q01 stays IN_PROGRESS.
