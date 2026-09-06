@@ -19,6 +19,128 @@ namespace Hatifect.UI.Runtime.Tests;
 
 public sealed class SceneReconciliationTests
 {
+    [Theory]
+    [InlineData("update")]
+    [InlineData("refresh")]
+    [InlineData("focus")]
+    [InlineData("text")]
+    [InlineData("submit")]
+    [InlineData("reconcile")]
+    public void CandidateCallbacksSeeAcceptedStateAndCannotReenterMutation(string mutation)
+    {
+        Action? observe = null;
+        int executions = 0;
+        var text = new UiState<string>("Accepted draft");
+        SceneFixture fixture = Fixture(text, canExecute: () => { observe?.Invoke(); return true; },
+            execute: () => executions++);
+        var viewport = new UiRect(0, 0, 420, 180);
+        UiScene initial = fixture.Compose();
+        UiSymbolId focused = mutation == "submit"
+            ? Assert.Single(Nodes(initial.Root).OfType<UiButtonSceneNode>()).Id
+            : Assert.Single(Nodes(initial.Root).OfType<UiTextInputSceneNode>()).Id;
+        var runtime = new UiHostRuntimeSession(initial, viewport, new RecordingPlatform(),
+            new UiInteractionSnapshot(Focused: focused));
+        Assert.Equal(focused, runtime.Interactions.Snapshot.Focused);
+        runtime.RefreshTextEditingVisuals();
+        UiScene accepted = runtime.Scene;
+        UiLayoutSnapshot layout = runtime.Layout;
+        UiRenderFrame frame = runtime.Frame;
+        var accessibility = runtime.Accessibility;
+        UiInteractionSnapshot interaction = runtime.Interactions.Snapshot;
+        text.Value = "Candidate draft";
+        UiScene candidate = fixture.Compose(interaction);
+        int observations = 0;
+        observe = () =>
+        {
+            observations++;
+            Assert.Same(accepted, runtime.Scene);
+            Assert.Same(layout, runtime.Layout);
+            Assert.Same(frame, runtime.Frame);
+            Assert.Same(accessibility, runtime.Accessibility);
+            Assert.Same(interaction, runtime.Interactions.Snapshot);
+            var failure = Assert.Throws<InvalidOperationException>(() =>
+            {
+                switch (mutation)
+                {
+                    case "update": runtime.Update(accepted, viewport); break;
+                    case "refresh": runtime.RefreshInteractionVisuals(); break;
+                    case "focus": runtime.Interactions.MoveFocus(UiNavigationDirection.Next); break;
+                    case "text": runtime.Interactions.ReplaceText("Reentrant draft"); break;
+                    case "submit": runtime.Interactions.Submit(); break;
+                    case "reconcile": runtime.Interactions.Reconcile(accepted, layout); break;
+                    default: throw new Xunit.Sdk.XunitException("Unknown mutation case.");
+                }
+            });
+            Assert.Equal("The host cannot be mutated while a scene update is being prepared.", failure.Message);
+        };
+
+        runtime.Update(candidate, viewport);
+
+        Assert.True(observations > 0);
+        Assert.Same(candidate, runtime.Scene);
+        Assert.Equal("Candidate draft", text.Value);
+        Assert.Equal(0, executions);
+        Assert.Equal(interaction.Focused, runtime.Interactions.Snapshot.Focused);
+        observe = null;
+        if (mutation == "submit")
+        {
+            Assert.True(runtime.Interactions.Submit().ActionInvoked);
+            Assert.Equal(1, executions);
+        }
+        else
+        {
+            Assert.True(runtime.Interactions.ReplaceText("Accepted later edit").Consumed);
+            Assert.Equal("Accepted later edit", text.Value);
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void FailedCandidateRetainsTheAcceptedSceneAndInteraction(int failOnRead)
+    {
+        bool armed = false;
+        int reads = 0;
+        var error = new InvalidOperationException("Candidate availability failed.");
+        var text = new UiState<string>("Accepted draft");
+        SceneFixture fixture = Fixture(text, canExecute: () =>
+        {
+            if (armed && ++reads == failOnRead) throw error;
+            return true;
+        });
+        var viewport = new UiRect(0, 0, 420, 180);
+        var runtime = new UiHostRuntimeSession(fixture.Compose(), viewport, new RecordingPlatform());
+        Assert.True(runtime.Interactions.MoveFocus(UiNavigationDirection.Next).Consumed);
+        runtime.RefreshTextEditingVisuals();
+        UiScene scene = runtime.Scene;
+        UiLayoutSnapshot layout = runtime.Layout;
+        UiRenderFrame frame = runtime.Frame;
+        var accessibility = runtime.Accessibility;
+        UiInteractionSession interactions = runtime.Interactions;
+        UiInteractionSnapshot snapshot = interactions.Snapshot;
+        UiHostUpdate? update = runtime.LastUpdate;
+        text.Value = "Unaccepted candidate draft";
+        UiScene candidate = fixture.Compose(snapshot);
+        armed = true;
+
+        var failure = Assert.Throws<InvalidOperationException>(() => runtime.Update(candidate, viewport));
+
+        Assert.Same(error, failure);
+        Assert.Equal(failOnRead, reads);
+        Assert.Same(scene, runtime.Scene);
+        Assert.Same(layout, runtime.Layout);
+        Assert.Same(frame, runtime.Frame);
+        Assert.Same(accessibility, runtime.Accessibility);
+        Assert.Same(interactions, runtime.Interactions);
+        Assert.Same(snapshot, runtime.Interactions.Snapshot);
+        Assert.Same(update, runtime.LastUpdate);
+        armed = false;
+        Assert.True(runtime.Update(candidate, viewport).LayoutChanged);
+        Assert.Same(candidate, runtime.Scene);
+        Assert.Equal(snapshot.Focused, runtime.Interactions.Snapshot.Focused);
+        Assert.Contains(runtime.Frame.Primitives.OfType<UiTextPrimitive>(), primitive => primitive.Text == text.Value);
+    }
+
     [Fact]
     public void TextStateChangeRequiresLayoutBecauseSceneSnapshotsContent()
     {
@@ -91,11 +213,11 @@ public sealed class SceneReconciliationTests
         Assert.Equal(UiPropertyEffects.Render, applied.Diff.Effects);
     }
 
-    private static SceneFixture Fixture(UiState<string> text, int actionCount = 1)
+    private static SceneFixture Fixture(UiState<string> text, int actionCount = 1, Func<bool>? canExecute = null, Action? execute = null)
     {
         UiSymbolId id = RegistryTests.Id("reconcile/window");
         UiActionDefinition[] actions = Enumerable.Range(0, actionCount)
-            .Select(index => new UiActionDefinition(RegistryTests.Id($"reconcile/action/{index}"), $"Action {index}", () => { }))
+            .Select(index => new UiActionDefinition(RegistryTests.Id($"reconcile/action/{index}"), $"Action {index}", execute ?? (() => { }), canExecute))
             .ToArray();
         UiExperienceDefinition experience = new UiExperienceBuilder(id, "Reconcile")
             .Search("Search", text)

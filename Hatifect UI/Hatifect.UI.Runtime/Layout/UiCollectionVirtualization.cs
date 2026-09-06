@@ -194,6 +194,27 @@ internal sealed class UiCollectionVirtualizer
             _states.Remove(stale);
     }
 
+    internal void RestoreTransitions(UiSceneNode acceptedRoot)
+    {
+        // A rejected candidate must not become the predecessor order of the next transition.
+        // Keyed measurement caches may be cold after failure; never copy their size-N row index
+        // on a successful update just to retain these small logical ownership references.
+        var active = new HashSet<UiSymbolId>();
+        Restore(acceptedRoot);
+        foreach (UiSymbolId stale in _states.Keys.Where(id => !active.Contains(id)).ToArray())
+            _states.Remove(stale);
+
+        void Restore(UiSceneNode node)
+        {
+            if (node is UiCollectionSceneNode collection)
+            {
+                active.Add(collection.Id);
+                StateFor(collection).RestoreTransition(collection);
+            }
+            foreach (UiSceneNode child in node.Children) Restore(child);
+        }
+    }
+
     private UiCollectionLayoutWindow MaterializeUniform(
         UiCollectionSceneNode collection,
         UiRect viewport,
@@ -732,6 +753,13 @@ internal sealed class UiCollectionVirtualizer
         }
 
         public void Remember(UiCollectionSceneNode collection) => _previous = collection;
+
+        public void RestoreTransition(UiCollectionSceneNode collection)
+        {
+            _previous = collection;
+            _removedAnchorRequest = null;
+            _fallbackRequest = null;
+        }
 
         private UiCollectionViewportRequest RememberFallback(
             UiCollectionViewportRequest request, UiSymbolId item, int index, float localOffset)

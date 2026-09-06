@@ -100,6 +100,9 @@ internal sealed class UiSceneLayoutEngine
     public UiLayoutSnapshot Build(UiScene scene, UiRect viewport)
         => Build(scene, new UiHostPlacementContext(viewport));
 
+    internal void RestoreCollectionTransitions(UiScene accepted)
+        => _collections.RestoreTransitions(accepted.Root);
+
     public UiLayoutSnapshot Build(UiScene scene, UiHostPlacementContext context)
         => Build(scene, context, UiCollectionViewportSnapshot.Empty);
 
