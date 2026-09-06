@@ -135,6 +135,7 @@ public sealed class NetworkExperienceTests
         Assert.True(send.TryExecute());
         Assert.Equal(3, app.SendCommand!.Slot);
         Assert.Equal(new string('A', 64), app.SendCommand.Fingerprint);
+        Assert.Null(app.SendCommand.Quantity);
         int reads = app.InventoryReads;
         app.Application.Refresh(force: true);
         Assert.False(send.CanExecute);
@@ -144,6 +145,38 @@ public sealed class NetworkExperienceTests
         view.Dispose();
         Assert.False(send.TryExecute());
         Assert.All(view.Experience.Actions, action => Assert.False(action.CanExecute));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SelectedQuantityUsesValidatedFormAndKeepsCompleteSourceFingerprint(bool russian)
+    {
+        using var app = new NetworkTestApplication();
+        using var view = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "quantity"), app, russian);
+        T Element<T>(string suffix) => Assert.IsType<T>(view.Experience.Elements.Single(element => element.Id.LocalId.EndsWith(suffix, StringComparison.Ordinal)).Source);
+        var source = Element<UiSelectableCollectionState<FlowStationDetails>>("/source-station");
+        var destination = Element<UiSelectableCollectionState<FlowStationDetails>>("/destination-station");
+        source.TrySelect(source.GetItem(0).Id);
+        destination.TrySelect(destination.GetItem(1).Id);
+        var inventory = Element<UiSelectableCollectionState<FlowInventorySlot>>("/source-cargo");
+        var form = Element<UiFormState>("/shipment-quantity");
+        UiActionDefinition send = Assert.Single(view.Experience.Actions, action => action.Id.LocalId.EndsWith("/send-quantity", StringComparison.Ordinal));
+        Assert.False(send.CanExecute);
+        inventory.TrySelect(inventory.GetItem(0).Id);
+        foreach (string invalid in new[] { "0", "9", "-1", "1.5", "", "999999999999" })
+        {
+            form.Fields[0].Value.Value = invalid;
+            Assert.False(form.IsValid);
+            Assert.False(send.TryExecute());
+        }
+        form.Fields[0].Value.Value = "3";
+        Assert.True(form.IsValid);
+        Assert.True(send.TryExecute());
+        Assert.Equal(3, app.SendCommand!.Quantity);
+        Assert.Equal(new string('A', 64), app.SendCommand.Fingerprint);
+        view.Dispose();
+        Assert.False(send.TryExecute());
     }
 
     private static T Source<T>(NetworkExperience view, string name) => Assert.IsType<T>(view.Experience.Elements.Single(element => element.Name == name).Source);

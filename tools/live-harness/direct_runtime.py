@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 import re
+import signal
 import shutil
 import stat
 import subprocess
@@ -34,6 +35,7 @@ REQUEST_TTL_SECONDS = 30
 MAX_DOCUMENT_BYTES = 256 * 1024
 PRIVATE_DIRECTORY_MODE = 0o700
 PRIVATE_FILE_MODE = 0o600
+SAVED_CRASH_SCENARIO = "flow.chest.crash-after-save"
 LIFECYCLE_STATES = {
     "Accepted",
     "Launching",
@@ -572,13 +574,20 @@ def _record_started_process(
     smapi: Path,
     pid: int,
     process_group: int,
+    *,
+    continuation: bool = False,
 ) -> None:
     active = dict(_read_json(active_path))
+    if continuation and (request["scenarioId"] != SAVED_CRASH_SCENARIO or active.get("lifecycleState") != "Running"):
+        raise DirectRuntimeError("Only the validated saved-crash continuation may replace a running child.")
     active["smapiPid"] = pid
     active["smapiProcessGroup"] = process_group
     active["smapiExecutable"] = str(smapi)
     _atomic_write_json(active_path, active, replace=True)
-    _transition(active_path, request, "Running", "SMAPI process group started.")
+    if continuation:
+        _append_transport_log(request, "Running", "Saved-crash continuation started a new owned SMAPI process group.")
+    else:
+        _transition(active_path, request, "Running", "SMAPI process group started.")
 
 
 def _minimal_environment(request: dict[str, Any], metadata: dict[str, Any]) -> dict[str, str]:
@@ -823,8 +832,153 @@ def _prepared_request_saves(request: dict[str, Any], metadata: dict[str, Any]):
 def _acceptance_report_source(isolated: Path, scenario_id: str) -> Path:
     # Fixed ownership for the allowlisted asynchronous Flow lifecycle scenario.
     # The request cannot supply an arbitrary report path or module name.
-    module = "Hatifect Flow" if scenario_id in {"flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip"} else "Hatifect UI"
+    module = "Hatifect Flow" if scenario_id in {"flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip", SAVED_CRASH_SCENARIO} else "Hatifect UI"
     return isolated / "Mods" / "Hatifect" / module / ".acceptance" / "host-acceptance-report.json"
+
+
+def _flow_runtime_fingerprint(isolated: Path) -> str:
+    module = isolated / "Mods" / "Hatifect" / "Hatifect Flow"
+    names = ("Hatifect.Flow.Core.dll", "Hatifect.Flow.Persistence.dll", "Hatifect.Flow.dll")
+    lines: list[str] = []
+    for name in names:
+        path = module / name
+        if path != path.resolve(strict=True) or not path.is_file():
+            raise DirectRuntimeError("Flow runtime fingerprint requires the exact deployed regular DLLs.")
+        lines.append(f"{name}\t{_sha256(path)}\n")
+    return hashlib.sha256("".join(lines).encode()).hexdigest()
+
+
+def _saved_crash_marker(request: dict[str, Any], metadata: dict[str, Any], process: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        return _validate_saved_crash_marker(request, metadata, process)
+    except (OSError, ValueError, RecursionError) as error:
+        raise DirectRuntimeError(f"Unable to validate confirmed-save crash evidence: {error}") from error
+
+
+def _validate_saved_crash_marker(request: dict[str, Any], metadata: dict[str, Any], process: dict[str, Any]) -> dict[str, Any] | None:
+    if request["scenarioId"] != SAVED_CRASH_SCENARIO:
+        raise DirectRuntimeError("Saved-crash marker is not available to this scenario.")
+    artifact = Path(request["artifactDirectory"])
+    path = artifact / "diagnostics" / "flow-crash-ready.json"
+    info = _lstat(path)
+    if info is None:
+        return None
+    if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 65536 or path != _contained(artifact, path):
+        raise DirectRuntimeError("Saved-crash marker must be a bounded regular request-owned file.")
+    marker = _read_json(path)
+    fields = {"formatVersion", "runId", "scenarioId", "phase", "pid", "sessionId", "saveName", "saveId", "saveHash",
+              "runtimeFingerprint", "parcelId", "partialParcelId", "sourceX", "sourceY", "destinationX", "destinationY",
+              "remainderXml", "loads", "savingEvents", "savedEvents", "capturedAtUtc"}
+    if not isinstance(marker, dict) or set(marker) != fields:
+        raise DirectRuntimeError("Saved-crash marker has an invalid field set.")
+    if (type(marker["formatVersion"]) is not int or marker["formatVersion"] != 1
+            or marker["runId"] != request["requestId"] or marker["scenarioId"] != SAVED_CRASH_SCENARIO
+            or marker["phase"] != "saved-in-transit"
+            or type(marker["pid"]) is not int or marker["pid"] != process.get("pid")
+            or type(marker["saveId"]) is not int or marker["saveId"] != 4242424242):
+        raise DirectRuntimeError("Saved-crash marker has a foreign request, process or save identity.")
+    for key in ("sessionId", "parcelId", "partialParcelId"):
+        value = marker[key]
+        try:
+            valid = isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0
+        except ValueError:
+            valid = False
+        if not valid:
+            raise DirectRuntimeError(f"Saved-crash marker has invalid {key}.")
+    if marker["parcelId"] == marker["partialParcelId"]:
+        raise DirectRuntimeError("Saved-crash marker aliases distinct cargo parcels.")
+    for key in ("sourceX", "sourceY", "destinationX", "destinationY"):
+        if type(marker[key]) is not int or not 0 <= marker[key] <= 10000:
+            raise DirectRuntimeError("Saved-crash marker has invalid station coordinates.")
+    if (marker["sourceX"], marker["sourceY"]) == (marker["destinationX"], marker["destinationY"]):
+        raise DirectRuntimeError("Saved-crash marker aliases its source and destination.")
+    if any(type(marker[key]) is not int or marker[key] != 1 for key in ("loads", "savingEvents", "savedEvents")):
+        raise DirectRuntimeError("Saved-crash marker does not prove one confirmed save boundary.")
+    if not isinstance(marker["remainderXml"], str) or not 0 < len(marker["remainderXml"]) <= 32768:
+        raise DirectRuntimeError("Saved-crash remainder evidence exceeds its bound.")
+    captured = _parse_timestamp(marker["capturedAtUtc"])
+    if not _parse_timestamp(process.get("startedAtUtc")) <= captured <= _utc_now() + dt.timedelta(seconds=5):
+        raise DirectRuntimeError("Saved-crash marker timestamp predates its process or is in the future.")
+    save = Path(request["savePath"])
+    if marker["saveName"] != save.name or marker["runtimeFingerprint"] != _flow_runtime_fingerprint(Path(request["isolatedRoot"])):
+        raise DirectRuntimeError("Saved-crash marker belongs to another save or runtime candidate.")
+    provisioner = _load_module("hatifect_crash_save_validator", Path(metadata["saveProvisionerExecutable"]))
+    fixture, _ = provisioner.validate_fixture(Path(request["isolatedRoot"]), Path(metadata["smapiPath"]))
+    provisioner.validate_working_copy(Path(request["isolatedRoot"]), save, fixture["runtimeId"], request["requestId"], request["scenarioId"])
+    if marker["saveHash"] != _sha256(save / save.name):
+        raise DirectRuntimeError("Confirmed saved bytes changed before the controlled process crash.")
+    return marker
+
+
+def _run_saved_crash(request, metadata, runner, active_path, cancellation_path, on_started, on_completed) -> int:
+    """Exactly two fixed launches with one owned save; only a proved SIGKILL authorizes continuation."""
+    artifact = Path(request["artifactDirectory"])
+    smapi = Path(metadata["smapiPath"])
+    deadline = time.monotonic() + request["timeoutSeconds"]
+    marker: dict[str, Any] | None = None
+    forced: dict[str, Any] | None = None
+
+    def kill_requested() -> bool:
+        nonlocal marker
+        marker = _saved_crash_marker(request, metadata, _read_json(artifact / "process.json"))
+        return marker is not None
+
+    def forced_exit(pid: int, group: int, raw_exit: int) -> None:
+        nonlocal forced
+        forced = {"formatVersion": 1, "requestId": request["requestId"], "scenarioId": SAVED_CRASH_SCENARIO,
+                  "pid": pid, "processGroup": group, "requestedSignal": int(signal.SIGKILL), "rawExitCode": raw_exit,
+                  "observedAtUtc": _timestamp()}
+        _atomic_write_json(artifact / "diagnostics" / "flow-crash-termination.json", forced)
+
+    environment = _minimal_environment(request, metadata)
+    environment["HATIFECT_TEST_CRASH_PHASE"] = "prepare"
+    first_exit = runner.run([str(smapi)], smapi.parent, artifact / "smapi.log", request["timeoutSeconds"], 5.0,
+                            environment=environment, on_started=on_started, cancel_requested=cancellation_path.exists,
+                            on_completed=on_completed, force_kill_requested=kill_requested, on_forced_exit=forced_exit)
+    process = _read_json(artifact / "process.json")
+    _atomic_write_json(artifact / "diagnostics" / "process-prepare.json", process)
+    _copy_smapi_logs(Path(request["isolatedRoot"]), artifact / "diagnostics" / "crash-prepare")
+    if (artifact / "smapi.log").is_file():
+        shutil.copy2(artifact / "smapi.log", artifact / "smapi-prepare.log")
+    prepare_report = _acceptance_report_source(Path(request["isolatedRoot"]), request["scenarioId"])
+    if _lstat(prepare_report) is not None:
+        # Prepare must remain alive at its save barrier. Any terminal report is a failure,
+        # even if SIGKILL wins the race with the driver's next Game1.Exit tick.
+        if prepare_report.is_file():
+            shutil.copy2(prepare_report, artifact / "diagnostics" / "host-acceptance-prepare.json")
+        raise DirectRuntimeError("The prepare process published a terminal acceptance report before restart.")
+    if forced is None:
+        if first_exit == 0:
+            raise DirectRuntimeError("The prepare process exited without the required controlled crash.")
+        return first_exit
+    if first_exit in {runner.TIMEOUT_EXIT, runner.INTERRUPTED_EXIT, runner.TEARDOWN_FAILURE_EXIT}:
+        return first_exit
+    if (first_exit != 128 + signal.SIGKILL or forced["rawExitCode"] != -signal.SIGKILL
+            or forced["pid"] != process.get("pid") or forced["processGroup"] != process.get("processGroup")
+            or process.get("teardownErrors") or marker is None):
+        raise DirectRuntimeError("The prepare process did not prove the requested owned SIGKILL.")
+    if _saved_crash_marker(request, metadata, process) != marker:
+        raise DirectRuntimeError("Saved-crash evidence changed after process termination.")
+    if cancellation_path.exists():
+        return runner.INTERRUPTED_EXIT
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return runner.TIMEOUT_EXIT
+    # Retire the dead child's journal before a second launch can fail; supervisor cleanup must never use its old PID.
+    active = dict(_read_json(active_path))
+    active["smapiPid"] = active["smapiProcessGroup"] = None
+    _atomic_write_json(active_path, active, replace=True)
+    _atomic_write_json(artifact / "process.json", {"protocolVersion": PROTOCOL_VERSION, "requestId": request["requestId"],
+                       "pid": None, "processGroup": None, "executable": str(smapi), "launchRequestedAtUtc": _timestamp()}, replace=True)
+    environment["HATIFECT_TEST_CRASH_PHASE"] = "resume"
+    result = runner.run([str(smapi)], smapi.parent, artifact / "smapi.log", remaining, 5.0,
+                        environment=environment, on_started=lambda pid, group: on_started(pid, group, True),
+                        cancel_requested=cancellation_path.exists, on_completed=on_completed)
+    resumed = _read_json(artifact / "process.json")
+    _atomic_write_json(artifact / "diagnostics" / "process-resume.json", resumed)
+    if result == 0 and (resumed.get("pid") in {None, forced["pid"]} or resumed.get("processGroup") == forced["processGroup"]):
+        raise DirectRuntimeError("Saved-crash continuation did not prove a distinct owned process.")
+    return result
 
 
 def _execute_request(
@@ -867,8 +1021,8 @@ def _execute_request(
     )
     _write_transport_diagnostics(request, metadata, phase="starting")
 
-    def on_started(pid: int, process_group: int) -> None:
-        _record_started_process(active_path, request, smapi, pid, process_group)
+    def on_started(pid: int, process_group: int, continuation: bool = False) -> None:
+        _record_started_process(active_path, request, smapi, pid, process_group, continuation=continuation)
         _atomic_write_json(
             artifact / "process.json",
             {
@@ -900,17 +1054,32 @@ def _execute_request(
         process_document["teardownErrors"] = list(errors)
         _atomic_write_json(process_path, process_document, replace=True)
 
-    exit_code = run_process.run(
-        [str(smapi)],
-        smapi_directory,
-        artifact / "smapi.log",
-        request["timeoutSeconds"],
-        5.0,
-        environment=_minimal_environment(request, metadata),
-        on_started=on_started,
-        cancel_requested=cancellation_path.exists,
-        on_completed=on_completed,
-    )
+    try:
+        if request["scenarioId"] == SAVED_CRASH_SCENARIO:
+            exit_code = _run_saved_crash(request, metadata, run_process, active_path, cancellation_path, on_started, on_completed)
+        else:
+            exit_code = run_process.run(
+                [str(smapi)],
+                smapi_directory,
+                artifact / "smapi.log",
+                request["timeoutSeconds"],
+                5.0,
+                environment=_minimal_environment(request, metadata),
+                on_started=on_started,
+                cancel_requested=cancellation_path.exists,
+                on_completed=on_completed,
+            )
+    except DirectRuntimeError as error:
+        if request["scenarioId"] != SAVED_CRASH_SCENARIO:
+            raise
+        _copy_smapi_logs(isolated, artifact)
+        if report_source.is_file():
+            shutil.copy2(report_source, report_artifact)
+        _complete_save_lifecycle(request, metadata, process_succeeded=False, report_exists=False)
+        message = f"Controlled saved-crash evidence failed: {error}"
+        _write_harness_result(metadata, request, "FAIL", message, "HARNESS-CRASH-EVIDENCE", started_at, exception_type="CrashEvidence")
+        _write_transport_diagnostics(request, metadata, phase="completed", status="FAIL")
+        return "Failed", "FAIL", 1, "ScenarioFailure", message, False
     _copy_smapi_logs(isolated, artifact)
     if report_source.is_file():
         shutil.copy2(report_source, report_artifact)

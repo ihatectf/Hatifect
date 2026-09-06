@@ -4,14 +4,14 @@ Date: 2026-09-06. Working branch: `codex/flowline-next-ten-slices`; source basel
 
 The authoritative scope is [ROADMAP.md](ROADMAP.md), restored verbatim from commit `1e741ef` because this task branch predates that documentation commit. The earlier exploratory Flow multiplayer/adapters/policies list is superseded as an execution plan; no new product work outside the approved roadmap is being added. It does not replace U01–U10, R01–R04, T01–T03 or their acceptance. The Flow foundation is committed and published in task branch as `cdf9d2e86e90f0174251243147f8a2f9480d14e8`; its integration with the verified UI SDK/editor/D01 is owned by the UI task. The full roadmap IDs remain incomplete until all their acceptance and integration evidence are present.
 
-This report preserves Flow owner evidence for foundation commit `cdf9d2e` and the subsequent F11 handoffs `e31c1ef` / `ff43d0b`. Relative artifact paths below belong to its original worktree `${HOME}/Developer/Hatifect`; they do not certify the later combined UI/Flow candidate. Current shared B01/B02 statuses and D01 are authoritative in [ROADMAP.md](ROADMAP.md) and [SEMANTIC_V2.md](SEMANTIC_V2.md). The table records Flow handoff state, including the later F11 verification; B01/B02 historical rows are superseded by the shared roadmap. Each evidence section names its own candidate and worktree.
+This report preserves separate evidence for Flow foundation `cdf9d2e`, F11 `e31c1ef`/`ff43d0b`, F16-a `54c5af5`, and the combined UI foundation. Flow artifact paths belong to `${HOME}/Developer/Hatifect`; the UI integration section names its own worktree. Earlier checks do not certify a later combined candidate. Shared B01/B02 statuses and D01 are authoritative in [ROADMAP.md](ROADMAP.md) and [SEMANTIC_V2.md](SEMANTIC_V2.md).
 
-## B01: current gaps at Flow handoff
+## Flow owner implementation status
 
 | IDs | State | Authoritative implementation/evidence | Remaining acceptance |
 |---|---|---|---|
-| B01 | IN_PROGRESS | Source and contract inventory below; current host-free and platform checks PASS | Commit this inventory and integrate the UI owner baseline |
-| B02 | IN_PROGRESS (UI owner) | Shared contract owned by the UI task in codex/roadmap-implementation; this task supplied Flow consumer requirements | Integrate verified D01/U01 commits without competing UI implementation |
+| B01 | DONE | Integrated audit `de766c5`; authoritative baseline and C evidence in ROADMAP.md / ROADMAP_BASELINE.md | No remaining baseline acceptance |
+| B02 | DONE | Integrated D01 `1fd9d57`; SEMANTIC_V2.md and its C evidence recorded in ROADMAP.md | U01 implementation remains separate |
 | U01 | IN_PROGRESS | Existing typed sources and explicit builder IDs; discovered binding regenerates IDs from localized labels | Preserve identity in binding; typed relation graph; negative diagnostics; Flow/CA fixtures |
 | U02 | PLANNED | Collections already have internal revision and stable-ID selection; scalar UiState has no public version | Version/publication contract, typed deltas/reset and atomic related-source publication |
 | U03–U10 | PLANNED | Current actions are synchronous; deterministic planner/profiles, layout/input/virtualization and form validation already exist | All specified async/environment/authoring/theme/component/extension acceptance remains required |
@@ -19,7 +19,7 @@ This report preserves Flow owner evidence for foundation commit `cdf9d2e` and th
 | T01–T03 | PLANNED | Existing Tooling/Server, symbols/diagnostics and DevTools | New metadata/protocol, preview matrix, editor workflow and examples |
 | F11 | DONE | Integrated `5f2d10c`: immutable snapshots, typed commands/session/revision, observer fencing, provider capabilities and stable availability reasons; combined C/G and fresh runtime evidence below | F12 after U01/U02/U04; F16 continues independently |
 | F12–F13 | IN_PROGRESS | ParcelExperience/ParcelSurface, typed controls and localized projections; host-free behavior tests | New semantic-v2 integration; complete fake-session in-game lifecycle/input evidence |
-| F14–F17 | IN_PROGRESS | SaveBoundCargoPort and FlowGameSession: item XML, physical custody, save barrier, fencing; production chest roundtrip recorded below | D03/D04 record, partial stacks and complete supported runtime failure matrix; current candidate rerun |
+| F14–F17 | IN_PROGRESS | D03/D04, SaveBoundCargoPort and FlowGameSession: item XML, selected quantities, physical custody, save barrier and fencing; production evidence below | Complete supported runtime failure matrix, production A→B→A and performance evidence |
 | F18–F19 | IN_PROGRESS | NetworkExperience: stations/routes, inventory fingerprints, shipping/history, return/recovery | Ordinary player entry without console, Quick/View integration, reason codes, locale/input/scale acceptance |
 | F20 | PLANNED | Explicit bounded stations/links/cargo and per-tick work | Measurements, D06, backpressure diagnostics and long-running runtime evidence |
 | I01 | IN_PROGRESS | CA continues consuming exact UI packages; prior alpha.30 isolated build passes | Migration to the new semantic/authoring contract and current runtime/visual acceptance |
@@ -56,7 +56,33 @@ Owner: Flow semantic consumer; existing application event/snapshot contract and 
 
 ## Current next slice
 
-F11 sequence `e31c1ef` and `ff43d0b` is integrated with the combined UI foundation `3f11e5d` in `5f2d10c`. The UI task owns B02/U01–U10/R/T and develop integration; the Flow task continues F16 partial-stack acceptance. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
+F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`; F16-b now has actual Saved/InTransit process-crash evidence below. Continue F16-c with the confirmed-delivery crash boundary, then the remaining F16/F17 failure and production save-isolation matrix. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
+
+## F11-b: owner-derived availability and rejection reasons
+
+Owner: Flow Core/Application and Dispatch. The D01 contract supplies provider mode, supported operations and an immutable five-action availability set with stable rejection codes/reason keys. Reservation projection and execution share route, queue and capacity admission. Semantic consumers localize those reasons in EN/RU and explicitly identify the diagnostic provider. Game sessions and the disabled peer wire preserve the metadata; terminal peer projections release their previous live contents. No persistence envelope or physical inventory/custody format changes.
+
+- `./tools/hatifect-check --platform`: **PASS**, 1,076 .NET + 297 Python tests (`run-ub2txdqz`).
+- After retaining the original public constructors and deconstruction signatures, `./tools/hatifect-check`: **PASS**, 927 .NET + 297 Python tests (`run-vh75lnho`).
+- Final `./tools/hatifect-test flow --platform`: **PASS**, 657 Flow + 65 Stardew tests (`run-t2mgi20d`), including terminal peer disposal and actual parcel binding-context creation. These are the bounded code deltas after the full platform check.
+- Added 11 `FlowAvailabilityTests` cases, serializer/forged-wire coverage in `PeerProtocolTests`, and terminal cleanup coverage in `PeerHostTests`. Existing tests remain intact. Tests cover admission/rejection agreement, stale session/revision, immutable cached reads, provider fencing, EN/RU reasons, legacy constructors and STJ/Newtonsoft roundtrips.
+- Binary compatibility: an executable compiled against the foundation Core DLL successfully invoked both original constructors and both generated `Deconstruct` methods after replacing that DLL with the current build, without recompiling the consumer. Evidence: `artifacts/flowline-f11/binary-compatibility.json` and `binary-consumer.cs`.
+- Independent review identified and rechecked the constructor compatibility and terminal projection issues. Final source/diff review found no remaining issue in this bounded contract change. Separate physical runtime acceptance remains recorded against the foundation; it is not relabelled as F11 candidate evidence.
+- U01 dependency remains explicit: current UI binding regenerates identity from labels, so the full NetworkExperience binding/compilation path with multiword localized labels is still invalid. The UI owner is fixing that shared path. The new parcel availability element uses a valid existing binding label and is tested through `CreateBindingContext`. F12/F18 UI/runtime acceptance is still incomplete.
+
+## F16-a: selected stack quantity
+
+Owner: game-save adapter and physical chest access. `FlowSendCommand.Quantity` is additive and nullable; the original constructor/deconstruction and whole-stack behavior remain. The source fingerprint and quantity are checked under the lease, selected cargo XML is prepared without changing the source quantity, and extraction performs one slot replacement with an untagged remainder. Version 2 of the game aggregate retains the complete source quantity; version 1 whole-stack saves migrate explicitly. Core custody transitions, checkpoint and receipt formats remain unchanged.
+
+- `./tools/hatifect-check --platform`: **PASS**, 1,107 .NET + 297 Python tests (`run-o7zrqs5e`), including 659 Flow and 92 Stardew cases.
+- `./tools/hatifect-check`: **PASS**, 929 .NET + 297 Python tests (`run-ogcutlsc`).
+- `./tools/hatifect-agent-check --host`: **PASS**, project config/skill loaded, 217 skills discovered. The initial sandboxed host launch exited before audit; the same canonical audit succeeded outside the sandbox without changing settings.
+- Added 24 `PartialStackTests` cases, 2 EN/RU quantity form cases, 2 quantity wire cases and a partial quantity variant of the existing stale-on-mutex test. Exact post-write checks distinguish a harmless throwing observer from mutation of the same remainder object; unknown outcomes survive reload without physical replay. Tagging failures retain a saveable fenced aggregate, including when no transfer exists to reconcile.
+- Independent reviewer found no actionable regressions in the bounded quantity/custody/migration/consumer diff and independently confirmed the actual final Flow/Stardew TRX, including both tagging-observer cases and legacy JSON without the new field.
+- Fresh isolated deployment: `run-lj6ytpwy`. Packaging tests are explicitly SKIPPED by live preparation; separate checks above are the test evidence, and no RC promotion is claimed.
+- `./tools/hatifect-smoke flow.chest.roundtrip`: **PASS**, request `d60b0e0c-6d5f-4560-b07c-37bf28b1c906`, 8 checks, 347 frames, 3 loads, 2 actual Saving/Saved pairs, process exit 0 and no errors. Whole8 plus partial13→5+8 preserved total21, the exact untagged source remainder and delivered item fidelity; repeated delivery was rejected. Flow runtime fingerprint: `4b56cbc49bfcdfae5332e67e0db9818aa0707a64fdb4dafc177603a843d356c9`.
+- `python3 tools/release.py verify-package .smapi-test/isolated/Mods/Hatifect`: **PASS**. The generated acceptance report was byte-matched to the retained runtime artifact before removing only that generated report. Current package inventory/archive are in `artifacts/flowline-f16/`.
+- At F16-a the executor launched one process and cleaned its owned save on exit. F16-b adds the bounded continuation below. Full process-crash and production A→B→A acceptance remain incomplete.
 
 ## Combined UI SDK/editor and Flow foundation integration
 
@@ -88,19 +114,17 @@ The corrected candidate passed `./tools/hatifect-check --platform`: **PASS**, 1,
 - `./tools/hatifect-smoke flow.chest.roundtrip`: **PASS**, request `46967acd-30bb-4c93-89ff-ce9c1b95c9e3`, all eight checks, 347 frames, three loads, two Saving/Saved pairs and no errors. The production session retained real chest cargo across saving/loading and did not duplicate delivery. Evidence is under `artifacts/runtime/<request-id>/result.json`; exact counts are in `diagnostics/flow-chest-roundtrip.json`.
 - CA's actual third-party mod was absent in this isolated run and the adapter disabled itself normally. These scenarios do not claim CA visual/runtime acceptance. Q01–Q03 and the known U01 Network binding gap remain open.
 
-F11 integration is now verified below; next U01 preserves explicit identity/alias/label through the real Network binding/compile path and adds the complete typed graph/wire acceptance. The UI task remains the single `develop` integration owner.
+F11 integration is recorded below; U01 preserves explicit identity/alias/label through the real Network binding/compile path and adds the complete typed graph/wire acceptance. The UI task remains the single `develop` integration owner.
 
-## F11-b: owner-derived availability and rejection reasons
+## Flow task integration of UI foundation with F16-a
 
-Owner: Flow Core/Application and Dispatch. The D01 contract supplies provider mode, supported operations and an immutable five-action availability set with stable rejection codes/reason keys. Reservation projection and execution share route, queue and capacity admission. Semantic consumers localize those reasons in EN/RU and explicitly identify the diagnostic provider. Game sessions and the disabled peer wire preserve the metadata; terminal peer projections release their previous live contents. No persistence envelope or physical inventory/custody format changes.
+The Flow task merged published UI foundation `3f11e5d` into its published F16-a `54c5af5`. Only the status document conflicted; all source/code bytes from the incoming UI change match that reviewed upstream commit, and both owners' evidence sections remain. This integration does not replace either runtime candidate's identity.
 
-- `./tools/hatifect-check --platform`: **PASS**, 1,076 .NET + 297 Python tests (`run-ub2txdqz`).
-- After retaining the original public constructors and deconstruction signatures, `./tools/hatifect-check`: **PASS**, 927 .NET + 297 Python tests (`run-vh75lnho`).
-- Final `./tools/hatifect-test flow --platform`: **PASS**, 657 Flow + 65 Stardew tests (`run-t2mgi20d`), including terminal peer disposal and actual parcel binding-context creation. These are the bounded code deltas after the full platform check.
-- Added 11 `FlowAvailabilityTests` cases, serializer/forged-wire coverage in `PeerProtocolTests`, and terminal cleanup coverage in `PeerHostTests`. Existing tests remain intact. Tests cover admission/rejection agreement, stale session/revision, immutable cached reads, provider fencing, EN/RU reasons, legacy constructors and STJ/Newtonsoft roundtrips.
-- Binary compatibility: an executable compiled against the foundation Core DLL successfully invoked both original constructors and both generated `Deconstruct` methods after replacing that DLL with the current build, without recompiling the consumer. Evidence: `artifacts/flowline-f11/binary-compatibility.json` and `binary-consumer.cs`.
-- Independent review identified and rechecked the constructor compatibility and terminal projection issues. Final source/diff review found no remaining issue in this bounded contract change. Separate physical runtime acceptance remains recorded against the foundation; it is not relabelled as F11 candidate evidence.
-- U01 dependency remains explicit: current UI binding regenerates identity from labels, so the full NetworkExperience binding/compilation path with multiword localized labels is still invalid. The UI owner is fixing that shared path. The new parcel availability element uses a valid existing binding label and is tested through `CreateBindingContext`. F12/F18 UI/runtime acceptance is still incomplete.
+- `./tools/hatifect-check --platform`: **PASS**, 1,203 .NET + 301 Python, `artifacts/validation/run-v86kdbsx/summary.json` (659 Flow + 92 Stardew).
+- `./tools/hatifect-check`: **PASS**, 1,016 .NET + 301 Python, `artifacts/validation/run-5itzrxbq/summary.json`.
+- `./tools/hatifect-isolated-ui-ca --keep`: **PASS**, 43 projected files, eight alpha.31 packages, 80 tests, two CA DLLs and no UI source. Retained projection/TRX: `/private/var/folders/ly/sph907ln7bv1tc3dxmflc62h0000gn/T/hatifect-ui-ca-isolated.l_zpwa5h`.
+- `./tools/hatifect-agent-check --host`: **PASS**, project config/skill loaded, 217 skills discovered.
+- Final source/staged review: `artifacts/flowline-ui-integration/`. Runtime evidence for the full next candidate will be generated by the next F16 crash slice; earlier normal roundtrip evidence remains scoped to its recorded fingerprint. No release or new UI acceptance is claimed by this task-branch integration.
 
 ## F11 combined integration checks
 
@@ -128,3 +152,29 @@ Schema v2 preserves graph IDs, aliases/labels, descriptors, capabilities, slots,
 - Final independent read-only review rechecked the fixes against current sources and actual C/U TRX: no open findings in this bounded U01 diff. Package isolation and game/visual evidence are reported separately; the reviewer did not claim to run them.
 
 Observed presentation impact: History Browse enables the existing Gallery policy on Wide/Medium, retains List on Compact/Controller, and selects generated MasterDetail for Network. U01 does not introduce a consumer layout override. Full visual/input/locale/scale runtime acceptance remains in F12/I01/Q03; U01 runtime, visual and performance acceptance are **NOT_APPLICABLE** as separate gates, with graph work kept outside draw/layout/dispatch. The earlier F11 chest runtime is not relabelled as U01 evidence. Next UI work is U02 and U04, followed by F12 with already completed F11.
+## F16-b: actual process crash after a confirmed in-flight save
+
+Owner: fixed scenario orchestration in the live harness and production Flow diagnostics. `flow.chest.crash-after-save` uses one request-owned canonical save and exactly two fixed SMAPI launches under one timeout. After actual Saved the first process holds the existing save barrier; the executor validates the bounded marker against request/PID/save owner/saved bytes/Flow DLL fingerprint, sends SIGKILL only to its owned group and requires the observed raw exit `-9`. The second process validates the saved marker and distinct process/session identity before continuing. No intermediate save provisioning or cleanup occurs; old child IDs are retired before a failed second launch can leave stale ownership. Public Flow/UI APIs, request schema, Core/Persistence and save formats are unchanged.
+
+- `./tools/hatifect-test flow --platform`: **PASS**, 659 Flow + 92 Stardew (`run-pkii1yop`).
+- Final `./tools/hatifect-check --platform`: **PASS**, 1,203 .NET + 315 Python (`run-t3t1h105`), including the final UI host handoff condition and current exact-package CA tests.
+- `./tools/hatifect-check`: **PASS**, 1,016 .NET + 315 Python (`run-pht4qkv7`). The subsequent one-condition change is in the game-only UI host, excluded from this host-free graph and covered by final G/runtime.
+- Added 14 Python tests in `test_saved_crash.py`. Real subprocess tests verify SIGKILL, raw exit, owned descendants, unrelated-process survival and a distinct second process retaining the same saved bytes. Other cases cover malformed/linked/stale/foreign markers, fixture ownership, changed saved bytes, cancellation, unexpected first exits, failed second launch, public FAIL evidence and cleanup. These test executables are fixtures, distinct from the actual game result below.
+- Independent review found a race where a failed prepare report could be overwritten by a successful resume report. Any terminal prepare report now stops continuation and is archived; the new regression passed in the actual 315-test run. Final bounded source review closed with no open finding.
+- Fresh isolated deployment: `run-uwtjbc_f`. Packaging tests are explicitly SKIPPED by the canonical prepare command; separate C/G runs supply test evidence. No RC promotion is claimed.
+- `./tools/hatifect-smoke flow.chest.crash-after-save`: **PASS**, request `628c1799-df43-4c51-8b82-b8d6c4432979`, all 9 checks, no exceptions, 28,146 ms. Prepare PID68184: signal9, raw-9, normalized137; resume PID68206: exit0; both teardown error lists empty. Three loads and two actual Saving/Saved pairs conserved whole8 and partial13→5+8 with exact remainder/item fidelity and rejected repeat delivery. Phase journals, marker and termination proof are in `artifacts/runtime/<request-id>/diagnostics/`. Flow fingerprint: `67df64afd3e51c398bb4ba8fb59708d3e55c6305c565289909e8028e23c36243`.
+- Same-candidate `./tools/hatifect-smoke flow.chest.roundtrip`: **PASS**, request `e410b0d2-8d12-4577-ad6a-09e4fe07051e`, 8 checks, 347 frames, 3 loads, two Saving/Saved pairs, PID68389 exit0 and no errors. This separately confirms ordinary lifecycle behavior after the shared-driver change.
+- `python3 tools/release.py verify-package .smapi-test/isolated/Mods/Hatifect`: **PASS**, 21 files / 14 runtime DLLs. Generated reports were byte-matched to preserved request artifacts before removing only the generated copies. Inventory, archive and source/staged review are retained under `artifacts/flowline-f16-crash/`.
+- Earlier attempt `b444bf17-e31c-4c1d-9357-9ce0b5469b47` is **FAIL**: the generic UI automation controller did not delegate the new Flow scenario and exited before the crash boundary. The fixed handoff is covered by the fresh runs above. Initial `run-29d150qg` failed on an incorrectly precreated test fixture journal; production overwrite protection was retained. `run-8u5pt1fz` stopped on NuGet signature-source access and `run-jfq8ex7w` on concurrent package-feed preparation; fresh sequential checks/deployment passed without disabling validation.
+
+This closes only the bounded Saved/InTransit crash increment. Other confirmed custody states, unsaved/interrupted save boundaries, production A→B→A and full F16/F17 acceptance remain open. Separate visual and UI package-boundary changes are NOT_APPLICABLE here; UI graph/schema/version remain unchanged. The existing actual G and package-consumer checks cover the private harness handoff.
+
+
+## Combined U01 and F16-a/b integration
+
+The shared candidate combines published U01 `7c77f4c` with Flow handoff `51eee23` (including `54c5af5` partial quantities and `87ee5c1` prior combined-base verification). The conflict resolution retains quantity admission, source fingerprint and whole-stack behavior, and gives the new quantity form its explicit U01 alias `ShipmentQuantity` and Flow-owned schema. All eight UI packages remain alpha.32; both historical evidence sections are retained with their original candidate scope.
+
+- `./tools/hatifect-check --platform`: **PASS**, 1,287 .NET + 315 Python, `artifacts/validation/run-dl08uyka/summary.json` in `/private/tmp/hatifect-ui-next-ten-slices`; 660 Flow and 92 Flow Stardew tests include EN/RU quantity validation and partial-stack custody/migration.
+- `./tools/hatifect-check`: **PASS**, 1,099 .NET + 315 Python, `artifacts/validation/run-0j90sfgw/summary.json`.
+- `./tools/hatifect-agent-check --host`: **PASS**, project config/skill loaded, 217 skills discovered. The first sandbox launch stopped before Codex audit and remains BLOCKED; the authorized direct repeat completed successfully.
+- U01's final exact-package CA projection remains authoritative for the unchanged UI producer/CA sources. The newly merged Flow consumer and current CA are additionally built and tested by the combined G gate. This integration does not mark full F16 complete; the further delivery/unsaved/save-isolation matrix remains open.

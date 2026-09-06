@@ -37,7 +37,7 @@ internal static class FlowItemCodec
     {
         if (item is null || item.GetType() != typeof(SObject) || item.Stack <= 0
             || ((SObject)item).bigCraftable.Value || ((SObject)item).heldObject.Value is not null)
-            throw new InvalidOperationException("Flowline currently supports whole stacks of ordinary objects only.");
+            throw new InvalidOperationException("Flowline currently supports ordinary object stacks only.");
     }
 
     private sealed class BoundedTextWriter : TextWriter

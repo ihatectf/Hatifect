@@ -403,7 +403,7 @@ def _is_acceptance_storage(document: Any) -> bool:
 def _working_name(run_id: str, scenario_id: str = "") -> str:
     token = uuid.UUID(_canonical_run_id(run_id)).hex
     # Stardew loads the base before '_' and saves base + '_' + world identity.
-    return f"HatifectHarness{token}_4242424242" if scenario_id == "flow.chest.roundtrip" else f"HatifectHarness_{token}"
+    return f"HatifectHarness{token}_4242424242" if scenario_id in {"flow.chest.roundtrip", "flow.chest.crash-after-save"} else f"HatifectHarness_{token}"
 
 
 def plan_working_copy(isolated_root: Path, smapi_path: Path, run_id: str, scenario_id: str = "") -> Path:

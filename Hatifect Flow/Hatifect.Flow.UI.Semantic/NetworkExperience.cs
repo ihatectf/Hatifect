@@ -58,6 +58,7 @@ internal sealed partial class NetworkExperience : IFlowExperience
             _stationForm = new(new UiSemanticFormField(id.Child("field/name"), Text("Station name", "Имя станции"), _name, _nameError));
             _linkForm = new(new UiSemanticFormField(id.Child("field/capacity"), Text("Capacity", "Ёмкость"), _capacity, _capacityError),
                 new UiSemanticFormField(id.Child("field/ticks"), Text("Travel ticks", "Время в тиках"), _ticks, _ticksError));
+            _shipmentForm = new(new UiSemanticFormField(id.Child("field/quantity"), Text("Quantity", "Количество"), _quantity, _quantityError));
             var builder = new UiExperienceBuilder(id, Text("Flowline network", "Сеть Flowline")
                 + (_snapshot.Transport.ProviderMode == FlowProviderMode.DiagnosticFake ? Text(" · diagnostic", " · диагностика") : ""))
                 .Element(id.Child("element/transport"), "Transport", Text("Transport", "Перевозки"), _status, UiSourceTypes.String, UiCapabilities.Monitor)
@@ -87,6 +88,9 @@ internal sealed partial class NetworkExperience : IFlowExperience
             _name.Changed += Validate;
             _capacity.Changed += Validate;
             _ticks.Changed += Validate;
+            _quantity.Changed += ValidateQuantity;
+            _inventory.Changed += ValidateQuantity;
+            ValidateQuantity();
             Project();
             if (_dirty) Pump();
         }
@@ -96,6 +100,7 @@ internal sealed partial class NetworkExperience : IFlowExperience
             Unsubscribe();
             _stationForm?.Dispose();
             _linkForm?.Dispose();
+            _shipmentForm?.Dispose();
             throw;
         }
     }
@@ -134,6 +139,9 @@ internal sealed partial class NetworkExperience : IFlowExperience
         _ticks.Changed -= Validate;
         _stationForm.Dispose();
         _linkForm.Dispose();
+        _shipmentForm.Dispose();
+        _quantity.Changed -= ValidateQuantity;
+        _inventory.Changed -= ValidateQuantity;
         _historyQuery.Changed -= OnHistoryQuery;
         _historyFilter.Changed -= OnHistoryQuery;
         _history.Changed -= OnHistorySelection;
@@ -154,6 +162,9 @@ internal sealed partial class NetworkExperience : IFlowExperience
             {
                 FlowApplicationState.Active => Text("Ready", "Готово"),
                 FlowApplicationState.Paused => Text("Paused", "Приостановлено"),
+                FlowApplicationState.RecoveryRequired when _recovery.Count == 0 => Text(
+                    "No settled transfer outcome; restore the complete game save from a known good backup",
+                    "Нет подтверждённого результата передачи; восстановите целый игровой сейв из исправной резервной копии"),
                 FlowApplicationState.RecoveryRequired => Text("Recovery required; cargo retained", "Требуется восстановление; груз сохранён"),
                 _ => Text("Session closed", "Сессия закрыта")
             };

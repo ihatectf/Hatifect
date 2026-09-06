@@ -36,12 +36,14 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
         try
         {
             StationBinding source = RequireStation(command.Source), destination = RequireStation(command.Destination);
-            if (string.IsNullOrEmpty(command.Fingerprint) || command.Fingerprint.Length != 64)
+            if (string.IsNullOrEmpty(command.Fingerprint) || command.Fingerprint.Length != 64 || command.Quantity is <= 0 or > 999)
                 return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision);
-            if (!SendCore(source.Name, destination.Name, command.Slot, command.Fingerprint).HasValue)
+            if (!SendCore(source.Name, destination.Name, command.Slot, command.Fingerprint, command.Quantity).HasValue)
                 return new FlowCommandResult(FlowCommandStatus.Conflict, ReadSnapshot().Revision);
             return new FlowCommandResult(FlowCommandStatus.Applied, ReadSnapshot().Revision);
         }
+        catch (ArgumentOutOfRangeException)
+        { return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision); }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException)
         { return new FlowCommandResult(_faulted ? FlowCommandStatus.Faulted : FlowCommandStatus.Rejected, ReadSnapshot().Revision); }
         finally { _managing = false; }

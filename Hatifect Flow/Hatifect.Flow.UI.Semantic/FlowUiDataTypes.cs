@@ -14,5 +14,6 @@ internal static class FlowUiDataTypes
     internal static readonly UiSourceType<FlowRecoveryIssue> Recovery = UiSourceTypes.Scalar<FlowRecoveryIssue>(Id("recovery"), false);
     internal static readonly UiSourceType<IReadOnlyList<UiSemanticFormField>> StationForm = UiSourceTypes.Form(Id("station-form"));
     internal static readonly UiSourceType<IReadOnlyList<UiSemanticFormField>> LinkForm = UiSourceTypes.Form(Id("link-form"));
+    internal static readonly UiSourceType<IReadOnlyList<UiSemanticFormField>> ShipmentForm = UiSourceTypes.Form(Id("shipment-form"));
     private static UiSymbolId Id(string name) => new("Hatifect.Flow", "data/" + name);
 }

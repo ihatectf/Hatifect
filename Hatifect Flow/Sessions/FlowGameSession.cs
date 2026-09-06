@@ -59,7 +59,10 @@ internal sealed partial class FlowGameSession : IDisposable
         {
             _faulted = saved.RequiresRecovery;
             foreach (StationBinding station in saved.Stations) _stations.Add(station.Id, station);
-            foreach (CargoPayload payload in saved.Payloads) _payloads.Add(payload.Id, payload);
+            Dictionary<Guid, int>? legacyQuantities = saved.Version == 1
+                ? checkpoint!.Cargo.ToDictionary(cargo => cargo.Id, cargo => cargo.Manifest.Quantity) : null;
+            foreach (CargoPayload payload in saved.Payloads)
+                _payloads.Add(payload.Id, legacyQuantities is null ? payload : payload with { SourceQuantity = legacyQuantities[payload.Id] });
         }
         _runtime.AttachCheckpointOwner(this);
         if (checkpoint is not null)
@@ -122,7 +125,7 @@ internal sealed partial class FlowGameSession : IDisposable
     internal Guid Send(string source, string destination, int slot)
         => SendCore(source, destination, slot, null)!.Value;
 
-    private Guid? SendCore(string source, string destination, int slot, string? expectedFingerprint)
+    private Guid? SendCore(string source, string destination, int slot, string? expectedFingerprint, int? quantity = null)
     {
         using HostOperation operation = EnterHostMutation();
         StationBinding from = FindStation(source), to = FindStation(destination);
@@ -134,35 +137,50 @@ internal sealed partial class FlowGameSession : IDisposable
         if (expectedFingerprint is not null
             && !string.Equals(expectedFingerprint, ChestInventoryAccess.Fingerprint(item), StringComparison.Ordinal))
             return null;
-        if (item.Stack > 999) throw new InvalidOperationException("The first inventory adapter supports whole stacks of at most 999 items.");
-        bool hadToken = item.modData.TryGetValue(ChestInventoryAccess.CargoKey, out string oldToken);
+        if (item.Stack > 999) throw new InvalidOperationException("The first inventory adapter supports source stacks of at most 999 items.");
+        int sourceQuantity = item.Stack, units = quantity ?? sourceQuantity;
+        if (units <= 0 || units > sourceQuantity) throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be between one and the complete source stack.");
+        item.modData.TryGetValue(ChestInventoryAccess.CargoKey, out string oldToken);
         if (Guid.TryParse(oldToken, out Guid previous) && Application.ReadSnapshot().Parcels.Any(parcel => parcel.CargoId == previous
             && parcel.State is not (ParcelState.Cancelled or ParcelState.Delivered or ParcelState.Returned)))
             throw new InvalidOperationException("This stack already belongs to an active shipment.");
         Guid cargo = Guid.NewGuid(), shipment = Guid.NewGuid(), parcel = Guid.NewGuid();
-        string payload;
-        try
-        {
-            item.modData[ChestInventoryAccess.CargoKey] = cargo.ToString("D");
-            payload = FlowItemCodec.Encode(item);
-            // Validate materialization before admitting custody; no physical withdrawal has happened yet.
-            if (FlowItemCodec.Encode(FlowItemCodec.Decode(payload)) != payload)
-                throw new InvalidOperationException("The item's saved representation does not round-trip exactly.");
-        }
-        catch
-        {
-            if (hadToken) item.modData[ChestInventoryAccess.CargoKey] = oldToken;
-            else item.modData.Remove(ChestInventoryAccess.CargoKey);
-            throw;
-        }
-        var manifest = new CargoManifest(item.QualifiedItemId, item.Stack);
-        _payloads.Add(cargo, new CargoPayload(cargo, payload));
+        string sourceXml = FlowItemCodec.Encode(item);
+        Item captured = FlowItemCodec.Decode(sourceXml);
+        if (FlowItemCodec.Encode(captured) != sourceXml)
+            throw new InvalidOperationException("The item's saved representation does not round-trip exactly.");
+        captured.modData[ChestInventoryAccess.CargoKey] = cargo.ToString("D");
+        string taggedSourceXml = FlowItemCodec.Encode(captured);
+        captured.Stack = units;
+        string payload = FlowItemCodec.Encode(captured);
+        Item restored = FlowItemCodec.Decode(payload);
+        if (FlowItemCodec.Encode(restored) != payload)
+            throw new InvalidOperationException("The selected cargo does not round-trip exactly.");
+        restored.Stack = sourceQuantity;
+        if (FlowItemCodec.Encode(restored) != taggedSourceXml)
+            throw new InvalidOperationException("The selected cargo cannot prove the complete source representation.");
+        var manifest = new CargoManifest(item.QualifiedItemId, units);
+        _payloads.Add(cargo, new CargoPayload(cargo, payload) { SourceQuantity = sourceQuantity });
         _ports[from.Id].Register(new CargoId(cargo), manifest);
         _runtime.RegisterCargo(new CargoId(cargo), new StationId(from.Id), manifest);
         _runtime.CreateShipment(new ShipmentId(shipment), new StationId(from.Id), new StationId(to.Id), manifest,
             new ServicePolicy(ServiceClass.Standard, DeliveryGuarantee.Reserved));
         _runtime.SplitShipment(new ShipmentId(shipment), new ParcelId(parcel), new CargoId(cargo));
         _runtime.TryReserve(new ParcelId(parcel));
+        try
+        {
+            item.modData[ChestInventoryAccess.CargoKey] = cargo.ToString("D");
+            if (!ReferenceEquals(_inventory.ReadSource(from.Id, slot), item) || FlowItemCodec.Encode(item) != taggedSourceXml)
+                throw new InvalidOperationException("Source admission was changed by an inventory observer.");
+        }
+        catch
+        {
+            // The admitted aggregate remains saveable even if a metadata observer throws.
+            // No quantity has left the physical source; preserve evidence and prohibit dispatch.
+            _faulted = true;
+            UpdateAvailability();
+            throw;
+        }
         Application.Refresh();
         return parcel;
     }
@@ -198,7 +216,7 @@ internal sealed partial class FlowGameSession : IDisposable
         _saving = true;
         UpdateAvailability();
         // Faulted transfers remain saveable. Reload retains the journal AND the recovery fence.
-        return new FlowGameSave(1, _saveId, CheckpointCodec.Encode(new CheckpointImage(0, _runtime.CaptureCheckpoint())),
+        return new FlowGameSave(2, _saveId, CheckpointCodec.Encode(new CheckpointImage(0, _runtime.CaptureCheckpoint())),
             _stations.Values.OrderBy(station => station.Id).ToArray(), _payloads.Values.OrderBy(payload => payload.Id).ToArray(), _faulted);
     }
 
@@ -223,7 +241,11 @@ internal sealed partial class FlowGameSession : IDisposable
 
     private SaveBoundCargoPort CreatePort(Guid station, PortCheckpoint? checkpoint = null)
     {
-        var port = new SaveBoundCargoPort(transfer => _inventory.Apply(transfer, _payloads[transfer.CargoId.Value].Xml), checkpoint);
+        var port = new SaveBoundCargoPort(transfer =>
+        {
+            CargoPayload payload = _payloads[transfer.CargoId.Value];
+            return _inventory.Apply(transfer, payload.Xml, payload.SourceQuantity);
+        }, checkpoint);
         _ports.Add(station, port);
         return port;
     }
@@ -275,7 +297,7 @@ internal sealed partial class FlowGameSession : IDisposable
 
     private static FlowCheckpoint ValidateSave(FlowGameSave saved, ulong saveId)
     {
-        if (saved.Version != 1 || saved.SaveId != saveId || saved.Checkpoint is null
+        if (saved.Version is not (1 or 2) || saved.SaveId != saveId || saved.Checkpoint is null
             || saved.Stations is null || saved.Stations.Length > MaxStations || saved.Payloads is null || saved.Payloads.Length > MaxCargo)
             throw new InvalidDataException("Unsupported or foreign Flow game-save aggregate.");
         FlowCheckpoint checkpoint = CheckpointCodec.Decode(saved.Checkpoint).Checkpoint;
@@ -300,6 +322,9 @@ internal sealed partial class FlowGameSession : IDisposable
         {
             if (payload is null || payload.Id == Guid.Empty || !payloads.TryAdd(payload.Id, FlowItemCodec.Decode(payload.Xml)))
                 throw new InvalidDataException("Invalid or duplicate cargo payload.");
+            if (saved.Version == 1 ? payload.SourceQuantity != 0
+                : payload.SourceQuantity < payloads[payload.Id].Stack || payload.SourceQuantity > 999)
+                throw new InvalidDataException("Invalid captured source quantity for the game-save version.");
         }
         if (payloads.Count != checkpoint.Cargo.Length) throw new InvalidDataException("Cargo payload set does not match the checkpoint.");
         foreach (CargoCheckpoint cargo in checkpoint.Cargo)
