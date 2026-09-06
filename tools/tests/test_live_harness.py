@@ -663,6 +663,19 @@ class LiveHarnessTests(unittest.TestCase):
         self.assertTrue({"flow.chest.cancellation.cancellation", "flow.chest.cancellation.source-conflict",
                          "flow.chest.cancellation.re-admission", "flow.chest.cancellation.no-late-effect"}
                         .issubset(resolved["checks"]))
+        self._verify_each_flow_check_is_required(resolved)
+
+    def test_return_requires_each_capacity_retry_custody_and_taken_item_check(self) -> None:
+        resolved = HARNESS.resolve_scenario(self.scenarios, "flow.chest.return", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.Flow"])
+        self.assertNotIn("flow.chest.return", self.scenarios["all"]["includes"])
+        self.assertTrue({"flow.chest.return.capacity", "flow.chest.return.delivery-retry", "flow.chest.return.return-requested",
+                         "flow.chest.return.return-rejected", "flow.chest.return.returned", "flow.chest.return.no-auto-retry",
+                         "flow.chest.return.taken-items"}.issubset(resolved["checks"]))
+        self._verify_each_flow_check_is_required(resolved)
+
+    def _verify_each_flow_check_is_required(self, resolved) -> None:
         report = self._report(resolved)
         self.assertEqual(report["Scenarios"], [])
         HARNESS.validate_report(resolved, report, started_at=0)

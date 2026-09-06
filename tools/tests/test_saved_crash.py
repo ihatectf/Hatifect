@@ -204,7 +204,7 @@ class SavedCrashTests(unittest.TestCase):
         self.assertEqual(json.loads(outside.read_text()), self.marker)
 
     def test_ordinary_scenario_cannot_use_marker_or_running_continuation(self):
-        for scenario in ("flow.chest.roundtrip", "flow.chest.cancellation"):
+        for scenario in ("flow.chest.roundtrip", "flow.chest.cancellation", "flow.chest.return"):
             with self.subTest(scenario=scenario):
                 self.request["scenarioId"] = scenario
                 self.write_marker()
