@@ -109,6 +109,8 @@ Combined with the published UI foundation `3f11e5d` in `/private/tmp/hatifect-ui
 
 ## U01: typed semantic graph and lossless binding
 
+**DONE**, implementation commit `856ff52`. This section supersedes the historical U01 gaps above; those remain attached to their earlier candidates.
+
 Owner: Semantics/Experience with Tooling and existing Runtime/Stardew hosts; worktree `/private/tmp/hatifect-ui-next-ten-slices`, based on published `22a6441`. UI packages advance together to `1.0.0-alpha.32`; no assembly or third-party dependency is added. The frozen surface API v1 and existing form contract remain source-identical. Builder additions and their compatibility were reviewed before refreshing its source fingerprint.
 
 The implementation separates stable identity, authoring alias and localized label, validates nominal CLR/nullability contracts, and binds all seven relation kinds with typed projection input slots. Invalid endpoints, duplicate producers, unsupported capabilities, type/nullability mismatch, invalid provenance and data cycles produce addressed diagnostics before activation. Failed Build can be retried without subscribing or sealing the builder. Collections validate actual item payload nullability. Typed action metadata must reference the actual authored action instance.
