@@ -357,17 +357,19 @@ internal static class UiSemanticCollectionSnapshot
                 throw new ArgumentException($"Collection item {index} has no stable ID.", nameof(identify));
             if (!ids.Add(id))
                 throw new InvalidOperationException($"Collection item ID '{id}' is duplicated.");
-            string display = label?.Invoke(value) ?? (value is null ? string.Empty : value.ToString() ?? string.Empty);
-            string? supporting = supportingText?.Invoke(value);
             valueSnapshot[index] = value;
-            itemSnapshot[index] = new UiSemanticCollectionItem(
-                id,
-                display,
-                value,
-                supporting,
-                ContentVersion(display, supporting)) { Icon = icon?.Invoke(value) };
+            itemSnapshot[index] = ProjectItem(id, value, label, supportingText, icon);
         }
         return (Array.AsReadOnly(valueSnapshot), Array.AsReadOnly(itemSnapshot));
+    }
+
+    internal static UiSemanticCollectionItem ProjectItem<T>(UiSymbolId id, T value, Func<T, string>? label,
+        Func<T, string?>? supportingText, Func<T, UiSymbolId?>? icon)
+    {
+        string display = label?.Invoke(value) ?? (value is null ? string.Empty : value.ToString() ?? string.Empty);
+        string? supporting = supportingText?.Invoke(value);
+        return new UiSemanticCollectionItem(id, display, value, supporting, ContentVersion(display, supporting))
+        { Icon = icon?.Invoke(value) };
     }
 
     public static bool Equivalent(

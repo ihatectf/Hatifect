@@ -3,7 +3,7 @@ using Hatifect.UI.Semantics;
 namespace Hatifect.UI.Experience;
 
 /// <summary>A collection stored in an atomic publication. Capture and lookup reuse committed immutable storage.</summary>
-public class UiPublishedCollection<T> : IUiSemanticSource<IReadOnlyList<T>>, IUiSemanticCollectionSnapshotSource,
+public partial class UiPublishedCollection<T> : IUiSemanticSource<IReadOnlyList<T>>, IUiSemanticCollectionSnapshotSource,
     IUiSemanticCollectionMetadata, IUiPublicationParticipant
 {
     private readonly UiSourceType<IReadOnlyList<T>> _type;
@@ -90,7 +90,8 @@ public class UiPublishedCollection<T> : IUiSemanticSource<IReadOnlyList<T>>, IUi
         bool sameContent = previous is not null && UiSemanticCollectionSnapshot.Equivalent(previous.Items, data.Items);
         long revision = previous is null ? 0 : sameContent ? previous.Revision : checked(previous.Revision + 1);
         IReadOnlyList<UiSemanticCollectionItem> items;
-        if (sameContent) items = previous!.Items;
+        int supportingCount = 0;
+        if (sameContent) { items = previous!.Items; supportingCount = previous.SupportingItemCount; }
         else
         {
             var revised = new UiSemanticCollectionItem[data.Items.Count];
@@ -101,11 +102,12 @@ public class UiPublishedCollection<T> : IUiSemanticSource<IReadOnlyList<T>>, IUi
                     ? previous.GetItem(oldIndex) : null;
                 revised[index] = old is not null && UiSemanticCollectionSnapshot.ItemEquivalent(old, item)
                     ? old : item with { ItemRevision = version };
+                if (!string.IsNullOrWhiteSpace(revised[index].SupportingText)) supportingCount++;
             }
             items = Array.AsReadOnly(revised);
         }
         return new(sameContent ? previous!.Value : data.Values, items, sameContent ? previous!.Indices : indices,
-            sameContent ? previous!.HasSupportingText : UiSemanticCollectionSnapshot.HasSupportingText(items),
+            supportingCount,
             revision, selected, version, History(previous, change));
     }
 
@@ -114,7 +116,7 @@ public class UiPublishedCollection<T> : IUiSemanticSource<IReadOnlyList<T>>, IUi
     {
         if (selected is { } selection && !data.TryGetIndex(selection, out _))
             throw new ArgumentException($"Selected collection item '{selection}' is absent from the candidate.", nameof(selected));
-        return new(data.Value, data.Items, data.Indices, data.HasSupportingText, data.Revision, selected,
+        return new(data.Value, data.Items, data.Indices, data.SupportingItemCount, data.Revision, selected,
             version, History(previous, change));
     }
 
@@ -159,8 +161,11 @@ public sealed class UiPublishedSelectableCollection<T> : UiPublishedCollection<T
 internal sealed class UiPublishedCollectionSnapshot<T> : UiCollectionReadSnapshot<T>
 {
     internal UiPublishedCollectionSnapshot(IReadOnlyList<T> values, IReadOnlyList<UiSemanticCollectionItem> items,
-        IReadOnlyDictionary<UiSymbolId, int> indices, bool supporting, long revision, UiSymbolId? selected,
+        IReadOnlyDictionary<UiSymbolId, int> indices, int supportingCount, long revision, UiSymbolId? selected,
         long version, IReadOnlyList<UiCollectionChange<T>> history)
-        : base(values, items, indices, supporting, revision, selected, version) { History = history; }
+        : base(UiChunkedList<T>.Copy(values), UiChunkedList<UiSemanticCollectionItem>.Copy(items), indices,
+            supportingCount > 0, revision, selected, version)
+    { History = history; SupportingItemCount = supportingCount; }
+    internal int SupportingItemCount { get; }
     internal IReadOnlyList<UiCollectionChange<T>> History { get; }
 }

@@ -7,7 +7,7 @@ namespace Hatifect.Flow.Application.Dispatch;
 
 internal sealed partial class FlowRuntime
 {
-    internal int RetainedLinkCount => _network.History.Count();
+    internal int RetainedLinkCount => _network.LifetimeLinkCount;
 
     internal FlowSnapshot ReadApplicationSnapshot(Guid sessionId, long revision,
         FlowProviderMode providerMode = FlowProviderMode.DiagnosticFake, FlowParcelActions supported = FlowParcelActions.All)

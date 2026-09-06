@@ -282,6 +282,21 @@ public sealed partial class UiPublicationBatch
             ? Array.Empty<UiGraphDiagnostic>() : Owner.Validate(source, snapshot);
         foreach (var diagnostic in invalid) _diagnostics.Add(new(diagnostic.Code, diagnostic.Message, source.SourceId));
         if (invalid.Count != 0) return;
+        StageValidated(source, snapshot, previous, equivalentToBase, version);
+    }
+
+    private void StagePreparedUpdates<T>(UiPublishedCollection<T>.PreparedUpdates prepared)
+    {
+        EnsureMutable();
+        UiPublicationEntry previous = BaseView.Entry(prepared.Source);
+        if (!ReferenceEquals(previous.Snapshot, prepared.Previous))
+            throw new ArgumentException("Prepared updates belong to a different captured source revision.", nameof(prepared));
+        StageValidated(prepared.Source, prepared.Snapshot, previous, false, prepared.Snapshot.Version);
+    }
+
+    private void StageValidated(IUiPublicationParticipant source, IUiSemanticSource snapshot,
+        UiPublicationEntry previous, bool equivalentToBase, long? version)
+    {
         if (equivalentToBase) { _changes.Remove(source.SourceId); return; }
         if (previous.Version == long.MaxValue) { _diagnostics.Add(new("UIP006", "The source version is exhausted.", source.SourceId)); return; }
         _changes[source.SourceId] = new(source, snapshot, version ?? previous.Version + 1);

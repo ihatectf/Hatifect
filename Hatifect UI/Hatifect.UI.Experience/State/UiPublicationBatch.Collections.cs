@@ -48,7 +48,9 @@ public sealed partial class UiPublicationBatch
     }
 
     /// <summary>Applies one explicit versioned change to this source. Do not combine it with Replace/Select
-    /// for the same source in this publication batch; put the final selection and all operations in change.</summary>
+    /// for the same source in this publication batch; put the final selection and all operations in change.
+    /// Update-only changes project final values at addressed indices. Use Reset/Replace when a shared
+    /// formatting policy changes, so unchanged payloads also receive the new projection.</summary>
     public UiPublicationBatch Apply<T>(UiPublishedCollection<T> source, UiCollectionChange<T> change)
     {
         ArgumentNullException.ThrowIfNull(change);
@@ -71,6 +73,11 @@ public sealed partial class UiPublicationBatch
         { Reject(source, "UIP013", "A collection version gap requires a full Reset."); return this; }
         try
         {
+            if (change.Operations.All(operation => operation is UiCollectionUpdate<T>))
+            {
+                StagePreparedUpdates(UiPublishedCollection<T>.PreparedUpdates.Create(source, previous, change));
+                return this;
+            }
             IReadOnlyList<T> values;
             if (change.IsReset) values = ((UiCollectionReset<T>)change.Operations[0]).Values;
             else

@@ -63,8 +63,10 @@ public sealed class CollectionPublicationPerformanceTests
         Assert.True(Assert.Single(source.ReadChanges(0).Changes).IsReset);
         Assert.True(double.IsFinite(elapsed[^1]));
         Assert.True(bytes > 0);
+        if (!reset) Assert.InRange(bytes, 1, Samples * 16L * 1024);
         // These are cold preparation allocations, not steady-state frame allocations. The
-        // unchanged 2/4 ms and 16 KiB frame budgets remain enforced by the steady runtime gates.
+        // update allocation bound also rejects a return to whole-collection projection/validation.
+        // The unchanged 2/4 ms and 16 KiB frame budgets remain enforced by the steady runtime gates.
 
         UiPublicationResult Publish(int iteration)
         {
