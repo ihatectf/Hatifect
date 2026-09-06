@@ -112,6 +112,58 @@ class SaveProvisioningTests(unittest.TestCase):
         self.assertEqual(SAVE.validate_fixture(self.isolated, self.smapi)[0], manifest)
         SAVE.validate_working_copy(self.isolated, secondary, manifest["runtimeId"], SAVE.flow_secondary_run_id(run_id))
 
+    def test_production_isolation_derives_two_world_names_and_preserves_every_other_byte(self) -> None:
+        original = b'<SaveGame xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><uniqueIDForThisGame>4242424242</uniqueIDForThisGame><other xsi:type="Thing">4242424242</other></SaveGame>'
+        self._bootstrap(save_xml=original)
+        manifest, golden = SAVE.validate_fixture(self.isolated, self.smapi)
+        before = SAVE._inventory(golden)
+        run_id = str(uuid.uuid4())
+        secondary_id = SAVE.flow_secondary_run_id(run_id)
+        scenario = "flow.chest.isolation"
+        primary = SAVE.prepare_working_copy(self.isolated, self.smapi, run_id, scenario)
+        first = SAVE._inventory(primary)
+        secondary = SAVE.prepare_flow_secondary(self.isolated, self.smapi, run_id, scenario)
+        self.assertEqual(primary.name, f"HatifectHarness{uuid.UUID(run_id).hex}_4242424242")
+        self.assertEqual(secondary.name, f"HatifectHarness{uuid.UUID(secondary_id).hex}_4242424243")
+        self.assertEqual((secondary / secondary.name).read_bytes(), original.replace(b">4242424242</uniqueID", b">4242424243</uniqueID"))
+        self.assertEqual((secondary / "SaveGameInfo").read_bytes(), b"save-info")
+        self.assertEqual(SAVE._inventory(primary), first)
+        self.assertEqual(SAVE._inventory(golden), before)
+        SAVE.validate_working_copy(self.isolated, secondary, manifest["runtimeId"], secondary_id, scenario, role="secondary")
+        for path, identity, wrong_scenario, role in ((primary, run_id, scenario, "secondary"),
+                (secondary, secondary_id, scenario, "primary"), (secondary, secondary_id, "flow.chest.roundtrip", "secondary"),
+                (secondary, run_id, scenario, "secondary"), (secondary, secondary_id, scenario, "arbitrary")):
+            with self.subTest(path=path, role=role, scenario=wrong_scenario), self.assertRaises(SAVE.SaveProvisioningError):
+                SAVE.cleanup_working_copy(self.isolated, path, manifest["runtimeId"], identity, wrong_scenario, role=role)
+        self.assertTrue(primary.exists())
+        self.assertTrue(secondary.exists())
+        SAVE.cleanup_working_copy(self.isolated, secondary, manifest["runtimeId"], secondary_id, scenario, role="secondary")
+        SAVE.cleanup_working_copy(self.isolated, primary, manifest["runtimeId"], run_id, scenario)
+        self.assertFalse(primary.exists())
+        self.assertFalse(secondary.exists())
+        self.assertEqual(SAVE._inventory(golden), before)
+
+    def test_production_secondary_collision_and_invalid_xml_preserve_existing_paths(self) -> None:
+        self._bootstrap(save_xml=b"not-xml")
+        run_id = str(uuid.uuid4())
+        scenario = "flow.chest.isolation"
+        primary = SAVE.prepare_working_copy(self.isolated, self.smapi, run_id, scenario)
+        before = SAVE._inventory(primary)
+        secondary_id = SAVE.flow_secondary_run_id(run_id)
+        secondary = primary.parent / SAVE._working_name(secondary_id, scenario, role="secondary")
+        with self.assertRaises(SAVE.SaveProvisioningError) as caught:
+            SAVE.prepare_flow_secondary(self.isolated, self.smapi, run_id, scenario)
+        self.assertEqual(caught.exception.assertion_id, "HARNESS-SAVE-IDENTITY")
+        self.assertFalse(secondary.exists())
+        self.assertEqual(SAVE._inventory(primary), before)
+        secondary.mkdir()
+        (secondary / "foreign").write_text("preserve")
+        with self.assertRaises(SAVE.SaveProvisioningError) as caught:
+            SAVE.prepare_flow_secondary(self.isolated, self.smapi, run_id, scenario)
+        self.assertEqual(caught.exception.assertion_id, "HARNESS-SAVE-COLLISION")
+        self.assertEqual((secondary / "foreign").read_text(), "preserve")
+        self.assertEqual(SAVE._inventory(primary), before)
+
     def test_flow_secondary_rejects_invalid_xml_and_cleans_only_new_copy(self) -> None:
         invalid = [b"not-xml", b"<SaveGame/>", b"<Farmer><uniqueIDForThisGame>4242424242</uniqueIDForThisGame></Farmer>", b"<SaveGame><uniqueIDForThisGame>1</uniqueIDForThisGame></SaveGame>", b"<SaveGame><nested><uniqueIDForThisGame>4242424242</uniqueIDForThisGame></nested></SaveGame>", b"<SaveGame><uniqueIDForThisGame>4242424242</uniqueIDForThisGame><uniqueIDForThisGame>4242424242</uniqueIDForThisGame></SaveGame>"]
         invalid.append(b"<SaveGame><!--<uniqueIDForThisGame>4242424242</uniqueIDForThisGame>--><uniqueIDForThisGame><![CDATA[4242424242]]></uniqueIDForThisGame></SaveGame>")

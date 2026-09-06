@@ -102,7 +102,7 @@ internal sealed class FlowHostAcceptance : IDisposable
 
     internal static AcceptanceRequest ReadAcceptanceRequest(IModHelper helper, string scenarioId)
     {
-        Require(scenarioId is "flow.route.basic" or "flow.save.isolation" or "flow.chest.roundtrip" or "flow.chest.crash-after-save" or "flow.chest.crash-after-delivery" or "flow.chest.crash-after-unsaved-extraction" or "flow.chest.crash-after-unsaved-delivery" or "flow.chest.cancellation" or "flow.chest.return" or "flow.chest.crash-after-return", "Unknown Flow acceptance scenario.");
+        Require(scenarioId is "flow.route.basic" or "flow.save.isolation" or "flow.chest.roundtrip" or "flow.chest.crash-after-save" or "flow.chest.crash-after-delivery" or "flow.chest.crash-after-unsaved-extraction" or "flow.chest.crash-after-unsaved-delivery" or "flow.chest.cancellation" or "flow.chest.return" or "flow.chest.crash-after-return" or "flow.chest.isolation", "Unknown Flow acceptance scenario.");
         Require(Required("HATIFECT_TEST_PROTOCOL_VERSION") == "1", "Unsupported harness protocol.");
         string runId = Required("HATIFECT_TEST_RUN_ID");
         Require(Guid.TryParseExact(runId, "D", out Guid parsed) && parsed.ToString("D") == runId,
@@ -113,7 +113,7 @@ internal sealed class FlowHostAcceptance : IDisposable
         Require(Full(helper.DirectoryPath) == Path.Combine(isolated, "Mods", "Hatifect", "Hatifect Flow"),
             "Flow acceptance requires the isolated Flow module directory.");
         Require(Path.GetDirectoryName(save) == Path.Combine(isolated, "config", "StardewValley", "Saves")
-            && Path.GetFileName(save) == (scenarioId is "flow.chest.roundtrip" or "flow.chest.crash-after-save" or "flow.chest.crash-after-delivery" or "flow.chest.crash-after-unsaved-extraction" or "flow.chest.crash-after-unsaved-delivery" or "flow.chest.cancellation" or "flow.chest.return" or "flow.chest.crash-after-return" ? "HatifectHarness" + parsed.ToString("N") + "_4242424242" : "HatifectHarness_" + parsed.ToString("N")) && Directory.Exists(save),
+            && Path.GetFileName(save) == (scenarioId is "flow.chest.roundtrip" or "flow.chest.crash-after-save" or "flow.chest.crash-after-delivery" or "flow.chest.crash-after-unsaved-extraction" or "flow.chest.crash-after-unsaved-delivery" or "flow.chest.cancellation" or "flow.chest.return" or "flow.chest.crash-after-return" or "flow.chest.isolation" ? "HatifectHarness" + parsed.ToString("N") + "_4242424242" : "HatifectHarness_" + parsed.ToString("N")) && Directory.Exists(save),
             "The save must be this run's provisioned isolated working copy.");
         Require(Path.GetFileName(artifact) == runId && Directory.Exists(artifact), "Artifact directory identity mismatch.");
         RejectLinks(isolated); RejectLinks(helper.DirectoryPath); RejectLinks(save); RejectLinks(artifact);
@@ -132,10 +132,12 @@ internal sealed class FlowHostAcceptance : IDisposable
             + HashFile(typeof(IModHelper).Assembly.Location) + "\n")[..24];
         ValidateSaveOwner(save, runId, runtimeId);
         string? secondSave = null;
-        if (scenarioId == "flow.save.isolation")
+        if (scenarioId is "flow.save.isolation" or "flow.chest.isolation")
         {
             string secondRunId = CompanionRunId(runId);
-            secondSave = Path.Combine(Path.GetDirectoryName(save)!, "HatifectHarness_" + Guid.Parse(secondRunId).ToString("N"));
+            secondSave = Path.Combine(Path.GetDirectoryName(save)!, scenarioId == "flow.chest.isolation"
+                ? "HatifectHarness" + Guid.Parse(secondRunId).ToString("N") + "_4242424243"
+                : "HatifectHarness_" + Guid.Parse(secondRunId).ToString("N"));
             ValidateSaveTree(secondSave);
             ValidateSaveOwner(secondSave, secondRunId, runtimeId);
         }
@@ -154,7 +156,7 @@ internal sealed class FlowHostAcceptance : IDisposable
             "The provisioned save ownership marker does not match the loaded runtime and run.");
     }
 
-    private static string CompanionRunId(string runId)
+    internal static string CompanionRunId(string runId)
     {
         int last = int.Parse(runId[^1..], NumberStyles.HexNumber, CultureInfo.InvariantCulture) ^ 1;
         return runId[..^1] + last.ToString("x", CultureInfo.InvariantCulture);
