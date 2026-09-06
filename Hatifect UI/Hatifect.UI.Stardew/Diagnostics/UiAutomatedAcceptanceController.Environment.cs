@@ -21,6 +21,7 @@ internal sealed partial class UiAutomatedAcceptanceController
 {
     private static readonly string[] EnvironmentCases = { "window", "terminal", "hud", "active-menu" };
     private readonly List<object> _environmentObservations = new();
+    private readonly List<object> _environmentAutomaticObservations = new();
     private readonly List<TerminalGenerationCompletion> _environmentOperations = new();
     private IUiSemanticReloadSession? _environmentSurface;
     private UiPortalHandle? _environmentPortal;
@@ -213,7 +214,8 @@ internal sealed partial class UiAutomatedAcceptanceController
         _advancingEnvironment = true;
         try
         {
-            if (++_environmentTicks > 600) throw new TimeoutException("Native environment action delivery timed out.");
+            if (++_environmentTicks > 600) throw new TimeoutException(_environmentAwaitingAutomatic
+                ? "Native automatic environment transition timed out." : "Native environment action delivery timed out.");
             if (!_environmentAwaitingAutomatic)
             {
                 if (!EnvironmentDelivered(_environmentRootOperation!, 51) || !EnvironmentDelivered(_environmentPopupOperation!, 52))
@@ -230,10 +232,12 @@ internal sealed partial class UiAutomatedAcceptanceController
                 _environmentAutomaticScale = Game1.options.uiScale;
                 _environmentAwaitingAutomatic = true;
                 _environmentTicks = 0;
+                CaptureAutomaticEnvironment("requested");
                 // Only observe on subsequent game ticks. No Refresh, Synchronize, Update or
                 // Pump call in this driver may apply the requested automatic transition.
                 return true;
             }
+            if (_environmentTicks is 1 or 600) CaptureAutomaticEnvironment("waiting");
             var surface = _environmentSurface!;
             UiEnvironment environment = ReloadField<UiEnvironment>(surface, "_environment");
             UiEnvironment expected = UiSemanticStardewEnvironmentCapture.Capture(UiSemanticStardewMenu.CaptureViewport(), UiSemanticTheme.HighContrast);
@@ -263,6 +267,19 @@ internal sealed partial class UiAutomatedAcceptanceController
             return true;
         }
         finally { _advancingEnvironment = false; }
+    }
+
+    private void CaptureAutomaticEnvironment(string phase)
+    {
+        var surface = _environmentSurface!;
+        UiEnvironment accepted = ReloadField<UiEnvironment>(surface, "_environment");
+        UiEnvironment native = UiSemanticStardewEnvironmentCapture.Capture(UiSemanticStardewMenu.CaptureViewport(), UiSemanticTheme.HighContrast);
+        _environmentAutomaticObservations.Add(new { kind = EnvironmentCases[_environmentCase], phase, ticks = _environmentTicks,
+            accepted, native, requestedScale = _environmentAutomaticScale, requestedInput = _environmentAutomaticInput,
+            requestedLocale = _environmentAutomaticLocale, sameAcceptedFrame = ReferenceEquals(accepted, _environmentBeforeAutomatic),
+            matchesNative = accepted == native, visible = surface.Visible, gameIsActiveNoOverlay = Game1.game1.IsActiveNoOverlay,
+            gamepadMode = Game1.options.gamepadMode.ToString(), gamepadControls = Game1.options.gamepadControls,
+            baseScale = Game1.options.baseUIScale, desiredScale = Game1.options.desiredUIScale, appliedScale = Game1.options.uiScale });
     }
 
     private bool EnvironmentDelivered(TerminalGenerationCompletion operation, int expected)

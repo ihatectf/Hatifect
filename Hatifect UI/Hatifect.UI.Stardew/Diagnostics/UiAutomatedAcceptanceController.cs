@@ -1307,7 +1307,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             visualMatrix = _visualCaptures.ToArray(),
             visualMatrixRestored = _visualSettingsRestored,
             retiredOverlayInput = _retiredOverlayInput,
-            environment = new { completed = _environmentCompleted, targets = _environmentObservations.ToArray(), operations = _environmentOperations.ToArray() },
+            environment = new { completed = _environmentCompleted, targets = _environmentObservations.ToArray(), operations = _environmentOperations.ToArray(), automatic = _environmentAutomaticObservations.ToArray() },
             actionReload = new { completed = _reloadCompleted, targets = _reloadObservations.ToArray(), failedCleanup = _reloadFailedCleanup.ToArray() },
             terminalGeneration = new { completed = _terminalGenerationCompleted, ownerThread = _generationOwnerThread, transitions = _terminalGenerationTransitions.ToArray(), actions = _terminalGenerationActions.ToArray() },
             actionPump = new { completed = _actionPumpCompleted, ownerThread = _actionOwnerThread, ticks = _actionTicks, probes = _actionProbes.ToArray() },
