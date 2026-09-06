@@ -414,6 +414,86 @@ public sealed class ActionBindingTests
     }
 
     [Fact]
+    public void FailedActionPresentationIsRetriedWithoutAnotherAvailabilityChange()
+    {
+        bool enabled = true;
+        var definition = Action((request, _) => new(UiActionResult<int>.Success(request)),
+            availability: () => enabled ? UiActionAvailability.Available :
+                UiActionAvailability.Disabled(new("target.missing", "Select a target."))).Bind(() => 1);
+        UiScene scene = SearchScene(definition);
+        var platform = new Platform();
+        var host = new UiHostRuntimeSession(scene, Viewport, platform,
+            new UiInteractionSnapshot(Focused: Assert.Single(Nodes(scene.Root).OfType<UiTextInputSceneNode>()).Id));
+        try
+        {
+            var frame = host.Frame;
+            var accessibility = host.Accessibility;
+            var enabledSurface = ButtonSurface(host, definition);
+            Assert.True(FindAccessibility(host, definition).Enabled);
+            enabled = false;
+            var error = new InvalidOperationException("action presentation text metrics");
+            platform.OnMeasure = () => throw error;
+            Assert.Same(error, Assert.Throws<InvalidOperationException>(() => host.PumpActions()));
+            Assert.Same(frame, host.Frame);
+            Assert.Same(accessibility, host.Accessibility);
+            Assert.False(host.Actions.CanInvoke(definition));
+
+            platform.OnMeasure = null;
+            Assert.True(host.PumpActions());
+            Assert.NotSame(frame, host.Frame);
+            Assert.False(FindAccessibility(host, definition).Enabled);
+            Assert.NotEqual(enabledSurface.Opacity, ButtonSurface(host, definition).Opacity);
+            Assert.False(host.PumpActions());
+        }
+        finally { host.Deactivate(); }
+    }
+
+    [Fact]
+    public void ActionPresentationCannotOverwriteASceneAcceptedByTextMetrics()
+    {
+        bool enabled = true;
+        var definition = Action((request, _) => new(UiActionResult<int>.Success(request)),
+            availability: () => enabled ? UiActionAvailability.Available :
+                UiActionAvailability.Disabled(new("target.missing", "Select a target."))).Bind(() => 1);
+        var successor = Action((request, _) => new(UiActionResult<int>.Success(request)), id: Id("successor")).Bind(() => 2);
+        UiScene scene = SearchScene(definition);
+        UiScene next = Scene(successor);
+        var platform = new Platform();
+        var host = new UiHostRuntimeSession(scene, Viewport, platform,
+            new UiInteractionSnapshot(Focused: Assert.Single(Nodes(scene.Root).OfType<UiTextInputSceneNode>()).Id));
+        try
+        {
+            int callbacks = 0;
+            Exception? rejection = null;
+            UiRenderFrame? acceptedFrame = null;
+            enabled = false;
+            platform.OnMeasure = () =>
+            {
+                callbacks++;
+                platform.OnMeasure = null;
+                rejection = Record.Exception(() => host.Update(next, Viewport));
+                if (rejection == null) acceptedFrame = host.Frame;
+            };
+            Assert.True(host.PumpActions());
+            Assert.Equal(1, callbacks);
+            if (rejection == null)
+            {
+                Assert.Same(next, host.Scene);
+                Assert.Same(acceptedFrame, host.Frame);
+                Assert.True(FindAccessibility(host, successor).Enabled);
+                Assert.DoesNotContain(host.Frame.Primitives, p => p.Node == definition.Id.Child("scene/button"));
+            }
+            else
+            {
+                Assert.IsType<InvalidOperationException>(rejection);
+                Assert.Same(scene, host.Scene);
+                Assert.False(FindAccessibility(host, definition).Enabled);
+            }
+        }
+        finally { host.Deactivate(); }
+    }
+
+    [Fact]
     public void RegistrationCapacityIsCurrentSetBoundedAndFailedCandidatesCannotLeakSlots()
     {
         using var owner = new UiHostActionBindings(() => 0);
@@ -442,6 +522,57 @@ public sealed class ActionBindingTests
         Assert.Equal(0, owner.Count);
         using (var candidate = owner.Prepare(RegistrationScene(new[] { extra }))) candidate.Commit();
         Assert.True(owner.Current.Invoke(extra));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedActionPresentationRetainsInputAndCanRecoverThroughARegularUpdate(bool update)
+    {
+        bool enabled = true;
+        var disabled = UiActionAvailability.Disabled(new("target.missing", "Select a target."));
+        var definition = Action((request, _) => new(UiActionResult<int>.Success(request)),
+            availability: () => enabled ? UiActionAvailability.Available : disabled).Bind(() => 1);
+        UiScene scene = SearchScene(definition);
+        UiSymbolId button = definition.Id.Child("scene/button");
+        UiSymbolId search = Assert.Single(Nodes(scene.Root).OfType<UiTextInputSceneNode>()).Id;
+        var platform = new Platform();
+        var host = new UiHostRuntimeSession(scene, Viewport, platform,
+            new UiInteractionSnapshot(Hovered: button, Pressed: button, Focused: search));
+        try
+        {
+            var input = host.Interactions.Snapshot;
+            var frame = host.Frame;
+            var accessibility = host.Accessibility;
+            var layout = host.Layout;
+            long version = host.AcceptedVersion;
+            enabled = false;
+            platform.OnMeasure = () => throw new InvalidOperationException("presentation metrics");
+
+            Assert.Throws<InvalidOperationException>(() => host.PumpActions());
+
+            Assert.Same(input, host.Interactions.Snapshot);
+            Assert.Same(frame, host.Frame);
+            Assert.Same(accessibility, host.Accessibility);
+            Assert.Same(layout, host.Layout);
+            Assert.Equal(version, host.AcceptedVersion);
+            platform.OnMeasure = null;
+            if (update)
+            {
+                var changed = host.Update(scene, Viewport);
+                Assert.True(changed.FrameChanged);
+                Assert.False(changed.LayoutChanged);
+            }
+            else Assert.True(host.PumpActions());
+            Assert.Null(host.Interactions.Snapshot.Hovered);
+            Assert.Null(host.Interactions.Snapshot.Pressed);
+            Assert.Equal(search, host.Interactions.Snapshot.Focused);
+            Assert.False(FindAccessibility(host, definition).Enabled);
+            Assert.NotSame(frame, host.Frame);
+            Assert.Same(layout, host.Layout);
+            Assert.False(host.PumpActions());
+        }
+        finally { host.Deactivate(); }
     }
 
     [Fact]
@@ -754,6 +885,16 @@ public sealed class ActionBindingTests
         return new UiSceneComposer(UiThemePresets.Dark(), registry, catalog).Compose(invocation,
             Assert.IsType<UiVisualDefinition>(compilation.Definition),
             focused ? new UiInteractionSnapshot(Focused: definition.Id.Child("scene/button")) : null);
+    }
+
+    private static UiScene SearchScene(UiActionDefinition action)
+    {
+        UiSymbolId id = Id("window");
+        var experience = new UiExperienceBuilder(id, "Host actions")
+            .Search("Search", new UiState<string>("x")).Actions("Actions", action).Build();
+        var registry = new UiRegistryBuilder().Window(id, "Host actions", () => experience).Freeze();
+        var invocation = new UiInvocationService(registry).Invoke(id, UiPresentationProfiles.Wide);
+        return new UiSceneComposer(UiThemePresets.Dark(), registry).Compose(invocation);
     }
 
     private static UiScene Scene(params UiActionDefinition[] actions)

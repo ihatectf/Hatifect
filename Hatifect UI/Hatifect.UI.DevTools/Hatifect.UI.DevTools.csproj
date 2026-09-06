@@ -3,7 +3,7 @@
     <AssemblyName>Hatifect.UI.DevTools</AssemblyName>
     <RootNamespace>Hatifect.UI.DevTools</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.0.0-alpha.42</Version>
+    <Version>1.0.0-alpha.43</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Hatifect.UI.Experience/Hatifect.UI.Experience.csproj" />

@@ -135,7 +135,7 @@ class ReleaseSourceTests(ReleaseFixture):
         release_tool.verify_source(self.contract, ROOT)
         flow = self.modules['Hatifect.Flow']
         self.assertIn('Hatifect.Flow.UI.Semantic.dll', flow['AllowedRootFiles'])
-        self.assertEqual(flow['Dependencies'], [{'UniqueID': 'Hatifect.UI', 'IsRequired': True, 'MinimumVersion': '1.0.0-alpha.42'}])
+        self.assertEqual(flow['Dependencies'], [{'UniqueID': 'Hatifect.UI', 'IsRequired': True, 'MinimumVersion': '1.0.0-alpha.43'}])
 
     def test_source_validation_needs_current_projects_and_content_without_history_or_binaries(self) -> None:
         release_tool.verify_source(self.contract, self.root)

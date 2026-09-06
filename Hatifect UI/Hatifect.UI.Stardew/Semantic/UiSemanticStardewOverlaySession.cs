@@ -42,6 +42,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     private bool _closedNotified;
     private bool _retireRequested;
     private bool _disposing;
+    private bool _hiding;
     private bool _disposed;
     private bool _pointerSynchronized;
     private int _pointerX;
@@ -131,7 +132,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
 
     public void Hide()
     {
-        if (_disposed || _retireRequested || !Visible) return;
+        if (_disposed || !Visible) return;
         HideCore(notifyClosed: true);
     }
 
@@ -225,6 +226,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     public void Dispose()
     {
         if (_disposed || _disposing) return;
+        _host?.Session.Root.RequireOwner();
         _retireRequested = true;
         _disposing = true;
         try
@@ -311,20 +313,34 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     private void HideCore(bool notifyClosed, bool restoreKeyboard = true)
     {
         if (!Visible) return;
-        var failures = new List<Exception>();
-        try { _keyboard.Release(restoreKeyboard && (!_events.IsCurrentScreen || OwnsCurrentMenuContext())); }
-        catch (Exception error) { failures.Add(error); }
-        try { _events.Dispose(); }
-        catch (Exception error) { failures.Add(error); }
-        if (failures.Count > 0)
-            throw new AggregateException("Semantic Stardew overlay hide failed.", failures);
+        if (_hiding) return;
+        Host.Session.Root.RequireOwner();
+        _hiding = true;
+        try
+        {
+            // A real close is terminal even if event/keyboard cleanup needs a retry. A failed
+            // first Show uses notifyClosed:false and can retry its not-yet-visible candidate.
+            if (notifyClosed || _retireRequested)
+            {
+                _retireRequested = true;
+                Host.Session.Deactivate();
+            }
+            var failures = new List<Exception>();
+            try { _keyboard.Release(restoreKeyboard && (!_events.IsCurrentScreen || OwnsCurrentMenuContext())); }
+            catch (Exception error) { failures.Add(error); }
+            try { _events.Dispose(); }
+            catch (Exception error) { failures.Add(error); }
+            if (failures.Count > 0)
+                throw new AggregateException("Semantic Stardew overlay hide failed.", failures);
 
-        Visible = false;
-        _pointerSynchronized = false;
-        _boundActiveMenu = null;
-        if (notifyClosed) NotifyClosed(failures);
-        if (failures.Count > 0)
-            throw new AggregateException("Semantic Stardew overlay hide failed.", failures);
+            Visible = false;
+            _pointerSynchronized = false;
+            _boundActiveMenu = null;
+            if (notifyClosed) NotifyClosed(failures);
+            if (failures.Count > 0)
+                throw new AggregateException("Semantic Stardew overlay hide failed.", failures);
+        }
+        finally { _hiding = false; }
     }
 
     private void NotifyClosed(ICollection<Exception> failures)
@@ -337,11 +353,21 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
 
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
-        if (!CanRouteInput()) return;
+        if (!_events.IsCurrentScreen || _retireRequested || !Visible) return;
+        if (_renderLayer == UiSemanticStardewOverlayRenderLayer.ActiveMenu && !OwnsCurrentMenuContext())
+        {
+            RetireLostMenuContext();
+            return;
+        }
         var sample = BeginAcceptanceSample();
-        bool reflowed = ReflowIfViewportChanged();
-        SynchronizePointer(force: reflowed);
-        SyncTextInputOwnership();
+        // HUD occlusion by a native menu pauses input/draw, not owning-thread completions.
+        Host.Session.PumpActions();
+        if (CanRouteInput())
+        {
+            bool reflowed = ReflowIfViewportChanged();
+            SynchronizePointer(force: reflowed);
+            SyncTextInputOwnership();
+        }
         sample.Complete();
     }
 

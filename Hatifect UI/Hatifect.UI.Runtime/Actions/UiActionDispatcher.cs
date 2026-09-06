@@ -19,6 +19,7 @@ internal sealed class UiActionDispatcher : IDisposable
     private readonly int _thread = Environment.CurrentManagedThreadId;
     private Dictionary<UiSymbolId, IUiActionExecution> _actions = new();
     private bool _pumping;
+    private bool _retired;
     internal UiActionDispatcher(Guid sessionId, Guid generationId)
     {
         if (sessionId == Guid.Empty) throw new ArgumentException("A session identity is required.", nameof(sessionId));
@@ -85,10 +86,17 @@ internal sealed class UiActionDispatcher : IDisposable
     internal bool Contains(IUiActionExecution execution)
         => _actions.TryGetValue(execution.Id, out var current) && ReferenceEquals(current, execution);
 
+    internal void FenceRetirement()
+    {
+        RequireOwner();
+        IsDisposed = true;
+    }
+
     public void Dispose()
     {
         RequireOwner();
-        if (IsDisposed) return;
+        if (_retired) return;
+        _retired = true;
         IsDisposed = true;
         foreach (IUiActionExecution execution in _actions.Values) execution.Retire();
         if (!_pumping) _actions.Clear();

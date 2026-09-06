@@ -95,6 +95,13 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             "semantic.input.native.text",
             "semantic.input.native.backspace"
         }, includeInAggregate: false),
+        new("semantic.actions.pump", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.ActionPump, true, new[]
+        {
+            "semantic.actions.pump.menu",
+            "semantic.actions.pump.reopen",
+            "semantic.actions.pump.hud",
+            "semantic.actions.pump.context"
+        }, includeInAggregate: false),
         new("semantic.locale-scale-theme", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.LocaleScaleTheme, true, new[]
         {
             "semantic.locale.en",
@@ -317,6 +324,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        StopActionPump();
         StopNativeInput();
         RestoreVisualSettingsAfterFailure();
         _helper.Events.GameLoop.UpdateTicked -= OnUpdateTicked;
@@ -421,6 +429,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             return;
         }
         if (_awaitingReturnedToTitle) return;
+        if (AdvanceActionPump()) return;
         if (AdvanceNativeInput()) return;
         if (AdvanceVisualMatrix()) return;
         if (_performanceActive
@@ -505,6 +514,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         catch (Exception error)
         {
             RetainTerminalFailure("HARNESS-AUTOMATION-EXECUTION-EXCEPTION", error);
+            StopActionPump();
             StopNativeInput();
             RestoreVisualSettingsAfterFailure();
             WriteDiagnostics();
@@ -572,6 +582,9 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
                 return false;
             case AcceptanceScenarioExecution.LocaleScaleTheme:
                 BeginVisualMatrix();
+                return true;
+            case AcceptanceScenarioExecution.ActionPump:
+                BeginActionPump();
                 return true;
             case AcceptanceScenarioExecution.NativeInput:
                 BeginNativeInput();
@@ -642,6 +655,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         _returnToTitleContribution = null;
         _verifyReturnToTitleContribution = false;
         RetainTerminalFailure("HARNESS-AUTOMATION-LIFECYCLE-EXCEPTION", error);
+        StopActionPump();
         StopNativeInput();
         RestoreVisualSettingsAfterFailure();
         (_saveEnumerator as IDisposable)?.Dispose();
@@ -1201,6 +1215,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             },
             visualMatrix = _visualCaptures.ToArray(),
             visualMatrixRestored = _visualSettingsRestored,
+            actionPump = new { completed = _actionPumpCompleted, ownerThread = _actionOwnerThread, ticks = _actionTicks, probes = _actionProbes.ToArray() },
             nativeInput = new { completed = _nativeInputCompleted, expectedText = _nativeExpectedText, lastObservation = _nativeLastObservation, captures = _nativeCaptures.ToArray() },
             terminalError = _terminalFailure == null ? null : new
             {
@@ -1231,6 +1246,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         Overlay,
         Input,
         NativeInput,
+        ActionPump,
         LocaleScaleTheme,
         Performance,
         Contribution

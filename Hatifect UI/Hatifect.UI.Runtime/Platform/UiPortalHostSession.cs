@@ -94,8 +94,8 @@ internal sealed class UiPortalHandle : IDisposable
     public void Dispose()
     {
         Action? close = _close;
-        _close = null;
         close?.Invoke();
+        _close = null;
     }
 }
 
@@ -103,22 +103,31 @@ internal sealed class UiPortalHandle : IDisposable
 /// Owns one root runtime and its ordered portal stack. The platform normalizes input and supplies
 /// geometry; this session owns ancestry, modality, focus isolation, dismissal, and paint order.
 /// </summary>
-internal sealed class UiPortalHostSession : IUiPlatformInputSession
+internal sealed class UiPortalHostSession : IUiPlatformInputSession, IUiHostSceneOwner
 {
     private readonly IUiPlatformBridge _platform;
     private readonly List<PortalEntry> _portals = new();
+    private PortalEntry[] _portalSnapshot = Array.Empty<PortalEntry>();
     private long _nextGeneration;
     private bool _active = true;
+    private bool _pumping;
+    private bool _updating;
+    private PortalEntry[] _updateRetirements = Array.Empty<PortalEntry>();
 
     // An action can retire its host while dispatch is still unwinding. Stop post-action
     // composition before its owner and platform resources are released.
     internal void Deactivate()
     {
+        Root.RequireOwner();
         if (!_active) return;
         _active = false;
-        Root.Deactivate();
-        foreach (PortalEntry portal in _portals) portal.Runtime.Deactivate();
+        PortalEntry[] retiring = _portalSnapshot;
+        Root.FenceRetirement();
+        foreach (PortalEntry portal in retiring) portal.Runtime.FenceRetirement();
         _portals.Clear();
+        _portalSnapshot = Array.Empty<PortalEntry>();
+        Root.Deactivate();
+        foreach (PortalEntry portal in retiring) portal.Runtime.Deactivate();
     }
 
     public UiPortalHostSession(
@@ -129,10 +138,30 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
         Func<UiInteractionSnapshot, UiScene>? composeInteraction = null)
     {
         _platform = platform ?? throw new ArgumentNullException(nameof(platform));
-        Root = new UiHostRuntimeSession(root, placement, platform, interaction, composeInteraction);
+        Root = new UiHostRuntimeSession(root, placement, platform, interaction, composeInteraction, sceneOwner: this);
     }
 
     public UiHostRuntimeSession Root { get; }
+    internal bool PumpActions()
+    {
+        Root.RequireOwner();
+        if (!_active || _pumping || _updating) return false;
+        _pumping = true;
+        // Membership changes replace this snapshot. Children presented by a completion are
+        // first eligible on the next tick; removed children are already fenced before cleanup.
+        PortalEntry[] portals = _portalSnapshot;
+        try
+        {
+            bool changed = Root.PumpActions();
+            foreach (PortalEntry portal in portals)
+            {
+                if (!_active) break;
+                if (portal.Runtime.IsActive) changed |= portal.Runtime.PumpActions();
+            }
+            return changed;
+        }
+        finally { _pumping = false; }
+    }
     internal UiHostRuntimePerformanceSnapshot Performance
     {
         get
@@ -179,7 +208,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
             request.Scene,
             request.Placement,
             _platform,
-            composeInteraction: request.ComposeInteraction);
+            composeInteraction: request.ComposeInteraction, sceneOwner: this);
         try
         {
             EnsureCurrentOwner();
@@ -190,6 +219,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
             }
             EnsureCurrentOwner();
             _portals.Add(new PortalEntry(request, runtime, generation));
+            _portalSnapshot = _portals.ToArray();
             return new UiPortalHandle(() => Close(request.Id, generation));
         }
         catch
@@ -211,9 +241,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
     public UiHostUpdate UpdateRoot(UiScene scene, UiHostPlacementContext placement)
     {
         EnsureActive();
-        UiHostUpdate update = Root.Update(scene, placement);
-        RetireOrphans();
-        return update;
+        return Root.Update(scene, placement);
     }
 
     public UiHostUpdate UpdatePortal(UiSymbolId id, UiScene scene, UiHostPlacementContext placement)
@@ -226,18 +254,37 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
         UiHostUpdate update = entry.Runtime.Update(scene, placement);
         entry.Request = new UiPortalRequest(
             id, entry.Request.Owner, scene, placement, entry.Request.ComposeInteraction);
-        RetireOrphans();
         return update;
+    }
+
+    void IUiHostSceneOwner.BeginSceneUpdate()
+    {
+        EnsureActive();
+        _updating = true;
+    }
+
+    void IUiHostSceneOwner.FenceAcceptedScene() => _updateRetirements = DetachOrphans();
+
+    void IUiHostSceneOwner.EndSceneUpdate()
+    {
+        // Detached entries are absent from Deactivate/Close. Retain this local set even
+        // when a removed owner's cancellation retires the host or closes another tree.
+        PortalEntry[] retiring = _updateRetirements;
+        _updateRetirements = Array.Empty<PortalEntry>();
+        try { foreach (PortalEntry entry in retiring) entry.Runtime.Deactivate(); }
+        finally { _updating = false; }
     }
 
     public bool Close(UiSymbolId id)
     {
+        Root.RequireOwner();
         PortalEntry? entry = _portals.FirstOrDefault(item => item.Request.Id == id);
         return entry != null && Close(id, entry.Generation);
     }
 
     public UiPortalDispatch PressPointer(UiPoint point)
     {
+        EnsureActive();
         for (int index = _portals.Count - 1; index >= 0; index--)
         {
             PortalEntry entry = _portals[index];
@@ -261,6 +308,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     public UiPortalDispatch MovePointer(UiPoint point)
     {
+        EnsureActive();
         for (int index = _portals.Count - 1; index >= 0; index--)
         {
             PortalEntry entry = _portals[index];
@@ -278,6 +326,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     public UiPortalDispatch ReleasePointer(UiPoint point)
     {
+        EnsureActive();
         for (int index = _portals.Count - 1; index >= 0; index--)
         {
             PortalEntry entry = _portals[index];
@@ -307,6 +356,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     public UiPortalDispatch Cancel()
     {
+        EnsureActive();
         if (_portals.Count == 0)
         {
             UiInteractionUpdate root = Root.Interactions.Cancel();
@@ -343,6 +393,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     public UiPortalScrollDispatch ScrollAt(UiPoint point, float delta)
     {
+        EnsureActive();
         for (int index = _portals.Count - 1; index >= 0; index--)
         {
             PortalEntry entry = _portals[index];
@@ -365,31 +416,31 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     private bool Close(UiSymbolId id, long generation)
     {
+        Root.RequireOwner();
         int root = _portals.FindIndex(item => item.Request.Id == id && item.Generation == generation);
         if (root < 0) return false;
-        var retiring = new HashSet<UiSymbolId> { id };
-        bool changed;
-        do
-        {
-            changed = false;
-            foreach (PortalEntry entry in _portals)
-            {
-                if (entry.Request.Owner.Portal is not { } owner || !retiring.Contains(owner)) continue;
-                changed |= retiring.Add(entry.Request.Id);
-            }
-        } while (changed);
-        _portals.RemoveAll(entry =>
-        {
-            if (!retiring.Contains(entry.Request.Id)) return false;
-            entry.Runtime.Deactivate();
-            return true;
-        });
+        PortalEntry[] retiring = DetachPortals(new HashSet<UiSymbolId> { id });
+        foreach (PortalEntry entry in retiring) entry.Runtime.Deactivate();
         return true;
+    }
+
+    private PortalEntry[] DetachPortals(HashSet<UiSymbolId> retiring)
+    {
+        // Present requires an existing owner, so every ancestor precedes its descendants.
+        foreach (PortalEntry entry in _portalSnapshot)
+            if (entry.Request.Owner.Portal is { } owner && retiring.Contains(owner))
+                retiring.Add(entry.Request.Id);
+        PortalEntry[] detached = _portalSnapshot.Where(entry => retiring.Contains(entry.Request.Id)).ToArray();
+        foreach (PortalEntry entry in detached) entry.Runtime.FenceRetirement();
+        _portals.RemoveAll(entry => retiring.Contains(entry.Request.Id));
+        _portalSnapshot = _portals.ToArray();
+        return detached;
     }
 
     private UiPortalDispatch DispatchToKeyboardOwner(
         Func<UiHostRuntimeSession, UiInteractionUpdate> dispatch)
     {
+        EnsureActive();
         ArgumentNullException.ThrowIfNull(dispatch);
         PortalEntry? entry = _portals.Count == 0 ? null : _portals[^1];
         UiHostRuntimeSession runtime = entry?.Runtime ?? Root;
@@ -418,20 +469,15 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
             runtime.RefreshTextEditingVisuals();
     }
 
-    private void RetireOrphans()
+    private PortalEntry[] DetachOrphans()
     {
-        bool changed;
-        do
+        HashSet<UiSymbolId>? retiring = null;
+        foreach (PortalEntry entry in _portalSnapshot)
         {
-            changed = false;
-            for (int index = _portals.Count - 1; index >= 0; index--)
-            {
-                PortalEntry entry = _portals[index];
-                if (OwnerExists(entry.Request.Owner)) continue;
-                Close(entry.Request.Id, entry.Generation);
-                changed = true;
-            }
-        } while (changed);
+            if (OwnerExists(entry.Request.Owner)) continue;
+            (retiring ??= new HashSet<UiSymbolId>()).Add(entry.Request.Id);
+        }
+        return retiring == null ? Array.Empty<PortalEntry>() : DetachPortals(retiring);
     }
 
     private bool OwnerExists(UiPortalOwner owner)
@@ -446,7 +492,9 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession
 
     private void EnsureActive()
     {
+        Root.RequireOwner();
         if (!_active) throw new ObjectDisposedException(nameof(UiPortalHostSession));
+        if (_updating) throw new InvalidOperationException("The portal graph cannot be mutated during a scene update.");
     }
 
     private PortalEntry Find(UiSymbolId id)

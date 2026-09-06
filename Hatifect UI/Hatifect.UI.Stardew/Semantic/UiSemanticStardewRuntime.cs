@@ -446,6 +446,7 @@ internal sealed class UiSemanticStardewHost : IDisposable
     public void Dispose()
     {
         if (_retiring) return;
+        Session.Root.RequireOwner();
         UiSemanticStardewRuntime? runtime = _runtime;
         if (runtime == null && _owner == null) return;
         _retireRequested = true;
@@ -466,6 +467,7 @@ internal sealed class UiSemanticStardewHost : IDisposable
     internal void Retire()
     {
         if (_retiring) return;
+        Session.Root.RequireOwner();
         _retireRequested = true;
         Session.Deactivate();
         _retiring = true;

@@ -461,6 +461,20 @@
       }
     },
     {
+      "id": "semantic.actions.pump",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.actions.pump.menu",
+        "semantic.actions.pump.reopen",
+        "semantic.actions.pump.hud",
+        "semantic.actions.pump.context"
+      ],
+      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+    },
+    {
       "id": "semantic.locale-scale-theme",
       "kind": "ui",
       "requiresSave": true,
