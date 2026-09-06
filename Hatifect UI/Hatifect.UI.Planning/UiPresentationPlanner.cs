@@ -8,6 +8,12 @@ namespace Hatifect.UI.Planning;
 /// <summary>Pure deterministic Experience -> PresentationPlan materialization.</summary>
 public sealed class UiPresentationPlanner
 {
+    // Bounded foundation alternatives, in stable policy order. A plan never retains prior traces.
+    private static readonly string[] FoundationPresentations =
+    {
+        "Gallery", "List", "TextField", "FilterBar", "Value", "Side", "Sheet", "Route",
+        "Form", "Status", "NavigationList", "ActionBar"
+    };
     private readonly UiSemanticCatalog _catalog;
 
     public UiPresentationPlanner(UiSemanticCatalog? catalog = null)
@@ -23,6 +29,12 @@ public sealed class UiPresentationPlanner
 
         PlanIndexes indexes = PlanIndexes.Create(experience, presentation);
         var globalDecisions = new List<UiPlanDecision>();
+        if (host.Environment is { } environment)
+        {
+            if (host.Profile != UiPresentationProfiles.Resolve(environment).Id)
+                throw new ArgumentException("The selected profile contradicts the captured environment.", nameof(host));
+            ExplainEnvironment(environment, host.Profile, globalDecisions);
+        }
         UiSymbolId pattern = ResolvePattern(indexes, globalDecisions);
         var planned = new List<UiPlannedElement>(experience.Elements.Count);
         var collectionRecipes = new Dictionary<UiSymbolId, UiPlannedCollectionRecipe>();
@@ -92,7 +104,7 @@ public sealed class UiPresentationPlanner
         }
 
         UiSymbolId presentation = ResolvePresentation(element, host, indexes, decisions);
-        return new UiPlannedElement(element.Id, region, presentation, decisions.ToArray());
+        return new UiPlannedElement(element.Id, region, presentation, Array.AsReadOnly(decisions.ToArray()));
     }
 
     private UiSymbolId ResolvePresentation(
@@ -105,6 +117,7 @@ public sealed class UiPresentationPlanner
             ?? indexes.FindAssignment(element.Id, "view", profile: null);
         if (explicitView?.Value is UiSymbolValue explicitValue)
         {
+            RequireCoverage(element, explicitValue, explicitView.Provenance, decisions);
             decisions.Add(new UiPlanDecision(UiPlanDecisionCode.ExplicitPresentation, element.Id,
                 $"Presentation '{explicitValue.Name}' comes from the active profile matrix.", explicitView.Provenance));
             return explicitValue.Symbol;
@@ -115,19 +128,87 @@ public sealed class UiPresentationPlanner
             ?? indexes.FindAssignment(element.Id, compact ? "fallback" : "prefer", profile: null);
         if (preferred?.Value is UiSymbolValue preferredValue)
         {
+            RequireCoverage(element, preferredValue, preferred.Provenance, decisions);
             decisions.Add(new UiPlanDecision(UiPlanDecisionCode.ProfileAdaptation, element.Id,
                 $"Presentation '{preferredValue.Name}' was selected by {(compact ? "fallback" : "preference")} policy.", preferred.Provenance));
             return preferredValue.Symbol;
         }
 
         string name = DefaultPresentation(element, host.Profile, indexes);
-        if (!_catalog.TryGetPresentation(name, out UiPresentationSymbol? presentation) || presentation == null)
-            throw new InvalidOperationException($"Foundation presentation '{name}' is not registered.");
+        UiPresentationSymbol? presentation = TryCover(element, name, decisions);
+        if (presentation == null)
+        {
+            foreach (string alternative in FoundationPresentations)
+            {
+                if (alternative == name) continue;
+                presentation = TryCover(element, alternative, decisions);
+                if (presentation == null) continue;
+                decisions.Add(new UiPlanDecision(UiPlanDecisionCode.CoverageFallback, element.Id,
+                    $"Presentation '{alternative}' covers every required capability after '{name}' was rejected.", null)
+                    { Candidate = presentation.Id });
+                return presentation.Id;
+            }
+            throw new UiPlanningException(element.Id, decisions.ToArray());
+        }
         decisions.Add(new UiPlanDecision(
             IsAdaptive(element, host.Profile, indexes) ? UiPlanDecisionCode.ProfileAdaptation : UiPlanDecisionCode.CapabilityPresentation,
             element.Id,
             $"Presentation '{name}' was selected from capabilities and profile.", null));
         return presentation.Id;
+    }
+
+    private void RequireCoverage(UiSemanticElementDefinition element, UiSymbolValue value,
+        UiSourceProvenance source, List<UiPlanDecision> decisions)
+    {
+        UiPresentationSymbol? candidate = TryCover(element, value.Name, decisions, source);
+        if (candidate != null && candidate.Id == value.Symbol) return;
+        if (candidate != null)
+            decisions.Add(new UiPlanDecision(UiPlanDecisionCode.PresentationRejected, element.Id,
+                $"Presentation '{value.Name}' does not match the catalog identity '{value.Symbol}'.", source)
+                { Candidate = value.Symbol });
+        throw new UiPlanningException(element.Id, decisions.ToArray());
+    }
+
+    private UiPresentationSymbol? TryCover(UiSemanticElementDefinition element, string name,
+        List<UiPlanDecision> decisions, UiSourceProvenance? source = null)
+    {
+        if (!_catalog.TryGetPresentation(name, out UiPresentationSymbol? candidate) || candidate == null)
+        {
+            decisions.Add(new UiPlanDecision(UiPlanDecisionCode.PresentationRejected, element.Id,
+                $"Presentation '{name}' is not registered.", source));
+            return null;
+        }
+
+        List<string>? missing = null;
+        foreach (UiCapability capability in element.Capabilities)
+        {
+            if (candidate.SupportedCapabilities.Contains(capability.Id)) continue;
+            (missing ??= new List<string>()).Add(capability.Id.ToString());
+        }
+        if (missing == null) return candidate;
+        missing.Sort(StringComparer.Ordinal);
+        decisions.Add(new UiPlanDecision(UiPlanDecisionCode.PresentationRejected, element.Id,
+            $"Presentation '{name}' cannot preserve required capabilities: {string.Join(", ", missing)}.", source)
+            { Candidate = candidate.Id });
+        return null;
+    }
+
+    private static void ExplainEnvironment(UiEnvironment environment, UiSymbolId profile,
+        List<UiPlanDecision> decisions)
+    {
+        var origins = environment.Origins;
+        Add("viewport", FormattableString.Invariant($"{environment.Viewport.Width} x {environment.Viewport.Height} logical UI units"), origins.Viewport);
+        Add("scale", FormattableString.Invariant($"{environment.Scale}"), origins.Scale);
+        Add("input", environment.InputMode.ToString(), origins.InputMode);
+        Add("locale", environment.Locale, origins.Locale);
+        Add("theme", environment.Theme.ToString(), origins.Theme);
+        Add("accessibility", $"ReducedMotion={environment.Accessibility.ReducedMotion}, HighContrast={environment.Accessibility.HighContrast}", origins.Accessibility);
+        decisions.Add(new UiPlanDecision(UiPlanDecisionCode.EnvironmentProfile, null,
+            $"Profile '{profile}' uses controller input first, otherwise logical viewport width (<720 Compact, <1100 Medium, otherwise Wide). Scale is not applied twice.", null));
+
+        void Add(string facet, string value, string origin)
+            => decisions.Add(new UiPlanDecision(UiPlanDecisionCode.EnvironmentFacet, null,
+                $"{facet} = {value}; origin: {origin}.", null));
     }
 
     private UiPlannedCollectionRecipe ResolveCollectionRecipe(
