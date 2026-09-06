@@ -1277,6 +1277,12 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             terminalOpen = _dogfood.IsOpen,
             overlayVisible = _dogfood.IsOverlayVisible,
             fadeToBlackAlpha = Game1.fadeToBlackAlpha,
+            gamePaused = Game1.paused,
+            gameIsActiveNoOverlay = Game1.game1.IsActiveNoOverlay,
+            pauseWhenOutOfFocus = Game1.options?.pauseWhenOutOfFocus,
+            gameMode = Game1.gameMode,
+            worldReady = Context.IsWorldReady,
+            multiplayerMode = Game1.multiplayerMode,
             menuBounds = _dogfood.AutomationMenu is { } menu ? new
             {
                 x = menu.xPositionOnScreen,
