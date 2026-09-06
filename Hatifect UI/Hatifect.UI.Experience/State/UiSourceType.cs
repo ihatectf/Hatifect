@@ -40,7 +40,7 @@ public sealed class UiValidationResult
 }
 
 /// <summary>Observes the collection's existing selection; it never creates a second selection state.</summary>
-public sealed class UiSelectionSource : IUiSemanticSource<UiSymbolId?>
+public sealed class UiSelectionSource : IUiSemanticSource<UiSymbolId?>, IUiPublicationReadableSource
 {
     private readonly IUiSelectableCollectionSource _collection;
     public UiSelectionSource(IUiSelectableCollectionSource collection)
@@ -48,6 +48,15 @@ public sealed class UiSelectionSource : IUiSemanticSource<UiSymbolId?>
     public UiSymbolId? Value => _collection.SelectedItemId;
     public Type ValueType => typeof(UiSymbolId?);
     public object? UntypedValue => Value;
+    public UiPublication? Publication => (_collection as IUiPublicationReadableSource)?.Publication;
+    public IUiSemanticSource ReadSnapshot(UiPublicationView view)
+    {
+        if (_collection is not IUiPublicationReadableSource source || source.Publication is null)
+            throw new InvalidOperationException("This selection does not have a publication owner.");
+        if (source.ReadSnapshot(view) is not IUiSemanticCollectionSnapshot snapshot)
+            throw new InvalidOperationException("The publication source did not return a collection snapshot.");
+        return new UiPublishedValueSnapshot<UiSymbolId?>(snapshot.SelectedItemId, snapshot.Version);
+    }
     public event Action? Changed { add => _collection.Changed += value; remove => _collection.Changed -= value; }
 }
 

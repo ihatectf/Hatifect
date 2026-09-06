@@ -79,7 +79,7 @@ var experience = new UiExperienceBuilder(owner, "Catalog")
 
 Существующий `UiFormState` экспортирует `IReadOnlyList<UiSemanticFormField>`; `UiSourceTypes.Form(schema)` проверяет именно этот контракт. `UiValidationResult` хранит immutable schema/messages. `Submission.Mapping` явно описывает output consumer adapter; U01 не исполняет этот adapter и не добавляет вымышленный `UiFormSnapshot` или async dispatch. Их дальнейший контракт относится к U02/U03. Новые typed enum/record filters являются auxiliary sources до появления подходящего editable presentation; предъявленный Filter должен иметь поддержанный string source.
 
-Flow Network использует независимые ID/alias/локализованные labels, typed immutable parcel collection, owner selection, nullable details payload и query/filter slots. Добавление Browse для Query/Filter включает действующую framework policy: History выбирает Gallery в Wide/Medium, List в Compact/Controller, generated Network pattern становится MasterDetail. CA объявляет Mode и Category как разные required inputs Storages, две owner selection relations и Open/Favorite ActionTarget. Пассивное старое CA Mode presentation пока использует совместимый opaque overload; private bridge удаляется в U07/I01 после появления typed choice authoring. Последовательные consumer уведомления ещё не являются atomic publication U02.
+Flow Network использует независимые ID/alias/локализованные labels, typed immutable parcel collection, owner selection, nullable details payload и query/filter slots. Добавление Browse для Query/Filter включает действующую framework policy: History выбирает Gallery в Wide/Medium, List в Compact/Controller, generated Network pattern становится MasterDetail. CA объявляет Mode и Category как разные required inputs Storages, две owner selection relations и Open/Favorite ActionTarget. Пассивное старое CA Mode presentation пока использует совместимый opaque overload; private bridge удаляется в U07/I01 после появления typed choice authoring. CA перешёл на atomic publication в U02-a; последовательные Flow notifications ещё ожидают миграцию оставшейся части U02.
 
 Legacy canonical opaque names, включая ранее допустимые `0`, `A/B`, `A..B`, сохраняют ID и v1 wire. Новые explicit aliases используют dotted identifier grammar. Для независимых IDs, labels или graph metadata exporter выбирает v2; `[1,2]` объявляется tooling server до работы с документами. Неправильный graph не заменяет прежние bindings при refresh. Подробнее: [UI_AUTHORING.md](UI_AUTHORING.md).
 
@@ -96,6 +96,35 @@ Scalar/collection sources имеют монотонные version. Collection ch
 Content revision учитывает payload/icon/text изменения; существующий hash label/supporting text сохраняет роль measurement key и не выдаётся за monotonic domain version. Reorder сохраняет selected ID и stable scroll/focus anchors. Удаление selection очищает её и связанные details в том же publication; runtime focus переносится на существующий соседний item по прежнему index (или на collection container при пустом списке), scroll anchor — на ближайший surviving predecessor/first item. Повтор delta не вставляет дубликат. Невалидная delta не меняет publication и не выдаёт Changed.
 
 Первый сквозной consumer — CA projection: mode/category/status/categories/storages переключаются одним batch, а не последовательными notifications. Второй — Flow read model целиком. Acceptance проверяет наблюдение из callback, пропущенный/повторный change, reorder/removal/reset и отсутствие смешанного кадра; PERF использует фиксированные 100/1000/10000 item fixtures, сохраняя действующие UI budgets.
+
+### Реализованная часть U02-a
+
+В alpha.33 доступны `UiPublication`, `UiPublishedState<T>`, `UiPublishedCollection<T>`, `UiPublishedSelectableCollection<T>` и immutable `UiPublicationView`. Все sources объявляются до первого Capture/BeginUpdate. Nominal CLR registry общий для publication; невалидная регистрация не занимает ID. Пример согласованного обновления:
+
+```csharp
+var owner = new UiSymbolId("Example", "catalog");
+using var publication = new UiPublication(owner);
+var items = publication.SelectableCollection(owner.Child("items"), new[] { "wood" },
+    UiSourceTypes.String, value => owner.Child("item/" + value));
+var details = publication.State(owner.Child("details"), "Wood", UiSourceTypes.String);
+UiPublicationView before = publication.Capture();
+UiPublicationResult result = publication.BeginUpdate()
+    .Replace(items, new[] { "stone" })
+    .Select(items, owner.Child("item/stone"))
+    .Set(details, "Stone")
+    .Commit();
+// При успешном commit callbacks читают stone/Stone вместе; before продолжает хранить wood/Wood.
+```
+
+Batch явно читает draft через `Read`; обычный `source.Value` до commit возвращает прежнее committed значение. Invalid/stale/foreign/reentrant/wrong-thread/disposed commits не меняют view. Ошибки подготовки, включая consumer equality/projection callbacks, делают весь batch невалидным. Observer errors доступны в результате и не откатывают commit. Явный Dispose во время notification завершает оставшуюся доставку и снимает subscriptions; уже committed view остаётся читаемой. Consumer request adapter проверяет lifecycle/reentry **до** внешнего эффекта, как в CA.
+
+`UiCollectionChange<T>` задаёт final selection вместе с 0–128 typed operations. Один explicit change на source/batch не смешивается с Replace/Select того же source; несколько операций помещаются в сам change. Reset — единственная операция своего change; он может восстановить пропущенные версии. Повтор сверяется с bounded history, а retired/conflicting replay требует нового Reset. `ReadChanges(afterVersion)` возвращает доступную последовательность либо текущий immutable Reset; capacity от 1 до 64, default 64. Структуры/payloads копируются при подготовке; это не обещание O(1) materialization целого нового snapshot. Обычный capture переиспользует готовый объект, selection не перепроецирует items.
+
+`IUiVersionedSemanticSource.Version` есть у новых published и совместимых legacy scalar/collection sources. Captured scalar/selection/collection сохраняют source version. Collection metadata `Revision` по-прежнему игнорирует selection-only changes; `UiSemanticCollectionItem.ItemRevision` учитывает payload/icon/text, а прежний `ContentVersion` остаётся measurement hash. `IUiPublicationReadableSource` позволяет request facade читать именно переданную view без повторного live capture и без provider calls.
+
+Runtime захватывает все объявленные publications и nested form input/validation owners до форматирования. Старые scenes сохраняют значения, order/selection и lookup. Ввод пишет живому owner и затем повторно составляет сцену; сохраняется действующий host/planner/runtime. Legacy external collection без capture отклоняет чтение под изменёнными count/revision до live getter. Источник без metadata не даёт гарантии обнаружения изменения payload при прежнем count; его прежний запрет mutation во время layout остаётся обязательным.
+
+Сквозной CA consumer завершён и проверен на exact packages. Полный U02 **IN_PROGRESS**: Flow publication, окончательный focus/scroll fallback и оставшиеся collection update measurements ещё не закрыты. Evidence: [ROADMAP-STATUS.md](ROADMAP-STATUS.md#u02-a-publication-collection-changes-and-atomic-ca).
 
 ## Действия и lifecycle (U03, R01)
 

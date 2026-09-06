@@ -216,11 +216,13 @@ Item@Selected
         for (int warmup = 0; warmup < 256; warmup++)
             Assert.Same(expected, inspection.RevealAssignment(definitionId, targets[^1], propertyId));
 
+        int matched = 0;
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int query = 0; query < count; query++)
-            Assert.Same(expected, inspection.RevealAssignment(definitionId, targets[^1], propertyId));
+            if (ReferenceEquals(expected, inspection.RevealAssignment(definitionId, targets[^1], propertyId))) matched++;
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
+        Assert.Equal(count, matched);
         Assert.Equal(count, inspection.Entries.Count);
         Assert.True(
             allocated <= 4096,

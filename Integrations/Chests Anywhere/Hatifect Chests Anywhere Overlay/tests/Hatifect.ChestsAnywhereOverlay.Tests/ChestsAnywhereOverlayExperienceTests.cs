@@ -154,6 +154,200 @@ public sealed class ChestsAnywhereOverlayExperienceTests
         Assert.Equal("Switch failed", session.Status.Value);
     }
 
+    [Fact]
+    public void EveryProjectionObserverReadsTheSameCompleteModeCategoryStatusAndCollections()
+    {
+        var port = new RecordingPort(TwoCategorySnapshot());
+        using var session = new ChestsAnywhereNavigatorExperienceSession(Id("publication"), port);
+        var before = session.Publication.Capture();
+        var oldCategories = session.Categories.CaptureSnapshot();
+        var oldStorages = session.Storages.CaptureSnapshot();
+        port.NextRefresh = TwoCategorySnapshot() with
+        {
+            Mode = ChestsAnywhereNavigatorMode.Favorites,
+            SelectedCategoryKey = "mine",
+            StatusText = "Refreshed",
+            Categories = new[] { new ChestsAnywhereCategorySnapshot("farm", "New Farm"), new ChestsAnywhereCategorySnapshot("mine", "New Mine") },
+            FavoriteStorageKeys = new[] { "mine-a" }
+        };
+        var observations = new List<ProjectionObservation>();
+        void Observe() => observations.Add(ObserveProjection(session));
+        session.Mode.Changed += Observe;
+        session.SelectedCategory.Changed += Observe;
+        session.Status.Changed += Observe;
+        session.Categories.Changed += Observe;
+        session.Storages.Changed += Observe;
+        session.Publication.Changed += Observe;
+        session.Refresh(preserveView: false);
+
+        var expected = new ProjectionObservation(ChestsAnywhereNavigatorMode.Favorites, "mine", "Refreshed",
+            "New Farm,New Mine", "mine-a", ChestsAnywhereNavigatorIdentity.Category("mine"),
+            ChestsAnywhereNavigatorIdentity.Storage("mine-a"), null);
+        Assert.Equal(6, observations.Count);
+        Assert.All(observations, observation => Assert.Equal(expected, observation));
+        Assert.Empty(session.Publication.LastResult.ObserverErrors);
+        Assert.Equal(1, session.Publication.Version);
+        Assert.Equal(0, before.Version);
+        Assert.Equal("Farm", oldCategories.GetItem(0).Label);
+        Assert.Equal(ChestsAnywhereNavigatorIdentity.Category("farm"), oldCategories.SelectedItemId);
+        Assert.Equal(ChestsAnywhereNavigatorIdentity.Storage("farm-a"), oldStorages.SelectedItemId);
+        Assert.Empty(port.ViewRequests);
+    }
+
+    [Fact]
+    public void RenderedCategorySelectionRequestsTheProviderBeforePublishingSelection()
+    {
+        var port = new RecordingPort(TwoCategorySnapshot());
+        using var session = new ChestsAnywhereNavigatorExperienceSession(Id("category-request"), port);
+        var rendered = Assert.IsAssignableFrom<IUiSelectableCollectionSource>(
+            session.Experience.Elements.Single(element => element.Alias == "Categories").Source);
+        Assert.Same(session.Categories, rendered);
+        var mine = ChestsAnywhereNavigatorIdentity.Category("mine");
+        Assert.True(rendered.TrySelect(mine));
+        Assert.Equal((ChestsAnywhereNavigatorMode.Category, "mine"), Assert.Single(port.ViewRequests));
+        Assert.Equal(mine, rendered.SelectedItemId);
+        Assert.Equal("mine", session.SelectedCategory.Value);
+        Assert.Equal("mine-a", Assert.Single(session.Storages.Value).Key);
+        Assert.True(rendered.TrySelect(mine));
+        Assert.False(rendered.TrySelect(ChestsAnywhereNavigatorIdentity.Category("removed")));
+        Assert.Single(port.ViewRequests);
+    }
+
+    [Fact]
+    public void FailedCategoryRequestKeepsPriorSelectionAndWholePublication()
+    {
+        var port = new RecordingPort(TwoCategorySnapshot()) { ThrowOnChangeView = true };
+        using var session = new ChestsAnywhereNavigatorExperienceSession(Id("category-failure"), port);
+        var before = session.Publication.Capture();
+        var observed = ObserveProjection(session);
+        Assert.Throws<InvalidOperationException>(() => session.Categories.TrySelect(ChestsAnywhereNavigatorIdentity.Category("mine")));
+        Assert.Same(before, session.Publication.Capture());
+        Assert.Equal(observed, ObserveProjection(session));
+        Assert.Equal(ChestsAnywhereNavigatorIdentity.Category("farm"), session.Categories.SelectedItemId);
+        port.ThrowOnChangeView = false;
+        Assert.True(session.Categories.TrySelect(ChestsAnywhereNavigatorIdentity.Category("mine")));
+        Assert.Equal("mine", session.SelectedCategory.Value);
+    }
+
+    [Fact]
+    public void ReentrantRequestsAreRejectedBeforeAnyProviderSideEffect()
+    {
+        var port = new RecordingPort(TwoCategorySnapshot());
+        using var session = new ChestsAnywhereNavigatorExperienceSession(Id("reentrant"), port);
+        var failures = new List<Exception?>();
+        var selections = new List<bool>();
+        session.Categories.Changed += () =>
+        {
+            failures.Add(Record.Exception(() => session.SelectMode(ChestsAnywhereNavigatorMode.Favorites)));
+            failures.Add(Record.Exception(() => session.Refresh()));
+            failures.Add(Record.Exception(() => session.OpenSelectedStorage()));
+            failures.Add(Record.Exception(() => session.ToggleSelectedFavorite()));
+            selections.Add(session.Categories.TrySelect(ChestsAnywhereNavigatorIdentity.Category("farm")));
+            selections.Add(session.Storages.TrySelect(ChestsAnywhereNavigatorIdentity.Storage("mine-a")));
+        };
+        session.SelectCategory("mine");
+        Assert.Equal(4, failures.Count);
+        Assert.All(failures, error => Assert.Contains("UIP003", Assert.IsType<InvalidOperationException>(error).Message));
+        Assert.Equal(new[] { false, false }, selections);
+        Assert.Single(port.ViewRequests);
+        Assert.Equal(0, port.RefreshRequests);
+        Assert.Empty(port.OpenRequests);
+        Assert.Empty(port.FavoriteRequests);
+        Assert.Equal("mine", session.SelectedCategory.Value);
+        Assert.Empty(session.Publication.LastResult.ObserverErrors);
+    }
+
+    [Fact]
+    public void ObserverFailureDoesNotPreventOtherObserversOrRepeatProviderCommands()
+    {
+        var port = new RecordingPort(TwoCategorySnapshot());
+        using var session = new ChestsAnywhereNavigatorExperienceSession(Id("observer-failure"), port);
+        var failure = new ApplicationException("observer failed");
+        session.Categories.Changed += () => throw failure;
+        ProjectionObservation? observed = null;
+        session.Categories.Changed += () => observed = ObserveProjection(session);
+        session.SelectCategory("mine");
+        Assert.Equal(ObserveProjection(session), observed);
+        Assert.Same(failure, Assert.Single(session.Publication.LastResult.ObserverErrors));
+        Assert.Single(port.ViewRequests);
+        Assert.Equal("mine-a", Assert.Single(session.Storages.Value).Key);
+    }
+
+    [Fact]
+    public void HandoffAndStatusPublishTogetherAndDoNotTriggerCategoryRequests()
+    {
+        var port = new RecordingPort(TwoCategorySnapshot());
+        using var session = new ChestsAnywhereNavigatorExperienceSession(Id("handoff-publication"), port);
+        var observed = new List<(string, string?)>();
+        session.Status.Changed += () => observed.Add((session.Status.Value, session.Handoff.Value?.StorageKey));
+        session.Handoff.Changed += () => observed.Add((session.Status.Value, session.Handoff.Value?.StorageKey));
+        session.OpenSelectedStorage();
+        Assert.Equal(new[] { ("Opening", (string?)"farm-a"), ("Opening", (string?)"farm-a") }, observed);
+        session.Refresh();
+        session.ToggleSelectedFavorite();
+        Assert.Single(port.OpenRequests);
+        Assert.Single(port.FavoriteRequests);
+        Assert.Equal(1, port.RefreshRequests);
+        Assert.Empty(port.ViewRequests);
+    }
+
+    [Fact]
+    public void InvalidRefreshedProjectionPreservesAllCommittedValues()
+    {
+        var port = new RecordingPort(TwoCategorySnapshot());
+        using var session = new ChestsAnywhereNavigatorExperienceSession(Id("invalid-refresh"), port);
+        var before = session.Publication.Capture();
+        var observation = ObserveProjection(session);
+        port.NextRefresh = TwoCategorySnapshot() with { Categories = new[]
+        {
+            new ChestsAnywhereCategorySnapshot("farm", "One"), new ChestsAnywhereCategorySnapshot("farm", "Duplicate")
+        } };
+        Assert.Throws<InvalidOperationException>(() => session.Refresh());
+        Assert.Same(before, session.Publication.Capture());
+        Assert.Equal(observation, ObserveProjection(session));
+    }
+
+    [Fact]
+    public void DisposalDuringHandoffNotificationRetiresTheSessionAndItsRequestFacades()
+    {
+        var port = new RecordingPort(TwoCategorySnapshot());
+        var session = new ChestsAnywhereNavigatorExperienceSession(Id("dispose-handoff"), port);
+        var categories = session.Categories;
+        var storages = session.Storages;
+        session.Handoff.Changed += session.Dispose;
+        session.OpenSelectedStorage();
+        Assert.True(session.Publication.IsDisposed);
+        Assert.Empty(session.Publication.LastResult.ObserverErrors);
+        Assert.False(categories.TrySelect(ChestsAnywhereNavigatorIdentity.Category("mine")));
+        Assert.False(storages.TrySelect(ChestsAnywhereNavigatorIdentity.Storage("farm-a")));
+        Assert.All(session.Experience.Actions, action => Assert.False(action.CanExecute));
+        Assert.Single(port.OpenRequests);
+        Assert.Empty(port.ViewRequests);
+        session.Dispose();
+    }
+
+    [Fact]
+    public void DirectPublicationRetirementRejectsEveryRequestBeforeTheProvider()
+    {
+        var port = new RecordingPort(TwoCategorySnapshot());
+        using var session = new ChestsAnywhereNavigatorExperienceSession(Id("retired-publication"), port);
+        var before = session.Publication.Capture();
+        session.Publication.Dispose();
+        Assert.All(session.Experience.Actions, action => Assert.False(action.CanExecute));
+        Assert.False(session.Categories.TrySelect(ChestsAnywhereNavigatorIdentity.Category("mine")));
+        Assert.False(session.Storages.TrySelect(ChestsAnywhereNavigatorIdentity.Storage("farm-a")));
+        Assert.Throws<ObjectDisposedException>(() => session.SelectMode(ChestsAnywhereNavigatorMode.Favorites));
+        Assert.Throws<ObjectDisposedException>(() => session.SelectCategory("mine"));
+        Assert.Throws<ObjectDisposedException>(() => session.Refresh());
+        Assert.Throws<ObjectDisposedException>(() => session.OpenSelectedStorage());
+        Assert.Throws<ObjectDisposedException>(() => session.ToggleSelectedFavorite());
+        Assert.Same(before, session.Publication.Capture());
+        Assert.Empty(port.ViewRequests);
+        Assert.Empty(port.OpenRequests);
+        Assert.Empty(port.FavoriteRequests);
+        Assert.Equal(0, port.RefreshRequests);
+    }
+
     [Theory]
     [InlineData("duplicate-category")]
     [InlineData("duplicate-storage")]
@@ -295,6 +489,20 @@ public sealed class ChestsAnywhereOverlayExperienceTests
     private static UiSymbolId Id(string local)
         => new("Hatifect.ChestsAnywhereOverlay", $"navigator/test/{local}");
 
+    private static ChestsAnywhereNavigatorSnapshot TwoCategorySnapshot()
+        => Snapshot(categories: new[] { new ChestsAnywhereCategorySnapshot("farm", "Farm"), new ChestsAnywhereCategorySnapshot("mine", "Mine") },
+            storages: new[] { Storage("farm-a", "Farm A", "farm", 1), Storage("mine-a", "Mine A", "mine", 2) },
+            selectedCategory: "farm", current: "farm-a");
+
+    private sealed record ProjectionObservation(ChestsAnywhereNavigatorMode Mode, string Category, string Status,
+        string Categories, string Storages, UiSymbolId? CategorySelection, UiSymbolId? StorageSelection, string? Handoff);
+
+    private static ProjectionObservation ObserveProjection(ChestsAnywhereNavigatorExperienceSession session)
+        => new(session.Mode.Value, session.SelectedCategory.Value, session.Status.Value,
+            string.Join(",", session.Categories.Value.Select(category => category.Label)),
+            string.Join(",", session.Storages.Value.Select(storage => storage.Key)),
+            session.Categories.SelectedItemId, session.Storages.SelectedItemId, session.Handoff.Value?.StorageKey);
+
     private sealed class RecordingPort : IChestsAnywhereNavigatorPort
     {
         internal RecordingPort(ChestsAnywhereNavigatorSnapshot capture) => CaptureValue = capture;
@@ -304,6 +512,9 @@ public sealed class ChestsAnywhereOverlayExperienceTests
         internal bool ThrowOnChangeView { get; set; }
         internal bool ThrowOnToggleFavorite { get; set; }
         internal bool RejectOpen { get; set; }
+        internal ChestsAnywhereNavigatorSnapshot? NextRefresh { get; set; }
+        internal int RefreshRequests { get; private set; }
+        internal List<(ChestsAnywhereNavigatorMode Mode, string Category)> ViewRequests { get; } = new();
         internal List<string> OpenRequests { get; } = new();
         internal List<string> FavoriteRequests { get; } = new();
 
@@ -311,12 +522,15 @@ public sealed class ChestsAnywhereOverlayExperienceTests
 
         public ChestsAnywhereNavigatorSnapshot Refresh()
         {
+            RefreshRequests++;
             if (ThrowOnRefresh) throw new InvalidOperationException("refresh failed");
+            if (NextRefresh is { } next) { CaptureValue = next; NextRefresh = null; }
             return CaptureValue;
         }
 
         public ChestsAnywhereNavigatorSnapshot ChangeView(ChestsAnywhereNavigatorMode mode, string selectedCategoryKey)
         {
+            ViewRequests.Add((mode, selectedCategoryKey));
             if (ThrowOnChangeView) throw new InvalidOperationException("view failed");
             CaptureValue = CaptureValue with
             {

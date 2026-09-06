@@ -62,6 +62,7 @@ internal sealed class UiSceneComposer
         IReadOnlyList<UiExperienceDescriptor>? terminalSections = null)
     {
         ArgumentNullException.ThrowIfNull(invocation);
+        var reads = new UiPublicationReadScope(invocation.Experience);
         Dictionary<UiSymbolId, UiSemanticElementDefinition> elements = invocation.Experience.Elements
             .ToDictionary(element => element.Id);
         Dictionary<UiSymbolId, UiProjectedElement> projections = invocation.Projection.Elements
@@ -82,7 +83,7 @@ internal sealed class UiSceneComposer
                 throw new InvalidOperationException(
                     $"Terminal section '{invocation.Experience.Id}' cannot project '{planned.Element}' into the " +
                     "shell-owned Navigation slot. Terminal navigation is derived from registered section descriptors.");
-            Add(bySlot, projection.HostSlot, CreateElement(invocation, planned, element, visual, interaction));
+            Add(bySlot, projection.HostSlot, CreateElement(invocation, planned, element, visual, interaction, reads));
         }
 
         AddContributions(invocation, visual, interaction, bySlot);
@@ -138,7 +139,8 @@ internal sealed class UiSceneComposer
             new UiSceneMeasurementContext(
                 invocation.Plan.Host.Profile,
                 string.IsNullOrWhiteSpace(locale) ? CultureInfo.CurrentUICulture.Name : locale,
-                _theme.Id));
+                _theme.Id),
+            reads.HasPublications ? nextInteraction => Compose(invocation, visual, nextInteraction, locale, terminalSections) : null);
     }
 
     private UiSceneNode CreateElement(
@@ -146,25 +148,26 @@ internal sealed class UiSceneComposer
         UiPlannedElement planned,
         UiSemanticElementDefinition element,
         UiVisualDefinition? visual,
-        UiInteractionSnapshot? interaction)
+        UiInteractionSnapshot? interaction,
+        UiPublicationReadScope reads)
     {
         if (!FoundationComponents.TryGetValue(planned.Presentation, out FoundationComponentKind component))
             throw new InvalidOperationException($"No component is registered for Presentation '{planned.Presentation}'.");
         return component switch
         {
             FoundationComponentKind.Collection => Collection(
-                invocation, planned, element, visual, interaction),
-            FoundationComponentKind.TextInput => TextInput(invocation, element, visual, interaction),
+                invocation, planned, element, visual, interaction, reads),
+            FoundationComponentKind.TextInput => TextInput(invocation, element, visual, interaction, reads),
             FoundationComponentKind.SelectionText when element.Source is IUiSemanticCollectionSource => Collection(
-                invocation, planned, element, visual, interaction),
+                invocation, planned, element, visual, interaction, reads),
             FoundationComponentKind.SelectionText => Source(
-                invocation, element, visual, interaction, UiSceneNodeKind.Text, UiSceneRoles.Text),
+                invocation, element, visual, interaction, UiSceneNodeKind.Text, UiSceneRoles.Text, reads),
             FoundationComponentKind.Inspector => Source(
-                invocation, element, visual, interaction, UiSceneNodeKind.Inspector, UiSceneRoles.Inspector),
-            FoundationComponentKind.Form => Form(invocation, element, visual, interaction),
+                invocation, element, visual, interaction, UiSceneNodeKind.Inspector, UiSceneRoles.Inspector, reads),
+            FoundationComponentKind.Form => Form(invocation, element, visual, interaction, reads),
             FoundationComponentKind.StatusText => Source(
-                invocation, element, visual, interaction, UiSceneNodeKind.Text, UiSceneRoles.Text),
-            FoundationComponentKind.ActionBar => ActionBar(invocation, element, visual, interaction),
+                invocation, element, visual, interaction, UiSceneNodeKind.Text, UiSceneRoles.Text, reads),
+            FoundationComponentKind.ActionBar => ActionBar(invocation, element, visual, interaction, reads),
             _ => throw new InvalidOperationException($"Unsupported foundation component '{component}'.")
         };
     }
@@ -193,13 +196,14 @@ internal sealed class UiSceneComposer
         UiVisualDefinition? visual,
         UiInteractionSnapshot? interaction,
         UiSceneNodeKind kind,
-        UiSymbolId fallbackRole)
+        UiSymbolId fallbackRole,
+        UiPublicationReadScope reads)
     {
         UiSymbolId nodeId = element.Id.Child("scene/component");
         UiSymbolId role = Role(invocation.Experience, element.Alias, fallbackRole);
         return new UiSourceSceneNode(
             nodeId, kind, role,
-            Resolve(role, kind, nodeId, invocation, visual, interaction), element.Name, element.Source);
+            Resolve(role, kind, nodeId, invocation, visual, interaction), element.Name, reads.Read(element.Source));
     }
 
     private UiSceneNode Collection(
@@ -207,7 +211,8 @@ internal sealed class UiSceneComposer
         UiPlannedElement planned,
         UiSemanticElementDefinition element,
         UiVisualDefinition? visual,
-        UiInteractionSnapshot? interaction)
+        UiInteractionSnapshot? interaction,
+        UiPublicationReadScope reads)
     {
         if (element.Source is not IUiSemanticCollectionSource collection)
             throw new InvalidOperationException(
@@ -231,8 +236,10 @@ internal sealed class UiSceneComposer
             domainStates: selectedState);
         EnsureRenderOnlyState(nodeId, normal, selected, "Collection item states");
 
-        UiSymbolId? selectedNode = collection is IUiSelectableCollectionSource selectable &&
-                                   selectable.SelectedItemId is { } selectedItem
+        var capturedCollection = reads.Read(collection) as IUiSemanticCollectionSnapshot;
+        UiSymbolId? selectedId = capturedCollection?.SelectedItemId ??
+            (capturedCollection is null ? (collection as IUiSelectableCollectionSource)?.SelectedItemId : null);
+        UiSymbolId? selectedNode = selectedId is { } selectedItem
             ? ItemNodeId(nodeId, selectedItem)
             : null;
         var activeVisuals = new Dictionary<UiSymbolId, UiVisualResolution>();
@@ -263,37 +270,41 @@ internal sealed class UiSceneComposer
             element.Name,
             collection,
             recipe,
-            activeVisuals);
+            activeVisuals,
+            capturedCollection);
     }
 
     private UiSceneNode TextInput(
         UiInvocationResult invocation,
         UiSemanticElementDefinition element,
         UiVisualDefinition? visual,
-        UiInteractionSnapshot? interaction)
+        UiInteractionSnapshot? interaction,
+        UiPublicationReadScope reads)
     {
         UiSymbolId role = Role(invocation.Experience, element.Alias, UiSceneRoles.TextInput);
         UiSymbolId nodeId = element.Id.Child("scene/input");
         return new UiTextInputSceneNode(
             nodeId, role,
-            Resolve(role, UiSceneNodeKind.TextInput, nodeId, invocation, visual, interaction), element.Name, element.Source);
+            Resolve(role, UiSceneNodeKind.TextInput, nodeId, invocation, visual, interaction), element.Name, element.Source, reads.Read(element.Source));
     }
 
     private UiSceneNode Form(
         UiInvocationResult invocation,
         UiSemanticElementDefinition element,
         UiVisualDefinition? visual,
-        UiInteractionSnapshot? interaction)
+        UiInteractionSnapshot? interaction,
+        UiPublicationReadScope reads)
     {
         if (element.Source is not IUiSemanticFormSource form)
             return Source(
-                invocation, element, visual, interaction, UiSceneNodeKind.Form, UiSceneRoles.Form);
+                invocation, element, visual, interaction, UiSceneNodeKind.Form, UiSceneRoles.Form, reads);
 
         UiSymbolId labelRole = Role(invocation.Experience, "Field.Label", UiSceneRoles.Text);
         UiSymbolId inputRole = Role(invocation.Experience, "Field.Input", UiSceneRoles.TextInput);
         var children = new List<UiSceneNode>(form.Fields.Count * 2);
         foreach (UiSemanticFormField field in form.Fields)
         {
+            IUiSemanticSource fieldValue = reads.Read(field.Value);
             UiSymbolId labelId = field.Id.Child("scene/label");
             children.Add(new UiTextSceneNode(
                 labelId,
@@ -308,7 +319,7 @@ internal sealed class UiSceneComposer
                 {
                     UiFormOption option = field.Options[index];
                     UiSymbolId optionId = inputId.Child(index.ToString(CultureInfo.InvariantCulture));
-                    bool selected = field.Value.Value == option.Value;
+                    bool selected = (string?)fieldValue.UntypedValue == option.Value;
                     var action = new UiActionDefinition(optionId, $"{field.Label}: {option.Label}{(selected ? " ✓" : string.Empty)}",
                         () => field.Value.Value = option.Value);
                     children.Add(new UiButtonSceneNode(optionId, UiSceneRoles.Button,
@@ -319,8 +330,8 @@ internal sealed class UiSceneComposer
             else
                 children.Add(new UiTextInputSceneNode(inputId, inputRole,
                     Resolve(inputRole, UiSceneNodeKind.TextInput, inputId, invocation, visual, interaction),
-                    field.Label, field.Value));
-            string? error = field.Error ?? field.ValidationMessage?.Value;
+                    field.Label, field.Value, fieldValue));
+            string? error = field.Error ?? (field.ValidationMessage is { } validation ? (string?)reads.Read(validation).UntypedValue : null);
             if (!string.IsNullOrWhiteSpace(error))
             {
                 UiSymbolId errorId = field.Id.Child("scene/error");
@@ -346,9 +357,10 @@ internal sealed class UiSceneComposer
         UiInvocationResult invocation,
         UiSemanticElementDefinition element,
         UiVisualDefinition? visual,
-        UiInteractionSnapshot? interaction)
+        UiInteractionSnapshot? interaction,
+        UiPublicationReadScope reads)
     {
-        IReadOnlyList<UiActionDefinition> actions = element.Source.UntypedValue as IReadOnlyList<UiActionDefinition>
+        IReadOnlyList<UiActionDefinition> actions = reads.Read(element.Source).UntypedValue as IReadOnlyList<UiActionDefinition>
             ?? throw new InvalidOperationException($"Action element '{element.Id}' has an incompatible source.");
         UiSymbolId buttonRole = Role(invocation.Experience, "Action.Primary", UiSceneRoles.Button);
         UiSceneNode[] buttons = actions.Select(action =>

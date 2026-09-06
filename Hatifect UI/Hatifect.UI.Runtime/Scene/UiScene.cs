@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Hatifect.UI.Experience;
 using Hatifect.UI.Runtime.Hosting;
+using Hatifect.UI.Runtime.Input;
 using Hatifect.UI.Runtime.Visual.Resolution;
 
 namespace Hatifect.UI.Runtime.Scene;
@@ -127,6 +128,8 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
 {
     private readonly IUiSelectableCollectionSource? _selection;
     private readonly IUiSemanticCollectionSource _source;
+    private readonly IUiSemanticCollectionSource _sourceIdentity;
+    private readonly bool _captured;
     private readonly IUiSemanticCollectionMetadata? _runtimeMetadata;
     private readonly long _sourceRevision;
     private readonly bool _mayHaveSupportingText;
@@ -140,18 +143,24 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
         string semanticName,
         IUiSemanticCollectionSource source,
         UiCollectionPresentationRecipe recipe,
-        IDictionary<UiSymbolId, UiVisualResolution>? activeItemVisuals = null)
+        IDictionary<UiSymbolId, UiVisualResolution>? activeItemVisuals = null,
+        IUiSemanticCollectionSnapshot? publicationSnapshot = null)
         : base(id, UiSceneNodeKind.Collection, role, visual)
     {
         if (string.IsNullOrWhiteSpace(semanticName))
             throw new ArgumentException("A semantic collection name is required.", nameof(semanticName));
         ArgumentNullException.ThrowIfNull(source);
-        int count = source.Count;
+        IUiSemanticCollectionSnapshot? snapshot = publicationSnapshot ?? (source is IUiSemanticCollectionSnapshotSource snapshots
+            ? snapshots.CaptureSnapshot() ?? throw new InvalidOperationException($"Collection '{id}' returned a null snapshot.")
+            : null);
+        _sourceIdentity = source;
+        _source = snapshot ?? source;
+        _captured = snapshot is not null || source is IUiSemanticCollectionSnapshot;
+        int count = _source.Count;
         if (count < 0)
             throw new InvalidOperationException($"Collection '{id}' returned a negative item count.");
         SemanticName = semanticName;
-        _source = source;
-        _runtimeMetadata = source as IUiSemanticCollectionMetadata;
+        _runtimeMetadata = _source as IUiSemanticCollectionMetadata;
         Count = count;
         Recipe = recipe ?? throw new ArgumentNullException(nameof(recipe));
         if (Recipe.IsAdaptive && _runtimeMetadata == null)
@@ -162,7 +171,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
         _mayHaveSupportingText = !Recipe.IsNavigation && (_runtimeMetadata?.HasSupportingText ?? true);
         SelectedItemVisual = selectedItemVisual ?? throw new ArgumentNullException(nameof(selectedItemVisual));
         _selection = source as IUiSelectableCollectionSource;
-        SelectedItemId = _selection?.SelectedItemId;
+        SelectedItemId = _source is IUiSemanticCollectionSnapshot captured ? captured.SelectedItemId : _selection?.SelectedItemId;
         if (SelectedItemId is { } selected &&
             _runtimeMetadata != null &&
             !TryGetIndex(selected, -1, out _))
@@ -175,7 +184,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
 
     public string SemanticName { get; }
     public int Count { get; }
-    public object SourceIdentity => _source;
+    public object SourceIdentity => _sourceIdentity;
     public long SourceRevision => _sourceRevision;
     public bool MayHaveSupportingText => _mayHaveSupportingText;
     public UiCollectionPresentationRecipe Recipe { get; }
@@ -186,6 +195,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
 
     public UiSemanticCollectionItem ItemAt(int index)
     {
+        EnsureCapturedVersion();
         if ((uint)index >= (uint)Count) throw new ArgumentOutOfRangeException(nameof(index));
         return _source.GetItem(index)
             ?? throw new InvalidOperationException($"Collection '{Id}' returned a null item at index {index}.");
@@ -195,6 +205,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
 
     public bool TryGetIndex(UiSymbolId item, int hint, out int index)
     {
+        EnsureCapturedVersion();
         if (_runtimeMetadata != null && _runtimeMetadata.TryGetIndex(item, out index))
         {
             if ((uint)index >= (uint)Count || ItemAt(index).Id != item)
@@ -218,6 +229,12 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
             : IsSelected(item) ? SelectedItemVisual : Visual;
 
     public bool TrySelect(UiSymbolId item) => _selection?.TrySelect(item) == true;
+
+    private void EnsureCapturedVersion()
+    {
+        if (!_captured && (_source.Count != Count || (_runtimeMetadata?.Revision ?? 0) != _sourceRevision))
+            throw new InvalidOperationException($"Collection '{Id}' changed after scene capture; recompose before reading it or implement IUiSemanticCollectionSnapshotSource.");
+    }
 
 }
 
@@ -273,25 +290,28 @@ internal sealed class UiTextInputSceneNode : UiSceneNode
 {
     private readonly IUiSemanticSource _source;
     private readonly string _text;
+    private readonly bool _captured;
 
     public UiTextInputSceneNode(
         UiSymbolId id,
         UiSymbolId role,
         UiVisualResolution visual,
         string semanticName,
-        IUiSemanticSource source)
+        IUiSemanticSource source,
+        IUiSemanticSource? capturedSource = null)
         : base(id, UiSceneNodeKind.TextInput, role, visual)
     {
         if (string.IsNullOrWhiteSpace(semanticName))
             throw new ArgumentException("A semantic text-input name is required.", nameof(semanticName));
         _source = source ?? throw new ArgumentNullException(nameof(source));
         SemanticName = semanticName;
-        _text = source.UntypedValue?.ToString() ?? string.Empty;
+        _captured = capturedSource is not null && !ReferenceEquals(source, capturedSource);
+        _text = (capturedSource ?? source).UntypedValue?.ToString() ?? string.Empty;
     }
 
     public string SemanticName { get; }
     public string Text => _text;
-    internal string CurrentText => _source.UntypedValue?.ToString() ?? string.Empty;
+    internal string CurrentText => _captured ? _text : _source.UntypedValue?.ToString() ?? string.Empty;
 
     public bool TrySetText(string text)
     {
@@ -321,7 +341,8 @@ internal sealed class UiScene
         UiSymbolId experience,
         string displayName,
         UiHostSceneNode root,
-        UiSceneMeasurementContext measurementContext)
+        UiSceneMeasurementContext measurementContext,
+        Func<UiInteractionSnapshot, UiScene>? recomposePublication = null)
     {
         if (string.IsNullOrWhiteSpace(displayName))
             throw new ArgumentException("An Experience display name is required.", nameof(displayName));
@@ -329,10 +350,12 @@ internal sealed class UiScene
         DisplayName = displayName;
         Root = root ?? throw new ArgumentNullException(nameof(root));
         MeasurementContext = measurementContext ?? throw new ArgumentNullException(nameof(measurementContext));
+        RecomposePublication = recomposePublication;
     }
 
     public UiSymbolId Experience { get; }
     public string DisplayName { get; }
     public UiHostSceneNode Root { get; }
     public UiSceneMeasurementContext MeasurementContext { get; }
+    internal Func<UiInteractionSnapshot, UiScene>? RecomposePublication { get; }
 }

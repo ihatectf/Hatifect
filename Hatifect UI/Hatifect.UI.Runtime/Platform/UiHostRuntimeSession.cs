@@ -169,7 +169,8 @@ internal sealed class UiHostRuntimeSession
 
     public UiHostUpdate? RefreshInteractionVisuals(bool textChanged = false)
     {
-        if (_composeInteraction == null)
+        var compose = _composeInteraction ?? _scene.RecomposePublication;
+        if (compose == null)
         {
             if (textChanged)
                 return RefreshLiveText();
@@ -185,7 +186,7 @@ internal sealed class UiHostRuntimeSession
             LastUpdate = directUpdate;
             return directUpdate;
         }
-        UiScene next = _composeInteraction(Interactions.Snapshot)
+        UiScene next = compose(Interactions.Snapshot)
             ?? throw new InvalidOperationException("The interaction scene composer returned null.");
         return Update(next, _placement);
     }

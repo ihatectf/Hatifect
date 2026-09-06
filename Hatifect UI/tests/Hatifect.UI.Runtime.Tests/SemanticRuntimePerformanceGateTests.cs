@@ -34,6 +34,85 @@ public sealed class SemanticRuntimePerformanceGateTests
     public SemanticRuntimePerformanceGateTests(ITestOutputHelper output)
         => _output = output;
 
+    [Theory]
+    [InlineData(100)]
+    [InlineData(1000)]
+    [InlineData(10000)]
+    [Trait("Category", "performance")]
+    public void CollectionCaptureReusesPreparedViewsWithinTheSteadyBudgets(int count)
+    {
+        UiSymbolId owner = RegistryTests.Id("performance/capture");
+        var source = new UiSelectableCollectionState<int>(Enumerable.Range(0, count).ToArray(), value => owner.Child("item/" + value));
+        IUiSemanticCollectionSnapshot first = source.CaptureSnapshot();
+        var elapsed = new double[MeasurementFrames];
+        int total = 0;
+        // Warm the complete measured path, including the runtime timer initialization.
+        for (int index = 0; index < 100; index++)
+        {
+            long started = Stopwatch.GetTimestamp();
+            _ = source.CaptureSnapshot().Count;
+            _ = (Stopwatch.GetTimestamp() - started) * 1000d / Stopwatch.Frequency;
+        }
+        long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < MeasurementFrames; index++)
+        {
+            long started = Stopwatch.GetTimestamp();
+            total += source.CaptureSnapshot().Count;
+            elapsed[index] = (Stopwatch.GetTimestamp() - started) * 1000d / Stopwatch.Frequency;
+        }
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+        Array.Sort(elapsed);
+        double p95 = Percentile(elapsed, 0.95), p99 = Percentile(elapsed, 0.99);
+        double bytes = allocated / (double)MeasurementFrames;
+        _output.WriteLine($"collection-capture items={count} frames={MeasurementFrames} p95Ms={p95:F6} p99Ms={p99:F6} allocatedBytesPerCapture={bytes:F2}");
+        Assert.Equal(count * MeasurementFrames, total);
+        Assert.Same(first, source.CaptureSnapshot());
+        Assert.Equal(0, allocated);
+        Assert.True(p95 <= MaximumP95Milliseconds);
+        Assert.True(p99 <= MaximumP99Milliseconds);
+        Assert.True(bytes <= MaximumAllocatedBytesPerFrame);
+    }
+
+    [Theory]
+    [InlineData(100)]
+    [InlineData(1000)]
+    [InlineData(10000)]
+    [Trait("Category", "performance")]
+    public void PublicationSelectionUsesBoundedDispatchWithoutReprojectingCollectionItems(int count)
+    {
+        UiSymbolId owner = RegistryTests.Id("performance/publication");
+        using var publication = new UiPublication(owner);
+        int projected = 0;
+        var ids = Enumerable.Range(0, count).Select(value => owner.Child("item/" + value)).ToArray();
+        var source = publication.SelectableCollection(owner.Child("rows"), Enumerable.Range(0, count).ToArray(),
+            UiSourceTypes.Scalar<int>(owner.Child("type/int"), false), value => { projected++; return ids[value]; });
+        for (int index = 0; index < 100; index++) source.TrySelect(ids[index % 2]);
+        int projectedBefore = projected;
+        var payload = source.Value;
+        var elapsed = new double[MeasurementFrames];
+        int succeeded = 0;
+        long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        for (int index = 0; index < MeasurementFrames; index++)
+        {
+            long started = Stopwatch.GetTimestamp();
+            if (source.TrySelect(ids[index % 2])) succeeded++;
+            elapsed[index] = (Stopwatch.GetTimestamp() - started) * 1000d / Stopwatch.Frequency;
+        }
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+        Array.Sort(elapsed);
+        double p95 = Percentile(elapsed, .95), p99 = Percentile(elapsed, .99), bytes = allocated / (double)MeasurementFrames;
+        _output.WriteLine($"publication-selection items={count} dispatches={MeasurementFrames} p95Ms={p95:F6} p99Ms={p99:F6} allocatedBytesPerDispatch={bytes:F2}");
+        Assert.Equal(MeasurementFrames, succeeded);
+        Assert.Equal(projectedBefore, projected);
+        Assert.Same(payload, source.Value);
+        Assert.Equal(700, source.Version);
+        Assert.Equal(0, source.Revision);
+        Assert.Equal(ids[1], source.SelectedItemId);
+        Assert.True(p95 <= MaximumP95Milliseconds, $"p95 {p95:F3} ms exceeds budget.");
+        Assert.True(p99 <= MaximumP99Milliseconds, $"p99 {p99:F3} ms exceeds budget.");
+        Assert.True(bytes <= MaximumAllocatedBytesPerFrame, $"{bytes:F2} bytes per selection exceeds budget.");
+    }
+
     [Fact]
     [Trait("Category", "performance")]
     public void TerminalLayoutReportsHostFreeLatencyAndAllocationEvidence()
