@@ -184,9 +184,13 @@ internal sealed class UiSceneRenderPlanner
                         textMetrics,
                         primitives);
                 }
+                // The empty-field hint is presentation only. Caret, selection and scrolling
+                // continue to use the actual editable text, including its zero length.
+                string displayedText = node is UiTextInputSceneNode input && text.Length == 0
+                    ? input.SemanticName : text;
                 primitives.Add(new UiTextPrimitive(
-                    node.Id, textBounds, textClip, text, foreground, typography,
-                    overflow, opacity, transform));
+                    node.Id, textBounds, textClip, displayedText, foreground, typography,
+                    displayedText == text ? overflow : UiTextOverflow.Ellipsis, opacity, transform));
                 if (editing != null)
                     AddCaret(
                         node.Id,

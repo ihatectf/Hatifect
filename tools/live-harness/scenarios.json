@@ -444,6 +444,23 @@
       }
     },
     {
+      "id": "semantic.input.native",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.input.native.pointer",
+        "semantic.input.native.keyboard",
+        "semantic.input.native.text",
+        "semantic.input.native.backspace"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
       "id": "semantic.locale-scale-theme",
       "kind": "ui",
       "requiresSave": true,

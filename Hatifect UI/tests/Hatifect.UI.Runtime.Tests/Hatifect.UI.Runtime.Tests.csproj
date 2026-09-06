@@ -28,5 +28,7 @@
              Link="Stardew/UiRuntimeFingerprint.cs" />
     <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiRenderedStateGate.cs"
              Link="Stardew/UiRenderedStateGate.cs" />
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiNativeInputGate.cs"
+             Link="Stardew/UiNativeInputGate.cs" />
   </ItemGroup>
 </Project>

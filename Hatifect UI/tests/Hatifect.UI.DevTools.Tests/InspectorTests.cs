@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Hatifect.UI.Experience;
 using Hatifect.UI.Language.Diagnostics;
@@ -13,6 +14,7 @@ using Hatifect.UI.Runtime.Projection;
 using Hatifect.UI.Runtime.Registration;
 using Hatifect.UI.Runtime.Rendering;
 using Hatifect.UI.Runtime.Scene;
+using Hatifect.UI.Runtime.Terminal;
 using Hatifect.UI.Runtime.Visual;
 using Hatifect.UI.Runtime.Visual.Resolution;
 using Hatifect.UI.Runtime.Visual.Theming;
@@ -25,6 +27,67 @@ namespace Hatifect.UI.DevTools.Tests;
 
 public sealed class InspectorTests
 {
+    [Fact]
+    public void TerminalInspectorTabReachesSearchInsteadOfAnInspectedNavigationRow()
+    {
+        UiSymbolId diagnosticsId = Id("native/diagnostics");
+        UiSymbolId inspectorId = Id("native/inspector");
+        UiTerminalHostSession? terminal = null;
+        UiInspectorExperienceSession? inspector = null;
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(diagnosticsId, "Diagnostics", () => new UiExperienceBuilder(diagnosticsId, "Diagnostics")
+                .Monitor("Status", new UiState<string>("Ready")).Build(), order: 10)
+            .TerminalSection(inspectorId, "Inspector", () =>
+            {
+                var capture = UiInspector.Capture(terminal!.CurrentInvocation, terminal.Host.Root.CaptureDiagnostics());
+                inspector = new UiInspectorExperienceSession(capture, inspectorId);
+                return inspector.Experience;
+            }, order: 20)
+            .Freeze();
+        using (terminal = new UiTerminalHostSession(registry, UiThemePresets.Dark(),
+            new UiHostPlacementContext(new UiRect(0, 0, 1280, 720)), new TestPlatform(), UiPresentationProfiles.Wide))
+        {
+            UiRouteButtonSceneNode route = Assert.Single(SceneNodes(terminal.Host.Root.Scene.Root)
+                .OfType<UiRouteButtonSceneNode>(), node => node.Route == inspectorId);
+            Assert.True(terminal.Host.Root.Layout.TryGetEntry(route.Id, out UiLayoutEntry? routeLayout));
+            UiRect bounds = routeLayout!.Bounds;
+            var pointer = new UiPoint(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            Assert.True(terminal.PressPointer(pointer).Consumed);
+            Assert.True(terminal.ReleasePointer(pointer).Consumed);
+            Assert.Equal(inspectorId, terminal.ActiveSection);
+            Assert.NotNull(inspector);
+
+            UiTextInputSceneNode field = Assert.Single(SceneNodes(terminal.Host.Root.Scene.Root).OfType<UiTextInputSceneNode>());
+            Assert.True(terminal.MoveFocus(UiNavigationDirection.Next).Consumed);
+            Assert.Equal(field.Id, terminal.FocusedTextEditing?.Input);
+            Assert.Equal(field.Id, terminal.Host.Root.Interactions.Snapshot.Focused);
+            Assert.True(terminal.Host.Root.Layout.TryGetEntry(field.Id, out UiLayoutEntry? fieldLayout));
+            Assert.True(fieldLayout!.Bounds.Width > 0 && fieldLayout.Bounds.Height > 0);
+
+            Assert.DoesNotContain(Enumerable.Range(0, inspector!.Nodes.Count)
+                .Select(index => inspector.Nodes.GetItem(index).Id), row => SceneNodes(terminal.Host.Root.Scene.Root).Any(node => node.Id == row));
+            var rowsBeforeFilter = Enumerable.Range(0, inspector.Nodes.Count)
+                .Select(inspector.Nodes.GetItem)
+                .ToDictionary(item => ((UiInspectorNodeSnapshot)item.Value!).Id, item => item.Id);
+            Assert.True(terminal.InsertText("navigation-route").Interaction?.TextChanged);
+            Assert.Equal("navigation-route", inspector.Query.Value);
+            Assert.NotEmpty(inspector.Nodes.Value);
+            Assert.All(inspector.Nodes.Value, node => Assert.Contains("navigation-route", node.Id.ToString()));
+            Assert.All(Enumerable.Range(0, inspector.Nodes.Count).Select(inspector.Nodes.GetItem), item =>
+                Assert.Equal(rowsBeforeFilter[((UiInspectorNodeSnapshot)item.Value!).Id], item.Id));
+            Assert.Contains(terminal.Host.Root.Frame.Primitives.OfType<UiTextPrimitive>(),
+                primitive => primitive.Node == field.Id && primitive.Text == "navigation-route");
+        }
+        inspector?.Dispose();
+    }
+
+    private static IEnumerable<UiSceneNode> SceneNodes(UiSceneNode root)
+    {
+        yield return root;
+        foreach (UiSceneNode child in root.Children)
+        foreach (UiSceneNode node in SceneNodes(child)) yield return node;
+    }
+
     [Fact]
     public void CaptureIncludesExperiencePlanProjectionVisualSourceLayoutAndDiagnostics()
     {
@@ -224,7 +287,11 @@ public sealed class InspectorTests
             $"{node.Id} {node.Kind} {node.SemanticName} {node.Role}",
             StringComparison.OrdinalIgnoreCase));
         Assert.Contains(inspector.Nodes.Value, node => node.Id == sourceNode.Id);
-        Assert.True(inspector.Nodes.TrySelect(sourceNode.Id));
+        UiSemanticCollectionItem sourceRow = Assert.Single(Enumerable.Range(0, inspector.Nodes.Count)
+            .Select(inspector.Nodes.GetItem), item => ((UiInspectorNodeSnapshot)item.Value!).Id == sourceNode.Id);
+        Assert.NotEqual(sourceNode.Id, sourceRow.Id);
+        Assert.True(inspector.Nodes.TrySelect(sourceRow.Id));
+        Assert.Contains(sourceNode.Id.ToString(), inspector.Details.Value);
 
         UiActionDefinition reveal = Assert.Single(
             inspector.Experience.Actions,

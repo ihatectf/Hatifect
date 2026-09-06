@@ -71,11 +71,24 @@ internal sealed class UiSemanticKeyboardSubscriberLease : IKeyboardSubscriber, I
         if (CanReceive) _textInput(text);
     }
 
-    public void RecieveCommandInput(char command) { }
+    public void RecieveCommandInput(char command)
+    {
+        if (!CanReceive) return;
+        Keys? key = command switch
+        {
+            '\b' => Keys.Back,
+            '\t' => Keys.Tab,
+            '\r' => Keys.Enter,
+            _ => null
+        };
+        if (key is { } normalized) _specialInput(normalized);
+    }
 
     public void RecieveSpecialInput(Keys key)
     {
-        if (CanReceive) _specialInput(key);
+        // Stardew delivers these through RecieveCommandInput. Its legacy key path can
+        // additionally send this callback; forwarding both would delete/navigate twice.
+        if (CanReceive && key is not (Keys.Back or Keys.Tab or Keys.Enter)) _specialInput(key);
     }
 
     private bool CanReceive => Selected && _isCurrentScreen() && OwnsSubscriber;
