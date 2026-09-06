@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Hatifect.UI.Experience;
 using Hatifect.UI.Planning;
 using Hatifect.UI.Runtime.Activation;
 using Hatifect.UI.Runtime.Input;
@@ -33,6 +34,8 @@ internal sealed class UiTerminalShellSession : IDisposable
     private readonly UiInvocationService _invocations;
     private readonly UiSceneComposer _composer;
     private readonly Func<UiExperienceDescriptor, UiTerminalSectionAssets> _resolveAssets;
+    private UiExperienceDefinition? _activeExperience;
+    private long _commitVersion;
     private bool _disposed;
 
     public UiTerminalShellSession(
@@ -108,9 +111,26 @@ internal sealed class UiTerminalShellSession : IDisposable
         UiInteractionSnapshot? interaction = null)
     {
         EnsureActive();
-        return ActiveSection is { } section
-            ? Open(section, profile, locale, interaction)
-            : throw new InvalidOperationException("No Terminal section is active.");
+        ArgumentNullException.ThrowIfNull(profile);
+        if (ActiveSection is not { } section || _activeExperience is not { } experience)
+            throw new InvalidOperationException("No Terminal section is active.");
+        long commitVersion = _commitVersion;
+        UiExperienceDescriptor descriptor = TerminalDescriptor(section);
+        UiExperienceDescriptor[] available = SnapshotAvailableSections();
+        EnsureRecompositionActive(commitVersion);
+        if (!available.Any(item => item.Id == section))
+            throw new InvalidOperationException($"Terminal section '{section}' is currently unavailable.");
+        UiTerminalSectionAssets assets = _resolveAssets(descriptor)
+            ?? throw new InvalidOperationException($"Asset resolver for Terminal section '{section}' returned null.");
+        EnsureRecompositionActive(commitVersion);
+        // Input, environment and asset refresh keep the committed model. Only an explicit open
+        // activates a new Transient instance, and only its accepted frame replaces that model.
+        UiInvocationResult invocation = _invocations.ReplanKnownAvailable(
+            descriptor, experience, profile, assets.Presentation);
+        UiScene scene = _composer.Compose(invocation, assets.Visual, interaction, locale,
+            terminalSections: available);
+        EnsureRecompositionActive(commitVersion);
+        return new UiTerminalFrame(section, invocation, scene);
     }
 
     public bool TryFollow(
@@ -156,8 +176,20 @@ internal sealed class UiTerminalShellSession : IDisposable
     {
         EnsureActive();
         ArgumentNullException.ThrowIfNull(frame);
-        _ = TerminalDescriptor(frame.Section);
+        UiExperienceDescriptor descriptor = TerminalDescriptor(frame.Section);
+        if (!ReferenceEquals(frame.Invocation.Descriptor, descriptor) || frame.Invocation.Experience.Id != frame.Section)
+            throw new InvalidOperationException("The Terminal frame does not belong to its section.");
         ActiveSection = frame.Section;
+        _activeExperience = frame.Invocation.Experience;
+        _commitVersion++;
+    }
+
+    private void EnsureRecompositionActive(long commitVersion)
+    {
+        EnsureActive();
+        // Explicit reopen can reuse the same Cached model; identity equality alone is insufficient.
+        if (_commitVersion != commitVersion)
+            throw new InvalidOperationException("The active Terminal section changed during recomposition.");
     }
 
     private bool TryFollowCore(
@@ -194,6 +226,7 @@ internal sealed class UiTerminalShellSession : IDisposable
         if (_disposed) return;
         _disposed = true;
         ActiveSection = null;
+        _activeExperience = null;
         _activator.DisposeSession();
     }
 

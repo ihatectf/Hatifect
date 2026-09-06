@@ -600,3 +600,32 @@ Integration base `64cce4e` contains U03-a implementation `320e5c9` and Q01 throu
 - Independent F20 review verified the bounded fixture/validator,20 original source hashes/blob identities, original C/G and actual resources/PERF evidence. All29 retained runtime file hashes match. Those ordinary-GC game results belong to the owner alpha.35 candidate and Flow fingerprint `b954c613428089e5cb84156dabd8742931997d99729bea15d6062ff86c52e44b`; this integration does not claim new alpha.37 runtime/visual measurements. No game, normal Mods or save was changed by these integration gates.
 
 F20 is DONE only in its documented bounded ordinary-chest single-player scope; active/cold cost limitations remain. Full U03 and Q01 stay IN_PROGRESS. The next UI implementation is the U03-b Transient Terminal model-identity prerequisite, then host action binding; F12 continues to await U04.
+
+
+## U03-b Transient Terminal model identity
+
+Base `4737d64`, alpha.38; full U03 remains IN_PROGRESS. Root cause: Shell.Recompose called Open/Activate; a Transient factory ran even for initial host focus, leaving visible scene and CurrentInvocation with different models. The shell now retains the committed Experience and uses internal InvocationService.ReplanKnownAvailable against its registered descriptor. Current assets, section availability, profile, locale and theme are evaluated again; only an explicit successful Open/route commits a new model. Failed host update preserves the prior owner, and Dispose clears the retained reference before cached-owner disposal. No new collection, traversal or history is introduced on input; the former activation/factory allocation is removed. Public Activate/Invoke lifetime policy, frozen surface API signatures and persistence remain unchanged. All17 UI version/package/consumer authorities move together to alpha.38.
+
+Focused regressions extend the existing TerminalHostSessionTests fixture; no project-wide test scaffolding or new test dependency was introduced.
+
+| Requirement | Evidence |
+|---|---|
+| Initial focus, actual text input and environment recompose keep model/action/draft/focus | `TransientHostRecompositionPreservesActivatedModelDraftAndAction` |
+| Rejected route cannot replace committed model; explicit reopen creates fresh Transient model | `TransientRouteFailurePreservesModelAndExplicitReopenCreatesNewModel` |
+| Availability changes still affect navigation/admission without activating sections | `TransientRecompositionRechecksAvailabilityWithoutActivatingSections` |
+| Existing explicit transient activation and owned cached disposal remain valid | Existing `RegistryTests.TransientWindowCreatesEachTime` and Terminal lifecycle tests remain unchanged |
+
+Reproduction `run-o33wsx8k`: FAIL3/299,296 existing cases PASS. Factories ran2/3/5 times instead of1; tests were preserved for the fix. Targeted `./tools/hatifect-test ui --project 'Hatifect UI/tests/Hatifect.UI.Runtime.Tests/Hatifect.UI.Runtime.Tests.csproj'`: `run-jdvxftmu` PASS299/299. Explicit x64 SDK and command-local build GC workaround as documented above. Final C/G/P and independent review follow on the frozen candidate. Runtime/visual is NOT_APPLICABLE to this internal identity prerequisite; full U03 host/consumer integration still requires isolated RUNTIME acceptance. Next: bind action execution to the stable host model and retire it on actual owner/generation replacement.
+
+
+Independent review found one lifecycle regression before final gates: removing Open/Commit also removed its post-composition EnsureActive. `run-qxk8f5y0` reproduced FAIL3/302 (299 PASS): CanExecute disposed the host, opened another section, or explicitly reopened the same Cached definition while outer composition was still running. The shell now captures the committed model and an internal commit stamp before callbacks, then checks live/stamp after availability, asset resolution and composition. Every explicit Commit advances the stamp, including same-model reopen; ordinary Recompose does not commit. No new history or per-recompose allocation is added. Regressions are unchanged for the correction.
+
+| Requirement | Evidence |
+|---|---|
+| A composition callback that closes the Terminal cannot validate/publish a new scene | `RecompositionCallbackCannotPublishAfterTerminalDisposal` |
+| Nested committed Open wins over the old outer scene, including same Cached model | `RecompositionCallbackCannotOverwriteNestedCommittedOpen` (two cases) |
+
+Final scoped correction `run-dfnhqwa0`: PASS302/302 Runtime cases, including all six new identity/callback cases. Independent source review closes the P2 at the shell composition return boundary. Validation/platform callbacks after shell return remain part of subsequent host action integration; this result does not claim that larger lifecycle surface is complete.
+
+
+Final alpha.38 gates on unchanged compiled sources: C `./tools/hatifect-check`, `run-hsx41w29`, **PASS1323 .NET +348 Python**; G `./tools/hatifect-check --platform`, `run-lccboylt`, **PASS1561 .NET +348 Python**. Actual TRX counters and all individual outcomes agree, with no failures/skips. P `./tools/hatifect-isolated-ui-ca --keep`: **PASS90**,44 exact projection files,8 alpha.38 package DLLs matching producers,3 isolated assets files and2 matching CA deployment DLLs without UI duplication. Retained workspace `hatifect-ui-ca-isolated.f1_qfmwf`; log and hashes under `artifacts/u03-terminal-identity/`. A supplemental audit initially assumed the TRX completed outcome equalled passed and that NuGet package paths ended in a slash; both audit assumptions were corrected against actual files, with the canonical successful P result unchanged. Source review is PASS at the documented shell boundary. Full U03 remains IN_PROGRESS; next is production host action binding and lifecycle fencing.
