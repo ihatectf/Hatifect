@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import os
 import signal
 import subprocess
@@ -88,7 +89,7 @@ def run(
     grace_seconds: float,
     *,
     environment: Mapping[str, str] | None = None,
-    on_started: Callable[[int, int], None] | None = None,
+    on_started: Callable[[int, int, dt.datetime], None] | None = None,
     cancel_requested: Callable[[], bool] | None = None,
     on_completed: Callable[[int, list[str]], None] | None = None,
     force_kill_requested: Callable[[], bool] | None = None,
@@ -107,6 +108,8 @@ def run(
     try:
         with log_path.open("wb") as log:
             try:
+                # The child may publish evidence before Popen returns or its ownership journal is written.
+                started_at = dt.datetime.now(dt.timezone.utc)
                 process = subprocess.Popen(
                     command,
                     cwd=working_directory,
@@ -130,7 +133,7 @@ def run(
             process_group = os.getpgid(process.pid)
             try:
                 if on_started is not None:
-                    on_started(process.pid, process_group)
+                    on_started(process.pid, process_group, started_at)
             except Exception as error:
                 teardown_errors = _retire_group(process_group, grace_seconds)
                 process.wait(timeout=max(1.0, grace_seconds))

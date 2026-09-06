@@ -211,7 +211,7 @@ class DirectRuntimeTests(unittest.TestCase):
                             with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
                                 raise OSError('launch failed')
                     self.assertFalse(path.exists())
-                    provisioner.prepare_flow_secondary.assert_not_called()
+                    provisioner.prepare_secondary.assert_not_called()
                     provisioner.cleanup_working_copy.assert_called_once_with(isolated, path, 'runtime', fixture.request['requestId'], scenario, role='primary')
 
     def test_flow_lifecycle_report_has_fixed_module_ownership(self) -> None:
@@ -253,9 +253,89 @@ class DirectRuntimeTests(unittest.TestCase):
                     with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
                         raise OSError("launch failed")
             self.assertFalse(path.exists())
-            provisioner.prepare_flow_secondary.assert_not_called()
+            provisioner.prepare_secondary.assert_not_called()
             provisioner.cleanup_working_copy.assert_called_once_with(
                 isolated, path, "runtime", fixture.request["requestId"], scenario, role="primary")
+
+    def _ui_save_switch_provisioner(self, fixture):
+        fixture.request["scenarioId"] = "semantic.actions.save-switch"
+        isolated = Path(fixture.request["isolatedRoot"])
+        primary, secondary = isolated / "primary", isolated / "secondary"
+        primary.mkdir()
+        secondary.mkdir()
+        fixture.request["savePath"] = str(primary)
+        fixture.metadata["saveProvisionerExecutable"] = "save.py"
+        provisioner = mock.Mock()
+        provisioner.validate_fixture.return_value = ({"runtimeId": "runtime"}, None)
+        provisioner.prepare_working_copy.return_value = primary
+        provisioner.prepare_secondary.return_value = secondary
+        provisioner.secondary_run_id.return_value = "secondary-id"
+        provisioner._working_name.return_value = "secondary"
+        provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
+        return provisioner, primary, secondary
+
+    def test_ui_save_switch_environment_derives_companion_without_mutating_request(self) -> None:
+        with _RequestFixture() as fixture:
+            provisioner, primary, secondary = self._ui_save_switch_provisioner(fixture)
+            before = dict(fixture.request)
+            with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner), mock.patch.dict(
+                os.environ, {"HATIFECT_SMAPI_TEST_SECONDARY_SAVE": "/foreign", "HATIFECT_TEST_SECONDARY_RUN_ID": "foreign"}
+            ):
+                environment = DIRECT_RUNTIME._minimal_environment(fixture.request, fixture.metadata)
+            self.assertEqual(environment.get("HATIFECT_SMAPI_TEST_SECONDARY_SAVE"), str(secondary))
+            self.assertEqual(environment.get("HATIFECT_TEST_SECONDARY_RUN_ID"), "secondary-id")
+            self.assertEqual(environment["HATIFECT_SMAPI_TEST_SAVE"], str(primary))
+            self.assertEqual(environment["HATIFECT_TEST_RUN_ID"], before["requestId"])
+            self.assertEqual(fixture.request, before)
+            provisioner._working_name.assert_called_once_with("secondary-id", "semantic.actions.save-switch", role="secondary")
+            provisioner.prepare_secondary.assert_not_called()
+
+    def test_ui_save_switch_preparation_collision_preserves_foreign_secondary(self) -> None:
+        with _RequestFixture() as fixture:
+            provisioner, primary, secondary = self._ui_save_switch_provisioner(fixture)
+            (secondary / "foreign").write_text("preserve")
+            provisioner.prepare_secondary.side_effect = ValueError("foreign secondary collision")
+            with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
+                with self.assertRaisesRegex(ValueError, "foreign secondary collision"):
+                    DIRECT_RUNTIME._prepare_request_saves(fixture.request, fixture.metadata)
+            self.assertFalse(primary.exists())
+            self.assertEqual((secondary / "foreign").read_text(), "preserve")
+            provisioner.cleanup_working_copy.assert_called_once_with(
+                Path(fixture.request["isolatedRoot"]), primary, "runtime", fixture.request["requestId"],
+                "semantic.actions.save-switch", role="primary")
+
+    def test_ui_save_switch_cleans_both_owned_roles_on_launch_failure_and_success(self) -> None:
+        for fail_launch in (True, False):
+            with self.subTest(fail_launch=fail_launch), _RequestFixture() as fixture:
+                provisioner, primary, secondary = self._ui_save_switch_provisioner(fixture)
+                def run():
+                    with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
+                        self.assertTrue(primary.exists())
+                        self.assertTrue(secondary.exists())
+                        if fail_launch:
+                            raise OSError("launch failed")
+                        DIRECT_RUNTIME._complete_save_lifecycle(fixture.request, fixture.metadata,
+                                                               process_succeeded=True, report_exists=True)
+                with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
+                    if fail_launch:
+                        with self.assertRaisesRegex(OSError, "launch failed"):
+                            run()
+                    else:
+                        run()
+                self.assertFalse(primary.exists())
+                self.assertFalse(secondary.exists())
+                isolated = Path(fixture.request["isolatedRoot"])
+                self.assertEqual(provisioner.cleanup_working_copy.call_args_list, [
+                    mock.call(isolated, primary, "runtime", fixture.request["requestId"], "semantic.actions.save-switch", role="primary"),
+                    mock.call(isolated, secondary, "runtime", "secondary-id", "semantic.actions.save-switch", role="secondary")])
+                provisioner.prepare_secondary.assert_called_once_with(isolated, Path(fixture.metadata["smapiPath"]),
+                                                                       fixture.request["requestId"], "semantic.actions.save-switch")
+                if not fail_launch:
+                    evidence = json.loads((Path(fixture.request["artifactDirectory"]) / "diagnostics/save-provisioning.json").read_text())
+                    self.assertEqual(evidence["workingCopies"], [
+                        {"runId": fixture.request["requestId"], "savePath": str(primary), "role": "primary", "status": "PASS"},
+                        {"runId": "secondary-id", "savePath": str(secondary), "role": "secondary", "status": "PASS"}])
+                    self.assertEqual(evidence["fixtureRuntimeId"], "runtime")
 
     def test_secondary_preparation_failure_cleans_primary_without_claiming_collision(self) -> None:
         with _RequestFixture() as fixture:
@@ -267,7 +347,7 @@ class DirectRuntimeTests(unittest.TestCase):
             provisioner = mock.Mock()
             provisioner.validate_fixture.return_value = ({"runtimeId": "runtime"}, None)
             provisioner.prepare_working_copy.return_value = primary
-            provisioner.prepare_flow_secondary.side_effect = ValueError("foreign secondary collision")
+            provisioner.prepare_secondary.side_effect = ValueError("foreign secondary collision")
             provisioner._working_name.return_value = "secondary"
             provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
             with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
@@ -288,9 +368,9 @@ class DirectRuntimeTests(unittest.TestCase):
             provisioner = mock.Mock()
             provisioner.validate_fixture.return_value = ({"runtimeId": "runtime"}, None)
             provisioner.prepare_working_copy.return_value = primary
-            provisioner.prepare_flow_secondary.return_value = secondary
+            provisioner.prepare_secondary.return_value = secondary
             provisioner._working_name.return_value = "secondary"
-            provisioner.flow_secondary_run_id.return_value = "secondary-id"
+            provisioner.secondary_run_id.return_value = "secondary-id"
             provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
             with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
                 with self.assertRaisesRegex(OSError, "launch failed"):
@@ -312,8 +392,8 @@ class DirectRuntimeTests(unittest.TestCase):
             provisioner = mock.Mock()
             provisioner.validate_fixture.return_value = ({"runtimeId": "runtime"}, None)
             provisioner.prepare_working_copy.return_value = primary
-            provisioner.prepare_flow_secondary.return_value = secondary
-            provisioner.flow_secondary_run_id.return_value = "secondary-id"
+            provisioner.prepare_secondary.return_value = secondary
+            provisioner.secondary_run_id.return_value = "secondary-id"
             provisioner._working_name.return_value = "secondary"
             provisioner.cleanup_working_copy.side_effect = lambda *args, **kwargs: args[1].rmdir()
             expected = [(primary, fixture.request["requestId"], "primary"), (secondary, "secondary-id", "secondary")]
@@ -322,7 +402,7 @@ class DirectRuntimeTests(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, "launch failed"):
                     with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
                         raise OSError("launch failed")
-            provisioner.prepare_flow_secondary.assert_called_once_with(isolated, Path(fixture.metadata["smapiPath"]),
+            provisioner.prepare_secondary.assert_called_once_with(isolated, Path(fixture.metadata["smapiPath"]),
                                                                        fixture.request["requestId"], "flow.chest.isolation")
             self.assertEqual(provisioner.cleanup_working_copy.call_args_list, [
                 mock.call(isolated, primary, "runtime", fixture.request["requestId"], "flow.chest.isolation", role="primary"),
@@ -348,7 +428,7 @@ class DirectRuntimeTests(unittest.TestCase):
             provisioner.prepare_working_copy.return_value = Path(fixture.request["savePath"])
             with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
                 prepared = DIRECT_RUNTIME._prepare_request_saves(fixture.request, fixture.metadata)
-            provisioner.prepare_flow_secondary.assert_not_called()
+            provisioner.prepare_secondary.assert_not_called()
             self.assertEqual(prepared[2], [(Path(fixture.request["savePath"]), fixture.request["requestId"], "primary")])
 
     def test_checked_in_protocol_schemas_match_runtime_field_sets(self) -> None:
@@ -545,16 +625,21 @@ class DirectRuntimeTests(unittest.TestCase):
         self.assertEqual(environment["SMAPI_MODS_PATH"], str(isolated / "Mods"))
         self.assertEqual(environment["HATIFECT_TEST_RUN_ID"], fixture.request["requestId"])
         self.assertEqual(environment["HATIFECT_TEST_ISOLATED_ROOT"], str(isolated))
+        self.assertEqual(environment.get("HATIFECT_TEST_BACKGROUND_PROGRESS"), "1")
         self.assertNotEqual(environment["HOME"], str(Path.home()))
 
     def test_minimal_environment_does_not_inherit_unallowlisted_ambient_values(self) -> None:
         with self._request_fixture() as fixture, mock.patch.dict(
             os.environ,
-            {"HATIFECT_AMBIENT_SECRET_SENTINEL": "must-not-be-inherited"},
+            {"HATIFECT_AMBIENT_SECRET_SENTINEL": "must-not-be-inherited", "HATIFECT_TEST_BACKGROUND_PROGRESS": "0",
+             "HATIFECT_SMAPI_TEST_SECONDARY_SAVE": "/foreign", "HATIFECT_TEST_SECONDARY_RUN_ID": "foreign"},
         ):
             environment = DIRECT_RUNTIME._minimal_environment(fixture.request, fixture.metadata)
 
+        self.assertNotIn("HATIFECT_SMAPI_TEST_SECONDARY_SAVE", environment)
+        self.assertNotIn("HATIFECT_TEST_SECONDARY_RUN_ID", environment)
         self.assertNotIn("HATIFECT_AMBIENT_SECRET_SENTINEL", environment)
+        self.assertEqual(environment.get("HATIFECT_TEST_BACKGROUND_PROGRESS"), "1")
         self.assertEqual(
             environment["HOME"],
             str(Path(fixture.request["isolatedRoot"]) / "home"),
@@ -587,6 +672,7 @@ class DirectRuntimeTests(unittest.TestCase):
             DIRECT_RUNTIME._atomic_write_json(active, fixture.request)
             DIRECT_RUNTIME._transition(active, fixture.request, "Accepted", "accepted")
             captured = {}
+            started = DIRECT_RUNTIME._utc_now() - dt.timedelta(seconds=1)
 
             def run(command, working_directory, _log, _timeout, _grace, **kwargs):
                 captured["command"] = command
@@ -594,7 +680,7 @@ class DirectRuntimeTests(unittest.TestCase):
                 captured["environment"] = kwargs["environment"]
                 options = Path(kwargs['environment']['XDG_CONFIG_HOME']) / 'StardewValley/default_options'
                 self.assertEqual(ET.parse(options).findtext('pauseWhenOutOfFocus'), 'false')
-                kwargs["on_started"](4242, 4242)
+                kwargs["on_started"](4242, 4242, started)
                 report = (
                     Path(fixture.request["isolatedRoot"])
                     / "Mods"
@@ -639,6 +725,9 @@ class DirectRuntimeTests(unittest.TestCase):
             self.assertEqual(outcome[:5], ("Completed", "PASS", 0, None, "Automated acceptance evidence finalized."))
             self.assertEqual(captured["command"], ["/game/StardewModdingAPI"])
             self.assertEqual(captured["working_directory"], Path("/game"))
+            self.assertEqual(captured["environment"].get("HATIFECT_TEST_BACKGROUND_PROGRESS"), "1")
+            process = DIRECT_RUNTIME._read_json(Path(fixture.request["artifactDirectory"]) / "process.json")
+            self.assertEqual(process["startedAtUtc"], DIRECT_RUNTIME._timestamp(started))
             self.assertFalse((Path(fixture.request['isolatedRoot']) / 'config/StardewValley/default_options').exists())
             self.assertEqual(
                 captured["environment"]["SMAPI_MODS_PATH"],
@@ -719,7 +808,7 @@ class DirectRuntimeTests(unittest.TestCase):
         DIRECT_RUNTIME._transition(active, fixture.request, "Accepted", "accepted")
 
         def run(_command, _working_directory, log_path, _timeout, _grace, **kwargs):
-            kwargs["on_started"](4343, 4343)
+            kwargs["on_started"](4343, 4343, DIRECT_RUNTIME._utc_now())
             Path(log_path).write_text(log_text, encoding="utf-8")
             kwargs["on_completed"](134, [])
             return 134

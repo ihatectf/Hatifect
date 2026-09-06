@@ -10,6 +10,8 @@ using Hatifect.UI;
 using Hatifect.UI.Runtime.Hosting;
 using Hatifect.UI.Runtime.Invocation;
 using Hatifect.UI.Runtime.Platform;
+using Hatifect.UI.Runtime.Terminal;
+using Hatifect.UI.Semantics;
 using RuntimeRect = Hatifect.UI.Runtime.Layout.UiRect;
 
 namespace Hatifect.UI.Stardew.Semantic;
@@ -223,9 +225,42 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
     internal void SetTerminalTheme(Hatifect.UI.Runtime.Visual.Theming.UiTheme theme) => _host!.SetTerminalTheme(theme);
 
     internal UiHostUpdate RecomposeTerminal(Hatifect.UI.Planning.UiPresentationProfile profile,
-        RuntimeRect viewport, string locale)
-        => (_host ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu)))
-            .RecomposeTerminal(profile, new UiHostPlacementContext(viewport), locale);
+        RuntimeRect viewport, string locale, UiEnvironment? environment = null, Action? acceptOwnerState = null,
+        Hatifect.UI.Runtime.Visual.Theming.UiTheme? theme = null, Action? validateOwner = null)
+    {
+        ValidateTerminalOwner();
+        return _host!.RecomposeTerminal(profile, new UiHostPlacementContext(viewport), locale,
+            environment, acceptOwnerState, ValidateOwner, theme);
+
+        void ValidateOwner()
+        {
+            validateOwner?.Invoke();
+            ValidateTerminalOwner();
+        }
+    }
+
+    internal UiHostUpdate ReloadTerminal(UiTerminalSectionAssets assets,
+        Hatifect.UI.Planning.UiPresentationProfile profile, RuntimeRect viewport, string locale, Action acceptAssets,
+        UiEnvironment? environment = null, Hatifect.UI.Runtime.Visual.Theming.UiTheme? theme = null,
+        Action? validateOwner = null)
+    {
+        ValidateTerminalOwner();
+        return _host!.ReloadTerminal(assets, profile, new UiHostPlacementContext(viewport), locale,
+            acceptAssets, ValidateOwner, environment, theme);
+
+        void ValidateOwner()
+        {
+            validateOwner?.Invoke();
+            ValidateTerminalOwner();
+        }
+    }
+
+    private void ValidateTerminalOwner()
+    {
+        _slot.PollRetirement();
+        if (_host == null || !_slot.CanDispatch)
+            throw new InvalidOperationException("The Terminal lost its native menu owner during preparation.");
+    }
 
     internal bool EvictTerminalSection(UiSymbolId section)
     {

@@ -744,6 +744,7 @@ def _minimal_environment(request: dict[str, Any], metadata: dict[str, Any]) -> d
             "SMAPI_USE_CURRENT_SHELL": "true",
             "HATIFECT_TEST_MODE": "1",
             "HATIFECT_TEST_AUTOMATED": "1",
+            "HATIFECT_TEST_BACKGROUND_PROGRESS": "1",
             "HATIFECT_TEST_PROTOCOL_VERSION": str(HARNESS_PROTOCOL_VERSION),
             "HATIFECT_TEST_SCENARIO": request["scenarioId"],
             "HATIFECT_TEST_ISOLATED_ROOT": str(isolated),
@@ -755,6 +756,14 @@ def _minimal_environment(request: dict[str, Any], metadata: dict[str, Any]) -> d
     )
     if request["savePath"] is not None:
         environment["HATIFECT_SMAPI_TEST_SAVE"] = request["savePath"]
+        if request["scenarioId"] in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch"):
+            provisioner = _load_module(
+                "hatifect_direct_runtime_companion_environment",
+                Path(metadata["saveProvisionerExecutable"]),
+            )
+            secondary, secondary_id, _role = _request_save_copies(request, provisioner)[1]
+            environment["HATIFECT_SMAPI_TEST_SECONDARY_SAVE"] = str(secondary)
+            environment["HATIFECT_TEST_SECONDARY_RUN_ID"] = secondary_id
     if request["scenarioId"] == "save.bootstrap":
         provisioner = _load_module(
             "hatifect_direct_runtime_bootstrap_environment",
@@ -870,7 +879,7 @@ def _complete_save_lifecycle(
             "fixtureRuntimeId": fixture["runtimeId"],
             "completedAtUtc": _timestamp(),
         }
-        if request["scenarioId"] in ("flow.save.isolation", "flow.chest.isolation"):
+        if request["scenarioId"] in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch"):
             evidence["workingCopies"] = [{"runId": run_id, "savePath": str(path), "role": role, "status": "PASS"} for path, run_id, role in copies]
     elif request["scenarioId"] == "save.bootstrap" and process_succeeded and report_exists:
         provisioner = _load_module(
@@ -909,9 +918,9 @@ def _request_save_copies(request: dict[str, Any], provisioner) -> list[tuple[Pat
     primary = Path(request["savePath"])
     copies = [(primary, request["requestId"], "primary")]
     scenario = request["scenarioId"]
-    if scenario in ("flow.save.isolation", "flow.chest.isolation"):
-        secondary_id = provisioner.flow_secondary_run_id(request["requestId"])
-        role = "secondary" if scenario == "flow.chest.isolation" else "primary"
+    if scenario in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch"):
+        secondary_id = provisioner.secondary_run_id(request["requestId"])
+        role = "primary" if scenario == "flow.save.isolation" else "secondary"
         secondary = primary.parent / provisioner._working_name(secondary_id, scenario, role=role)
         copies.append((secondary, secondary_id, role))
     return copies
@@ -946,7 +955,7 @@ def _prepare_request_saves(request: dict[str, Any], metadata: dict[str, Any]) ->
             raise DirectRuntimeError("Provisioned save path differs from the accepted request.")
         if len(expected) == 2:
             expected_path, secondary_id, role = expected[1]
-            secondary = provisioner.prepare_flow_secondary(isolated, smapi, request["requestId"], request["scenarioId"])
+            secondary = provisioner.prepare_secondary(isolated, smapi, request["requestId"], request["scenarioId"])
             owned.append((secondary, secondary_id, role))
             if secondary != expected_path:
                 raise DirectRuntimeError("Provisioned secondary differs from this scenario's derived save.")
@@ -1114,7 +1123,7 @@ def _run_saved_crash(request, metadata, runner, active_path, cancellation_path, 
                        "pid": None, "processGroup": None, "executable": str(smapi), "launchRequestedAtUtc": _timestamp()}, replace=True)
     environment["HATIFECT_TEST_CRASH_PHASE"] = "resume"
     result = runner.run([str(smapi)], smapi.parent, artifact / "smapi.log", remaining, 5.0,
-                        environment=environment, on_started=lambda pid, group: on_started(pid, group, True),
+                        environment=environment, on_started=lambda pid, group, started: on_started(pid, group, started, True),
                         cancel_requested=cancellation_path.exists, on_completed=on_completed)
     resumed = _read_json(artifact / "process.json")
     _atomic_write_json(artifact / "diagnostics" / "process-resume.json", resumed)
@@ -1163,7 +1172,7 @@ def _execute_request(
     )
     _write_transport_diagnostics(request, metadata, phase="starting")
 
-    def on_started(pid: int, process_group: int, continuation: bool = False) -> None:
+    def on_started(pid: int, process_group: int, started: dt.datetime, continuation: bool = False) -> None:
         _record_started_process(active_path, request, smapi, pid, process_group, continuation=continuation)
         _atomic_write_json(
             artifact / "process.json",
@@ -1173,7 +1182,7 @@ def _execute_request(
                 "pid": pid,
                 "processGroup": process_group,
                 "executable": str(smapi),
-                "startedAtUtc": _timestamp(),
+                "startedAtUtc": _timestamp(started),
             },
             replace=True,
         )

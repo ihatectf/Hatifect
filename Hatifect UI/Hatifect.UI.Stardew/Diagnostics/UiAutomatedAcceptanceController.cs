@@ -95,6 +95,92 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             "semantic.input.native.text",
             "semantic.input.native.backspace"
         }, includeInAggregate: false),
+        new("semantic.input.retired-overlay", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.RetiredOverlayInput, true, new[]
+        {
+            "semantic.input.retired-overlay.keyboard",
+            "semantic.input.retired-overlay.retry"
+        }, includeInAggregate: false),
+        new("semantic.environment", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.Environment, true, new[]
+        {
+            "semantic.environment.window.facets",
+            "semantic.environment.window.rejection",
+            "semantic.environment.window.reentry",
+            "semantic.environment.window.idle",
+            "semantic.environment.window.delivery",
+            "semantic.environment.window.automatic",
+            "semantic.environment.terminal.facets",
+            "semantic.environment.terminal.rejection",
+            "semantic.environment.terminal.reentry",
+            "semantic.environment.terminal.idle",
+            "semantic.environment.terminal.delivery",
+            "semantic.environment.terminal.automatic",
+            "semantic.environment.hud.facets",
+            "semantic.environment.hud.rejection",
+            "semantic.environment.hud.reentry",
+            "semantic.environment.hud.idle",
+            "semantic.environment.hud.delivery",
+            "semantic.environment.hud.automatic",
+            "semantic.environment.active-menu.facets",
+            "semantic.environment.active-menu.rejection",
+            "semantic.environment.active-menu.reentry",
+            "semantic.environment.active-menu.idle",
+            "semantic.environment.active-menu.delivery",
+            "semantic.environment.active-menu.automatic",
+            "semantic.environment.active-menu.show-owner",
+        }, includeInAggregate: false),
+        new("semantic.actions.reload", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.ActionReload, true, new[]
+        {
+            "semantic.actions.reload.window.publication",
+            "semantic.actions.reload.window.generation",
+            "semantic.actions.reload.window.retirement",
+            "semantic.actions.reload.terminal.publication",
+            "semantic.actions.reload.terminal.generation",
+            "semantic.actions.reload.terminal.retirement",
+            "semantic.actions.reload.hud.publication",
+            "semantic.actions.reload.hud.generation",
+            "semantic.actions.reload.hud.retirement",
+            "semantic.actions.reload.active-menu.publication",
+            "semantic.actions.reload.active-menu.generation",
+            "semantic.actions.reload.active-menu.retirement",
+            "semantic.actions.reload.hud-hide.failed-cleanup",
+            "semantic.actions.reload.hud-hide.retry",
+            "semantic.actions.reload.hud-dispose.failed-cleanup",
+            "semantic.actions.reload.hud-dispose.retry",
+            "semantic.actions.reload.active-menu-hide.failed-cleanup",
+            "semantic.actions.reload.active-menu-hide.retry"
+        }, includeInAggregate: false),
+        new("semantic.actions.terminal", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.TerminalGeneration, true, new[]
+        {
+            "semantic.actions.terminal.same.transition",
+            "semantic.actions.terminal.same.delivery",
+            "semantic.actions.terminal.route.transition",
+            "semantic.actions.terminal.route.delivery",
+            "semantic.actions.terminal.failed-open.transition",
+            "semantic.actions.terminal.failed-open.delivery",
+            "semantic.actions.terminal.failed-route.transition",
+            "semantic.actions.terminal.failed-route.delivery"
+        }, includeInAggregate: false),
+        new("semantic.actions.save-switch", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.SaveSwitch, true, new[]
+        {
+            "semantic.actions.save-switch.copies",
+            "semantic.actions.save-switch.window.pending",
+            "semantic.actions.save-switch.window.retirement",
+            "semantic.actions.save-switch.window.late",
+            "semantic.actions.save-switch.window.delivery",
+            "semantic.actions.save-switch.terminal.pending",
+            "semantic.actions.save-switch.terminal.retirement",
+            "semantic.actions.save-switch.terminal.late",
+            "semantic.actions.save-switch.terminal.delivery",
+            "semantic.actions.save-switch.hud.pending",
+            "semantic.actions.save-switch.hud.retirement",
+            "semantic.actions.save-switch.hud.late",
+            "semantic.actions.save-switch.hud.delivery",
+            "semantic.actions.save-switch.active-menu.pending",
+            "semantic.actions.save-switch.active-menu.retirement",
+            "semantic.actions.save-switch.active-menu.late",
+            "semantic.actions.save-switch.active-menu.delivery",
+            "semantic.actions.save-switch.lifecycle"
+        }, includeInAggregate: false),
         new("semantic.actions.pump", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.ActionPump, true, new[]
         {
             "semantic.actions.pump.menu",
@@ -325,6 +411,9 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        StopSaveSwitch();
+        StopEnvironment();
+        StopTerminalGeneration();
         StopActionPump();
         StopNativeInput();
         RestoreVisualSettingsAfterFailure();
@@ -358,6 +447,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             Game1.game1.Exit();
             return;
         }
+        if (AdvanceSaveSwitch()) return;
         if (_verifyReturnToTitleContribution)
         {
             VerifyReturnedToTitleContribution();
@@ -430,6 +520,8 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             return;
         }
         if (_awaitingReturnedToTitle) return;
+        if (AdvanceEnvironment()) return;
+        if (AdvanceTerminalGeneration()) return;
         if (AdvanceActionPump()) return;
         if (AdvanceNativeInput()) return;
         if (AdvanceVisualMatrix()) return;
@@ -515,6 +607,9 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         catch (Exception error)
         {
             RetainTerminalFailure("HARNESS-AUTOMATION-EXECUTION-EXCEPTION", error);
+            StopSaveSwitch();
+            StopEnvironment();
+            StopTerminalGeneration();
             StopActionPump();
             StopNativeInput();
             RestoreVisualSettingsAfterFailure();
@@ -584,6 +679,21 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             case AcceptanceScenarioExecution.LocaleScaleTheme:
                 BeginVisualMatrix();
                 return true;
+            case AcceptanceScenarioExecution.RetiredOverlayInput:
+                ExecuteRetiredOverlayInput();
+                return false;
+            case AcceptanceScenarioExecution.ActionReload:
+                ExecuteActionReload();
+                return false;
+            case AcceptanceScenarioExecution.Environment:
+                BeginEnvironment();
+                return true;
+            case AcceptanceScenarioExecution.TerminalGeneration:
+                BeginTerminalGeneration();
+                return true;
+            case AcceptanceScenarioExecution.SaveSwitch:
+                BeginSaveSwitch();
+                return true;
             case AcceptanceScenarioExecution.ActionPump:
                 BeginActionPump();
                 return true;
@@ -626,6 +736,13 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         try
         {
             _awaitingReturnedToTitle = false;
+            if (_saveSwitchStage == SaveSwitchStage.AwaitTitle)
+            {
+                _saveSwitchTitles++;
+                _saveSwitchStage = SaveSwitchStage.LoadNext;
+                _saveSwitchTicks = 0;
+                return;
+            }
             if (_returnToTitleContribution != null)
             {
                 // The UI handler can precede other mods' handlers. Observe their completed teardown
@@ -656,6 +773,9 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         _returnToTitleContribution = null;
         _verifyReturnToTitleContribution = false;
         RetainTerminalFailure("HARNESS-AUTOMATION-LIFECYCLE-EXCEPTION", error);
+        StopSaveSwitch();
+        StopEnvironment();
+        StopTerminalGeneration();
         StopActionPump();
         StopNativeInput();
         RestoreVisualSettingsAfterFailure();
@@ -1193,6 +1313,12 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             terminalOpen = _dogfood.IsOpen,
             overlayVisible = _dogfood.IsOverlayVisible,
             fadeToBlackAlpha = Game1.fadeToBlackAlpha,
+            gamePaused = Game1.paused,
+            gameIsActiveNoOverlay = Game1.game1.IsActiveNoOverlay,
+            pauseWhenOutOfFocus = Game1.options?.pauseWhenOutOfFocus,
+            gameMode = Game1.gameMode,
+            worldReady = Context.IsWorldReady,
+            multiplayerMode = Game1.multiplayerMode,
             menuBounds = _dogfood.AutomationMenu is { } menu ? new
             {
                 x = menu.xPositionOnScreen,
@@ -1216,6 +1342,11 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             },
             visualMatrix = _visualCaptures.ToArray(),
             visualMatrixRestored = _visualSettingsRestored,
+            retiredOverlayInput = _retiredOverlayInput,
+            environment = new { completed = _environmentCompleted, targets = _environmentObservations.ToArray(), operations = _environmentOperations.ToArray(), automatic = _environmentAutomaticObservations.ToArray() },
+            saveSwitch = new { completed = _saveSwitchCompleted, ownerThread = _saveSwitchOwnerThread, titles = _saveSwitchTitles, loads = _saveSwitchLoads, targets = _saveSwitchObservations.ToArray(), effects = _saveSwitchEffects.ToArray() },
+            actionReload = new { completed = _reloadCompleted, targets = _reloadObservations.ToArray(), failedCleanup = _reloadFailedCleanup.ToArray() },
+            terminalGeneration = new { completed = _terminalGenerationCompleted, ownerThread = _generationOwnerThread, transitions = _terminalGenerationTransitions.ToArray(), actions = _terminalGenerationActions.ToArray() },
             actionPump = new { completed = _actionPumpCompleted, ownerThread = _actionOwnerThread, ticks = _actionTicks, probes = _actionProbes.ToArray() },
             nativeInput = new { completed = _nativeInputCompleted, expectedText = _nativeExpectedText, lastObservation = _nativeLastObservation, captures = _nativeCaptures.ToArray() },
             terminalError = _terminalFailure == null ? null : new
@@ -1247,7 +1378,12 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         Overlay,
         Input,
         NativeInput,
+        TerminalGeneration,
+        SaveSwitch,
         ActionPump,
+        ActionReload,
+        Environment,
+        RetiredOverlayInput,
         LocaleScaleTheme,
         Performance,
         Contribution
