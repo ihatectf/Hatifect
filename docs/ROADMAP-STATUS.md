@@ -601,6 +601,35 @@ Integration base `64cce4e` contains U03-a implementation `320e5c9` and Q01 throu
 
 F20 is DONE only in its documented bounded ordinary-chest single-player scope; active/cold cost limitations remain. Full U03 and Q01 stay IN_PROGRESS. The next UI implementation is the U03-b Transient Terminal model-identity prerequisite, then host action binding; F12 continues to await U04.
 
+
+## U03-b Transient Terminal model identity
+
+Base `4737d64`, alpha.38; full U03 remains IN_PROGRESS. Root cause: Shell.Recompose called Open/Activate; a Transient factory ran even for initial host focus, leaving visible scene and CurrentInvocation with different models. The shell now retains the committed Experience and uses internal InvocationService.ReplanKnownAvailable against its registered descriptor. Current assets, section availability, profile, locale and theme are evaluated again; only an explicit successful Open/route commits a new model. Failed host update preserves the prior owner, and Dispose clears the retained reference before cached-owner disposal. No new collection, traversal or history is introduced on input; the former activation/factory allocation is removed. Public Activate/Invoke lifetime policy, frozen surface API signatures and persistence remain unchanged. All17 UI version/package/consumer authorities move together to alpha.38.
+
+Focused regressions extend the existing TerminalHostSessionTests fixture; no project-wide test scaffolding or new test dependency was introduced.
+
+| Requirement | Evidence |
+|---|---|
+| Initial focus, actual text input and environment recompose keep model/action/draft/focus | `TransientHostRecompositionPreservesActivatedModelDraftAndAction` |
+| Rejected route cannot replace committed model; explicit reopen creates fresh Transient model | `TransientRouteFailurePreservesModelAndExplicitReopenCreatesNewModel` |
+| Availability changes still affect navigation/admission without activating sections | `TransientRecompositionRechecksAvailabilityWithoutActivatingSections` |
+| Existing explicit transient activation and owned cached disposal remain valid | Existing `RegistryTests.TransientWindowCreatesEachTime` and Terminal lifecycle tests remain unchanged |
+
+Reproduction `run-o33wsx8k`: FAIL3/299,296 existing cases PASS. Factories ran2/3/5 times instead of1; tests were preserved for the fix. Targeted `./tools/hatifect-test ui --project 'Hatifect UI/tests/Hatifect.UI.Runtime.Tests/Hatifect.UI.Runtime.Tests.csproj'`: `run-jdvxftmu` PASS299/299. Explicit x64 SDK and command-local build GC workaround as documented above. Final C/G/P and independent review follow on the frozen candidate. Runtime/visual is NOT_APPLICABLE to this internal identity prerequisite; full U03 host/consumer integration still requires isolated RUNTIME acceptance. Next: bind action execution to the stable host model and retire it on actual owner/generation replacement.
+
+
+Independent review found one lifecycle regression before final gates: removing Open/Commit also removed its post-composition EnsureActive. `run-qxk8f5y0` reproduced FAIL3/302 (299 PASS): CanExecute disposed the host, opened another section, or explicitly reopened the same Cached definition while outer composition was still running. The shell now captures the committed model and an internal commit stamp before callbacks, then checks live/stamp after availability, asset resolution and composition. Every explicit Commit advances the stamp, including same-model reopen; ordinary Recompose does not commit. No new history or per-recompose allocation is added. Regressions are unchanged for the correction.
+
+| Requirement | Evidence |
+|---|---|
+| A composition callback that closes the Terminal cannot validate/publish a new scene | `RecompositionCallbackCannotPublishAfterTerminalDisposal` |
+| Nested committed Open wins over the old outer scene, including same Cached model | `RecompositionCallbackCannotOverwriteNestedCommittedOpen` (two cases) |
+
+Final scoped correction `run-dfnhqwa0`: PASS302/302 Runtime cases, including all six new identity/callback cases. Independent source review closes the P2 at the shell composition return boundary. Validation/platform callbacks after shell return remain part of subsequent host action integration; this result does not claim that larger lifecycle surface is complete.
+
+
+Final alpha.38 gates on unchanged compiled sources: C `./tools/hatifect-check`, `run-hsx41w29`, **PASS1323 .NET +348 Python**; G `./tools/hatifect-check --platform`, `run-lccboylt`, **PASS1561 .NET +348 Python**. Actual TRX counters and all individual outcomes agree, with no failures/skips. P `./tools/hatifect-isolated-ui-ca --keep`: **PASS90**,44 exact projection files,8 alpha.38 package DLLs matching producers,3 isolated assets files and2 matching CA deployment DLLs without UI duplication. Retained workspace `hatifect-ui-ca-isolated.f1_qfmwf`; log and hashes under `artifacts/u03-terminal-identity/`. A supplemental audit initially assumed the TRX completed outcome equalled passed and that NuGet package paths ended in a slash; both audit assumptions were corrected against actual files, with the canonical successful P result unchanged. Source review is PASS at the documented shell boundary. Full U03 remains IN_PROGRESS; next is production host action binding and lifecycle fencing.
+
 ## Q01 first-frame fixes and fresh alpha.37 runtime
 
 Integration `aa04181073ec66694ec6713aea7f7b5cf362b88c` combines published `4737d64` with `edbe9e8` (runtime help/argument validation before initialization) and `3f3029b` (synchronize Stardew menu viewport before Draw). All46 other incoming files retain exact bytes; the common controller preserves incoming Flow resource exclusion and capture-error shutdown. [The full Q01 report](Q01_WINDOW_VIEWPORT.md) separates before/after alpha.36 evidence, actual native window observations, retained failures and this new combined candidate. Evidence belongs to `${HOME}/Developer/Worktrees/Codex/345f/Hatifect`.
@@ -611,3 +640,15 @@ Integration `aa04181073ec66694ec6713aea7f7b5cf362b88c` combines published `4737d
 - Fresh fake Flow route `52984fa5-522e-417d-adea-ce9097420b81`: PASS6; save isolation `1baed3a9-7913-43da-8db5-df9ecea14bd0`: PASS7. Flow fingerprint `24750ff64fc5d223423bc246b13c8360aa1c3db96d8451be11520396582d2ec3`, with its own inventory algorithm. The mistyped isolation ID was rejected before game submission and is retained separately.
 
 The two bounded fixes are DONE. Q01 remains IN_PROGRESS: native clipping is confirmed in this Mac's borderless mode and absent in isolated windowed1280×720, but no game-engine fix is claimed. Stable rendered EN/RU × scale/theme states and physical input remain unverified. These Q01 steps can continue independently of the UI owner's U03 host integration; F20 completion and its earlier measured source candidate are preserved.
+
+
+## Combined alpha.38 Terminal identity and Q01 viewport fixes
+
+UI checkpoint [`8a3545d`](https://github.com/ihatectf/Hatifect/commit/8a3545d) is integrated with published `d3e9092` (Q01 implementation `3f3029b` / `edbe9e8`, combined alpha.37 `aa04181`). All six incoming non-Markdown files retain exact owner bytes, all alpha.38 compiled UI/consumer changes remain unchanged, and both appended STATUS histories survive the sole merge conflict. The first-draw viewport synchronization and help-before-initialization fix are preserved alongside F20.
+
+- C `./tools/hatifect-check`, `run-rgifh2v6`: **PASS1323 .NET +351 Python**.
+- G `./tools/hatifect-check --platform`, `run-56ru38nr`: **PASS1561 .NET +351 Python**. Actual TRX counters and every individual outcome were verified for both gates; no failures/skips. The explicit x64 SDK and command-local build GC workaround remain as documented above.
+- P `./tools/hatifect-isolated-ui-ca --keep`: **PASS90**,44 exact projection files,8 alpha.38 packages whose DLLs match current producers,3 isolated assets files and2 exact CA deployment DLLs with no UI duplication. Retained workspace `hatifect-ui-ca-isolated.9qhv9tqo`; log and hashes: `artifacts/u03-alpha38-q01-integration/`.
+- Independent bounded source review: **PASS**, including all32 candidate hashes. Changed viewport can recompose before Draw; no action Pump or Execute was added there. Future action completion dispatch must remain a separate Update operation. Existing shell return fencing is not a claim of transactional validation/platform callbacks.
+
+This integration starts no game and makes no new runtime/visual claim. The Q01 native-window and runtime observations belong to the original alpha.36/37 candidates documented above. Full U03/Q01 remain IN_PROGRESS. Next UI step: guarded action request admission and independently retired binding, followed by production host/input/legacy binding and isolated U03 RUNTIME; U04 remains available by dependency but unimplemented.

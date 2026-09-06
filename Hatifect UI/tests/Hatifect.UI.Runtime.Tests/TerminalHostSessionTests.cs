@@ -370,6 +370,218 @@ public sealed class TerminalHostSessionTests
         Assert.Throws<ObjectDisposedException>(() => session.CurrentInvocation);
     }
 
+    [Fact]
+    public void TransientHostRecompositionPreservesActivatedModelDraftAndAction()
+    {
+        UiSymbolId section = Id("terminal-transient/section");
+        int created = 0;
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(section, "Storage", () => { created++; return Section(section, "Storage"); },
+                lifetime: UiExperienceLifetime.Transient)
+            .Freeze();
+        using var session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            new TestPlatform(), UiPresentationProfiles.Wide);
+        UiExperienceDefinition model = session.CurrentInvocation.Experience;
+        UiState<string> draft = Assert.IsType<UiState<string>>(model.Elements.Single(e => e.Name == "Search").Source);
+
+        Assert.Equal(1, created);
+        Assert.Same(model.Actions[0], Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiButtonSceneNode>()).Action);
+        Assert.True(session.MoveFocus(UiNavigationDirection.Next).Consumed);
+        UiTextInputSceneNode input = Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiTextInputSceneNode>());
+        UiPoint pointer = Center(Layout(session, input.Id).Bounds);
+        Assert.True(session.PressPointer(pointer).Consumed);
+        Assert.True(session.ReleasePointer(pointer).Consumed);
+        Assert.True(session.InsertText("Draft").Consumed);
+        Assert.Equal("Draft", draft.Value);
+        Assert.Equal("Draft", Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiTextInputSceneNode>()).Text);
+        Assert.True(session.ReplaceText("Сохранённый ввод").Consumed);
+        UiSymbolId? focus = session.Host.Root.Interactions.Snapshot.Focused;
+        Assert.Equal(input.Id, focus);
+        UiColor foreground = session.Host.Root.Frame.Primitives.OfType<UiTextPrimitive>().First().Foreground;
+
+        session.SetTheme(UiSemanticThemes.Resolve(UiSemanticTheme.Light));
+        session.Recompose(UiPresentationProfiles.Compact,
+            new UiHostPlacementContext(new UiRect(0, 0, 640, 480)), "ru");
+
+        Assert.Equal(1, created);
+        Assert.Same(model, session.CurrentInvocation.Experience);
+        Assert.Equal(UiPresentationProfiles.Compact.Id, session.CurrentInvocation.Plan.Host.Profile);
+        Assert.Equal("Сохранённый ввод", draft.Value);
+        Assert.Equal("Сохранённый ввод", Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiTextInputSceneNode>()).Text);
+        Assert.Equal(focus, session.Host.Root.Interactions.Snapshot.Focused);
+        Assert.Same(model.Actions[0], Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiButtonSceneNode>()).Action);
+        Assert.NotEqual(foreground, session.Host.Root.Frame.Primitives.OfType<UiTextPrimitive>().First().Foreground);
+    }
+
+    [Fact]
+    public void TransientRouteFailurePreservesModelAndExplicitReopenCreatesNewModel()
+    {
+        UiSymbolId flow = Id("terminal-transient-route/flow");
+        UiSymbolId storage = Id("terminal-transient-route/storage");
+        int created = 0;
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(flow, "Flow", () => { created++; return Section(flow, "Flow"); },
+                lifetime: UiExperienceLifetime.Transient)
+            .TerminalSection(storage, "Storage", () => Section(storage, "Storage"),
+                lifetime: UiExperienceLifetime.Transient)
+            .Freeze();
+        var platform = new TestPlatform();
+        using var session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            platform, UiPresentationProfiles.Wide, initialSection: flow);
+        UiExperienceDefinition original = session.CurrentInvocation.Experience;
+        UiState<string> draft = Assert.IsType<UiState<string>>(original.Elements.Single(e => e.Name == "Search").Source);
+        draft.Value = "Retain through failed route";
+        UiPoint pointer = Center(Layout(session, Route(session.Host.Root.Scene, storage).Id).Bounds);
+        Assert.True(session.PressPointer(pointer).Consumed);
+        platform.FailOnStorageContent = true;
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => session.ReleasePointer(pointer));
+
+        Assert.Contains("Storage content", error.Message, StringComparison.Ordinal);
+        session.Recompose(UiPresentationProfiles.Wide, Placement);
+        Assert.Equal(1, created);
+        Assert.Equal(flow, session.ActiveSection);
+        Assert.Same(original, session.CurrentInvocation.Experience);
+        Assert.Equal("Retain through failed route", Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiTextInputSceneNode>()).Text);
+        Assert.Same(original.Actions[0], Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiButtonSceneNode>()).Action);
+
+        session.OpenSection(flow);
+
+        Assert.Equal(2, created);
+        Assert.NotSame(original, session.CurrentInvocation.Experience);
+        Assert.NotSame(original.Actions[0], Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiButtonSceneNode>()).Action);
+        Assert.Equal(string.Empty, Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiTextInputSceneNode>()).Text);
+        Assert.Equal("Retain through failed route", draft.Value);
+    }
+
+    [Fact]
+    public void TransientRecompositionRechecksAvailabilityWithoutActivatingSections()
+    {
+        UiSymbolId active = Id("terminal-transient-availability/active");
+        UiSymbolId other = Id("terminal-transient-availability/other");
+        int activeCreated = 0, otherCreated = 0;
+        bool activeAvailable = true, otherAvailable = false;
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(active, "Active", () => { activeCreated++; return Section(active, "Active"); },
+                lifetime: UiExperienceLifetime.Transient, isAvailable: () => activeAvailable)
+            .TerminalSection(other, "Other", () => { otherCreated++; return Section(other, "Other"); },
+                lifetime: UiExperienceLifetime.Transient, isAvailable: () => otherAvailable)
+            .Freeze();
+        using var session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            new TestPlatform(), UiPresentationProfiles.Wide, initialSection: active);
+        UiExperienceDefinition model = session.CurrentInvocation.Experience;
+        Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiRouteButtonSceneNode>());
+        otherAvailable = true;
+
+        session.Recompose(UiPresentationProfiles.Wide, Placement);
+
+        Assert.False(Route(session.Host.Root.Scene, other).IsCurrent);
+        Assert.Equal(1, activeCreated);
+        Assert.Equal(0, otherCreated);
+        UiScene scene = session.Host.Root.Scene;
+        activeAvailable = false;
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => session.Recompose(UiPresentationProfiles.Wide, Placement));
+        Assert.Contains("currently unavailable", error.Message, StringComparison.Ordinal);
+        Assert.Same(scene, session.Host.Root.Scene);
+        Assert.Same(model, session.CurrentInvocation.Experience);
+        activeAvailable = true;
+        otherAvailable = false;
+
+        session.Recompose(UiPresentationProfiles.Wide, Placement);
+
+        Assert.Single(SceneNodes(session.Host.Root.Scene.Root).OfType<UiRouteButtonSceneNode>());
+        Assert.Same(model, session.CurrentInvocation.Experience);
+        Assert.Equal(1, activeCreated);
+        Assert.Equal(0, otherCreated);
+    }
+
+    [Fact]
+    public void RecompositionCallbackCannotPublishAfterTerminalDisposal()
+    {
+        UiTerminalHostSession? session = null;
+        bool close = false;
+        int validations = 0;
+        UiSymbolId section = Id("terminal-compose-disposal/section");
+        var action = new UiActionDefinition(section.Child("action/check"), "Check", () => { }, () =>
+        {
+            if (close) { close = false; session!.Dispose(); }
+            return true;
+        });
+        UiExperienceDefinition model = new UiExperienceBuilder(section, "Section").Actions("Actions", action).Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder().TerminalSection(section, "Section", () => model).Freeze();
+        using (session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            new TestPlatform(), UiPresentationProfiles.Wide, validateScene: _ => validations++))
+        {
+            UiScene previous = session.Host.Root.Scene;
+            int before = validations;
+            close = true;
+
+            Assert.Throws<ObjectDisposedException>(() => session.Recompose(UiPresentationProfiles.Compact, Placement));
+
+            Assert.Equal(before, validations);
+            Assert.Same(previous, session.Host.Root.Scene);
+            Assert.Null(session.ActiveSection);
+            Assert.Throws<ObjectDisposedException>(() => session.Submit());
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RecompositionCallbackCannotOverwriteNestedCommittedOpen(bool reopenSameCachedModel)
+    {
+        UiTerminalHostSession? session = null;
+        UiScene? nestedScene = null;
+        Hatifect.UI.Runtime.Invocation.UiInvocationResult? nestedInvocation = null;
+        bool open = false;
+        UiSymbolId first = Id("terminal-compose-reentry/first");
+        UiSymbolId second = Id("terminal-compose-reentry/second");
+        UiSymbolId target = reopenSameCachedModel ? first : second;
+        var action = new UiActionDefinition(first.Child("action/check"), "Check", () => { }, () =>
+        {
+            if (open)
+            {
+                open = false;
+                session!.OpenSection(target);
+                nestedScene = session.Host.Root.Scene;
+                nestedInvocation = session.CurrentInvocation;
+            }
+            return true;
+        });
+        UiExperienceDefinition model = new UiExperienceBuilder(first, "First").Actions("Actions", action).Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .TerminalSection(first, "First", () => model)
+            .TerminalSection(second, "Second", () => Section(second, "Second"))
+            .Freeze();
+        using (session = new UiTerminalHostSession(registry, UiThemePresets.Dark(), Placement,
+            new TestPlatform(), UiPresentationProfiles.Wide, initialSection: first))
+        {
+            open = true;
+
+            InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+                () => session.Recompose(UiPresentationProfiles.Compact, Placement));
+
+            Assert.Contains("changed during recomposition", error.Message, StringComparison.Ordinal);
+            Assert.NotNull(nestedScene);
+            Assert.NotNull(nestedInvocation);
+            Assert.Same(nestedScene, session.Host.Root.Scene);
+            Assert.Same(nestedInvocation, session.CurrentInvocation);
+            Assert.Equal(target, session.ActiveSection);
+            Assert.Equal(target, session.Host.Root.Scene.Experience);
+            Assert.Equal(UiPresentationProfiles.Wide.Id, session.CurrentInvocation.Plan.Host.Profile);
+            if (reopenSameCachedModel) Assert.Same(model, session.CurrentInvocation.Experience);
+        }
+    }
+
+    private static IEnumerable<UiSceneNode> SceneNodes(UiSceneNode node)
+    {
+        yield return node;
+        foreach (UiSceneNode child in node.Children)
+        foreach (UiSceneNode descendant in SceneNodes(child))
+            yield return descendant;
+    }
+
     private static UiHostPlacementContext Placement { get; }
         = new(new UiRect(0, 0, 960, 540));
 

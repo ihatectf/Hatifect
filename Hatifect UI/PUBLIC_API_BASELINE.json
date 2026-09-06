@@ -19,7 +19,7 @@
   },
   "SemanticSurface": {
     "Assembly": "Hatifect.UI.Experience",
-    "ContractVersion": "1.0.0-alpha.37",
+    "ContractVersion": "1.0.0-alpha.38",
     "ApiVersion": 1,
     "Policy": "consumer-source-freeze",
     "PublicTypes": [

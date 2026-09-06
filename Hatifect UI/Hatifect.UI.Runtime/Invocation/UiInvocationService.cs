@@ -54,6 +54,21 @@ public sealed class UiInvocationService
         return Build(descriptor, experience, profile, presentation);
     }
 
+    internal UiInvocationResult ReplanKnownAvailable(
+        UiExperienceDescriptor descriptor,
+        UiExperienceDefinition experience,
+        UiPresentationProfile profile,
+        UiPresentationDefinition? presentation = null)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(experience);
+        ArgumentNullException.ThrowIfNull(profile);
+        if (!_registry.TryGetExperience(descriptor.Id, out UiExperienceDescriptor? registered) ||
+            !ReferenceEquals(registered, descriptor) || experience.Id != descriptor.Id)
+            throw new InvalidOperationException("The active Experience must belong to this registry descriptor.");
+        return Build(descriptor, experience, profile, presentation);
+    }
+
     private UiInvocationResult Build(
         UiExperienceDescriptor descriptor,
         UiExperienceDefinition experience,
