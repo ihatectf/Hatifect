@@ -21,7 +21,7 @@ This report preserves separate evidence for Flow foundation `cdf9d2e`, F11 `e31c
 | F12–F13 | IN_PROGRESS | ParcelExperience/ParcelSurface, typed controls and localized projections; host-free behavior tests | New semantic-v2 integration; complete fake-session in-game lifecycle/input evidence |
 | F14–F17 | DONE | D03/D04, SaveBoundCargoPort and FlowGameSession; supported F16 failure matrix plus F17-a production A→B→A and F17-b actual bounded performance below | Checked Flow candidate complete; subsequent combined UI candidates retain their own integration/acceptance gates |
 | F18–F19 | IN_PROGRESS | NetworkExperience: stations/routes, inventory fingerprints, shipping/history, return/recovery | Ordinary player entry without console, Quick/View integration, reason codes, locale/input/scale acceptance |
-| F20 | IN_PROGRESS | F20-a below: owner resource snapshots, bounded console diagnostics, explicit retention refusals and full-journal model tests | Actual routing/dispatch/checkpoint/restore measurements, D06 and long-running SMAPI evidence |
+| F20 | DONE | F20-a `6d0ac14` and F20-b `a0520d2`: bounded diagnostics, actual routing/dispatch/save/restore profile, resources PASS12 and PERF PASS9; D06 chooses bounded retention | No remaining F20 acceptance for the chosen provider; combined candidates keep their own evidence and player-facing limits follow F18/F19 |
 | I01 | IN_PROGRESS | CA continues consuming exact UI packages; prior alpha.30 isolated build passes | Migration to the new semantic/authoring contract and current runtime/visual acceptance |
 | Q01–Q03 | IN_PROGRESS | Prior baseline package and game results retained separately | Full specified modernized scope, current fingerprints, matrix, performance/editor evidence and final archive |
 
@@ -56,7 +56,7 @@ Owner: Flow semantic consumer; existing application event/snapshot contract and 
 
 ## Current next slice
 
-F11 is integrated and verified in develop through `5f2d10c`/`22a6441`. F16-a is published as `54c5af5`; F16-b `51eee23`, F16-c `c12261c`, F16-d `1a06fa3`, F16-e `2224c6e`, F16-f `b4eff25`, F16-g `2a36f34` and F16-h `eb30f62` have actual confirmed-save, unsaved-effect, cancellation and return evidence below. F17-a and F17-b now complete production A→B→A and actual idle/paused/due-work performance; continue with F20 bounded resource diagnostics and D06 measurements. F16-h closes the bounded supported matrix on this task candidate; combined develop integration remains with the UI owner. The UI task owns U01–U10/R/T and develop integration. F18 ordinary player entry follows the standalone host and U01 identity fix. Multiplayer remains disabled.
+F11 and the chosen F14–F17 provider are complete with the separately attributed evidence below. F20 implementation `a0520d2` and evidence `db7acd6` are published on the Flow task branch; the resource profile closes D06 with bounded retention. Combined develop integration remains with the UI owner, who also owns U01–U10/R/T. Published U02 `356e52e` / alpha.36 is available in develop `54e14e7`; this Flow source candidate still uses its separately tested alpha.35 baseline. F12 implementation waits for completed U04, then F13 requires completed U03/F12 and F18/F19 require U07 and the earlier Flow UI stages. [F12 readiness and acceptance](FLOW_UI_READINESS.md) identifies the remaining consumer states and actual UI lifecycle evidence. No new stage is declared complete by this readiness assessment. Multiplayer remains disabled.
 
 ## F11-b: owner-derived availability and rejection reasons
 

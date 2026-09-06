@@ -256,6 +256,8 @@ U02-d, checkpoint `56c9e7f`, alpha.35: renderer/accessibility использую
 
 **F12.** Заменить прямое наблюдение domain `Parcel` snapshot-проекцией и подключить read-only Flow experience к поддержанному UI host. Выбрать конкретную точку открытия; при необходимости расширить public host capability вместе с реализацией/consumer. Включить semantic DLL и корректную UI dependency в release inventory, проверяя единственного поставщика UI DLL. Выход: экран открывается, обновляется после доменного изменения, показывает unavailable/empty/faulted state, закрывается и переживает A → B → A без старых данных и утечки подписок. Пока источник fake, экран обозначает диагностический режим.
 
+Готовность после F20: snapshot/publication и supported host уже существуют; published U02 alpha.36 закрывает свою зависимость, U04 остаётся незавершённым. [Проверка исходников и оставшаяся приёмка F12](FLOW_UI_READINESS.md) фиксирует пробелы empty/faulted, смены локали и фактического UI lifecycle. Это подготовка к зависимому срезу, без объявления нового runtime PASS или завершения F12.
+
 **F13.** Добавить ограниченное управление fake transport: выбранные операции create/dispatch/cancel/retry и объяснение отказов в рамках существующей доменной семантики. Окончательный набор определяется в срезе; UI не обещает возврат груза после точки, где cancel запрещён. Выход: повторный click, устаревший экран, running operation и domain rejection отображаются корректно; изменение видно другим открытым projections. Harness создаёт fixtures в изолированной среде; тестовые команды provisioning не становятся production inventory API.
 
 ### F14–F17: реальный provider и production session
