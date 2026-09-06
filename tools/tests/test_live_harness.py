@@ -1,4 +1,6 @@
 import datetime as dt
+import base64
+import copy
 import importlib.util
 import json
 import os
@@ -355,27 +357,26 @@ class LiveHarnessTests(unittest.TestCase):
                 HARNESS.validate_required_mods(resolved, mods_root)
 
     def test_ui_scale_failures_remain_structured_runtime_diagnostics(self) -> None:
-        driver = (
-            ROOT
-            / "Hatifect UI"
-            / "Hatifect.UI.Stardew"
-            / "Diagnostics"
-            / "UiAutomatedAcceptanceController.cs"
-        ).read_text(encoding="utf-8")
-        scale_method = driver[driver.index("private static UiScaleAttempt TrySetUiScale(float value)"):]
+        resolved = HARNESS.resolve_scenario(self.scenarios, "semantic.locale-scale-theme", "ui")
+        for scale in (75, 100, 125, 150):
+            with self.subTest(scale=scale):
+                report = self._report(resolved)
+                check_id = f"semantic.scale.{scale}"
+                note = f"HARNESS-VISUAL-STATE-NOT-RENDERED: scale={scale / 100}; menu origin is invalid"
+                check = next(item for item in report["HostChecks"] if item["Id"] == check_id)
+                check.update(Passed=False, Note=note)
 
-        self.assertIn("private readonly List<UiScaleAttempt> _uiScaleAttempts = new();", driver)
-        self.assertIn("uiScaleAttempts = _uiScaleAttempts.Select", driver)
-        self.assertIn("private static UiScaleAttempt TrySetUiScale(float value)", driver)
-        self.assertIn("UiScaleAttempt.ReadbackMismatch(value, observed)", driver)
-        self.assertIn("UiScaleAttempt.Failed(value, error)", driver)
-        self.assertIn('"HARNESS-UI-SCALE-READBACK-MISMATCH"', driver)
-        self.assertIn('reason: "HARNESS-UI-SCALE-SET-EXCEPTION"', driver)
-        self.assertIn("exceptionType: error.GetType().FullName ?? error.GetType().Name", driver)
-        self.assertIn("exceptionMessage: error.Message", driver)
-        self.assertIn("exceptionStack: error.StackTrace ?? string.Empty", driver)
-        self.assertNotIn("_monitor.Log", scale_method)
-        self.assertNotIn("WriteDiagnostics", scale_method)
+                with self.assertRaises(HARNESS.HarnessError) as caught:
+                    HARNESS.validate_report(resolved, report, started_at=0)
+
+                self.assertEqual(str(caught.exception), f"Failed required host checks: {check_id}")
+                self.assertEqual(caught.exception.assertions, [{
+                    "id": check_id,
+                    "status": "FAIL",
+                    "subject": "semantic.locale-scale-theme",
+                    "expected": "The required host check passes.",
+                    "actual": note,
+                }])
 
     def test_terminal_failure_is_retained_as_one_typed_diagnostic(self) -> None:
         driver = (
@@ -400,7 +401,7 @@ class LiveHarnessTests(unittest.TestCase):
 
         write_diagnostics = driver[
             driver.index("private void WriteDiagnostics()"):driver.index(
-                "private static bool TrySetStaticProperty"
+                "private enum AcceptanceScenarioKind"
             )
         ]
         guard = write_diagnostics.index("if (_diagnosticsWritten) return;")
@@ -719,6 +720,124 @@ class LiveHarnessTests(unittest.TestCase):
 
         self.assertEqual(evidence["performance"]["frames"], 600)
         self.assertEqual(evidence["checks"], ["semantic.performance.steady"])
+
+    def test_late_diagnostic_write_failure_cannot_finalize_passed_matrix(self) -> None:
+        scenario = "semantic.locale-scale-theme"
+        resolved = HARNESS.resolve_scenario(self.scenarios, scenario, "ui")
+        report = self._report(resolved)
+        self.assertTrue(all(check["Passed"] for check in report["HostChecks"]))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report_path = root / "host-acceptance-report.json"
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            (root / "diagnostics" / "runtime.json").mkdir(parents=True)
+            args = HARNESS.argparse.Namespace(
+                kind="ui", scenario=scenario, manifest=str(HARNESS.DEFAULT_MANIFEST),
+                report=str(report_path), result=str(root / "result.json"),
+                artifact_root=str(root), run_id="late-matrix-write", started_at=0,
+            )
+
+            exit_code = HARNESS.command_finalize(args)
+
+            self.assertEqual(1, exit_code)
+            result = json.loads((root / "result.json").read_text(encoding="utf-8"))
+            self.assertEqual("FAIL", result["status"])
+            self.assertEqual("HARNESS-RUNTIME-DIAGNOSTICS", result["assertions"][0]["id"])
+            self.assertEqual(report, json.loads(report_path.read_text(encoding="utf-8")))
+
+    def test_ui_finalization_rejects_invalid_or_foreign_diagnostics(self) -> None:
+        for defect in ("missing", "temporary-only", "invalid-json", "invalid-utf8", "deep-json", "array",
+                       "boolean-protocol", "foreign-run", "foreign-scenario", "missing-terminal-error",
+                       "terminal-failure", "stale", "no-timezone", "boolean-process", "zero-process"):
+            with self.subTest(defect=defect), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                args, payload = self._finalization_fixture(root, "semantic.locale-scale-theme")
+                path = root / "diagnostics/runtime.json"
+                if defect == "missing": path.unlink()
+                elif defect == "temporary-only": path.rename(path.with_suffix(".json.tmp"))
+                elif defect == "invalid-json": path.write_text("{", encoding="utf-8")
+                elif defect == "invalid-utf8": path.write_bytes(b"\xff")
+                elif defect == "deep-json": path.write_text("[" * 100000 + "]" * 100000, encoding="utf-8")
+                else:
+                    if defect == "array": payload = []
+                    elif defect == "boolean-protocol": payload["protocolVersion"] = True
+                    elif defect == "foreign-run": payload["runId"] = "other-request"
+                    elif defect == "foreign-scenario": payload["scenario"] = "semantic.lifecycle"
+                    elif defect == "missing-terminal-error": del payload["terminalError"]
+                    elif defect == "terminal-failure": payload["terminalError"] = {"reason": "LATE-WRITE", "message": "failed"}
+                    elif defect == "stale": payload["capturedAtUtc"] = "2000-01-01T00:00:00Z"
+                    elif defect == "no-timezone": payload["capturedAtUtc"] = "2026-01-01T00:00:00"
+                    elif defect == "boolean-process": payload["processId"] = True
+                    elif defect == "zero-process": payload["processId"] = 0
+                    path.write_text(json.dumps(payload), encoding="utf-8")
+
+                self.assertEqual(1, HARNESS.command_finalize(args))
+                result = json.loads((root / "result.json").read_text(encoding="utf-8"))
+                self.assertEqual("FAIL", result["status"])
+                self.assertEqual("HARNESS-RUNTIME-DIAGNOSTICS", result["assertions"][0]["id"])
+
+    def test_ui_finalization_requires_complete_rendered_matrix_including_aggregate(self) -> None:
+        defects = ("missing-matrix", "not-restored", "duplicate-state", "old-frame", "boolean-frame", "no-probe",
+                   "no-observation", "locale", "theme", "unapplied-scale", "nan-scale", "zero-pixel-scale",
+                   "infinite-pixel-scale", "boolean-geometry", "menu-origin", "viewport", "menu-size",
+                   "invalid-tree", "missing-probe", "fade", "wrong-path", "missing-png", "not-png")
+        for scenario in ("semantic.locale-scale-theme", "all"):
+            for defect in defects:
+                with self.subTest(scenario=scenario, defect=defect), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    args, payload = self._finalization_fixture(root, scenario)
+                    capture = payload["visualMatrix"][1]
+                    observation = capture["Observation"]
+                    if defect == "missing-matrix": del payload["visualMatrix"]
+                    elif defect == "not-restored": payload["visualMatrixRestored"] = False
+                    elif defect == "duplicate-state": payload["visualMatrix"] = [copy.deepcopy(capture)] * 8
+                    elif defect == "old-frame": capture["CompletedFrame"] = 2
+                    elif defect == "boolean-frame": capture["CompletedFrame"] = True
+                    elif defect == "no-probe": capture["ProbeText"] = ""
+                    elif defect == "no-observation": capture["Observation"] = None
+                    elif defect == "locale": observation["SceneLocale"] = "ru"
+                    elif defect == "theme": observation["Theme"] = "unknown"
+                    elif defect == "unapplied-scale": observation["BaseScale"] = .75
+                    elif defect == "nan-scale": observation["DesiredScale"] = float("nan")
+                    elif defect == "zero-pixel-scale": observation["PixelScale"] = 0
+                    elif defect == "infinite-pixel-scale": observation["PixelScale"] = float("inf")
+                    elif defect == "boolean-geometry": observation["BackBufferWidth"] = True
+                    elif defect == "menu-origin": observation["MenuX"] = -2147483648
+                    elif defect == "viewport": observation["ViewportWidth"] += 1
+                    elif defect == "menu-size": observation["MenuHeight"] += 1
+                    elif defect == "invalid-tree": observation["HasValidTree"] = False
+                    elif defect == "missing-probe": observation["HasProbeText"] = 1
+                    elif defect == "fade": observation["LoadFadeFinished"] = False
+                    elif defect == "wrong-path": capture["Screenshot"] = "../foreign.png"
+                    elif defect == "missing-png": (root / capture["UiLayerScreenshot"]).unlink()
+                    elif defect == "not-png": (root / capture["Screenshot"]).write_bytes(b"not a PNG")
+                    (root / "diagnostics/runtime.json").write_text(json.dumps(payload), encoding="utf-8")
+
+                    self.assertEqual(1, HARNESS.command_finalize(args))
+                    result = json.loads((root / "result.json").read_text(encoding="utf-8"))
+                    self.assertEqual("FAIL", result["status"])
+                    self.assertEqual("HARNESS-RUNTIME-DIAGNOSTICS", result["assertions"][0]["id"])
+
+    def test_ui_finalization_accepts_current_diagnostics_and_restored_matrix(self) -> None:
+        for scenario in ("semantic.locale-scale-theme", "all", "semantic.lifecycle"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                args, payload = self._finalization_fixture(root, scenario)
+                # Closed menus and non-matrix scenarios remain valid final states.
+                payload["terminalOpen"] = False
+                payload["menuBounds"] = None
+                if scenario == "semantic.lifecycle":
+                    payload["visualMatrix"] = []
+                    payload["visualMatrixRestored"] = False
+                    args.run_id = None
+                    payload["runId"] = root.name
+                (root / "diagnostics/runtime.json").write_text(json.dumps(payload), encoding="utf-8")
+
+                self.assertEqual(0, HARNESS.command_finalize(args))
+                result = json.loads((root / "result.json").read_text(encoding="utf-8"))
+                self.assertEqual("PASS", result["status"])
+                self.assertTrue(all(item["status"] == "PASS" for item in result["assertions"]))
+                self.assertEqual(payload["runId"], result["runId"])
 
     def test_evidence_v3_preserves_checked_in_acceptance_criteria(self) -> None:
         ui_root = ROOT / "Hatifect UI"
@@ -1211,6 +1330,45 @@ class LiveHarnessTests(unittest.TestCase):
             "HostChecks": checks,
             "Scenarios": scenarios,
         }
+
+    def _finalization_fixture(self, root, scenario):
+        resolved = HARNESS.resolve_scenario(self.scenarios, scenario, "ui")
+        (root / "host-acceptance-report.json").write_text(json.dumps(self._report(resolved)), encoding="utf-8")
+        args = HARNESS.argparse.Namespace(
+            kind="ui", scenario=scenario, manifest=str(HARNESS.DEFAULT_MANIFEST),
+            report=str(root / "host-acceptance-report.json"), result=str(root / "result.json"),
+            artifact_root=str(root), run_id="matrix-finalization", started_at=time.time() - 1,
+        )
+        captures = []
+        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jhE0AAAAASUVORK5CYII=")
+        (root / "screenshots").mkdir()
+        for locale in ("en", "ru"):
+            for scale, width, height in ((.75, 1707, 960), (1., 1280, 720), (1.25, 1024, 576), (1.5, 854, 480)):
+                stem = f"screenshots/matrix-{locale}-{int(scale * 100)}-dark"
+                capture = {
+                    "Locale": locale, "Scale": scale, "CompletedFrame": 2 * (len(captures) + 1),
+                    "ProbeText": "English probe" if locale == "en" else "Русский текст: ё, щ, №42",
+                    "Screenshot": stem + ".png", "UiLayerScreenshot": stem + "-ui-layer.png",
+                    "Observation": {
+                        "GameLocale": locale, "SceneLocale": locale, "Theme": "Hatifect.UI/theme/Dark",
+                        "DesiredScale": scale, "BaseScale": scale, "PixelScale": scale,
+                        "BackBufferWidth": 1280, "BackBufferHeight": 720,
+                        "ViewportWidth": width, "ViewportHeight": height,
+                        "MenuX": 0, "MenuY": 0, "MenuWidth": width, "MenuHeight": height,
+                        "HasValidTree": True, "HasProbeText": True, "LoadFadeFinished": True,
+                    },
+                }
+                for key in ("Screenshot", "UiLayerScreenshot"):
+                    (root / capture[key]).write_bytes(png)
+                captures.append(capture)
+        payload = {
+            "protocolVersion": 1, "runId": args.run_id, "scenario": scenario,
+            "capturedAtUtc": dt.datetime.now(dt.timezone.utc).isoformat(), "processId": 42,
+            "terminalError": None, "visualMatrix": captures, "visualMatrixRestored": True,
+        }
+        (root / "diagnostics").mkdir()
+        (root / "diagnostics/runtime.json").write_text(json.dumps(payload), encoding="utf-8")
+        return args, payload
 
     @staticmethod
     def _validate_shell_result(payload, expected):

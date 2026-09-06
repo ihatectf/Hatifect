@@ -61,6 +61,13 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
     internal static RuntimeRect CaptureViewport()
         => new(0, 0, Math.Max(1, Game1.uiViewport.Width), Math.Max(1, Game1.uiViewport.Height));
 
+    public override void gameWindowSizeChanged(Rectangle oldBounds, Rectangle newBounds)
+    {
+        // The base menu scales its position relative to the unused window margins. A full-viewport
+        // menu has zero margins, so that calculation can produce NaN/int.MinValue even on a no-op
+        // resize. This presenter derives its bounds from the UI viewport in Update and Draw.
+    }
+
     public override void update(GameTime time)
     {
         _slot.PollRetirement();
