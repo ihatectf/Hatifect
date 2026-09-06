@@ -63,7 +63,8 @@ internal sealed partial class UiAutomatedAcceptanceController
         _generationFirst = NewTerminalGenerationAction(kind + "/first");
         _generationSecond = NewTerminalGenerationAction(kind + "/second");
         _generationPopup = NewTerminalGenerationAction(kind + "/popup");
-        _generationFirstModel = GenerationModel("first", _generationFirst.Definition);
+        TerminalGenerationAction idleSibling = NewTerminalGenerationAction(kind + "/idle-sibling");
+        _generationFirstModel = GenerationModel("first", _generationFirst.Definition, idleSibling.Definition);
         _generationSecondModel = GenerationModel("second", _generationSecond.Definition);
         var registry = new UiRegistryBuilder()
             .TerminalSection(GenerationId("first"), "First", () => _generationFirstModel, order: 1)
@@ -82,6 +83,8 @@ internal sealed partial class UiAutomatedAcceptanceController
         var previousInvocation = host.CurrentInvocation;
         var previousScene = host.Session.Root.Scene;
         RequireAction(previousActions.Invoke(_generationFirst.Definition), "Terminal root rejected its pending typed action.");
+        RequireAction(previousActions.CanInvoke(idleSibling.Definition) && idleSibling.Captures == 0,
+            "The old generation must contain an available idle action before retirement.");
         var popupPolicy = new UiHostPolicy(UiHostKind.Popup, UiWindowChrome.Tool, UiDismissPolicy.Escape,
             UiModalPolicy.Modeless, UiFocusScopePolicy.Contained, UiPopupPlacement.Anchor);
         _generationPortal = host.Present(new UiPortalRequest(GenerationId("popup"),
@@ -97,7 +100,9 @@ internal sealed partial class UiAutomatedAcceptanceController
                     same ? _generationFirstModel : _generationSecondModel)
                 && !ReferenceEquals(previousInvocation, host.CurrentInvocation)
                 && host.Session.Accessibility.Portals.Count == 0
-                && !previousActions.CanInvoke(_generationFirst.Definition);
+                && !previousActions.CanInvoke(idleSibling.Definition)
+                && !previousActions.Invoke(idleSibling.Definition)
+                && idleSibling.Captures == 0 && idleSibling.Operations.Count == 0;
         });
         if (kind.StartsWith("failed-", StringComparison.Ordinal))
         {
@@ -108,7 +113,7 @@ internal sealed partial class UiAutomatedAcceptanceController
             bool retained = rejection?.Message == "Controlled Terminal candidate rejection."
                 && ReferenceEquals(previousInvocation, host.CurrentInvocation)
                 && (kind == "failed-route" || ReferenceEquals(previousScene, host.Session.Root.Scene))
-                && ! _generationFirst.Operations[0].Token.IsCancellationRequested
+                && !_generationFirst.Operations[0].Token.IsCancellationRequested
                 && !_generationPopup.Operations[0].Token.IsCancellationRequested
                 && host.Session.Accessibility.Portals.Count == 1;
             Record("semantic.actions.terminal." + kind + ".transition", retained,
@@ -125,7 +130,7 @@ internal sealed partial class UiAutomatedAcceptanceController
             TransitionTerminalGeneration(kind == "route", GenerationId(same ? "first" : "second"));
             bool retired = _generationMetadataAtCancellation && _generationFirst.Operations[0].Token.IsCancellationRequested
                 && _generationPopup.Operations[0].Token.IsCancellationRequested
-                && !previousActions.Invoke(_generationFirst.Definition);
+                && !previousActions.Invoke(idleSibling.Definition) && idleSibling.Captures == 0;
             Record("semantic.actions.terminal." + kind + ".transition", retired,
                 "Explicit Open/Follow accepts Terminal metadata and retires old root/popup bindings before cancellation.");
             _terminalGenerationTransitions.Add(new { kind, retired, metadataAtCancellation = _generationMetadataAtCancellation });
@@ -220,9 +225,9 @@ internal sealed partial class UiAutomatedAcceptanceController
         _terminalGenerationActions.Add(action);
         return action;
     }
-    private static UiExperienceDefinition GenerationModel(string id, UiActionDefinition action)
+    private static UiExperienceDefinition GenerationModel(string id, params UiActionDefinition[] actions)
         => new UiExperienceBuilder(GenerationId(id), id).Monitor("Content", new UiConstantSource<string>(id))
-            .Actions("Actions", action).Build();
+            .Actions("Actions", actions).Build();
     private static IEnumerable<UiSceneNode> GenerationNodes(UiSceneNode root)
     {
         yield return root;
@@ -270,6 +275,7 @@ internal sealed partial class UiAutomatedAcceptanceController
             });
         }
         public string Name { get; }
+        public int Captures => _captured;
         internal UiActionDefinition Definition { get; }
         public List<TerminalGenerationCompletion> Operations { get; } = new();
     }
