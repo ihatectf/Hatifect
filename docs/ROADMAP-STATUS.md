@@ -629,3 +629,26 @@ Final scoped correction `run-dfnhqwa0`: PASS302/302 Runtime cases, including all
 
 
 Final alpha.38 gates on unchanged compiled sources: C `./tools/hatifect-check`, `run-hsx41w29`, **PASS1323 .NET +348 Python**; G `./tools/hatifect-check --platform`, `run-lccboylt`, **PASS1561 .NET +348 Python**. Actual TRX counters and all individual outcomes agree, with no failures/skips. P `./tools/hatifect-isolated-ui-ca --keep`: **PASS90**,44 exact projection files,8 alpha.38 package DLLs matching producers,3 isolated assets files and2 matching CA deployment DLLs without UI duplication. Retained workspace `hatifect-ui-ca-isolated.f1_qfmwf`; log and hashes under `artifacts/u03-terminal-identity/`. A supplemental audit initially assumed the TRX completed outcome equalled passed and that NuGet package paths ended in a slash; both audit assumptions were corrected against actual files, with the canonical successful P result unchanged. Source review is PASS at the documented shell boundary. Full U03 remains IN_PROGRESS; next is production host action binding and lifecycle fencing.
+
+## Q01 first-frame fixes and fresh alpha.37 runtime
+
+Integration `aa04181073ec66694ec6713aea7f7b5cf362b88c` combines published `4737d64` with `edbe9e8` (runtime help/argument validation before initialization) and `3f3029b` (synchronize Stardew menu viewport before Draw). All46 other incoming files retain exact bytes; the common controller preserves incoming Flow resource exclusion and capture-error shutdown. [The full Q01 report](Q01_WINDOW_VIEWPORT.md) separates before/after alpha.36 evidence, actual native window observations, retained failures and this new combined candidate. Evidence belongs to `${HOME}/Developer/Worktrees/Codex/345f/Hatifect`.
+
+- C `run-mo6_ehgs`: PASS1,317 .NET +351 Python. G `run-oxunrnku`: PASS1,555 .NET +351 Python. Actual TRX audits agree and have no failures/skips/error outcomes.
+- P: PASS90 CA tests,44 exact projection files,8 alpha.37 packages,2 CA DLLs without UI duplication; retained `hatifect-ui-ca-isolated.8ou4iayd`. Logs and hashes are under `artifacts/q01-window-observation/`.
+- Fresh standalone `6b68ae01-5911-41fc-9dc5-ce938696d34d`: PASS3, correct 1280×720 native menu bounds and inspected complete frame. UI/CA aggregate `ac90367e-7f6a-4aab-b92a-403eeb970efc`: PASS28, actual native window inspected,620 frames, p95/p99 0.055584/0.360876 ms,4572.052 B/frame, zero measure/arrange cache misses. UI fingerprint `4fc0b3c304ca342338cb28c32859439173ceea60928d6873c97753ffdc2ebab2`.
+- Fresh fake Flow route `52984fa5-522e-417d-adea-ce9097420b81`: PASS6; save isolation `1baed3a9-7913-43da-8db5-df9ecea14bd0`: PASS7. Flow fingerprint `24750ff64fc5d223423bc246b13c8360aa1c3db96d8451be11520396582d2ec3`, with its own inventory algorithm. The mistyped isolation ID was rejected before game submission and is retained separately.
+
+The two bounded fixes are DONE. Q01 remains IN_PROGRESS: native clipping is confirmed in this Mac's borderless mode and absent in isolated windowed1280×720, but no game-engine fix is claimed. Stable rendered EN/RU × scale/theme states and physical input remain unverified. These Q01 steps can continue independently of the UI owner's U03 host integration; F20 completion and its earlier measured source candidate are preserved.
+
+
+## Combined alpha.38 Terminal identity and Q01 viewport fixes
+
+UI checkpoint [`8a3545d`](https://github.com/ihatectf/Hatifect/commit/8a3545d) is integrated with published `d3e9092` (Q01 implementation `3f3029b` / `edbe9e8`, combined alpha.37 `aa04181`). All six incoming non-Markdown files retain exact owner bytes, all alpha.38 compiled UI/consumer changes remain unchanged, and both appended STATUS histories survive the sole merge conflict. The first-draw viewport synchronization and help-before-initialization fix are preserved alongside F20.
+
+- C `./tools/hatifect-check`, `run-rgifh2v6`: **PASS1323 .NET +351 Python**.
+- G `./tools/hatifect-check --platform`, `run-56ru38nr`: **PASS1561 .NET +351 Python**. Actual TRX counters and every individual outcome were verified for both gates; no failures/skips. The explicit x64 SDK and command-local build GC workaround remain as documented above.
+- P `./tools/hatifect-isolated-ui-ca --keep`: **PASS90**,44 exact projection files,8 alpha.38 packages whose DLLs match current producers,3 isolated assets files and2 exact CA deployment DLLs with no UI duplication. Retained workspace `hatifect-ui-ca-isolated.9qhv9tqo`; log and hashes: `artifacts/u03-alpha38-q01-integration/`.
+- Independent bounded source review: **PASS**, including all32 candidate hashes. Changed viewport can recompose before Draw; no action Pump or Execute was added there. Future action completion dispatch must remain a separate Update operation. Existing shell return fencing is not a claim of transactional validation/platform callbacks.
+
+This integration starts no game and makes no new runtime/visual claim. The Q01 native-window and runtime observations belong to the original alpha.36/37 candidates documented above. Full U03/Q01 remain IN_PROGRESS. Next UI step: guarded action request admission and independently retired binding, followed by production host/input/legacy binding and isolated U03 RUNTIME; U04 remains available by dependency but unimplemented.

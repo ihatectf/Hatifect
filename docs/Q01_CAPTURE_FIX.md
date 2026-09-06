@@ -29,4 +29,4 @@ This changes no public UI/Flow API, package dependency, persistence format or ac
 
 ## Next ready Q01 work
 
-The subsequent [HUD-overlay fixture correction](Q01_OVERLAY_FIXTURE.md), `37b735e`, requires an isolated loaded world and waits for its initial fade to finish. Fresh alpha.36 C/G/P, UI/CA and fake Flow evidence are recorded there; the original alpha.35 measurements above remain unchanged. Next: distinguish the native-frame upper strip from the actual window surface and inspect the initial standalone viewport. Physical input and the locale/scale/theme visual matrix remain separate until verified.
+The subsequent [HUD-overlay fixture correction](Q01_OVERLAY_FIXTURE.md), `37b735e`, requires an isolated loaded world and waits for its initial fade to finish. Fresh alpha.36 C/G/P, UI/CA and fake Flow evidence are recorded there; the original alpha.35 measurements above remain unchanged. The later [first-frame/window checkpoint](Q01_WINDOW_VIEWPORT.md) fixes the initial standalone viewport and confirms the native clipping depends on borderless mode on this Mac. Physical input and the rendered locale/scale/theme matrix remain separate until verified.

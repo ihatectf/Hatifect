@@ -67,12 +67,7 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
         if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         base.update(time);
-        RuntimeRect viewport = CaptureViewport();
-        if (viewport != _viewport)
-        {
-            _recompose(viewport);
-            ApplyViewport(viewport);
-        }
+        SynchronizeViewport();
         CompleteInput();
         sample.Complete();
     }
@@ -159,9 +154,11 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
     {
         _slot.PollRetirement();
         if (!_slot.CanDispatch) return;
+        var sample = BeginAcceptanceSample();
+        // Stardew can establish the UI viewport after Update, including the first menu frame.
+        SynchronizeViewport();
         UiSemanticStardewHost host = _host
             ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu));
-        var sample = BeginAcceptanceSample();
         host.Render(batch);
         drawMouse(batch);
         sample.Complete(completesFrame: true, layoutBuilds: host.Performance.LayoutBuilds);
@@ -252,6 +249,14 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
         finally { _cleaning = false; }
         if (failures.Count > 0)
             throw new AggregateException("Semantic Stardew menu cleanup failed.", failures);
+    }
+
+    private void SynchronizeViewport()
+    {
+        RuntimeRect viewport = CaptureViewport();
+        if (viewport == _viewport) return;
+        _recompose(viewport);
+        ApplyViewport(viewport);
     }
 
     private void ApplyViewport(RuntimeRect viewport)
