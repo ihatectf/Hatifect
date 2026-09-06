@@ -1115,7 +1115,7 @@ def _run_saved_crash(request, metadata, runner, active_path, cancellation_path, 
                        "pid": None, "processGroup": None, "executable": str(smapi), "launchRequestedAtUtc": _timestamp()}, replace=True)
     environment["HATIFECT_TEST_CRASH_PHASE"] = "resume"
     result = runner.run([str(smapi)], smapi.parent, artifact / "smapi.log", remaining, 5.0,
-                        environment=environment, on_started=lambda pid, group: on_started(pid, group, True),
+                        environment=environment, on_started=lambda pid, group, started: on_started(pid, group, started, True),
                         cancel_requested=cancellation_path.exists, on_completed=on_completed)
     resumed = _read_json(artifact / "process.json")
     _atomic_write_json(artifact / "diagnostics" / "process-resume.json", resumed)
@@ -1164,7 +1164,7 @@ def _execute_request(
     )
     _write_transport_diagnostics(request, metadata, phase="starting")
 
-    def on_started(pid: int, process_group: int, continuation: bool = False) -> None:
+    def on_started(pid: int, process_group: int, started: dt.datetime, continuation: bool = False) -> None:
         _record_started_process(active_path, request, smapi, pid, process_group, continuation=continuation)
         _atomic_write_json(
             artifact / "process.json",
@@ -1174,7 +1174,7 @@ def _execute_request(
                 "pid": pid,
                 "processGroup": process_group,
                 "executable": str(smapi),
-                "startedAtUtc": _timestamp(),
+                "startedAtUtc": _timestamp(started),
             },
             replace=True,
         )
