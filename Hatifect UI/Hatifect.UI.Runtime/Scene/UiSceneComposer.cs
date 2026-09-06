@@ -236,6 +236,17 @@ internal sealed class UiSceneComposer
             domainStates: selectedState);
         EnsureRenderOnlyState(nodeId, normal, selected, "Collection item states");
 
+        // Capture policy values, not the mutable composer or the Experience/read scope.
+        // Reconciliation may move focus after Compose without recapturing the publication.
+        UiTheme theme = _theme;
+        UiVisualResolver resolver = _visualResolver;
+        UiFoundationVisuals foundation = _foundationVisuals;
+        UiSymbolId profile = invocation.Plan.Host.Profile;
+        var host = invocation.Descriptor.Host;
+        var stateVisuals = new UiCollectionStateVisuals(nodeId, normal, selected, (domain, active) =>
+            resolver.Resolve(new UiVisualContext(role, profile, domain, active), theme, visual,
+                foundation.For(UiSceneNodeKind.Collection, host, domain, active)));
+
         var capturedCollection = reads.Read(collection) as IUiSemanticCollectionSnapshot;
         UiSymbolId? selectedId = capturedCollection?.SelectedItemId ??
             (capturedCollection is null ? (collection as IUiSelectableCollectionSource)?.SelectedItemId : null);
@@ -247,18 +258,7 @@ internal sealed class UiSceneComposer
         {
             foreach (UiSymbolId activeNode in ActiveItemNodes(interaction))
             {
-                IReadOnlyList<UiVisualStateRef> interactionStates = interaction.StatesFor(activeNode);
-                IReadOnlyList<UiVisualStateRef>? domainStates = activeNode == selectedNode ? selectedState : null;
-                UiVisualResolution activeVisual = Resolve(
-                    role,
-                    UiSceneNodeKind.Collection,
-                    activeNode,
-                    invocation,
-                    visual,
-                    interaction: null,
-                    domainStates: domainStates,
-                    interactionStates: interactionStates);
-                EnsureRenderOnlyState(activeNode, normal, activeVisual, "Collection item states");
+                UiVisualResolution activeVisual = stateVisuals.Resolve(activeNode, activeNode == selectedNode, interaction);
                 activeVisuals.Add(activeNode, activeVisual);
             }
         }
@@ -271,7 +271,8 @@ internal sealed class UiSceneComposer
             collection,
             recipe,
             activeVisuals,
-            capturedCollection);
+            capturedCollection,
+            stateVisuals);
     }
 
     private UiSceneNode TextInput(

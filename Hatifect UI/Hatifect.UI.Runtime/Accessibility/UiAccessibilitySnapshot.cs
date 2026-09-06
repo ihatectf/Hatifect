@@ -141,7 +141,7 @@ internal sealed class UiAccessibilitySnapshotBuilder
                     value: null,
                     enabled: true,
                     focused: interaction.Focused == item.Node,
-                    selected: item.Selected,
+                    selected: collection.IsSelected(item.Item.Id),
                     item.Bounds,
                     item.Clip,
                     Array.Empty<UiAccessibilityNodeSnapshot>(),

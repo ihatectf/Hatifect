@@ -132,6 +132,27 @@ class FlowPerformanceTests(unittest.TestCase):
                 with self.assertRaises(HARNESS.HarnessError):
                     HARNESS.load_manifest(path)
 
+    def test_manifest_cannot_remove_or_substitute_host_checks_and_mod_authority(self):
+        document = json.loads(HARNESS.DEFAULT_MANIFEST.read_text())
+        index = next(i for i, item in enumerate(document['scenarios']) if item['id'] == 'flow.chest.performance')
+        for field in ['checks', 'requiredMods']:
+            original = document['scenarios'][index][field]
+            alternatives = [None, [], ['unrelated.authority']]
+            for position in range(len(original)):
+                alternatives.append(original[:position] + original[position + 1:])
+                alternatives.append(original[:position] + ['unrelated.authority'] + original[position + 1:])
+            for value in alternatives:
+                with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as temporary:
+                    changed = copy.deepcopy(document)
+                    if value is None:
+                        del changed['scenarios'][index][field]
+                    else:
+                        changed['scenarios'][index][field] = value
+                    path = Path(temporary) / 'manifest.json'
+                    path.write_text(json.dumps(changed))
+                    with self.assertRaises(HARNESS.HarnessError):
+                        HARNESS.load_manifest(path)
+
     def test_finalizer_binds_existing_request_id_and_records_budget_assertion(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

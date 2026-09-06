@@ -207,8 +207,13 @@ internal sealed class UiSceneLayoutEngine
                 ? 0
                 : (collection.Count + desiredColumns - 1) / desiredColumns;
             int desiredRows = Math.Min(totalRows, collection.Recipe.PreviewRows);
+            if (collection.Count == 0 && collection.IsSelectable)
+            {
+                desiredColumns = 1;
+                desiredRows = 1;
+            }
             desiredContent = new UiSize(preferredItemWidth * desiredColumns, desiredRows * itemExtent);
-            minimumContent = collection.Count == 0
+            minimumContent = collection.Count == 0 && !collection.IsSelectable
                 ? default
                 : new UiSize(
                     Math.Max(
@@ -620,7 +625,8 @@ internal sealed class UiSceneLayoutEngine
         };
 
     private static bool IsInteractive(UiSceneNode node)
-        => node.Kind is UiSceneNodeKind.Button or UiSceneNodeKind.RouteButton or UiSceneNodeKind.TextInput;
+        => node.Kind is UiSceneNodeKind.Button or UiSceneNodeKind.RouteButton or UiSceneNodeKind.TextInput ||
+           node is UiCollectionSceneNode { IsSelectable: true, Count: 0 };
 
     private static bool IsFlexible(UiSceneNode node)
     {

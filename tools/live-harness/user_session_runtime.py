@@ -603,7 +603,7 @@ def _validate_state(document: Any, repository: Path, *, require_live: bool) -> d
             os.kill(pid, 0)
         except PermissionError:
             # macOS sandbox/process-coalition policy may deny a signal probe for a live
-            # same-user VS Code task. A fresh current-user-owned heartbeat remains authoritative.
+            # same-user executor. A fresh current-user-owned heartbeat remains authoritative.
             pass
         except ProcessLookupError as error:
             raise UserSessionRuntimeError("User-session executor process is unavailable.") from error
@@ -1007,7 +1007,9 @@ def submit(args: argparse.Namespace) -> int:
                 except (FileNotFoundError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
                     if time.monotonic() >= ready_deadline:
                         raise UserSessionRuntimeError(
-                            "User-session executor is unavailable; open this workspace in VS Code and allow the folderOpen task."
+                            "User-session executor is unavailable; run "
+                            "`rtk proxy ./tools/hatifect-runtime-executor serve` in a persistent "
+                            "terminal at this worktree root and wait for Ready."
                         ) from error
                     time.sleep(POLL_SECONDS)
             _atomic_write_json(request_path, request, replace=True)
@@ -1072,30 +1074,6 @@ def status(args: argparse.Namespace) -> int:
 def doctor(args: argparse.Namespace) -> int:
     repository = Path(args.repository_root).resolve(strict=True)
     failures: list[str] = []
-    task_path = repository / ".vscode" / "tasks.json"
-    try:
-        tasks = json.loads(task_path.read_text(encoding="utf-8"))
-        matches = [
-            task
-            for task in tasks.get("tasks", [])
-            if task.get("label") == "Hatifect: User-session runtime executor"
-        ]
-        if len(matches) != 1:
-            raise UserSessionRuntimeError("Expected exactly one project-local executor task.")
-        task = matches[0]
-        if (
-            task.get("type") != "process"
-            or task.get("command") != "${workspaceFolder}/tools/hatifect-runtime-executor"
-            or task.get("args") != ["serve"]
-            or task.get("options") != {"cwd": "${workspaceFolder}"}
-            or task.get("isBackground") is not True
-            or task.get("runOptions", {}).get("runOn") != "folderOpen"
-            or task.get("runOptions", {}).get("instanceLimit") != 1
-        ):
-            raise UserSessionRuntimeError("VS Code executor task is not the required folderOpen singleton process task.")
-        print(f"PASS: VS Code folderOpen task: {task_path}")
-    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
-        failures.append(str(error))
     try:
         direct = _direct_runtime(repository)
         direct._direct_metadata(repository, Path(args.isolated_root), Path(args.smapi_path))

@@ -6,5 +6,5 @@
   "UniqueID": "Hatifect.Flow",
   "EntryDll": "Hatifect.Flow.dll",
   "MinimumApiVersion": "4.5.2",
-  "Dependencies": [{ "UniqueID": "Hatifect.UI", "IsRequired": true, "MinimumVersion": "1.0.0-alpha.33" }]
+  "Dependencies": [{ "UniqueID": "Hatifect.UI", "IsRequired": true, "MinimumVersion": "1.0.0-alpha.35" }]
 }

@@ -25,6 +25,12 @@ IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+$")
 MOD_UNIQUE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 STATUSES = {"PASS", "FAIL", "BLOCKED"}
 FLOW_PERFORMANCE = {'scenarioId': 'flow.chest.performance', 'warmupFrames': 120, 'measurementFrames': 600, 'shipments': 80, 'routes': 3, 'maxOperationsPerTick': 64, 'maximumP95TickMs': 0.25, 'maximumP99TickMs': 1.0, 'maximumAllocatedBytesPerTick': 0}
+FLOW_PERFORMANCE_CHECKS = [
+    'flow.chest.performance.' + suffix for suffix in (
+        'loaded', 'saving', 'saved', 'paused', 'due-work', 'idle',
+        'item-fidelity', 'unchanged-files',
+    )
+]
 
 
 class HarnessError(ValueError):
@@ -127,6 +133,7 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, dict[str, Any]]:
             if (scenario_id != FLOW_PERFORMANCE["scenarioId"] or kind != "smoke"
                     or scenario["requiresSave"] is not True or scenario.get("includes")
                     or scenario.get("includeInAll") is not False or "performance" in scenario
+                    or checks != FLOW_PERFORMANCE_CHECKS or required_mods != ["Hatifect.Flow"]
                     or json.dumps(flow_performance, sort_keys=True) != json.dumps(FLOW_PERFORMANCE, sort_keys=True)):
                 raise HarnessError("Flow performance requires its fixed isolated workload and checked-in budgets.")
         scenarios[scenario_id] = scenario

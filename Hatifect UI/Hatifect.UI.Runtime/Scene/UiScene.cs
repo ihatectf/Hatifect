@@ -134,6 +134,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
     private readonly long _sourceRevision;
     private readonly bool _mayHaveSupportingText;
     private readonly IReadOnlyDictionary<UiSymbolId, UiVisualResolution> _activeItemVisuals;
+    private readonly UiCollectionStateVisuals? _stateVisuals;
 
     public UiCollectionSceneNode(
         UiSymbolId id,
@@ -145,6 +146,20 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
         UiCollectionPresentationRecipe recipe,
         IDictionary<UiSymbolId, UiVisualResolution>? activeItemVisuals = null,
         IUiSemanticCollectionSnapshot? publicationSnapshot = null)
+        : this(id, role, visual, selectedItemVisual, semanticName, source, recipe,
+            activeItemVisuals, publicationSnapshot, stateVisuals: null) { }
+
+    internal UiCollectionSceneNode(
+        UiSymbolId id,
+        UiSymbolId role,
+        UiVisualResolution visual,
+        UiVisualResolution selectedItemVisual,
+        string semanticName,
+        IUiSemanticCollectionSource source,
+        UiCollectionPresentationRecipe recipe,
+        IDictionary<UiSymbolId, UiVisualResolution>? activeItemVisuals,
+        IUiSemanticCollectionSnapshot? publicationSnapshot,
+        UiCollectionStateVisuals? stateVisuals)
         : base(id, UiSceneNodeKind.Collection, role, visual)
     {
         if (string.IsNullOrWhiteSpace(semanticName))
@@ -180,6 +195,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
         _activeItemVisuals = new ReadOnlyDictionary<UiSymbolId, UiVisualResolution>(
             new Dictionary<UiSymbolId, UiVisualResolution>(
                 activeItemVisuals ?? new Dictionary<UiSymbolId, UiVisualResolution>()));
+        _stateVisuals = stateVisuals;
     }
 
     public string SemanticName { get; }
@@ -191,6 +207,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
     public UiVisualResolution SelectedItemVisual { get; }
     public UiSymbolId? SelectedItemId { get; }
     public bool IsSelectable => _selection != null;
+    internal bool HasCapturedItems => _captured;
     internal IReadOnlyDictionary<UiSymbolId, UiVisualResolution> ActiveItemVisuals => _activeItemVisuals;
 
     public UiSemanticCollectionItem ItemAt(int index)
@@ -227,6 +244,18 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
         => _activeItemVisuals.TryGetValue(node, out UiVisualResolution? visual)
             ? visual
             : IsSelected(item) ? SelectedItemVisual : Visual;
+
+    internal UiVisualResolution VisualFor(UiSymbolId node, UiSymbolId item, UiInteractionSnapshot? interaction)
+        => interaction is not null && _stateVisuals is not null
+            ? _stateVisuals.Resolve(node, IsSelected(item), interaction) : VisualFor(node, item);
+
+    internal UiVisualResolution ContainerVisualFor(UiInteractionSnapshot? interaction)
+    {
+        if (Count != 0 || !IsSelectable) return Visual;
+        if (interaction is not null && _stateVisuals is not null)
+            return _stateVisuals.Resolve(Id, selected: false, interaction);
+        return _activeItemVisuals.TryGetValue(Id, out UiVisualResolution? visual) ? visual : Visual;
+    }
 
     public bool TrySelect(UiSymbolId item) => _selection?.TrySelect(item) == true;
 

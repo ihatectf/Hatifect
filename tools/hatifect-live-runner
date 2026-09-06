@@ -116,7 +116,7 @@ fi
 python3 "$validator" check-scenario "$kind" "$scenario" > "$artifact_dir/instructions.txt"
 say "Hatifect automated live harness"
 say "Scenario: $scenario"
-say "Transport: VS Code user-session executor -> canonical owned direct process"
+say "Transport: worktree runtime executor -> canonical owned direct process"
 say "Isolated root: $isolated_root"
 say "Artifacts: $artifact_dir"
 say "Timeout: $timeout_seconds seconds"

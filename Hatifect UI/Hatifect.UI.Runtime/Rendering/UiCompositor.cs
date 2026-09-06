@@ -53,8 +53,9 @@ internal sealed class UiCompositor
     {
         ArgumentNullException.ThrowIfNull(frame);
         ArgumentNullException.ThrowIfNull(backend);
-        foreach (UiRenderPrimitive primitive in frame.Primitives)
+        for (int index = 0; index < frame.Primitives.Count; index++)
         {
+            UiRenderPrimitive primitive = frame.Primitives[index];
             switch (primitive)
             {
                 case UiSurfacePrimitive surface:
@@ -72,8 +73,10 @@ internal sealed class UiCompositor
 
 internal sealed class UiSceneRenderPlanner
 {
+    private static readonly UiSurface TransparentSurface = UiSurface.Solid(new UiColor(0, 0, 0, 0));
+
     public UiRenderFrame Build(UiScene scene, UiLayoutSnapshot layout)
-        => Build(scene, layout, new UiInteractionSnapshot(), UnusedTextMetrics.Instance);
+        => BuildCore(scene, layout, interaction: null, UnusedTextMetrics.Instance);
 
     public UiRenderFrame Build(
         UiScene scene,
@@ -81,9 +84,18 @@ internal sealed class UiSceneRenderPlanner
         UiInteractionSnapshot interaction,
         IUiTextMetrics textMetrics)
     {
+        ArgumentNullException.ThrowIfNull(interaction);
+        return BuildCore(scene, layout, interaction, textMetrics);
+    }
+
+    private static UiRenderFrame BuildCore(
+        UiScene scene,
+        UiLayoutSnapshot layout,
+        UiInteractionSnapshot? interaction,
+        IUiTextMetrics textMetrics)
+    {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(layout);
-        ArgumentNullException.ThrowIfNull(interaction);
         ArgumentNullException.ThrowIfNull(textMetrics);
         var primitives = new List<UiRenderPrimitive>();
         Visit(scene.Root, layout, interaction, textMetrics, primitives);
@@ -93,33 +105,35 @@ internal sealed class UiSceneRenderPlanner
     private static void Visit(
         UiSceneNode node,
         UiLayoutSnapshot layout,
-        UiInteractionSnapshot interaction,
+        UiInteractionSnapshot? interaction,
         IUiTextMetrics textMetrics,
         ICollection<UiRenderPrimitive> primitives)
     {
         if (layout.TryGetEntry(node.Id, out UiLayoutEntry? entry) && entry != null)
         {
+            UiVisualResolution visual = node is UiCollectionSceneNode currentCollection
+                ? currentCollection.ContainerVisualFor(interaction) : node.Visual;
             UiRect bounds = entry.Bounds;
-            UiOpacity opacity = Value(node.Visual, "opacity", new UiOpacity(1));
-            UiTransform transform = Value(node.Visual, "transform", new UiTransform(0, 0));
-            if (TryValue(node.Visual, "surface", out UiSurface surface))
+            UiOpacity opacity = Value(visual, "opacity", new UiOpacity(1));
+            UiTransform transform = Value(visual, "transform", new UiTransform(0, 0));
+            if (TrySurface(visual, out UiSurface surface))
             {
                 primitives.Add(new UiSurfacePrimitive(
                     node.Id,
                     bounds,
                     entry.Clip,
                     surface,
-                    Value(node.Visual, "radius", new UiCornerRadius(0)),
-                    Optional<UiBorder>(node.Visual, "border"),
-                    OptionalReference<UiElevation>(node.Visual, "elevation"),
+                    Value(visual, "radius", new UiCornerRadius(0)),
+                    Optional<UiBorder>(visual, "border"),
+                    OptionalReference<UiElevation>(visual, "elevation"),
                     opacity,
                     transform));
             }
 
             string? text = UiSceneLayoutEngine.RuntimeText(node);
             if (text != null &&
-                TryValue(node.Visual, "foreground", out UiColor foreground) &&
-                TryValue(node.Visual, "typography", out UiTypography typography))
+                TryValue(visual, "foreground", out UiColor foreground) &&
+                TryValue(visual, "typography", out UiTypography typography))
             {
                 UiRect textBounds = entry.ContentBounds;
                 UiRect textClip = entry.Clip;
@@ -135,7 +149,7 @@ internal sealed class UiSceneRenderPlanner
                         Math.Max(0, textBounds.Width - route.IconSpace), textBounds.Height);
                 }
                 UiTextEditingSnapshot? editing = node is UiTextInputSceneNode &&
-                    interaction.TextEditing is { } candidate && candidate.Input == node.Id
+                    interaction?.TextEditing is { } candidate && candidate.Input == node.Id
                         ? candidate
                         : null;
                 float scroll = 0;
@@ -189,25 +203,26 @@ internal sealed class UiSceneRenderPlanner
                         primitives);
             }
 
-            if (node is UiCollectionSceneNode &&
+            if (node is UiCollectionSceneNode collection &&
                 layout.TryGetCollection(node.Id, out UiCollectionLayoutWindow? window) &&
                 window != null)
             {
                 foreach (UiVirtualizedItemLayout item in window.Items)
                 {
                     if (item.Clip.Width <= 0 || item.Clip.Height <= 0) continue;
-                    UiOpacity itemOpacity = Value(item.Visual, "opacity", opacity);
-                    UiTransform itemTransform = Value(item.Visual, "transform", transform);
-                    if (TryValue(item.Visual, "surface", out UiSurface itemSurface))
+                    UiVisualResolution itemVisual = collection.VisualFor(item.Node, item.Item.Id, interaction);
+                    UiOpacity itemOpacity = Value(itemVisual, "opacity", opacity);
+                    UiTransform itemTransform = Value(itemVisual, "transform", transform);
+                    if (TrySurface(itemVisual, out UiSurface itemSurface))
                     {
                         primitives.Add(new UiSurfacePrimitive(
                             item.Node,
                             item.Bounds,
                             item.Clip,
                             itemSurface,
-                            Value(item.Visual, "radius", new UiCornerRadius(0)),
-                            Optional<UiBorder>(item.Visual, "border"),
-                            OptionalReference<UiElevation>(item.Visual, "elevation"),
+                            Value(itemVisual, "radius", new UiCornerRadius(0)),
+                            Optional<UiBorder>(itemVisual, "border"),
+                            OptionalReference<UiElevation>(itemVisual, "elevation"),
                             itemOpacity,
                             itemTransform));
                     }
@@ -215,8 +230,8 @@ internal sealed class UiSceneRenderPlanner
                         primitives.Add(new UiSurfacePrimitive(item.Node, iconBounds, item.Clip,
                             UiSurface.Texture(icon, new UiColor(255, 255, 255), pixelSnap: true),
                             new UiCornerRadius(0), null, null, itemOpacity, itemTransform));
-                    if (!TryValue(item.Visual, "foreground", out UiColor itemForeground) ||
-                        !TryValue(item.Visual, "typography", out UiTypography itemTypography))
+                    if (!TryValue(itemVisual, "foreground", out UiColor itemForeground) ||
+                        !TryValue(itemVisual, "typography", out UiTypography itemTypography))
                         continue;
                     primitives.Add(new UiTextPrimitive(
                         item.Node,
@@ -312,6 +327,17 @@ internal sealed class UiSceneRenderPlanner
             null,
             opacity,
             transform));
+    }
+
+    private static bool TrySurface(UiVisualResolution visual, out UiSurface surface)
+    {
+        if (TryValue(visual, "surface", out surface)) return true;
+        if (TryValue<UiBorder>(visual, "border", out _))
+        {
+            surface = TransparentSurface;
+            return true;
+        }
+        return false;
     }
 
     private static T Value<T>(UiVisualResolution visual, string property, T fallback) where T : notnull

@@ -1,0 +1,19 @@
+# Authorized by the user for required roadmap/runtime tests in this trusted worktree.
+# Invoke from the worktree root with a managed PTY; the canonical supervisor enforces ownership.
+prefix_rule(
+    pattern = ["rtk", "proxy", "./tools/hatifect-runtime-executor", "serve"],
+    decision = "allow",
+    justification = "Start the canonical worktree runtime executor for authorized isolated Hatifect tests.",
+    match = [
+        "rtk proxy ./tools/hatifect-runtime-executor serve",
+    ],
+    not_match = [
+        "rtk proxy ./tools/hatifect-runtime-executor status",
+        "rtk proxy ./tools/hatifect-runtime-executor doctor",
+        "rtk proxy ./tools/hatifect-ui-test all",
+        "rtk proxy python3 tools/live-harness/user_session_runtime.py worker",
+        "rtk proxy bash -c true",
+        "./tools/hatifect-runtime-executor serve",
+        "rtk proxy /tmp/other/tools/hatifect-runtime-executor serve",
+    ],
+)

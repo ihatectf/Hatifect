@@ -40,6 +40,9 @@ logs/
 !/.codex/agents/
 /.codex/agents/*
 !/.codex/agents/*.toml
+!/.codex/rules/
+/.codex/rules/*
+!/.codex/rules/runtime-executor.rules
 /.agents/*
 !/.agents/skills/
 TestResults/
