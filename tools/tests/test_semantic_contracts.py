@@ -37,6 +37,7 @@ class SemanticPublicApiTests(unittest.TestCase):
             "PUBLIC_API_BASELINE.json",
             "Hatifect.UI.Experience/Hatifect.UI.Experience.csproj",
             "Hatifect.UI.Experience/Hosting/UiSemanticSurfaceContracts.cs",
+            "Hatifect.UI.Experience/Hosting/UiSemanticSurfaceObservation.cs",
             "Hatifect.UI.Experience/State/UiSemanticFormSource.cs",
             "Hatifect.UI.Experience/UiExperienceBuilder.cs",
             "Hatifect.UI.Stardew/Hosting/UiSemanticSurfaceService.cs",
@@ -53,7 +54,7 @@ class SemanticPublicApiTests(unittest.TestCase):
             before = baseline_path.read_bytes()
             baseline = json.loads(before)
 
-            self.assertEqual({"FormatVersion", "SemanticSurface", "FormAuthoring"}, set(baseline))
+            self.assertEqual({"FormatVersion", "SemanticSurface", "FormAuthoring", "SurfaceObservation"}, set(baseline))
             self.assertEqual(1, baseline["SemanticSurface"]["ApiVersion"])
             self.assertEqual(
             "9de29d5a7c53964ae192efb4f4f7590e1dc75a64d2fe94605f86dac3861c6335",
@@ -75,6 +76,17 @@ class SemanticPublicApiTests(unittest.TestCase):
             )
 
             self.assertIn("semantic surface changed and requires explicit review", "\n".join(API.verify(root)))
+
+    def test_observation_publicity_cannot_be_removed_even_with_regenerated_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.create_api_fixture(root)
+            contract = root / "Hatifect.UI.Experience/Hosting/UiSemanticSurfaceObservation.cs"
+            contract.write_text(contract.read_text(encoding="utf-8").replace(
+                "public interface IUiSemanticSurfaceObservationApi", "internal interface IUiSemanticSurfaceObservationApi"),
+                encoding="utf-8")
+            (root / "PUBLIC_API_BASELINE.json").write_text(json.dumps(API.make_baseline(root)), encoding="utf-8")
+            self.assertIn("missing observation public type IUiSemanticSurfaceObservationApi", "\n".join(API.verify(root)))
 
     def test_form_publicity_cannot_be_removed_even_with_regenerated_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

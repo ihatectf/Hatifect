@@ -804,6 +804,29 @@
         "protocolVersion": 1,
         "driver": "Hatifect.TestHarness"
       }
+    },
+    {
+      "id": "semantic.observation",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.observation.api",
+        "semantic.observation.initial",
+        "semantic.observation.inert",
+        "semantic.observation.updated",
+        "semantic.observation.reentrant",
+        "semantic.observation.environment",
+        "semantic.observation.retirement",
+        "semantic.observation.reopen",
+        "semantic.observation.native-owner",
+        "semantic.observation.restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
     }
   ]
 }

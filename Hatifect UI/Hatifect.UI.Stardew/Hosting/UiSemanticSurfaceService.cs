@@ -11,6 +11,7 @@ using Hatifect.UI.Runtime.Scene;
 using Hatifect.UI.Semantics;
 using Hatifect.UI.Runtime.Visual;
 using Hatifect.UI.Runtime.Visual.Theming;
+using Hatifect.UI.Runtime.Diagnostics;
 using Hatifect.UI.Stardew.Semantic;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
@@ -25,7 +26,8 @@ namespace Hatifect.UI.Stardew;
 /// Public-contract adapter whose implementation remains entirely inside the Stardew host assembly.
 /// Consumers receive only opaque lifecycle handles; every Scene/platform object stays private.
 /// </summary>
-internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemanticSurfaceAutomation
+internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemanticSurfaceAutomation,
+    IUiSemanticSurfaceObservationApi, IUiSemanticSurfaceObservation
 {
     private readonly IModHelper _helper;
 
@@ -34,6 +36,7 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
 
     public int ApiVersion => 1;
     public IUiSemanticSurfaceAutomation Automation => this;
+    public IUiSemanticSurfaceObservation Observation => this;
     public bool IsEnabled => UiAutomatedAcceptanceScenarioRegistry.IsRegistrationEnabled;
 
     public IUiSemanticSurfaceSession CreateSurface(
@@ -92,6 +95,16 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
         owned.CancelForAutomatedAcceptance(input);
     }
 
+    public UiSemanticSurfaceSnapshot Capture(IUiSemanticSurfaceSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (!IsEnabled)
+            throw new InvalidOperationException("Surface observation is available only in the exact automated TestHarness environment.");
+        if (session is not UiActiveMenuSemanticSurfaceSession owned || !owned.IsOwnedBy(this))
+            throw new ArgumentException("The active-menu surface session belongs to another UI API instance.", nameof(session));
+        return owned.CaptureForAutomatedAcceptance();
+    }
+
     private sealed class AutomatedAcceptanceContextAdapter : IUiAutomatedAcceptanceContext
     {
         private readonly UiAutomatedAcceptanceScenarioContext _context;
@@ -109,6 +122,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
 {
     private readonly int _screen = Context.ScreenId;
     private readonly UiSemanticSurfaceService _owner;
+    private readonly UiSurfaceObservationState? _observation;
     private readonly UiExperienceDefinition _experience;
     private readonly UiRegistrySnapshot _registry;
     private UiSceneComposer _composer;
@@ -145,6 +159,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
             () => { if (!_retireRequested && !_closedRaised && !_disposeRequested) _watches.Poll(); });
         _experience = experience ?? throw new ArgumentNullException(nameof(experience));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _observation = owner.IsEnabled ? new UiSurfaceObservationState(options.Id) : null;
 
         UiHostPolicy policy = UiProvisionalHostPolicies.OverlayCentered(options.CloseOnOutsidePointer);
         _registry = new UiRegistryBuilder()
@@ -171,6 +186,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
                 OnOverlayClosed,
                 next => SynchronizeState(next));
             _overlay = overlay;
+            overlay.Observation = _observation;
             overlay.BackgroundDimmingOpacity = ResolveBackgroundDimmingOpacity(options);
             overlay.CloseRequestHandler = static () => true;
             overlay.Rendered += OnRendered;
@@ -357,6 +373,17 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
         return ReferenceEquals(_owner, owner);
     }
 
+    internal UiSemanticSurfaceSnapshot CaptureForAutomatedAcceptance()
+    {
+        if (Context.ScreenId != _screen)
+            throw new InvalidOperationException("Surface observation requires its owning screen.");
+        UiSurfaceObservationState observation = _observation
+            ?? throw new InvalidOperationException("This surface was created outside the exact automated TestHarness.");
+        if (_retireRequested || _closedRaised || _disposeRequested || _disposed || _overlay?.IsRetired != false)
+            return observation.Retire();
+        return _overlay.CaptureObservation(observation, _environment);
+    }
+
     private UiScene ComposeInteraction(UiInteractionSnapshot interaction)
     {
         _interaction = interaction ?? throw new ArgumentNullException(nameof(interaction));
@@ -420,6 +447,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
     {
         if (_closedRaised) return;
         _closedRaised = true;
+        _observation?.Retire();
         try { StopWatches(); } finally { Closed?.Invoke(); }
     }
 

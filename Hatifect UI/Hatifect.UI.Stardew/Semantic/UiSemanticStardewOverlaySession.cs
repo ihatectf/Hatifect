@@ -11,6 +11,8 @@ using Hatifect.UI.Runtime.Hosting;
 using Hatifect.UI.Experience;
 using Hatifect.UI.Runtime.Platform;
 using Hatifect.UI.Runtime.Scene;
+using Hatifect.UI.Runtime.Diagnostics;
+using Hatifect.UI.Semantics;
 using RuntimeSymbolId = Hatifect.UI.UiSymbolId;
 using RuntimePoint = Hatifect.UI.Runtime.Layout.UiPoint;
 using RuntimeRect = Hatifect.UI.Runtime.Layout.UiRect;
@@ -84,6 +86,18 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
     }
 
     public bool Visible { get; private set; }
+    internal bool IsRetired => _retireRequested || _closedNotified || _disposed;
+    internal UiSurfaceObservationState? Observation { get; set; }
+
+    internal UiSemanticSurfaceSnapshot CaptureObservation(UiSurfaceObservationState observation, UiEnvironment environment)
+    {
+        RequireCurrentScreen();
+        // Observation must reject a lost native owner immediately, without running lifecycle
+        // synchronization, closing the surface, or invoking consumer callbacks.
+        if (Visible && !OwnsCurrentMenuContext())
+            throw new InvalidOperationException("The observed overlay no longer owns its native menu context.");
+        return observation.Capture(Host.Session.Root, environment, Visible, Host.Session.Accessibility.Portals.Count);
+    }
 
     /// <summary>Optional platform backdrop drawn before the semantic host.</summary>
     public float BackgroundDimmingOpacity { get; set; }
@@ -462,6 +476,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
         if (_renderLayer == UiSemanticStardewOverlayRenderLayer.Hud && !Game1.options.hardwareCursor)
             SoftwareCursor.Draw(batch);
         sample.Complete(completesFrame: true, layoutBuilds: host.Performance.LayoutBuilds);
+        Observation?.CompleteRender(host.Session.Root.LastCompletedRender);
         Rendered?.Invoke();
     }
 

@@ -141,7 +141,7 @@ internal sealed class UiSceneComposer
                 terminal ? null : visual,
                 interaction),
             invocation.Descriptor.Host,
-            slots);
+            slots) { SemanticId = invocation.Experience.Id };
         return new UiScene(
             invocation.Experience.Id,
             terminal ? "Hatifect Terminal" : invocation.Experience.DisplayNameFor(capturedLocale),
@@ -233,7 +233,7 @@ internal sealed class UiSceneComposer
         return new UiSourceSceneNode(
             nodeId, kind, role,
             Resolve(role, kind, nodeId, invocation, visual, interaction),
-            invocation.Experience.ElementLabelFor(element, locale), captured, displayText);
+            invocation.Experience.ElementLabelFor(element, locale), captured, displayText) { SemanticId = element.Id };
     }
 
     private UiSceneNode Collection(
@@ -303,7 +303,7 @@ internal sealed class UiSceneComposer
             recipe,
             activeVisuals,
             capturedCollection,
-            stateVisuals);
+            stateVisuals) { SemanticId = element.Id };
     }
 
     private UiSceneNode TextInput(
@@ -319,7 +319,7 @@ internal sealed class UiSceneComposer
         return new UiTextInputSceneNode(
             nodeId, role,
             Resolve(role, UiSceneNodeKind.TextInput, nodeId, invocation, visual, interaction),
-            invocation.Experience.ElementLabelFor(element, locale), element.Source, reads.Read(element.Source));
+            invocation.Experience.ElementLabelFor(element, locale), element.Source, reads.Read(element.Source)) { SemanticId = element.Id };
     }
 
     private UiSceneNode Form(
@@ -345,7 +345,7 @@ internal sealed class UiSceneComposer
                 labelId,
                 labelRole,
                 Resolve(labelRole, UiSceneNodeKind.Text, labelId, invocation, visual, interaction),
-                field.Label));
+                field.Label) { SemanticId = field.Id });
 
             UiSymbolId inputId = field.Id.Child("scene/input");
             if (field.Kind is UiFormFieldKind.Toggle or UiFormFieldKind.Choice)
@@ -359,13 +359,13 @@ internal sealed class UiSceneComposer
                         () => field.Value.Value = option.Value);
                     children.Add(new UiButtonSceneNode(optionId, UiSceneRoles.Button,
                         Resolve(UiSceneRoles.Button, UiSceneNodeKind.Button, optionId, invocation, visual, interaction,
-                            domainStates: selected ? new[] { UiVisualStates.Selected } : null), action));
+                            domainStates: selected ? new[] { UiVisualStates.Selected } : null), action) { SemanticId = field.Id });
                 }
             }
             else
                 children.Add(new UiTextInputSceneNode(inputId, inputRole,
                     Resolve(inputRole, UiSceneNodeKind.TextInput, inputId, invocation, visual, interaction),
-                    field.Label, field.Value, fieldValue));
+                    field.Label, field.Value, fieldValue) { SemanticId = field.Id });
             string? error = field.Error ?? (field.ValidationMessage is { } validation ? (string?)reads.Read(validation).UntypedValue : null);
             if (!string.IsNullOrWhiteSpace(error))
             {
@@ -373,7 +373,7 @@ internal sealed class UiSceneComposer
                 UiSymbolId errorRole = Role(invocation.Experience, "Field.Error", UiSceneRoles.Text);
                 children.Add(new UiTextSceneNode(errorId, errorRole,
                     Resolve(errorRole, UiSceneNodeKind.Text, errorId, invocation, visual, interaction),
-                    field.Error is null ? error : $"{field.Label}: {error}"));
+                    field.Error is null ? error : $"{field.Label}: {error}") { SemanticId = field.Id });
             }
         }
 
@@ -385,7 +385,7 @@ internal sealed class UiSceneComposer
             formRole,
             Resolve(formRole, UiSceneNodeKind.Form, formId, invocation, visual, interaction),
             children.ToArray(),
-            invocation.Experience.ElementLabelFor(element, locale));
+            invocation.Experience.ElementLabelFor(element, locale)) { SemanticId = element.Id };
     }
 
     private UiSceneNode ActionBar(
@@ -410,7 +410,7 @@ internal sealed class UiSceneComposer
         return new UiContainerSceneNode(
             barId, UiSceneNodeKind.ActionBar, barRole,
             Resolve(barRole, UiSceneNodeKind.ActionBar, barId, invocation, visual, interaction), buttons,
-            invocation.Experience.ElementLabelFor(element, locale));
+            invocation.Experience.ElementLabelFor(element, locale)) { SemanticId = element.Id };
     }
 
     private void AddContributions(
@@ -438,7 +438,7 @@ internal sealed class UiSceneComposer
                     UiRouteContributionDescriptor route => new UiRouteButtonSceneNode(
                         nodeId, UiSceneRoles.Button,
                         Resolve(UiSceneRoles.Button, UiSceneNodeKind.RouteButton, nodeId, invocation, visual, interaction),
-                        route.Title, route.Route),
+                        route.Title, route.Route) { SemanticId = route.Route },
                     _ => throw new InvalidOperationException($"Unsupported contribution type '{contribution.GetType().Name}'.")
                 };
                 Add(bySlot, slot, node);
@@ -489,7 +489,8 @@ internal sealed class UiSceneComposer
             Add(
                 bySlot,
                 UiHostSlots.Navigation,
-                new UiRouteButtonSceneNode(nodeId, UiSceneRoles.Button, resolved, descriptor.Title, descriptor.Id, current, descriptor.Terminal.Icon));
+                new UiRouteButtonSceneNode(nodeId, UiSceneRoles.Button, resolved, descriptor.Title, descriptor.Id, current, descriptor.Terminal.Icon)
+                    { SemanticId = descriptor.Id });
         }
         if (!activeFound)
             throw new InvalidOperationException(
@@ -523,7 +524,7 @@ internal sealed class UiSceneComposer
             resolver.Resolve(new UiVisualContext(role, profile, null, active), theme, visual,
                 foundation.For(UiSceneNodeKind.Button, host, null, active)), renderOnly: action.Binding is not null);
         bool enabled = action.Binding is not null || action.CanExecute;
-        return new(node, role, states.Resolve(enabled, interaction), action, states, label);
+        return new(node, role, states.Resolve(enabled, interaction), action, states, label) { SemanticId = action.Id };
     }
 
     private UiVisualResolution Resolve(

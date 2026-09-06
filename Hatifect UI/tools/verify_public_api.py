@@ -20,6 +20,10 @@ SEMANTIC_SURFACE_TYPES = (
     'IUiSemanticSurfaceAutomation',
 )
 FORM_AUTHORING_TYPES = ('UiSemanticFormField', 'UiFormState')
+SURFACE_OBSERVATION_TYPES = (
+    'IUiSemanticSurfaceObservationApi', 'IUiSemanticSurfaceObservation', 'UiSemanticSurfaceFrame',
+    'UiSemanticSurfaceElement', 'UiSemanticSurfaceText', 'UiSemanticSurfaceSnapshot',
+)
 
 
 def _project_version(project: Path) -> str:
@@ -52,6 +56,15 @@ def make_baseline(root: Path = ROOT) -> dict:
                 'Sha256': hashlib.sha256((experience / relative).read_bytes()).hexdigest(),
             }],
         },
+        'SurfaceObservation': {
+            'Assembly': 'Hatifect.UI.Experience',
+            'Policy': 'optional-exact-harness-facet',
+            'PublicTypes': list(SURFACE_OBSERVATION_TYPES),
+            'Files': [{
+                'Path': 'Hosting/UiSemanticSurfaceObservation.cs',
+                'Sha256': hashlib.sha256((experience / 'Hosting/UiSemanticSurfaceObservation.cs').read_bytes()).hexdigest(),
+            }],
+        },
     }
 
 
@@ -79,6 +92,12 @@ def verify(root: Path = ROOT) -> list[str]:
         for name in SEMANTIC_SURFACE_TYPES:
             if not re.search(rf'\bpublic\s+(?:sealed\s+)?(?:record|class|interface|enum)\s+{re.escape(name)}\b', source):
                 errors.append(f'public API baseline: missing semantic public type {name}')
+        observation = _scrub_comments(
+            (root / 'Hatifect.UI.Experience/Hosting/UiSemanticSurfaceObservation.cs').read_text(encoding='utf-8')
+        )
+        for name in SURFACE_OBSERVATION_TYPES:
+            if not re.search(rf'\bpublic\s+(?:sealed\s+)?(?:record|class|interface)\s+{re.escape(name)}\b', observation):
+                errors.append(f'public API baseline: missing observation public type {name}')
         form = _scrub_comments((root / 'Hatifect.UI.Experience/State/UiSemanticFormSource.cs').read_text(encoding='utf-8'))
         for name in FORM_AUTHORING_TYPES:
             if not re.search(rf'\bpublic\s+(?:sealed\s+)?(?:record|class)\s+{re.escape(name)}\b', form):
