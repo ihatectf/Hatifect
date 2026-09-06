@@ -13,6 +13,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Hatifect.UI.Stardew.Tests" />
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.2" PrivateAssets="all" />
+    <Compile Include="../../tools/live-harness/AutomatedBackgroundProgress.cs" Link="Diagnostics/AutomatedBackgroundProgress.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Hatifect.UI.DevTools/Hatifect.UI.DevTools.csproj" />

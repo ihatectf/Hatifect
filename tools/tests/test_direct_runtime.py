@@ -521,16 +521,18 @@ class DirectRuntimeTests(unittest.TestCase):
         self.assertEqual(environment["SMAPI_MODS_PATH"], str(isolated / "Mods"))
         self.assertEqual(environment["HATIFECT_TEST_RUN_ID"], fixture.request["requestId"])
         self.assertEqual(environment["HATIFECT_TEST_ISOLATED_ROOT"], str(isolated))
+        self.assertEqual(environment.get("HATIFECT_TEST_BACKGROUND_PROGRESS"), "1")
         self.assertNotEqual(environment["HOME"], str(Path.home()))
 
     def test_minimal_environment_does_not_inherit_unallowlisted_ambient_values(self) -> None:
         with self._request_fixture() as fixture, mock.patch.dict(
             os.environ,
-            {"HATIFECT_AMBIENT_SECRET_SENTINEL": "must-not-be-inherited"},
+            {"HATIFECT_AMBIENT_SECRET_SENTINEL": "must-not-be-inherited", "HATIFECT_TEST_BACKGROUND_PROGRESS": "0"},
         ):
             environment = DIRECT_RUNTIME._minimal_environment(fixture.request, fixture.metadata)
 
         self.assertNotIn("HATIFECT_AMBIENT_SECRET_SENTINEL", environment)
+        self.assertEqual(environment.get("HATIFECT_TEST_BACKGROUND_PROGRESS"), "1")
         self.assertEqual(
             environment["HOME"],
             str(Path(fixture.request["isolatedRoot"]) / "home"),
@@ -615,6 +617,7 @@ class DirectRuntimeTests(unittest.TestCase):
             self.assertEqual(outcome[:5], ("Completed", "PASS", 0, None, "Automated acceptance evidence finalized."))
             self.assertEqual(captured["command"], ["/game/StardewModdingAPI"])
             self.assertEqual(captured["working_directory"], Path("/game"))
+            self.assertEqual(captured["environment"].get("HATIFECT_TEST_BACKGROUND_PROGRESS"), "1")
             self.assertFalse((Path(fixture.request['isolatedRoot']) / 'config/StardewValley/default_options').exists())
             self.assertEqual(
                 captured["environment"]["SMAPI_MODS_PATH"],
