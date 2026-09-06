@@ -42,3 +42,19 @@ G/P/host audit — **NOT_APPLICABLE** для этого изменения runne
 Принудительный SIGKILL самого executor или выключение ОС не дают выполнить восстановление в finally; исходники остаются в артефактах, и перед новым запуском требуется проверить конфигурацию. Это отличается от проверенного управляемого завершения дочернего SMAPI. Срез не заявляет устойчивость к произвольной конкурентной перезаписи private test root другим процессом.
 
 Новые runtime-прогоны подтверждают подготовку среды и существующие сценарии. Они не являются новым PASS физического ввода, всей Flow failure matrix или полного MVP. Следующий незавершённый шаг Q01 — физический Backspace при активном окне с completed-frame evidence. Product UI/Flowline roadmap остаётся у соответствующих задач; GQ владеет общим harness и сквозной приёмкой.
+
+## Проверка каталогов резервных копий
+
+Follow-up [`74f8010`](https://github.com/ihatectf/Hatifect/commit/74f8010ad937fba376e30bca703c23478f92f097), base `ba0db13`, устраняет обнаруженный независимым review P2. Проверки linked config files не защищали каталог назначения: symlink в `diagnostics` либо `runtime-options-originals` позволял создать резервные копии за пределами request directory. В первом случае наружу также попадал `runtime-options.json`.
+
+`_background_game_options` теперь проверяет оба компонента существующим `_ensure_private_directory` до первой backup-записи. Он отклоняет symlink до открытия каталога или изменения его прав, проверяет владельца и устанавливает private mode только для допустимого каталога. Исходный механизм восстановления байтов/прав сохранён. Изменены только runner и его существующая stdlib unittest suite; public API, package versions, game input и persistence не меняются.
+
+| Requirement | Evidence |
+|---|---|
+| Резервные копии остаются внутри изолированного request evidence | `test_background_options_reject_linked_evidence_before_copying_originals`: два subtests для `diagnostics` и `runtime-options-originals` проверяют пустой внешний каталог, его неизменные права0750, исходные config bytes и отказ до входа в контекст запуска. |
+| Сохраняются обычная подготовка и восстановление | Все прежние direct-runtime tests прошли, включая точные байты/права, отсутствующие файлы, частичную подготовку, ошибку восстановления и классификацию crash evidence. |
+| Исправление закрывает фактически воспроизведённый дефект | `rtk proxy python3 -m unittest -v tools.tests.test_direct_runtime`: исходный `before.log` —37 tests и2 failed subtests с созданными внешними файлами; тот же тест после исправления, `after.log` —37 tests/OK. |
+
+`rtk proxy ./tools/hatifect-test tools` — **PASS363**, `tools/run-uh0zxyot`. Финальный `rtk proxy env HATIFECT_DOTNET=${HOME}/.dotnet/hatifect-x64-8/dotnet HATIFECT_TEST_DOTNET=${HOME}/.dotnet/hatifect-x64-8/dotnet DOTNET_gcConcurrent=0 ./tools/hatifect-check` — **PASS1 396 .NET +363 Python**, `c/run-46f1cxu2`; все фактические TRX counters и individual outcomes согласованы, failures/skips отсутствуют. Источник, hashes и оригинальные логи сохранены в `/private/tmp/hatifect-flow-q01-options-evidence/artifacts/q01-options-evidence/`. Независимый reviewer подтвердил закрытие P2 по двухфайловому diff и actual before/after evidence; иных findings в рассмотренной Q01-области не осталось.
+
+G/P/runtime/visual/host audit — **NOT_APPLICABLE** для этого изменения проверки пути до запуска: adapter и package boundary не меняются, отрицательные сценарии выполнены на временных файловых fixtures без игры. Предыдущие игровые отчёты выше сохраняют source `4c860dd` и свои fingerprints. Защита от произвольной конкурентной подмены private request directory и восстановления после SIGKILL executor этим исправлением не заявляется. Следующий шаг — интеграция проверенного commit и продолжение незавершённой физической приёмки Q01; полный Q01 остаётся IN_PROGRESS.

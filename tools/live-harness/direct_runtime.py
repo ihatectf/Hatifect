@@ -664,7 +664,8 @@ def _background_game_options(request: dict[str, Any]):
         effective = ET.tostring(document, encoding="utf-8", xml_declaration=True)
         plans.append((path, original, effective, stat.S_IMODE(info.st_mode) if info else PRIVATE_FILE_MODE))
 
-    diagnostics = Path(request["artifactDirectory"]) / "diagnostics"
+    diagnostics = _ensure_private_directory(Path(request["artifactDirectory"]) / "diagnostics")
+    originals_directory = _ensure_private_directory(diagnostics / "runtime-options-originals")
     evidence_path = diagnostics / "runtime-options.json"
     evidence = {
         "policy": "background-progress-v1", "requestId": request["requestId"],
@@ -672,8 +673,7 @@ def _background_game_options(request: dict[str, Any]):
     }
     for path, original, effective, _mode in plans:
         if original is not None:
-            backup = diagnostics / "runtime-options-originals" / path.name
-            backup.parent.mkdir(parents=True, exist_ok=True, mode=PRIVATE_DIRECTORY_MODE)
+            backup = originals_directory / path.name
             with backup.open("xb") as stream:
                 os.fchmod(stream.fileno(), PRIVATE_FILE_MODE)
                 stream.write(original)
