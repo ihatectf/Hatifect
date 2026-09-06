@@ -27,7 +27,7 @@ namespace Hatifect.UI.Stardew;
 /// Test-mode-only game-thread driver for allowlisted live acceptance scenarios. It never activates
 /// without the transport-owned automated protocol environment.
 /// </summary>
-internal sealed class UiAutomatedAcceptanceController : IDisposable
+internal sealed partial class UiAutomatedAcceptanceController : IDisposable
 {
     private enum BootstrapLifecycleState
     {
@@ -88,7 +88,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             "semantic.input.controller",
             "semantic.input.text"
         }),
-        new("semantic.locale-scale-theme", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.LocaleScaleTheme, false, new[]
+        new("semantic.locale-scale-theme", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.LocaleScaleTheme, true, new[]
         {
             "semantic.locale.en",
             "semantic.locale.ru",
@@ -108,7 +108,6 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
     private readonly UiSemanticDogfoodCompositionRoot _dogfood;
     private readonly UiStardewAcceptanceRecorder _recorder = UiStardewAcceptanceRecorder.Shared;
     private readonly UiAutomatedAcceptanceCheckLedger _checkLedger = new();
-    private readonly List<UiScaleAttempt> _uiScaleAttempts = new();
     private readonly CompletedFrameCaptureComponent _captureComponent;
     private string? _screenshotSource;
     private int _screenshotWidth;
@@ -135,6 +134,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
     private string? _bootstrapSavePath;
     private HarnessTerminalFailure? _terminalFailure;
     private bool _diagnosticsWritten;
+    private int _nextAggregateScenario;
 
     private UiAutomatedAcceptanceController(
         IModHelper helper,
@@ -233,8 +233,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             allScenarios.Add(scenario);
         }
 
-        // Existing performance is the one asynchronous scenario and must stay terminal even when
-        // product-owned synchronous contributions are present.
+        // Performance stays last, after the rendered-state matrix and product-owned contributions.
         foreach (AcceptanceScenario scenario in BuiltInScenarioRegistry)
         {
             if (scenario.Kind != AcceptanceScenarioKind.Ui
@@ -278,18 +277,20 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         for (int index = 0; index < allScenarios.Count; index++)
         {
             AcceptanceScenario scenario = allScenarios[index];
-            if (scenario.CompletesAsynchronously != (scenario.Execution == AcceptanceScenarioExecution.Performance))
+            bool asynchronous = scenario.Execution is AcceptanceScenarioExecution.Performance
+                or AcceptanceScenarioExecution.LocaleScaleTheme;
+            if (scenario.CompletesAsynchronously != asynchronous)
                 throw new InvalidOperationException(
                     $"Automated TestHarness scenario '{scenario.Id}' has an inconsistent asynchronous execution contract.");
-            if (!scenario.CompletesAsynchronously) continue;
+            if (scenario.Execution != AcceptanceScenarioExecution.Performance) continue;
             terminalCount++;
             if (index != allScenarios.Count - 1)
                 throw new InvalidOperationException(
-                    $"Automated TestHarness asynchronous scenario '{scenario.Id}' must be last in 'all'.");
+                    $"Automated TestHarness performance scenario '{scenario.Id}' must be last in 'all'.");
         }
 
         if (terminalCount != 1)
-            throw new InvalidOperationException("Automated TestHarness scenario 'all' must end with exactly one asynchronous scenario.");
+            throw new InvalidOperationException("Automated TestHarness scenario 'all' must end with exactly one performance scenario.");
     }
 
     private AcceptanceScenarioCatalog ScenarioCatalog
@@ -308,6 +309,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        RestoreVisualSettingsAfterFailure();
         _helper.Events.GameLoop.UpdateTicked -= OnUpdateTicked;
         _helper.Events.Display.Rendered -= OnRendered;
         _captureComponent.Game.Components.Remove(_captureComponent);
@@ -410,6 +412,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             return;
         }
         if (_awaitingReturnedToTitle) return;
+        if (AdvanceVisualMatrix()) return;
         if (_performanceActive
             && _performanceFrames > 0
             && (_performanceFrames % 30) == 0
@@ -435,6 +438,12 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
 
     private void CaptureCompletedFrame()
     {
+        if (!_disposed && _visualGate != null)
+        {
+            try { ObserveVisualMatrixFrame(); }
+            catch (Exception error) { FailVisualMatrixCapture(error); }
+            return;
+        }
         if (_disposed || _performanceActive || !_capturePending) return;
         _capturePending = false;
         try
@@ -480,6 +489,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         catch (Exception error)
         {
             RetainTerminalFailure("HARNESS-AUTOMATION-EXECUTION-EXCEPTION", error);
+            RestoreVisualSettingsAfterFailure();
             WriteDiagnostics();
             _capturePending = true;
             FailUnrecorded(_terminalFailure!.Reason);
@@ -488,8 +498,11 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
 
     private bool ExecuteAllNamedUiScenarios()
     {
-        foreach (AcceptanceScenario scenario in ScenarioCatalog.AllUiScenarios)
+        while (_nextAggregateScenario < ScenarioCatalog.AllUiScenarios.Count)
+        {
+            AcceptanceScenario scenario = ScenarioCatalog.AllUiScenarios[_nextAggregateScenario++];
             if (ExecuteNamedScenario(scenario)) return true;
+        }
         return false;
     }
 
@@ -541,8 +554,8 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
                 ExecuteInput();
                 return false;
             case AcceptanceScenarioExecution.LocaleScaleTheme:
-                ExecuteLocaleScaleTheme();
-                return false;
+                BeginVisualMatrix();
+                return true;
             case AcceptanceScenarioExecution.Performance:
                 BeginPerformance();
                 return true;
@@ -609,6 +622,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         _returnToTitleContribution = null;
         _verifyReturnToTitleContribution = false;
         RetainTerminalFailure("HARNESS-AUTOMATION-LIFECYCLE-EXCEPTION", error);
+        RestoreVisualSettingsAfterFailure();
         (_saveEnumerator as IDisposable)?.Dispose();
         _saveEnumerator = null;
         _awaitingWorld = false;
@@ -993,51 +1007,6 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         Record("semantic.input.text", text, "Transport-driven text input updated the semantic Inspector search field.");
     }
 
-    private void ExecuteLocaleScaleTheme()
-    {
-        _dogfood.CloseOverlay();
-        EnsureMenu();
-        _uiScaleAttempts.Clear();
-        object originalLanguage = LocalizedContentManager.CurrentLanguageCode;
-        bool english = TrySetStaticProperty(typeof(LocalizedContentManager), "CurrentLanguageCode", "en", "English");
-        bool russian = TrySetStaticProperty(typeof(LocalizedContentManager), "CurrentLanguageCode", "ru", "Russian");
-        RestoreStaticProperty(typeof(LocalizedContentManager), "CurrentLanguageCode", originalLanguage);
-
-        float originalScale = Game1.options.desiredUIScale;
-        UiScaleAttempt scale75;
-        UiScaleAttempt scale100;
-        UiScaleAttempt scale125;
-        UiScaleAttempt scale150;
-        try
-        {
-            scale75 = TrySetUiScale(0.75f);
-            scale100 = TrySetUiScale(1.00f);
-            scale125 = TrySetUiScale(1.25f);
-            scale150 = TrySetUiScale(1.50f);
-            _uiScaleAttempts.Add(scale75);
-            _uiScaleAttempts.Add(scale100);
-            _uiScaleAttempts.Add(scale125);
-            _uiScaleAttempts.Add(scale150);
-        }
-        finally
-        {
-            Game1.options.desiredUIScale = originalScale;
-        }
-        bool reflow = UiSemanticStardewMenu.CaptureViewport().Width > 0 && UiSemanticStardewMenu.CaptureViewport().Height > 0;
-
-        UiSemanticStardewCapabilities.Validate(UiSemanticStardewTheme.Default);
-
-        Record("semantic.locale.en", english, "Switched the isolated runtime locale to English and recomposed semantic content.");
-        Record("semantic.locale.ru", russian, "Switched the isolated runtime locale to Russian and recomposed semantic content.");
-        Record("semantic.scale.75", scale75.Passed, scale75.Reason);
-        Record("semantic.scale.100", scale100.Passed, scale100.Reason);
-        Record("semantic.scale.125", scale125.Passed, scale125.Reason);
-        Record("semantic.scale.150", scale150.Passed, scale150.Reason);
-        Record("semantic.viewport.reflow", reflow, "Semantic host retained a positive viewport after scale recomposition.");
-        Record("semantic.theme.matrix", true,
-            $"Validated the implemented semantic host preset '{UiSemanticStardewTheme.Default.Id}' through the platform capability boundary.");
-    }
-
     private void BeginPerformance()
     {
         _dogfood.CloseOverlay();
@@ -1125,11 +1094,12 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             LogLevel.Error);
     }
 
-    private void CaptureScreenshot()
+    private void CaptureScreenshot(string? name = null)
     {
         string directory = Path.Combine(_artifactDirectory, "screenshots");
         Directory.CreateDirectory(directory);
-        string path = Path.Combine(directory, _scenario.Replace('.', '-') + ".png");
+        string fileName = name ?? _scenario.Replace('.', '-');
+        string path = Path.Combine(directory, fileName + ".png");
         GraphicsDevice graphics = Game1.graphics.GraphicsDevice;
         if (graphics.RenderTargetCount != 0)
             throw new InvalidOperationException("Completed-frame capture requires the composed back buffer.");
@@ -1148,7 +1118,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         // layout pixels can be compared with the final window frame without changing game state.
         if (Game1.game1.uiScreen is { IsDisposed: false } uiScreen)
         {
-            string uiPath = Path.Combine(directory, _scenario.Replace('.', '-') + "-ui-layer.png");
+            string uiPath = Path.Combine(directory, fileName + "-ui-layer.png");
             using FileStream uiStream = File.Create(uiPath);
             uiScreen.SaveAsPng(uiStream, uiScreen.Width, uiScreen.Height);
             uiStream.Flush(flushToDisk: true);
@@ -1208,19 +1178,8 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
                 pixelWidth = Game1.graphics.GraphicsDevice.Viewport.Width,
                 pixelHeight = Game1.graphics.GraphicsDevice.Viewport.Height
             },
-            uiScaleAttempts = _uiScaleAttempts.Select(attempt => new
-            {
-                requested = attempt.Requested,
-                observed = attempt.Observed,
-                passed = attempt.Passed,
-                reason = attempt.Reason,
-                exception = attempt.ExceptionType == null ? null : new
-                {
-                    type = attempt.ExceptionType,
-                    message = attempt.ExceptionMessage,
-                    stack = attempt.ExceptionStack
-                }
-            }),
+            visualMatrix = _visualCaptures.ToArray(),
+            visualMatrixRestored = _visualSettingsRestored,
             terminalError = _terminalFailure == null ? null : new
             {
                 reason = _terminalFailure.Reason,
@@ -1232,38 +1191,6 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         File.WriteAllText(temporary, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(temporary, path, overwrite: true);
         _diagnosticsWritten = true;
-    }
-
-    private static bool TrySetStaticProperty(Type type, string propertyName, params string[] candidates)
-    {
-        PropertyInfo? property = type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-        if (property?.CanWrite != true || !property.PropertyType.IsEnum) return false;
-        foreach (string candidate in candidates)
-        {
-            if (!Enum.TryParse(property.PropertyType, candidate, ignoreCase: true, out object? value)) continue;
-            property.SetValue(null, value);
-            return Equals(property.GetValue(null), value);
-        }
-        return false;
-    }
-
-    private static void RestoreStaticProperty(Type type, string propertyName, object value)
-        => type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)?.SetValue(null, value);
-
-    private static UiScaleAttempt TrySetUiScale(float value)
-    {
-        try
-        {
-            Game1.options.desiredUIScale = value;
-            float observed = Game1.options.desiredUIScale;
-            return Math.Abs(observed - value) < 0.001f
-                ? UiScaleAttempt.Applied(value, observed)
-                : UiScaleAttempt.ReadbackMismatch(value, observed);
-        }
-        catch (Exception error)
-        {
-            return UiScaleAttempt.Failed(value, error);
-        }
     }
 
     private enum AcceptanceScenarioKind
@@ -1429,48 +1356,4 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
                 error.StackTrace ?? string.Empty);
     }
 
-    private sealed class UiScaleAttempt
-    {
-        private UiScaleAttempt(
-            float requested,
-            float? observed,
-            bool passed,
-            string reason,
-            string? exceptionType = null,
-            string? exceptionMessage = null,
-            string? exceptionStack = null)
-        {
-            Requested = requested;
-            Observed = observed;
-            Passed = passed;
-            Reason = reason;
-            ExceptionType = exceptionType;
-            ExceptionMessage = exceptionMessage;
-            ExceptionStack = exceptionStack;
-        }
-
-        public float Requested { get; }
-        public float? Observed { get; }
-        public bool Passed { get; }
-        public string Reason { get; }
-        public string? ExceptionType { get; }
-        public string? ExceptionMessage { get; }
-        public string? ExceptionStack { get; }
-
-        public static UiScaleAttempt Applied(float requested, float observed)
-            => new(requested, observed, true, "HARNESS-UI-SCALE-APPLIED");
-
-        public static UiScaleAttempt ReadbackMismatch(float requested, float observed)
-            => new(requested, observed, false, "HARNESS-UI-SCALE-READBACK-MISMATCH");
-
-        public static UiScaleAttempt Failed(float requested, Exception error)
-            => new(
-                requested,
-                observed: null,
-                passed: false,
-                reason: "HARNESS-UI-SCALE-SET-EXCEPTION",
-                exceptionType: error.GetType().FullName ?? error.GetType().Name,
-                exceptionMessage: error.Message,
-                exceptionStack: error.StackTrace ?? string.Empty);
-    }
 }

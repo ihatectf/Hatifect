@@ -26,5 +26,7 @@
              Link="Stardew/UiAutomatedAcceptanceScenarioRegistry.cs" />
     <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiRuntimeFingerprint.cs"
              Link="Stardew/UiRuntimeFingerprint.cs" />
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiRenderedStateGate.cs"
+             Link="Stardew/UiRenderedStateGate.cs" />
   </ItemGroup>
 </Project>

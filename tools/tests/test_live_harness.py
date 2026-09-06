@@ -355,27 +355,26 @@ class LiveHarnessTests(unittest.TestCase):
                 HARNESS.validate_required_mods(resolved, mods_root)
 
     def test_ui_scale_failures_remain_structured_runtime_diagnostics(self) -> None:
-        driver = (
-            ROOT
-            / "Hatifect UI"
-            / "Hatifect.UI.Stardew"
-            / "Diagnostics"
-            / "UiAutomatedAcceptanceController.cs"
-        ).read_text(encoding="utf-8")
-        scale_method = driver[driver.index("private static UiScaleAttempt TrySetUiScale(float value)"):]
+        resolved = HARNESS.resolve_scenario(self.scenarios, "semantic.locale-scale-theme", "ui")
+        for scale in (75, 100, 125, 150):
+            with self.subTest(scale=scale):
+                report = self._report(resolved)
+                check_id = f"semantic.scale.{scale}"
+                note = f"HARNESS-VISUAL-STATE-NOT-RENDERED: scale={scale / 100}; menu origin is invalid"
+                check = next(item for item in report["HostChecks"] if item["Id"] == check_id)
+                check.update(Passed=False, Note=note)
 
-        self.assertIn("private readonly List<UiScaleAttempt> _uiScaleAttempts = new();", driver)
-        self.assertIn("uiScaleAttempts = _uiScaleAttempts.Select", driver)
-        self.assertIn("private static UiScaleAttempt TrySetUiScale(float value)", driver)
-        self.assertIn("UiScaleAttempt.ReadbackMismatch(value, observed)", driver)
-        self.assertIn("UiScaleAttempt.Failed(value, error)", driver)
-        self.assertIn('"HARNESS-UI-SCALE-READBACK-MISMATCH"', driver)
-        self.assertIn('reason: "HARNESS-UI-SCALE-SET-EXCEPTION"', driver)
-        self.assertIn("exceptionType: error.GetType().FullName ?? error.GetType().Name", driver)
-        self.assertIn("exceptionMessage: error.Message", driver)
-        self.assertIn("exceptionStack: error.StackTrace ?? string.Empty", driver)
-        self.assertNotIn("_monitor.Log", scale_method)
-        self.assertNotIn("WriteDiagnostics", scale_method)
+                with self.assertRaises(HARNESS.HarnessError) as caught:
+                    HARNESS.validate_report(resolved, report, started_at=0)
+
+                self.assertEqual(str(caught.exception), f"Failed required host checks: {check_id}")
+                self.assertEqual(caught.exception.assertions, [{
+                    "id": check_id,
+                    "status": "FAIL",
+                    "subject": "semantic.locale-scale-theme",
+                    "expected": "The required host check passes.",
+                    "actual": note,
+                }])
 
     def test_terminal_failure_is_retained_as_one_typed_diagnostic(self) -> None:
         driver = (
@@ -400,7 +399,7 @@ class LiveHarnessTests(unittest.TestCase):
 
         write_diagnostics = driver[
             driver.index("private void WriteDiagnostics()"):driver.index(
-                "private static bool TrySetStaticProperty"
+                "private enum AcceptanceScenarioKind"
             )
         ]
         guard = write_diagnostics.index("if (_diagnosticsWritten) return;")

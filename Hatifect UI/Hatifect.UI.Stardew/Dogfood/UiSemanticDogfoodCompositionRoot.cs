@@ -26,6 +26,8 @@ namespace Hatifect.UI.Stardew.Dogfood;
 /// </summary>
 internal sealed class UiSemanticDogfoodCompositionRoot : IDisposable
 {
+    internal const string DefaultStatusText =
+        "Clean-slate Runtime → Stardew composition is active. Use hatifect_ui_acceptance to capture live evidence.";
     private static readonly RuntimeSymbolId DiagnosticsId = new("Hatifect.UI", "dogfood/diagnostics");
     private static readonly RuntimeSymbolId InspectorId = DiagnosticsId.Child("devtools/inspector");
     private static readonly RuntimeSymbolId OverlayId = new("Hatifect.UI", "dogfood/overlay");
@@ -40,6 +42,7 @@ internal sealed class UiSemanticDogfoodCompositionRoot : IDisposable
     private UiSemanticStardewMenu? _menu;
     private UiSemanticStardewOverlaySession? _overlay;
     private bool _disposed;
+    private string? _automationStatus;
 
     public UiSemanticDogfoodCompositionRoot(GraphicsDevice graphicsDevice, IModHelper helper)
     {
@@ -74,6 +77,13 @@ internal sealed class UiSemanticDogfoodCompositionRoot : IDisposable
     public bool IsOpen => _menu != null && ReferenceEquals(Game1.activeClickableMenu, _menu);
     public bool IsOverlayVisible => _overlay?.Visible == true;
     internal UiSemanticStardewMenu? AutomationMenu => IsOpen ? _menu : null;
+
+    internal void SetAutomationStatus(string? text)
+    {
+        if (!UiAutomatedAcceptanceScenarioRegistry.IsRegistrationEnabled)
+            throw new InvalidOperationException("The visual text probe requires the isolated automated harness.");
+        _automationStatus = text;
+    }
 
     public bool TryOpen()
     {
@@ -173,8 +183,7 @@ internal sealed class UiSemanticDogfoodCompositionRoot : IDisposable
         => new UiExperienceBuilder(DiagnosticsId, "Semantic host diagnostics")
             .Monitor(
                 "Status",
-                new UiConstantSource<string>(
-                    "Clean-slate Runtime → Stardew composition is active. Use hatifect_ui_acceptance to capture live evidence."))
+                new UiConstantSource<string>(_automationStatus ?? DefaultStatusText))
             .Build();
 
     private (UiInspectorSnapshot Snapshot, Action Close) CaptureInspector()
