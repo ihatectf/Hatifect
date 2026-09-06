@@ -185,7 +185,7 @@ Fresh isolated runtime for integration commit `43ff04d`: `./tools/hatifect-live-
 
 ## U02-a: publication, collection changes and atomic CA
 
-**U02 remains IN_PROGRESS.** This checked implementation subset belongs to Experience/Runtime and the CA semantic consumer in `/private/tmp/hatifect-ui-next-ten-slices`, based on `69fd5b2`. All eight UI packages and their consumer authority advance together to alpha.33. Frozen surface API v1, builder/form source contracts, Flow domain/persistence and third-party dependencies remain unchanged.
+**U02 remains IN_PROGRESS.** Implementation commit: `c5db895`. This checked implementation subset belongs to Experience/Runtime and the CA semantic consumer in `/private/tmp/hatifect-ui-next-ten-slices`, based on `69fd5b2`. All eight UI packages and their consumer authority advance together to alpha.33. Frozen surface API v1, builder/form source contracts, Flow domain/persistence and third-party dependencies remain unchanged.
 
 `UiPublication` validates a complete draft and exchanges one immutable view before callbacks. Sources and snapshots expose monotonic versions; collection content/selection revisions remain distinct. Invalid preparation, stale/replayed/conflicting deltas, thread/reentry/disposal and observer failures have explicit outcomes. Collections retain at most 64 change batches of at most 128 operations; slow readers receive a current Reset. Captures preserve order, stable-ID lookup and selection without repeated copying. Runtime captures one view per publication before composition, including nested form inputs and selection facades; editing still reaches the original owner. Payload/icon/text changes advance ItemRevision while the previous measurement hash is preserved.
 
