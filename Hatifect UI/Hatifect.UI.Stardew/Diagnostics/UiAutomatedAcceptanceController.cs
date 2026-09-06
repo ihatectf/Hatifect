@@ -75,7 +75,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             "semantic.inspector.reveal",
             "semantic.inspector.close"
         }),
-        new("semantic.overlay", AcceptanceScenarioKind.Ui, false, AcceptanceScenarioExecution.Overlay, false, new[]
+        new("semantic.overlay", AcceptanceScenarioKind.Ui, true, AcceptanceScenarioExecution.Overlay, false, new[]
         {
             "semantic.overlay.visual",
             "semantic.overlay.context",
@@ -362,13 +362,17 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         }
         if (_awaitingWorld)
         {
-            if (!Context.IsWorldReady)
+            // The standalone HUD fixture needs the visible world, after its load transition.
+            bool awaitingOverlayFade = string.Equals(_scenario, "semantic.overlay", StringComparison.Ordinal)
+                && Game1.fadeToBlackAlpha > 0f;
+            if (!Context.IsWorldReady || awaitingOverlayFade)
             {
                 _worldWaitTicks++;
                 if (_worldWaitTicks == 1 || (_worldWaitTicks % 300) == 0)
                 {
                     _monitor.Log(
                         $"Awaiting world-ready: bootstrap={_bootstrapLifecycle}, worldReady={Context.IsWorldReady}, "
+                        + $"fadeAlpha={Game1.fadeToBlackAlpha}, "
                         + $"hasLoadedGame={Game1.hasLoadedGame}, "
                         + $"menu={Game1.activeClickableMenu?.GetType().FullName ?? "\u003Cnull\u003E"}, "
                         + $"location={Game1.currentLocation?.NameOrUniqueName ?? "\u003Cnull\u003E"}.",
@@ -1173,6 +1177,7 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             processId = Environment.ProcessId,
             terminalOpen = _dogfood.IsOpen,
             overlayVisible = _dogfood.IsOverlayVisible,
+            fadeToBlackAlpha = Game1.fadeToBlackAlpha,
             activeTheme = UiSemanticStardewTheme.Id,
             screenshot = _screenshotSource == null ? null : new
             {
