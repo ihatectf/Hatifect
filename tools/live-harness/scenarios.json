@@ -108,6 +108,26 @@
       }
     },
     {
+      "id": "flow.chest.crash-after-save",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": ["Hatifect.Flow"],
+      "checks": [
+        "flow.chest.crash-after-save.loaded",
+        "flow.chest.crash-after-save.custody",
+        "flow.chest.crash-after-save.saving",
+        "flow.chest.crash-after-save.saved",
+        "flow.chest.crash-after-save.delivery",
+        "flow.chest.crash-after-save.lifecycle",
+        "flow.chest.crash-after-save.reload",
+        "flow.chest.crash-after-save.no-duplication",
+        "flow.chest.crash-after-save.process-restart"
+      ],
+      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+    },
+    {
       "id": "semantic.lifecycle",
       "kind": "ui",
       "requiresSave": false,

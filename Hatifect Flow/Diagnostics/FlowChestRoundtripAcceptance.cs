@@ -17,11 +17,12 @@ using static Hatifect.Flow.Diagnostics.FlowHostAcceptance;
 namespace Hatifect.Flow.Diagnostics;
 
 // Real production-session acceptance. All world mutations stay in one request-owned canonical save copy.
-internal sealed class FlowChestRoundtripAcceptance : IDisposable
+internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
 {
     internal const string Scenario = "flow.chest.roundtrip";
     private static readonly string[] Checks = { "loaded", "custody", "saving", "saved", "delivery", "lifecycle", "reload", "no-duplication" };
     private readonly IModHelper _helper;
+    private readonly string _scenario;
     private readonly IMonitor _monitor;
     private readonly Func<FlowGameSession?> _current;
     private readonly AcceptanceRequest _request;
@@ -44,22 +45,27 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
     private int _verificationFrames;
     private bool _disposed;
     private bool _returning;
-    private enum Stage { Startup, Loading, Transit, SavingTransit, ReturnTransit, ReloadTransit, Delivery, SavingDelivered, ReturnDelivered, ReloadDelivered, Verify, Exit }
+    private enum Stage { Startup, Loading, Transit, SavingTransit, ReturnTransit, ReloadTransit, Delivery, SavingDelivered, ReturnDelivered, ReloadDelivered, Verify, AwaitCrash, Exit }
 
-    private FlowChestRoundtripAcceptance(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current)
+    private FlowChestRoundtripAcceptance(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current, string scenario)
     {
         _helper = helper;
         _monitor = monitor;
         _current = current;
-        _request = ReadAcceptanceRequest(helper, Scenario);
+        _scenario = scenario;
+        _request = ReadAcceptanceRequest(helper, scenario);
         _fingerprint = RuntimeFingerprint();
+        InitializeCrash();
         helper.Events.GameLoop.Saving += OnSaving;
         helper.Events.GameLoop.Saved += OnSaved;
     }
 
     internal static FlowChestRoundtripAcceptance? TryCreate(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current)
-        => Environment.GetEnvironmentVariable("HATIFECT_TEST_MODE") == "1" && Environment.GetEnvironmentVariable("HATIFECT_TEST_AUTOMATED") == "1"
-            && Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO") == Scenario ? new(helper, monitor, current) : null;
+    {
+        string? scenario = Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO");
+        return Environment.GetEnvironmentVariable("HATIFECT_TEST_MODE") == "1" && Environment.GetEnvironmentVariable("HATIFECT_TEST_AUTOMATED") == "1"
+            && scenario is Scenario or CrashScenario ? new(helper, monitor, current, scenario) : null;
+    }
 
     internal void OnSaveLoaded()
     {
@@ -69,6 +75,7 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
             ValidateLoadedSave();
             FlowGameSession session = Session();
             Require(!session.IsFaulted && session.ReadSnapshot().SessionId != _sessionId, "SaveLoaded did not create a fresh production session.");
+            if (_crashPhase == "resume" && _loads == 1) _passed.Add("process-restart");
             _sessionId = session.ReadSnapshot().SessionId;
             _loads++;
             if (_loads == 1)
@@ -170,6 +177,10 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
                     WriteReport();
                     _stage = Stage.Exit;
                     break;
+                case Stage.AwaitCrash:
+                    Require(Session().IsSaving && BothAt(ParcelState.InTransit), "The saved crash boundary advanced before termination.");
+                    VerifyRemainder();
+                    break;
             }
         }
         catch (Exception error) { Fail(error); }
@@ -222,6 +233,11 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
             Require(_saveHash != HashFile(Path.Combine(_request.SavePath, Path.GetFileName(_request.SavePath))), "Saved event did not update the owned on-disk game save.");
             _saves++;
             _passed.Add("saved");
+            if (_crashPhase == "prepare" && _stage == Stage.SavingTransit)
+            {
+                PrepareCrashBoundary();
+                return;
+            }
             _stage = _stage == Stage.SavingTransit ? Stage.ReturnTransit : Stage.ReturnDelivered;
         }
         catch (Exception error) { Fail(error); }
@@ -287,7 +303,7 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
     internal void Fail(Exception error)
     {
         _errors.Add(error.ToString());
-        _monitor.Log("Flowline chest roundtrip failed: " + error, LogLevel.Error);
+        _monitor.Log("Flowline " + _scenario + " failed: " + error, LogLevel.Error);
         try { WriteReport(); }
         finally { _stage = Stage.Exit; }
     }
@@ -300,11 +316,11 @@ internal sealed class FlowChestRoundtripAcceptance : IDisposable
             FormatVersion = 3, PerformanceFormatVersion = 3, CapturedAtUtc = captured,
             RuntimeFingerprintAlgorithm = "sha256-flow-runtime-v1", RuntimeFingerprint = _fingerprint,
             GameVersion = Game1.GetVersionString(), SmapiVersion = Constants.ApiVersion.ToString(), Scenarios = Array.Empty<object>(),
-            HostChecks = Checks.Select(id => new { Id = Scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
+            HostChecks = (_crashPhase is null ? Checks : Checks.Concat(new[] { "process-restart" })).Select(id => new { Id = _scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
                 CapturedAtUtc = captured, Note = _errors.Count == 0 ? "Whole and partial stacks, real chests, two actual game saves and reloads; total quantity conserved." : string.Join("\n", _errors) }).ToArray()
         });
         AtomicJson(Path.Combine(_request.Artifact, "diagnostics", "flow-chest-roundtrip.json"), new
-        { requestId = _request.RunId, scenarioId = Scenario, frames = _frames, loads = _loads, savingEvents = _savings, savedEvents = _saves,
+        { requestId = _request.RunId, scenarioId = _scenario, frames = _frames, loads = _loads, savingEvents = _savings, savedEvents = _saves,
             parcelId = _parcel, partialParcelId = _partialParcel, partialSourceQuantity = 13, partialCargoQuantity = 5, partialRemainderQuantity = 8,
             errors = _errors.ToArray() });
     }
