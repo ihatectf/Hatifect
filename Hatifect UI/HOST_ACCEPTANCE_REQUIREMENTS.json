@@ -1,7 +1,7 @@
 {
   "FormatVersion": 3,
   "PerformanceFormatVersion": 3,
-  "HatifectVersion": "1.0.0-alpha.46",
+  "HatifectVersion": "1.0.0-alpha.47",
   "RuntimeFingerprintAlgorithm": "sha256-runtime-v2",
   "RequiredChecks": [
     {
