@@ -17,7 +17,7 @@ using static Hatifect.Flow.Diagnostics.FlowHostAcceptance;
 
 namespace Hatifect.Flow.Diagnostics;
 
-internal sealed class FlowChestReturnAcceptance : IDisposable
+internal sealed partial class FlowChestReturnAcceptance : IDisposable
 {
     internal const string Scenario = "flow.chest.return";
     private static readonly string[] Checks = { "loaded", "custody", "capacity", "delivery-retry", "return-requested",
@@ -26,7 +26,7 @@ internal sealed class FlowChestReturnAcceptance : IDisposable
     private readonly IMonitor _monitor;
     private readonly Func<FlowGameSession?> _current;
     private readonly AcceptanceRequest _request;
-    private readonly string _fingerprint;
+    private readonly string _fingerprint, _scenario;
     private readonly HashSet<string> _passed = new(StringComparer.Ordinal);
     private readonly List<string> _errors = new();
     private Vector2 _sourceTile, _destinationTile, _holdingTile;
@@ -38,19 +38,21 @@ internal sealed class FlowChestReturnAcceptance : IDisposable
     private int _capacity, _boundary, _loads, _savings, _saves, _frames, _verificationFrames;
     private bool _returning, _disposed;
     private enum Stage { Startup, Loading, AwaitDeliveryRejected, VerifyDeliveryRejected, AwaitRetryDelivery,
-        AwaitReturnRejected, VerifyReturnRejected, AwaitReturned, VerifyReturned, VerifyTaken, Saving, Return, Reload, Exit }
+        AwaitReturnRejected, VerifyReturnRejected, AwaitReturned, VerifyReturned, VerifyTaken, Saving, Return, Reload, AwaitCrash, Exit }
 
     private FlowChestReturnAcceptance(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current)
     {
         _helper = helper; _monitor = monitor; _current = current;
-        _request = ReadAcceptanceRequest(helper, Scenario); _fingerprint = RuntimeFingerprint();
+        _scenario = Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO")!;
+        _request = ReadAcceptanceRequest(helper, _scenario); _fingerprint = RuntimeFingerprint();
+        InitializeCrash();
         helper.Events.GameLoop.Saving += OnSaving; helper.Events.GameLoop.Saved += OnSaved;
     }
 
     internal static FlowChestReturnAcceptance? TryCreate(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current)
         => Environment.GetEnvironmentVariable("HATIFECT_TEST_MODE") == "1"
             && Environment.GetEnvironmentVariable("HATIFECT_TEST_AUTOMATED") == "1"
-            && Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO") == Scenario ? new(helper, monitor, current) : null;
+            && Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO") is Scenario or CrashScenario ? new(helper, monitor, current) : null;
 
     internal void OnSaveLoaded()
     {
@@ -62,7 +64,9 @@ internal sealed class FlowChestReturnAcceptance : IDisposable
             _sessionId = Session().ReadSnapshot().SessionId; _loads++; _verificationFrames = 0;
             if (_loads == 1) { PrepareRoute(); _stage = Stage.AwaitDeliveryRejected; return; }
             Require(_loads is >= 2 and <= 6, "Return acceptance exceeded its fixed load sequence.");
+            if (_crashPhase == "resume" && _loads == 5) RestoreReturnFixture();
             VerifyBoundary(_loads - 1); _passed.Add("reload");
+            if (_crashPhase == "resume" && _loads == 5) _passed.Add("process-restart");
             _stage = _loads switch
             {
                 2 => Stage.VerifyDeliveryRejected,
@@ -93,8 +97,7 @@ internal sealed class FlowChestReturnAcceptance : IDisposable
         source.GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Add(partial);
         Item remainder = FlowItemCodec.Decode(FlowItemCodec.Encode(partial)); remainder.Stack = 8;
         _remainderXml = FlowItemCodec.Encode(remainder);
-        _sourceFillers = Enumerable.Range(0, _capacity - 1).Select(index => FlowItemCodec.Encode(CreateFiller("source", index))).ToArray();
-        _destinationFillers = Enumerable.Range(0, _capacity).Select(index => FlowItemCodec.Encode(CreateFiller("destination", index))).ToArray();
+        InitializeFillers();
         foreach (string xml in _destinationFillers) destination.GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Add(FlowItemCodec.Decode(xml));
         session.RegisterStation("return_source", "Farm", (int)_sourceTile.X, (int)_sourceTile.Y, source);
         session.RegisterStation("return_destination", "Farm", (int)_destinationTile.X, (int)_destinationTile.Y, destination);
@@ -169,6 +172,10 @@ internal sealed class FlowChestReturnAcceptance : IDisposable
                     Require(_loads == 6 && _savings == 5 && _saves == 5, "Return acceptance did not complete all real save/load boundaries.");
                     WriteReport(); _stage = Stage.Exit;
                     break;
+                case Stage.AwaitCrash:
+                    Require(Session().IsSaving, "The returned crash barrier was released before termination.");
+                    VerifyBoundary(4);
+                    break;
                 case Stage.Return:
                     if (_returning) break;
                     _returning = true; _retired = Session(); RequestReturnToTitle();
@@ -219,6 +226,12 @@ internal sealed class FlowChestReturnAcceptance : IDisposable
         if (!partial) item.modData.Remove("Hatifect.Flow/PartialAcceptance");
         item.modData[ChestInventoryAccess.CargoKey] = Parcel(partial).CargoId.ToString("D");
         return FlowItemCodec.Encode(item);
+    }
+
+    private void InitializeFillers()
+    {
+        _sourceFillers = Enumerable.Range(0, _capacity - 1).Select(index => FlowItemCodec.Encode(CreateFiller("source", index))).ToArray();
+        _destinationFillers = Enumerable.Range(0, _capacity).Select(index => FlowItemCodec.Encode(CreateFiller("destination", index))).ToArray();
     }
 
     private Item CreateFiller(string role, int index)
@@ -291,6 +304,7 @@ internal sealed class FlowChestReturnAcceptance : IDisposable
             ValidateLoadedSave(); VerifyBoundary(_boundary);
             Require(_saveHash != HashFile(Path.Combine(_request.SavePath, Path.GetFileName(_request.SavePath))), "Saved did not change the owned game save.");
             _saves++; _passed.Add("saved");
+            if (_crashPhase == "prepare" && _boundary == 4) { PrepareCrashBoundary(); return; }
             // Keep the saved queued return untouched until title; the production tick runs before this driver.
             if (_boundary == 2) Session().BeginSave();
             _stage = Stage.Return;
@@ -337,7 +351,7 @@ internal sealed class FlowChestReturnAcceptance : IDisposable
     private FlowGameSession Session() => _current() ?? throw new InvalidOperationException("Production session is absent.");
     internal void Fail(Exception error)
     {
-        _errors.Add(error.ToString()); _monitor.Log("Flowline " + Scenario + " failed: " + error, LogLevel.Error);
+        _errors.Add(error.ToString()); _monitor.Log("Flowline " + _scenario + " failed: " + error, LogLevel.Error);
         try { WriteReport(); } finally { _stage = Stage.Exit; }
     }
 
@@ -349,11 +363,13 @@ internal sealed class FlowChestReturnAcceptance : IDisposable
             FormatVersion = 3, PerformanceFormatVersion = 3, CapturedAtUtc = captured,
             RuntimeFingerprintAlgorithm = "sha256-flow-runtime-v1", RuntimeFingerprint = _fingerprint,
             GameVersion = Game1.GetVersionString(), SmapiVersion = Constants.ApiVersion.ToString(), Scenarios = Array.Empty<object>(),
-            HostChecks = Checks.Select(id => new { Id = Scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id), CapturedAtUtc = captured,
-                Note = _errors.Count == 0 ? "Real full-chest refusal, explicit retry/return, five game saves; exact cargo/filler XML and quantity21 retained, taken items never recreated." : string.Join("\n", _errors) }).ToArray()
+            HostChecks = Checks.Concat(_scenario == CrashScenario ? new[] { "process-restart" } : Array.Empty<string>())
+                .Select(id => new { Id = _scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id), CapturedAtUtc = captured,
+                Note = _errors.Count == 0 ? "Real full-chest refusal, explicit retry/return, five game saves; exact cargo/filler XML and quantity21 retained, taken items never recreated."
+                    + (_scenario == CrashScenario ? " Saved Returned survived owned SIGKILL and a distinct process on the same saved bytes." : "") : string.Join("\n", _errors) }).ToArray()
         });
         AtomicJson(Path.Combine(_request.Artifact, "diagnostics", "flow-chest-return.json"), new
-        { requestId = _request.RunId, scenarioId = Scenario, frames = _frames, loads = _loads, savingEvents = _savings, savedEvents = _saves,
+        { requestId = _request.RunId, scenarioId = _scenario, frames = _frames, loads = _loads, savingEvents = _savings, savedEvents = _saves,
             wholeParcelId = _wholeParcel, partialParcelId = _partialParcel, totalCargoQuantity = 21, errors = _errors.ToArray() });
     }
 

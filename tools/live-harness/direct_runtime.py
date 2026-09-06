@@ -39,7 +39,9 @@ SAVED_CRASH_SCENARIO = "flow.chest.crash-after-save"
 DELIVERED_CRASH_SCENARIO = "flow.chest.crash-after-delivery"
 UNSAVED_EXTRACTION_CRASH_SCENARIO = "flow.chest.crash-after-unsaved-extraction"
 UNSAVED_DELIVERY_CRASH_SCENARIO = "flow.chest.crash-after-unsaved-delivery"
+RETURNED_CRASH_SCENARIO = "flow.chest.crash-after-return"
 SAVED_CRASH_BOUNDARIES = {
+    RETURNED_CRASH_SCENARIO: ("saved-returned", 4),
     SAVED_CRASH_SCENARIO: ("saved-in-transit", 1),
     DELIVERED_CRASH_SCENARIO: ("saved-delivered", 2),
     UNSAVED_EXTRACTION_CRASH_SCENARIO: ("saved-reserved-unsaved-extraction", 1),
