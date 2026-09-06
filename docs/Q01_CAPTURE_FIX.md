@@ -29,4 +29,4 @@ This changes no public UI/Flow API, package dependency, persistence format or ac
 
 ## Next ready Q01 work
 
-Correct the standalone HUD-overlay fixture: it currently declares no save requirement despite using the gameplay HUD layer. Re-run it with an isolated loaded world and inspect the completed UI image; do not turn the existing visibility flag into proof that pixels were rendered. Keep the native-frame upper strip, initial standalone viewport and physical input/locale/scale/theme matrix as separate observations until verified.
+The subsequent [HUD-overlay fixture correction](Q01_OVERLAY_FIXTURE.md), `37b735e`, requires an isolated loaded world and waits for its initial fade to finish. Fresh alpha.36 C/G/P, UI/CA and fake Flow evidence are recorded there; the original alpha.35 measurements above remain unchanged. Next: distinguish the native-frame upper strip from the actual window surface and inspect the initial standalone viewport. Physical input and the locale/scale/theme visual matrix remain separate until verified.

@@ -2,6 +2,8 @@
 
 Status: **DONE** for the bounded HUD fixture correction; full Q01 remains **IN_PROGRESS**. This follow-up starts from `30d1b2a`, which combines the [completed capture correction](Q01_CAPTURE_FIX.md) with published U02 alpha.36 and F20-a diagnostics from `cb037e0`. The original alpha.35 Q01 baseline and capture validation remain attached to their own source candidates.
 
+Implementation and combined verification: [`37b735e`](https://github.com/ihatectf/Hatifect/commit/37b735eee598e33970b1622ac76941cbbcdd7b81).
+
 ## Scope
 
 The standalone `semantic.overlay` scenario declared `requiresSave: false` in the harness manifest and `RequiresWorld: false` in the game controller. The dogfood composition root binds this overlay to the gameplay HUD layer. The existing `semantic.overlay.visual` assertion checks a visibility flag synchronously, before a render pass; it alone cannot prove that an image contains the overlay.
