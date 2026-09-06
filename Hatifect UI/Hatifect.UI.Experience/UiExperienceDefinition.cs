@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using Hatifect.UI.Semantics;
 
@@ -28,7 +29,11 @@ public sealed class UiExperienceDefinition
         UiActionDefinition[] actions,
         UiVisualRoleDefinition[] visualRoles,
         UiSemanticElementDefinition[] sources,
-        UiSemanticGraph graph)
+        UiSemanticGraph graph,
+        UiLocalizedText? localizedDisplayName,
+        IDictionary<UiSymbolId, UiLocalizedText> localizedElementLabels,
+        IDictionary<UiSymbolId, UiLocalizedText> localizedActionTitles,
+        IDictionary<UiSymbolId, IUiTextFormatter> textFormatters)
     {
         Id = id;
         DisplayName = displayName;
@@ -37,6 +42,10 @@ public sealed class UiExperienceDefinition
         VisualRoles = Array.AsReadOnly(visualRoles);
         Sources = Array.AsReadOnly(sources);
         Graph = graph;
+        LocalizedDisplayName = localizedDisplayName;
+        LocalizedElementLabels = new ReadOnlyDictionary<UiSymbolId, UiLocalizedText>(new Dictionary<UiSymbolId, UiLocalizedText>(localizedElementLabels));
+        LocalizedActionTitles = new ReadOnlyDictionary<UiSymbolId, UiLocalizedText>(new Dictionary<UiSymbolId, UiLocalizedText>(localizedActionTitles));
+        _textFormatters = new Dictionary<UiSymbolId, IUiTextFormatter>(textFormatters);
     }
 
     public UiSymbolId Id { get; }
@@ -46,6 +55,30 @@ public sealed class UiExperienceDefinition
     public IReadOnlyList<UiVisualRoleDefinition> VisualRoles { get; }
     public IReadOnlyList<UiSemanticElementDefinition> Sources { get; }
     public UiSemanticGraph Graph { get; }
+    public UiLocalizedText? LocalizedDisplayName { get; }
+    public IReadOnlyDictionary<UiSymbolId, UiLocalizedText> LocalizedElementLabels { get; }
+    public IReadOnlyDictionary<UiSymbolId, UiLocalizedText> LocalizedActionTitles { get; }
+    private readonly Dictionary<UiSymbolId, IUiTextFormatter> _textFormatters;
+
+    internal string DisplayNameFor(string locale) => LocalizedDisplayName?.Resolve(locale) ?? DisplayName;
+    internal string ElementLabelFor(UiSemanticElementDefinition element, string locale)
+        => LocalizedElementLabels.TryGetValue(element.Id, out var text) ? text.Resolve(locale) : element.Label;
+    internal string ActionTitleFor(UiActionDefinition action, string locale)
+        => LocalizedActionTitles.TryGetValue(action.Id, out var text) ? text.Resolve(locale) : action.Title;
+    internal bool HasTextFormatter(UiSymbolId element) => _textFormatters.ContainsKey(element);
+    internal string? FormatText(UiSymbolId element, object? capturedValue, string capturedLocale)
+    {
+        if (!_textFormatters.TryGetValue(element, out var formatter)) return null;
+        try
+        {
+            return formatter.Format(capturedValue, capturedLocale)
+                ?? throw new InvalidOperationException("The formatter returned null.");
+        }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException($"Text formatting failed for element '{element}' in locale '{capturedLocale}'.", error);
+        }
+    }
 
     public UiBindingContext CreateBindingContext()
     {

@@ -21,6 +21,10 @@ public sealed class UiExperienceBuilder
     private readonly HashSet<UiSymbolId> _elementIds = new();
     private readonly HashSet<UiSymbolId> _actionIds = new();
     private readonly HashSet<string> _roleNames = new(StringComparer.Ordinal);
+    private UiLocalizedText? _localizedDisplayName;
+    private readonly Dictionary<UiSymbolId, UiLocalizedText> _localizedElementLabels = new();
+    private readonly Dictionary<UiSymbolId, UiLocalizedText> _localizedActionTitles = new();
+    private readonly Dictionary<UiSymbolId, IUiTextFormatter> _textFormatters = new();
     private bool _built;
 
     public UiExperienceBuilder(UiSymbolId id, string displayName)
@@ -194,6 +198,71 @@ public sealed class UiExperienceBuilder
         return this;
     }
 
+    /// <summary>Localizes the display name while retaining its original authoring fallback.</summary>
+    public UiExperienceBuilder LocalizeDisplayName(UiLocalizedText text)
+    {
+        EnsureMutable();
+        ValidateText(text, _displayName);
+        if (_localizedDisplayName is not null) throw new InvalidOperationException("The display name is already localized.");
+        _localizedDisplayName = text;
+        return this;
+    }
+
+    /// <summary>Localizes an already declared element's label without changing its ID or alias.</summary>
+    public UiExperienceBuilder LocalizeElement(UiSymbolId element, UiLocalizedText text)
+    {
+        EnsureMutable();
+        var definition = _elements.Find(value => value.Id == element)
+            ?? throw new ArgumentException("A presented element must be declared before its label.", nameof(element));
+        ValidateText(text, definition.Label);
+        if (!_localizedElementLabels.TryAdd(element, text))
+            throw new InvalidOperationException($"Element '{element}' is already localized.");
+        return this;
+    }
+
+    /// <summary>Localizes an already declared action's title while retaining the action object and binding.</summary>
+    public UiExperienceBuilder LocalizeAction(UiSymbolId action, UiLocalizedText text)
+    {
+        EnsureMutable();
+        var definition = _actions.Find(value => value.Id == action)
+            ?? throw new ArgumentException("An action group must declare the action before its title.", nameof(action));
+        ValidateText(text, definition.Title);
+        if (!_localizedActionTitles.TryAdd(action, text))
+            throw new InvalidOperationException($"Action '{action}' is already localized.");
+        return this;
+    }
+
+    /// <summary>
+    /// Formats a presented read-only value using its captured payload and the scene's captured locale.
+    /// The callback must not read live sources or mutate application state. It runs during composition,
+    /// never during drawing. Empty results are valid; null or an exception rejects candidate preparation.
+    /// Editable inputs, forms, collections and action groups do not support value formatting.
+    /// </summary>
+    public UiExperienceBuilder FormatText<T>(UiSymbolId element, Func<T, string, string> format)
+    {
+        EnsureMutable();
+        ArgumentNullException.ThrowIfNull(format);
+        var definition = _elements.Find(value => value.Id == element)
+            ?? throw new ArgumentException("A presented element must be declared before its formatter.", nameof(element));
+        if (definition.Source.ValueType != typeof(T))
+            throw new ArgumentException($"Formatter type '{typeof(T)}' differs from element '{element}' source type.", nameof(format));
+        if (definition.Source is IUiSemanticFormSource or IUiSemanticCollectionSource ||
+            definition.Capabilities.Any(capability => capability.Id == UiCapabilities.Search.Id ||
+                capability.Id == UiCapabilities.Filter.Id || capability.Id == UiCapabilities.Configure.Id ||
+                capability.Id == UiCapabilities.Actions.Id))
+            throw new ArgumentException($"Element '{element}' is not a supported read-only text value.", nameof(element));
+        if (!_textFormatters.TryAdd(element, new UiTextFormatter<T>(format)))
+            throw new InvalidOperationException($"Element '{element}' already has a text formatter.");
+        return this;
+    }
+
+    private static void ValidateText(UiLocalizedText text, string fallback)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (!string.Equals(text.Fallback, fallback, StringComparison.Ordinal))
+            throw new ArgumentException("Localized text must retain the original authoring fallback.", nameof(text));
+    }
+
     public UiExperienceDefinition Build()
     {
         EnsureMutable();
@@ -220,7 +289,8 @@ public sealed class UiExperienceBuilder
                 errors.Add(new("UIG023", "Typed action must be the same action instance used by an authored action group.", action));
         if (errors.Count != 0) throw new UiGraphValidationException(errors);
         _built = true;
-        return new UiExperienceDefinition(_id, _displayName, _elements.ToArray(), _actions.ToArray(), _roles.ToArray(), _sources.ToArray(), graph);
+        return new UiExperienceDefinition(_id, _displayName, _elements.ToArray(), _actions.ToArray(), _roles.ToArray(), _sources.ToArray(), graph,
+            _localizedDisplayName, _localizedElementLabels, _localizedActionTitles, _textFormatters);
     }
 
     private static string LegacyAlias(UiSymbolId id, string label)
