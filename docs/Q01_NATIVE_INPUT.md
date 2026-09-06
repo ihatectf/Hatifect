@@ -68,3 +68,24 @@ Environment: UI alpha.40, Stardew `1.6.15 build 24356`, SMAPI `4.5.2`, Dark them
 Next acceptance step: finish a native request with a qualifying physical Backspace event, retain its completed-frame deletion capture and explicit input provenance. Original matrix, Flow and performance evidence retain their earlier candidate identities. Normal Mods, real saves, golden assets and personal Codex settings are unchanged. Codex host audit is NOT_APPLICABLE.
 
 Aggregate measured620 frames: p95/p99 UI-thread cost0.037958/0.271708ms, steady allocation4356.981B/frame, measure/arrange miss ratios0. No build, CUA or image audit overlapped this window. Native observation is excluded from aggregate. All12 changed source/test/tool files still match the source hash index after C/G/P and runtime. This is an observed budget result for the captured candidate, not a controlled benchmark of every update shape.
+
+
+## Integration with the independently published alpha.41
+
+The first atomic push found a newer develop and failed without updating either ref. Verified alpha.40 checkpoint `4b502ed` was then published on `codex/hatifect-roadmap`. Exact incoming `6ef1b1257d1d0e7089abad2d92f45a827fac73cc` (UI owner implementation `8a45917`) was merged as `9006131204d463cf2ce92b36386043b4431fb568`. Its26 non-conflicting files remain byte-identical and both roadmap histories are retained. No additional product implementation was added here. The combined source index contains37 non-Markdown inputs.
+
+C `run-ha3cenlb` passes1,396 .NET +355 Python; G `run-remfjoux` passes1,637 .NET +355 Python. All17 actual TRX suites were separately tallied with zero failures/skips. This includes the owner's19 retirement cases together with the input regressions. P is PASS90 (`hatifect-ui-ca-isolated.mjczvzxq`): 44 exact projection files, eight alpha.41 packages matching producers, three isolated assets files and two exact CA DLLs. The partial physical-input evidence above retains alpha.40 identity and full Q01 remains IN_PROGRESS.
+
+
+Fresh combined runtime outcomes:
+
+| Scenario | Request | Result |
+|---|---|---|
+| First `hatifect-ui-test all` | `bea6c556-21fc-4431-9720-ebead73cd5bc` | FAIL,20.477s: valid UI tree/probe but load fade remained1.0204 while the game was paused outside focus; no matrix/performance acceptance. |
+| UI/CA aggregate with isolated out-of-focus pause disabled | `291142fa-49ac-4ce5-97e6-da7c6086ec1b` | PASS28,31.695s; eight matrix states, restored settings, null terminal error. |
+| `flow.route.basic` | `d406faee-9c96-407b-85a1-6e0a1229224e` | PASS6,11.256s; fake delivery/pause/idle/lifecycle/reload. |
+| `flow.save.isolation` | `b0a216f2-8275-4db3-ae95-95b534f638ab` | PASS7,10.545s; separate-save fake session isolation. |
+
+UI fingerprint is `bbefa735a14038526ff960f6fe939c77bd9ae9dbaeed69bd06445965855dca00`; both Flow runs use `452b30c788ed0768ea815e84ffa3755553a1027f030d1d4ceeac727b2a469434`. The first aggregate failed an environmental precondition and is retained as FAIL. Only the two isolated startup/default-options files temporarily changed `pauseWhenOutOfFocus` from true to false; original bytes and hashes are retained and both files were restored exactly after the last run. Normal configuration and golden saves were not edited. All four owned processes exited0 without teardown errors, and the reused executor is Ready.
+
+The passing aggregate measured620 frames: p95/p99 0.035916/0.274375ms,4349.884B/frame, zero measure/arrange misses. No build/CUA/image audit overlapped its measurement. All37 combined non-Markdown inputs still match commit `9006131`. The physical native Backspace check remains pending with its earlier FAIL; no alpha.41 native-input PASS is claimed. The next GQ acceptance step is physical-input completion under explicitly recorded focus conditions; UI/Flowline product ownership remains separate.
