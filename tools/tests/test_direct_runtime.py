@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +21,144 @@ SPEC.loader.exec_module(DIRECT_RUNTIME)
 
 
 class DirectRuntimeTests(unittest.TestCase):
+    def test_background_options_restore_exact_bytes_after_game_changes_and_failure(self) -> None:
+        for failure in (False, True):
+            with self.subTest(failure=failure), _RequestFixture() as fixture:
+                root = Path(fixture.request['isolatedRoot']) / 'config' / 'StardewValley'
+                root.mkdir(parents=True)
+                originals = {
+                    'startup_preferences': b'<?xml version="1.0"?><StartupPreferences><clientOptions><pauseWhenOutOfFocus>true</pauseWhenOutOfFocus><zoomLevel>0.75</zoomLevel></clientOptions></StartupPreferences>\n',
+                    'default_options': b'<Options><pauseWhenOutOfFocus>false</pauseWhenOutOfFocus><musicVolumeLevel>0.5</musicVolumeLevel></Options>',
+                }
+                for name, content in originals.items():
+                    (root / name).write_bytes(content)
+                    (root / name).chmod(0o640)
+                def run():
+                    with DIRECT_RUNTIME._background_game_options(fixture.request):
+                        self.assertEqual(ET.parse(root / 'startup_preferences').findtext('clientOptions/pauseWhenOutOfFocus'), 'false')
+                        self.assertEqual(ET.parse(root / 'startup_preferences').findtext('clientOptions/zoomLevel'), '0.75')
+                        self.assertEqual(ET.parse(root / 'default_options').findtext('musicVolumeLevel'), '0.5')
+                        (root / 'default_options').write_text('<Options/>')
+                        (root / 'default_options').chmod(0o600)
+                        if failure:
+                            raise OSError('owned game failed')
+                if failure:
+                    with self.assertRaisesRegex(OSError, 'owned game failed'):
+                        run()
+                else:
+                    run()
+                self.assertEqual({name: (root / name).read_bytes() for name in originals}, originals)
+                self.assertEqual([(root / name).stat().st_mode & 0o777 for name in originals], [0o640, 0o640])
+                evidence = json.loads((Path(fixture.request['artifactDirectory']) / 'diagnostics/runtime-options.json').read_text())
+                self.assertEqual(evidence['state'], 'Restored')
+                self.assertTrue(all(item['restored'] for item in evidence['files']))
+
+    def test_background_options_create_missing_settings_only_for_owned_run(self) -> None:
+        with _RequestFixture() as fixture:
+            root = Path(fixture.request['isolatedRoot']) / 'config' / 'StardewValley'
+            with DIRECT_RUNTIME._background_game_options(fixture.request):
+                startup = ET.parse(root / 'startup_preferences')
+                defaults = ET.parse(root / 'default_options')
+                self.assertEqual(startup.getroot().tag, 'StartupPreferences')
+                self.assertEqual(startup.findtext('clientOptions/pauseWhenOutOfFocus'), 'false')
+                self.assertEqual(defaults.getroot().tag, 'Options')
+                self.assertEqual(defaults.findtext('pauseWhenOutOfFocus'), 'false')
+            self.assertFalse((root / 'startup_preferences').exists())
+            self.assertFalse((root / 'default_options').exists())
+
+    def test_background_options_roll_back_partial_preparation(self) -> None:
+        with _RequestFixture() as fixture:
+            root = Path(fixture.request['isolatedRoot']) / 'config' / 'StardewValley'
+            root.mkdir(parents=True)
+            originals = {'startup_preferences': b'<StartupPreferences/>', 'default_options': b'<Options/>'}
+            for name, content in originals.items():
+                (root / name).write_bytes(content)
+            replace = DIRECT_RUNTIME._replace_game_options
+            def fail_second_preparation(path, content, mode):
+                if path.name == 'default_options' and content != originals[path.name]:
+                    raise OSError('second write failed')
+                replace(path, content, mode)
+            with mock.patch.object(DIRECT_RUNTIME, '_replace_game_options', side_effect=fail_second_preparation):
+                with self.assertRaisesRegex(OSError, 'second write failed'):
+                    with DIRECT_RUNTIME._background_game_options(fixture.request):
+                        self.fail('Partial preparation must not launch a process')
+            self.assertEqual({name: (root / name).read_bytes() for name in originals}, originals)
+
+    def test_background_options_attempt_all_restorations_and_report_failure(self) -> None:
+        with _RequestFixture() as fixture:
+            root = Path(fixture.request['isolatedRoot']) / 'config' / 'StardewValley'
+            root.mkdir(parents=True)
+            originals = {'startup_preferences': b'<StartupPreferences/>', 'default_options': b'<Options/>'}
+            for name, content in originals.items():
+                (root / name).write_bytes(content)
+            replace = DIRECT_RUNTIME._replace_game_options
+            def fail_default_restoration(path, content, mode):
+                if path.name == 'default_options' and content == originals[path.name]:
+                    raise OSError('restore denied')
+                replace(path, content, mode)
+            with mock.patch.object(DIRECT_RUNTIME, '_replace_game_options', side_effect=fail_default_restoration):
+                with self.assertRaisesRegex(DIRECT_RUNTIME.DirectRuntimeError, 'restoration failed.*restore denied'):
+                    with DIRECT_RUNTIME._background_game_options(fixture.request):
+                        pass
+            self.assertEqual((root / 'startup_preferences').read_bytes(), originals['startup_preferences'])
+            self.assertEqual(ET.parse(root / 'default_options').findtext('pauseWhenOutOfFocus'), 'false')
+            diagnostics = Path(fixture.request['artifactDirectory']) / 'diagnostics'
+            evidence = json.loads((diagnostics / 'runtime-options.json').read_text())
+            self.assertEqual(evidence['state'], 'RestoreFailed')
+            self.assertEqual([item['restored'] for item in evidence['files']], [True, False])
+            self.assertIn('restore denied', evidence['errors'][0])
+            self.assertEqual((diagnostics / 'runtime-options-originals/default_options').read_bytes(), originals['default_options'])
+
+    def test_background_options_validate_both_files_before_mutating_either(self) -> None:
+        for invalid in (b'broken', b'<Other/>', b'<Options><pauseWhenOutOfFocus>true</pauseWhenOutOfFocus><pauseWhenOutOfFocus>false</pauseWhenOutOfFocus></Options>'):
+            with self.subTest(invalid=invalid), _RequestFixture() as fixture:
+                root = Path(fixture.request['isolatedRoot']) / 'config' / 'StardewValley'
+                root.mkdir(parents=True)
+                original = b'<StartupPreferences><clientOptions/></StartupPreferences>'
+                (root / 'startup_preferences').write_bytes(original)
+                (root / 'default_options').write_bytes(invalid)
+                with self.assertRaises(DIRECT_RUNTIME.DirectRuntimeError):
+                    with DIRECT_RUNTIME._background_game_options(fixture.request):
+                        self.fail('Invalid configuration must not launch a process')
+                self.assertEqual((root / 'startup_preferences').read_bytes(), original)
+                self.assertEqual((root / 'default_options').read_bytes(), invalid)
+
+    def test_background_options_reject_links_without_changing_the_target(self) -> None:
+        for link_kind in ('directory', 'file', 'hardlink'):
+            with self.subTest(link_kind=link_kind), _RequestFixture() as fixture:
+                isolated = Path(fixture.request['isolatedRoot'])
+                outside = Path(fixture.temporary.name) / 'normal-config'
+                outside.mkdir()
+                target = outside / 'default_options'
+                original = b'<Options><pauseWhenOutOfFocus>true</pauseWhenOutOfFocus></Options>'
+                target.write_bytes(original)
+                if link_kind == 'directory':
+                    (isolated / 'config').symlink_to(outside, target_is_directory=True)
+                else:
+                    root = isolated / 'config' / 'StardewValley'
+                    root.mkdir(parents=True)
+                    if link_kind == 'file':
+                        (root / 'default_options').symlink_to(target)
+                    else:
+                        os.link(target, root / 'default_options')
+                with self.assertRaises(DIRECT_RUNTIME.DirectRuntimeError):
+                    with DIRECT_RUNTIME._background_game_options(fixture.request):
+                        self.fail('Linked configuration must not be changed')
+                self.assertEqual(target.read_bytes(), original)
+
+    def test_crash_options_failure_is_not_misreported_as_product_crash_evidence(self) -> None:
+        with _RequestFixture() as fixture:
+            fixture.request['scenarioId'] = 'flow.chest.crash-after-save'
+            active = Path(fixture.temporary.name) / 'active.json'
+            DIRECT_RUNTIME._atomic_write_json(active, fixture.request)
+            DIRECT_RUNTIME._transition(active, fixture.request, 'Accepted', 'accepted')
+            with mock.patch.object(DIRECT_RUNTIME, '_background_game_options', side_effect=DIRECT_RUNTIME.DirectRuntimeError('invalid preferences')), \
+                 mock.patch.object(DIRECT_RUNTIME, '_load_module'), \
+                 mock.patch.object(DIRECT_RUNTIME, '_write_harness_result') as result_writer:
+                with self.assertRaisesRegex(DIRECT_RUNTIME.DirectRuntimeError, 'invalid preferences'):
+                    DIRECT_RUNTIME._execute_request(fixture.request, fixture.metadata, active, Path(fixture.temporary.name) / 'cancel')
+            result_writer.assert_not_called()
+
     def test_canonical_flow_save_is_cleaned_on_launch_failure_with_same_scenario_authority(self) -> None:
         for scenario in ('flow.chest.roundtrip', 'flow.chest.performance', 'flow.chest.resources'):
             with self.subTest(scenario=scenario):
@@ -396,6 +535,8 @@ class DirectRuntimeTests(unittest.TestCase):
                 captured["command"] = command
                 captured["working_directory"] = working_directory
                 captured["environment"] = kwargs["environment"]
+                options = Path(kwargs['environment']['XDG_CONFIG_HOME']) / 'StardewValley/default_options'
+                self.assertEqual(ET.parse(options).findtext('pauseWhenOutOfFocus'), 'false')
                 kwargs["on_started"](4242, 4242)
                 report = (
                     Path(fixture.request["isolatedRoot"])
@@ -441,6 +582,7 @@ class DirectRuntimeTests(unittest.TestCase):
             self.assertEqual(outcome[:5], ("Completed", "PASS", 0, None, "Automated acceptance evidence finalized."))
             self.assertEqual(captured["command"], ["/game/StardewModdingAPI"])
             self.assertEqual(captured["working_directory"], Path("/game"))
+            self.assertFalse((Path(fixture.request['isolatedRoot']) / 'config/StardewValley/default_options').exists())
             self.assertEqual(
                 captured["environment"]["SMAPI_MODS_PATH"],
                 str(Path(fixture.request["isolatedRoot"]) / "Mods"),
