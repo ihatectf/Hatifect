@@ -177,7 +177,8 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
             || string.Equals(scenario, "flow.chest.return", StringComparison.Ordinal)
             || string.Equals(scenario, "flow.chest.crash-after-return", StringComparison.Ordinal)
             || string.Equals(scenario, "flow.chest.isolation", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.performance", StringComparison.Ordinal))
+            || string.Equals(scenario, "flow.chest.performance", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.chest.resources", StringComparison.Ordinal))
         {
             return null;
         }
@@ -445,11 +446,19 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         catch (Exception error)
         {
             RetainTerminalFailure("HARNESS-EVIDENCE-CAPTURE-EXCEPTION", error);
-            WriteDiagnostics();
-            _exitPending = true;
+            try { WriteDiagnostics(); }
+            catch (Exception diagnosticsError)
+            {
+                _monitor.Log($"Could not persist capture failure diagnostics: {diagnosticsError}", LogLevel.Error);
+            }
             FailUnrecorded(_terminalFailure!.Reason);
         }
-        _exitPending = true;
+        finally
+        {
+            // A failed diagnostics write must not strand the completed capture or escape through
+            // the native draw callback before requesting the owned harness shutdown.
+            _exitPending = true;
+        }
     }
 
     private void Execute()

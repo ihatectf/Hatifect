@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using Microsoft.Xna.Framework;
 using Hatifect.Flow.Application;
+using Hatifect.Flow.Diagnostics;
 using Hatifect.Flow.Inventory;
 using Hatifect.Flow.Sessions;
 using Hatifect.Flow.UI.Semantic;
@@ -65,10 +66,20 @@ public sealed partial class ModEntry
                 Monitor.Log("Flowline chest transport is enabled only in single-player saves.", LogLevel.Info);
                 return;
             }
-            FlowGameSession? session = _sessionOwner.Open(Context.ScreenId, Context.IsMainPlayer,
-                () => new FlowGameSession(Game1.uniqueIDForThisGame, Game1.player.UniqueMultiplayerID,
-                IsGameAuthority, ResolveStationChest, ReportGameFailure, Helper.Data.ReadSaveData<FlowGameSave>(FlowGameSession.SaveKey),
-                new FlowChestLocks(() => Context.IsMultiplayer, ReportGameFailure)));
+            FlowGameSave? saved = null;
+            FlowResourceCost read = default, restore = default;
+            FlowGameSession? session = _sessionOwner.Open(Context.ScreenId, Context.IsMainPlayer, () =>
+            {
+                if (_resourceAcceptance is null)
+                    return new FlowGameSession(Game1.uniqueIDForThisGame, Game1.player.UniqueMultiplayerID,
+                        IsGameAuthority, ResolveStationChest, ReportGameFailure, Helper.Data.ReadSaveData<FlowGameSave>(FlowGameSession.SaveKey),
+                        new FlowChestLocks(() => Context.IsMultiplayer, ReportGameFailure));
+                saved = FlowResourceCost.Measure(() => Helper.Data.ReadSaveData<FlowGameSave>(FlowGameSession.SaveKey), out read);
+                return FlowResourceCost.Measure(() => new FlowGameSession(Game1.uniqueIDForThisGame, Game1.player.UniqueMultiplayerID,
+                    IsGameAuthority, ResolveStationChest, ReportGameFailure, saved,
+                    new FlowChestLocks(() => Context.IsMultiplayer, ReportGameFailure)), out restore);
+            });
+            if (session is not null) _resourceAcceptance?.ObserveLoad(session, saved, read, restore);
             if (session?.IsFaulted == true)
                 Monitor.Log("Flowline transport is paused: a previous inventory error requires recovery. Saved cargo is retained; automatic replay is disabled.", LogLevel.Error);
         }
@@ -85,14 +96,15 @@ public sealed partial class ModEntry
     private void TickGameSession(UpdateTickedEventArgs e)
     {
         FlowGameSession? session = _gameSession;
-        if (session is not null && _performanceAcceptance is not null)
+        if (session is not null && (_performanceAcceptance is not null || _resourceAcceptance is not null))
         {
             bool timePasses = Game1.shouldTimePass();
             long allocated = GC.GetAllocatedBytesForCurrentThread(), started = Stopwatch.GetTimestamp();
             session.Tick(timePasses);
             long elapsed = Stopwatch.GetTimestamp() - started;
             allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
-            _performanceAcceptance.ObserveTick(session, timePasses, elapsed, allocated);
+            _performanceAcceptance?.ObserveTick(session, timePasses, elapsed, allocated);
+            _resourceAcceptance?.ObserveTick(session, timePasses, elapsed, allocated);
         }
         else session?.Tick(Game1.shouldTimePass());
         if (_parcelSurface is not null && (!_parcelSurface.IsClosed || e.IsOneSecond))
@@ -107,7 +119,17 @@ public sealed partial class ModEntry
         if (_gameSession is null) return;
         try { CloseParcelSurface(); }
         catch (Exception error) { ReportGameFailure(error); }
-        try { Helper.Data.WriteSaveData(FlowGameSession.SaveKey, _gameSession.BeginSave()); }
+        try
+        {
+            FlowGameSession session = _gameSession;
+            if (_resourceAcceptance is null) Helper.Data.WriteSaveData(FlowGameSession.SaveKey, session.BeginSave());
+            else
+            {
+                FlowGameSave saved = FlowResourceCost.Measure(session.BeginSave, out FlowResourceCost capture);
+                FlowResourceCost write = FlowResourceCost.Measure(() => Helper.Data.WriteSaveData(FlowGameSession.SaveKey, saved));
+                _resourceAcceptance.ObserveSave(session, saved, capture, write);
+            }
+        }
         catch (Exception error) { ReportGameFailure(error); }
     }
 

@@ -407,7 +407,7 @@ def _working_name(run_id: str, scenario_id: str = "", *, role: str = "primary") 
     if scenario_id == "flow.chest.isolation":
         return f"HatifectHarness{token}_{4242424243 if role == 'secondary' else 4242424242}"
     # Stardew loads the base before '_' and saves base + '_' + world identity.
-    return f"HatifectHarness{token}_4242424242" if scenario_id in {"flow.chest.roundtrip", "flow.chest.crash-after-save", "flow.chest.crash-after-delivery", "flow.chest.crash-after-unsaved-extraction", "flow.chest.crash-after-unsaved-delivery", "flow.chest.cancellation", "flow.chest.return", "flow.chest.crash-after-return", "flow.chest.performance"} else f"HatifectHarness_{token}"
+    return f"HatifectHarness{token}_4242424242" if scenario_id in {"flow.chest.roundtrip", "flow.chest.crash-after-save", "flow.chest.crash-after-delivery", "flow.chest.crash-after-unsaved-extraction", "flow.chest.crash-after-unsaved-delivery", "flow.chest.cancellation", "flow.chest.return", "flow.chest.crash-after-return", "flow.chest.performance", "flow.chest.resources"} else f"HatifectHarness_{token}"
 
 
 def plan_working_copy(isolated_root: Path, smapi_path: Path, run_id: str, scenario_id: str = "", *, role: str = "primary") -> Path:
