@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -157,6 +158,23 @@ def verify_feed(document: dict, feed: Path, *, host_free: bool = False) -> None:
             )
             if unexpected_binaries:
                 raise ValueError(f"{package_id}: unexpected binary payload {unexpected_binaries}")
+
+            # Later packs may rebuild a previously packaged ProjectReference.
+            # Audit the completed feed against the final normal Release outputs.
+            producer = (
+                ROOT / Path(expected[package_id]["Project"]).parent
+                / "bin/Release/net6.0" / f"{package_id}.dll"
+            )
+            if not producer.is_file():
+                raise ValueError(f"{package_id}: missing final Release producer: {producer}")
+            packaged_bytes = archive.read(expected_dll)
+            producer_bytes = producer.read_bytes()
+            if packaged_bytes != producer_bytes:
+                raise ValueError(
+                    f"{package_id}: packaged DLL differs from final Release producer: {producer}; "
+                    f"packaged SHA-256={hashlib.sha256(packaged_bytes).hexdigest()}, "
+                    f"producer SHA-256={hashlib.sha256(producer_bytes).hexdigest()}"
+                )
 
             actual_dependencies = dependency_map(root)
             expected_dependencies = set(expected[package_id]["Dependencies"])

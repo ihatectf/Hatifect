@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ui_packages
@@ -28,14 +29,14 @@ class UiPackageProjectionTests(unittest.TestCase):
             feed = Path(temporary)
             for package in ui_packages.selected_packages(contract, host_free=True):
                 self.write_package(feed, contract, package)
-            ui_packages.verify_feed(contract, feed, host_free=True)
+            self.verify_feed(contract, feed, host_free=True)
             with self.assertRaisesRegex(ValueError, "8 nupkg files; found 7"):
-                ui_packages.verify_feed(contract, feed)
+                self.verify_feed(contract, feed)
             stardew = next(p for p in contract["Packages"] if p["Id"] == "Hatifect.UI.Stardew")
             self.write_package(feed, contract, stardew)
-            ui_packages.verify_feed(contract, feed)
+            self.verify_feed(contract, feed)
             with self.assertRaisesRegex(ValueError, "7 nupkg files; found 8"):
-                ui_packages.verify_feed(contract, feed, host_free=True)
+                self.verify_feed(contract, feed, host_free=True)
 
     def test_feed_rejects_dependency_version_that_only_contains_the_pinned_version(self) -> None:
         contract = ui_packages.load_contract()
@@ -45,7 +46,7 @@ class UiPackageProjectionTests(unittest.TestCase):
                 for package in contract["Packages"]:
                     self.write_package(feed, contract, package, dependency_version=dependency_version)
                 with self.assertRaisesRegex(ValueError, "is not bound to"):
-                    ui_packages.verify_feed(contract, feed)
+                    self.verify_feed(contract, feed)
 
     def test_pack_preserves_the_release_compiler_profile_without_shipping_symbols(self) -> None:
         launcher = (ui_packages.ROOT / "tools/hatifect-pack-ui").read_text()
@@ -68,12 +69,62 @@ class UiPackageProjectionTests(unittest.TestCase):
                 archive.writestr(f"lib/net6.0/{identity}.pdb", b"symbol fixture")
 
             with self.assertRaisesRegex(ValueError, "unexpected binary payload"):
-                ui_packages.verify_feed(contract, feed)
+                self.verify_feed(contract, feed)
+
+    def test_feed_rejects_dll_changed_after_its_package_was_created(self) -> None:
+        contract = ui_packages.load_contract()
+        with tempfile.TemporaryDirectory() as temporary:
+            feed = Path(temporary)
+            for package in contract["Packages"]:
+                self.write_package(feed, contract, package)
+            self.verify_feed(contract, feed)
+
+            package = contract["Packages"][0]
+            producer = self.producer_path(feed, package)
+            original = producer.read_bytes()
+            producer.write_bytes(original[:-1] + b"!")
+            with self.assertRaisesRegex(ValueError, f"{package['Id']}: packaged DLL differs"):
+                self.verify_feed(contract, feed)
+
+            # A failed audit never replaces either artifact to make them agree.
+            with zipfile.ZipFile(feed / f"{package['Id']}.{contract['Version']}.nupkg") as archive:
+                self.assertEqual(original, archive.read(f"lib/net6.0/{package['Id']}.dll"))
+            self.assertEqual(original[:-1] + b"!", producer.read_bytes())
+
+    def test_feed_rejects_missing_producer_even_with_complete_packages(self) -> None:
+        contract = ui_packages.load_contract()
+        with tempfile.TemporaryDirectory() as temporary:
+            feed = Path(temporary)
+            for package in contract["Packages"]:
+                self.write_package(feed, contract, package)
+            package = contract["Packages"][-1]
+            producer = self.producer_path(feed, package)
+            producer.unlink()
+
+            with self.assertRaisesRegex(ValueError, f"{package['Id']}: missing final Release producer"):
+                self.verify_feed(contract, feed)
+            self.assertFalse(producer.exists())
+
+    @staticmethod
+    def verify_feed(contract: dict, feed: Path, *, host_free: bool = False) -> None:
+        with patch.object(ui_packages, "ROOT", feed / "producer"):
+            ui_packages.verify_feed(contract, feed, host_free=host_free)
+
+    @staticmethod
+    def producer_path(feed: Path, package: dict) -> Path:
+        return (
+            feed / "producer" / Path(package["Project"]).parent
+            / "bin/Release/net6.0" / f"{package['Id']}.dll"
+        )
 
     @staticmethod
     def write_package(feed: Path, contract: dict, package: dict, *, dependency_version: str | None = None) -> None:
         identity = package["Id"]
         version = contract["Version"]
+        payload = f"{identity} DLL fixture".encode()
+        producer = UiPackageProjectionTests.producer_path(feed, package)
+        producer.parent.mkdir(parents=True, exist_ok=True)
+        producer.write_bytes(payload)
         dependencies = "".join(
             f'<dependency id="{dependency}" version="{dependency_version or f"[{version}]"}" />'
             for dependency in package["Dependencies"]
@@ -84,7 +135,7 @@ class UiPackageProjectionTests(unittest.TestCase):
                 f"<package><metadata><id>{identity}</id><version>{version}</version>"
                 f"<dependencies>{dependencies}</dependencies></metadata></package>",
             )
-            archive.writestr(f"lib/net6.0/{identity}.dll", b"fixture")
+            archive.writestr(f"lib/net6.0/{identity}.dll", payload)
 
 
 if __name__ == "__main__":
