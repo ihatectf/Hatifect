@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
-
 kind="${1:-}"
 scenario="${2:-}"
 result="${3:-}"
 artifact_dir="${4:-}"
+if [[ $# -eq 1 && ( "$kind" == "--help" || "$kind" == "-h" ) ]]; then
+  printf '%s\n' "Usage: hatifect-live-runner <smoke|ui> <scenario> <result-json> <artifact-dir>"
+  exit 0
+fi
+if [[ $# -ne 4 || ( "$kind" != "smoke" && "$kind" != "ui" ) || -z "$scenario" || "$scenario" == -* || -z "$result" || -z "$artifact_dir" ]]; then
+  printf '%s\n' "ERROR: Usage: hatifect-live-runner <smoke|ui> <scenario> <result-json> <artifact-dir>" >&2
+  exit 2
+fi
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 validator="$TOOLS_DIR/live-harness/validate.py"
 user_session_runtime="$TOOLS_DIR/live-harness/user_session_runtime.py"
 save_provisioner="$TOOLS_DIR/live-harness/save_provisioning.py"
@@ -13,9 +20,6 @@ isolated_root="$(resolve_smapi_test_root)"
 deployment_marker="$isolated_root/deployment.json"
 artifact_root="$REPO_ROOT/artifacts/runtime"
 
-[[ "$kind" == "smoke" || "$kind" == "ui" ]] || die "Live runner kind must be smoke or ui."
-[[ -n "$scenario" && -n "$result" && -n "$artifact_dir" ]] || \
-  die "Usage: hatifect-live-runner <smoke|ui> <scenario> <result-json> <artifact-dir>"
 need_cmd python3
 smapi="${HATIFECT_SMAPI_PATH:-}"
 

@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
-
 scenario="${1:-}"
-[[ -n "$scenario" ]] || die "Usage: ./tools/hatifect-smoke <scenario-id>"
+if [[ $# -eq 1 && ( "$scenario" == "--help" || "$scenario" == "-h" ) ]]; then
+  printf '%s\n' "Usage: ./tools/hatifect-smoke <scenario-id>"
+  exit 0
+fi
+if [[ $# -ne 1 || -z "$scenario" || "$scenario" == -* ]]; then
+  printf '%s\n' "ERROR: Usage: ./tools/hatifect-smoke <scenario-id>" >&2
+  exit 2
+fi
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 need_cmd python3
 
 run_dir="$(new_runtime_run_dir)"
