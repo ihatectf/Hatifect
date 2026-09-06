@@ -5,6 +5,7 @@ using System.Linq;
 using Hatifect.Flow.Application;
 using Hatifect.Flow.Application.Dispatch;
 using Hatifect.Flow.Application.Planning;
+using Hatifect.Flow.Diagnostics;
 using Hatifect.Flow.Domain.Checkpoints;
 using Hatifect.Flow.Domain.Identity;
 using Hatifect.Flow.Domain.Policies;
@@ -98,7 +99,8 @@ internal sealed partial class FlowGameSession : IDisposable
         using HostOperation operation = EnterHostMutation();
         var binding = new StationBinding(Guid.NewGuid(), name, location, x, y);
         ValidateStation(binding);
-        if (_stations.Count >= MaxStations || _stations.Values.Any(station => string.Equals(station.Name, name, StringComparison.OrdinalIgnoreCase))
+        if (_stations.Count >= MaxStations) throw RejectResource(FlowAdmissionResource.Stations, _stations.Count, MaxStations);
+        if (_stations.Values.Any(station => string.Equals(station.Name, name, StringComparison.OrdinalIgnoreCase))
             || _stations.Values.Any(station => station.Location == location && station.X == x && station.Y == y)
             || !ChestInventoryAccess.IsSupported(chest) || chest.GetMutex().IsLocked()
             || !ReferenceEquals(_resolve(binding), chest)
@@ -118,9 +120,9 @@ internal sealed partial class FlowGameSession : IDisposable
     {
         using HostOperation operation = EnterHostMutation();
         StationBinding from = FindStation(source), to = FindStation(destination);
-        if (from.Id == to.Id || capacity is <= 0 or > 999 || transitTicks is <= 0 or > 36000
-            || _runtime.RetainedLinkCount >= MaxLinks)
+        if (from.Id == to.Id || capacity is <= 0 or > 999 || transitTicks is <= 0 or > 36000)
             throw new ArgumentException("A link needs different stations, capacity 1..999 and travel time 1..36000 ticks.");
+        if (_runtime.RetainedLinkCount >= MaxLinks) throw RejectResource(FlowAdmissionResource.LifetimeLinks, _runtime.RetainedLinkCount, MaxLinks);
         Guid id = Guid.NewGuid();
         _runtime.AddLink(new LinkId(id), new StationId(from.Id), new StationId(to.Id), capacity, transitTicks);
         Application.Refresh();
@@ -134,7 +136,7 @@ internal sealed partial class FlowGameSession : IDisposable
     {
         using HostOperation operation = EnterHostMutation();
         StationBinding from = FindStation(source), to = FindStation(destination);
-        if (_payloads.Count >= MaxCargo) throw new InvalidOperationException("This save has reached its retained cargo limit (256).");
+        if (_payloads.Count >= MaxCargo) throw RejectResource(FlowAdmissionResource.RetainedCargo, _payloads.Count, MaxCargo);
         if (from.Id == to.Id || _runtime.PlanRoute(new StationId(from.Id), new StationId(to.Id)).Status != RouteStatus.Found)
             throw new InvalidOperationException("No route connects the selected stations.");
         using IDisposable access = _inventory.EnterStation(from.Id);

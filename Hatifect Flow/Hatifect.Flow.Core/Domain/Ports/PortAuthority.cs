@@ -23,6 +23,9 @@ internal sealed class PortAuthority
     internal bool IsCargoRegistered(CargoId cargo) => _registeredCargo.Contains(cargo);
     internal void RegisterCargo(CargoId cargo) => _registeredCargo.Add(cargo);
     internal IEnumerable<PortTransfer> Issued => _issued.Values;
+    internal int IssuedCount => _issued.Count;
+    internal int RetiredCount => _retired.Count;
+    internal long Limit => _limit;
     internal bool IsRetired(PortTransfer transfer) => _retired.Contains(transfer.Id);
     internal void Seal() => _sealed = true;
 

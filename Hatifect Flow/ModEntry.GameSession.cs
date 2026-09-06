@@ -155,6 +155,7 @@ public sealed partial class ModEntry
                     + "  hatifect_flow link <source> <destination> [capacity=999] [ticks=180] — one-way link\n"
                     + "  hatifect_flow send <source> <destination> <slot=1-based> — dispatch a whole stack\n"
                     + "  hatifect_flow list — stations and shipments\n"
+                    + "  hatifect_flow diagnostics — bounded resource usage, remaining capacity and retained limits\n"
                     + "  hatifect_flow target — remember the chest under the cursor; network — open network controls over a game menu\n"
                     + "  hatifect_flow show [parcel-id] — open shipment controls over an open game menu\n"
                     + "  hatifect_flow cancel|reserve|retry|return <parcel-id> — shipment action\n"
@@ -164,6 +165,9 @@ public sealed partial class ModEntry
             FlowGameSession session = _gameSession ?? throw new InvalidOperationException("Load a single-player save first.");
             switch (args[0])
             {
+                case "diagnostics" when args.Length == 1:
+                    Monitor.Log(session.ReadResources().Format(), LogLevel.Info);
+                    break;
                 case "recovery" when args.Length == 1:
                     Monitor.Log(string.Join("\n", session.ReadRecovery().Select(value => $"{value.ParcelId}: {value.Phase}, receipt={value.Receipt}, can reconcile={value.CanReconcile}")), LogLevel.Info);
                     break;

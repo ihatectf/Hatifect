@@ -11,6 +11,7 @@ internal sealed class CargoLedger
     private readonly int _limit;
 
     internal CargoLedger(int limit) => _limit = limit;
+    internal int Count => _batches.Count;
     internal CargoBatch Get(CargoId id) => _batches[id];
     internal IEnumerable<CargoBatch> Batches => _batches.Values;
     internal void Restore(CargoBatch batch)
