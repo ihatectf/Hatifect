@@ -278,13 +278,17 @@ internal sealed class UiTextSceneNode : UiSceneNode
 
 internal sealed class UiButtonSceneNode : UiSceneNode
 {
-    public UiButtonSceneNode(UiSymbolId id, UiSymbolId role, UiVisualResolution visual, UiActionDefinition action)
+    private readonly UiButtonStateVisuals? _stateVisuals;
+    public UiButtonSceneNode(UiSymbolId id, UiSymbolId role, UiVisualResolution visual, UiActionDefinition action,
+        UiButtonStateVisuals? stateVisuals = null)
         : base(id, UiSceneNodeKind.Button, role, visual)
-        => Action = action ?? throw new ArgumentNullException(nameof(action));
+    { Action = action ?? throw new ArgumentNullException(nameof(action)); _stateVisuals = stateVisuals; }
 
     public UiActionDefinition Action { get; }
     public string Label => Action.Title;
     public bool Invoke() => Action.TryExecute();
+    internal UiVisualResolution VisualFor(bool enabled, UiInteractionSnapshot? interaction)
+        => _stateVisuals?.ForHost(enabled, interaction, Visual) ?? Visual;
 }
 
 internal sealed class UiRouteButtonSceneNode : UiSceneNode

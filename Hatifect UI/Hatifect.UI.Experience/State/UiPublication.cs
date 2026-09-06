@@ -89,6 +89,7 @@ public sealed class UiPublication : IDisposable
     private bool _notifying;
     private bool _disposed;
     private Action? _changed;
+    private Action? _retired;
 
     public UiPublication(UiSymbolId ownerId)
     {
@@ -109,6 +110,12 @@ public sealed class UiPublication : IDisposable
     {
         add { EnsureOwner(); if (_disposed) throw new ObjectDisposedException(nameof(UiPublication)); _changed += value; }
         remove { EnsureOwner(); _changed -= value; }
+    }
+
+    internal event Action Retired
+    {
+        add { EnsureOwner(); if (_disposed) throw new ObjectDisposedException(nameof(UiPublication)); _retired += value; }
+        remove { EnsureOwner(); _retired -= value; }
     }
 
     public UiPublishedState<T> State<T>(UiSymbolId id, T initial, UiSourceType<T> type)
@@ -213,6 +220,9 @@ public sealed class UiPublication : IDisposable
         _disposed = true;
         _changed = null;
         foreach (var source in _sources.Values) source.ClearSubscriptions();
+        Action? retired = _retired;
+        _retired = null;
+        retired?.Invoke();
     }
 
     internal void EnsureOwner()

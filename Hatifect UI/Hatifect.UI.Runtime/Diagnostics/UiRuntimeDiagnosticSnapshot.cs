@@ -11,6 +11,8 @@ using Hatifect.UI.Runtime.Platform;
 using Hatifect.UI.Runtime.Scene;
 using Hatifect.UI.Runtime.Visual.Resolution;
 using Hatifect.UI.Semantics;
+using Hatifect.UI.Runtime.Actions;
+using Hatifect.UI.Experience;
 
 namespace Hatifect.UI.Runtime.Diagnostics;
 
@@ -101,7 +103,14 @@ internal sealed record UiRuntimeNodeDiagnosticSnapshot(
     bool HitTestTarget,
     IReadOnlyList<UiSymbolId> ActiveStates,
     IReadOnlyList<UiRuntimeResolvedVisualDiagnosticSnapshot> VisualProperties,
-    UiRuntimeCollectionDiagnosticSnapshot? Collection);
+    UiRuntimeCollectionDiagnosticSnapshot? Collection)
+{
+    public UiRuntimeActionDiagnosticSnapshot? Action { get; init; }
+}
+
+internal sealed record UiRuntimeActionDiagnosticSnapshot(UiActionState State, bool Enabled, int WaitingCount,
+    string? ReasonCode, string? ReasonMessage, UiSymbolId? ReasonField, UiActionOutcome? Outcome,
+    string? ErrorType, string? ObserverErrorType);
 
 internal sealed record UiRuntimeInvalidationDiagnosticSnapshot(
     UiPropertyEffects Effects,
@@ -134,7 +143,7 @@ internal static class UiRuntimeDiagnosticCapture
         UiLayoutSnapshot layout,
         UiInteractionDiagnosticSnapshot interaction,
         UiHostUpdate? update,
-        UiHostRuntimePerformanceSnapshot performance)
+        UiHostRuntimePerformanceSnapshot performance, IUiActionResolver? actions = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(layout);
@@ -142,7 +151,7 @@ internal static class UiRuntimeDiagnosticCapture
         var focusable = interaction.FocusOrder.ToHashSet();
         var hitTestTargets = interaction.HitTestTargets.ToHashSet();
         var nodes = new List<UiRuntimeNodeDiagnosticSnapshot>();
-        Visit(scene.Root, parent: null, depth: 0, layout, interaction, focusable, hitTestTargets, nodes);
+        Visit(scene.Root, parent: null, depth: 0, layout, interaction, focusable, hitTestTargets, nodes, actions);
         UiHostPlacementResult placement = layout.HostPlacement;
         return new UiRuntimeDiagnosticSnapshot(
             scene.Experience,
@@ -183,7 +192,7 @@ internal static class UiRuntimeDiagnosticCapture
         UiInteractionDiagnosticSnapshot interaction,
         IReadOnlySet<UiSymbolId> focusable,
         IReadOnlySet<UiSymbolId> hitTestTargets,
-        ICollection<UiRuntimeNodeDiagnosticSnapshot> output)
+        ICollection<UiRuntimeNodeDiagnosticSnapshot> output, IUiActionResolver? actions)
     {
         if (!layout.TryGetEntry(node.Id, out UiLayoutEntry? entry) || entry == null)
             throw new InvalidOperationException($"Runtime diagnostic node '{node.Id}' has no layout entry.");
@@ -217,7 +226,9 @@ internal static class UiRuntimeDiagnosticCapture
                     Visual(item.Visual))).ToArray()));
         }
 
-        bool enabled = node is not UiButtonSceneNode button || button.Action.CanExecute;
+        bool enabled = node is not UiButtonSceneNode button || (actions?.CanInvoke(button.Action) ?? button.Action.CanExecute);
+        UiVisualResolution visual = node is UiButtonSceneNode actionNode && actions is not null
+            ? actionNode.VisualFor(enabled, new(interaction.Hovered, interaction.Pressed, interaction.Focused)) : node.Visual;
         output.Add(new UiRuntimeNodeDiagnosticSnapshot(
             depth,
             node.Id,
@@ -234,12 +245,18 @@ internal static class UiRuntimeDiagnosticCapture
             interaction.Pressed == node.Id,
             focusable.Contains(node.Id),
             hitTestTargets.Contains(node.Id),
-            States(node.Visual, interaction, node.Id, enabled, node is UiRouteButtonSceneNode { IsCurrent: true }),
-            Visual(node.Visual),
-            collection));
+            States(visual, interaction, node.Id, enabled, node is UiRouteButtonSceneNode { IsCurrent: true }),
+            Visual(visual),
+            collection)
+        {
+            Action = node is UiButtonSceneNode actionButton && actions?.Status(actionButton.Action) is { } status
+                ? new(status.State, status.Enabled, status.WaitingCount, status.Reason?.Code,
+                    status.Reason?.Message, status.Reason?.Field, status.Outcome,
+                    status.Error?.GetType().FullName, status.ObserverError?.GetType().FullName) : null
+        });
 
         foreach (UiSceneNode child in node.Children)
-            Visit(child, node.Id, depth + 1, layout, interaction, focusable, hitTestTargets, output);
+            Visit(child, node.Id, depth + 1, layout, interaction, focusable, hitTestTargets, output, actions);
     }
 
     private static UiRuntimeSemanticDiagnosticSnapshot Semantic(UiSceneNode node, bool enabled)

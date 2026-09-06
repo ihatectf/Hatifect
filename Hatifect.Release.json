@@ -12,7 +12,7 @@
       "Project": "Hatifect UI/Hatifect.UI.Stardew/Hatifect.UI.Stardew.csproj",
       "Manifest": "Hatifect UI/manifest.json",
       "UniqueID": "Hatifect.UI",
-      "Version": "1.0.0-alpha.41",
+      "Version": "1.0.0-alpha.42",
       "EntryDll": "Hatifect.UI.Stardew.dll",
       "AllowedRootFiles": [
         "Hatifect.UI.Stardew.dll",
@@ -55,7 +55,7 @@
         {
           "UniqueID": "Hatifect.UI",
           "IsRequired": true,
-          "MinimumVersion": "1.0.0-alpha.41"
+          "MinimumVersion": "1.0.0-alpha.42"
         },
         {
           "UniqueID": "Pathoschild.ChestsAnywhere",
@@ -84,7 +84,7 @@
       ],
       "AllowedDirectories": [],
       "AllowedRuntimeFiles": [],
-      "Dependencies": [{ "UniqueID": "Hatifect.UI", "IsRequired": true, "MinimumVersion": "1.0.0-alpha.41" }]
+      "Dependencies": [{ "UniqueID": "Hatifect.UI", "IsRequired": true, "MinimumVersion": "1.0.0-alpha.42" }]
     }
   ],
   "VersionFollowers": [

@@ -18,41 +18,58 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
     private sealed record Pending(TRequest Request, UiActionSubmission<TResult> Submission);
     private readonly UiActionDispatcher _owner;
     private readonly UiAction<TRequest, TResult> _action;
+    private readonly UiPublication? _publication;
     private readonly Queue<Pending> _waiting = new();
     private Action<TRequest, UiActionResult<TResult>>? _completed;
     private UiActionOperation<TResult>? _operation;
     private Pending? _active;
     private bool _dispatching;
     private bool _retired;
+    private bool _registered;
     private UiActionResult<TResult>? _availabilityFailure;
     internal UiActionExecution(UiActionDispatcher owner, UiAction<TRequest, TResult> action,
-        Action<TRequest, UiActionResult<TResult>>? completed)
-    { _owner = owner; _action = action; _completed = completed; }
+        Action<TRequest, UiActionResult<TResult>>? completed, UiPublication? publication = null)
+    { _owner = owner; _action = action; _completed = completed; _publication = publication; }
+
+    UiActionDispatcher IUiActionExecution.Owner => _owner;
+    UiSymbolId IUiActionExecution.Id => _action.Id;
+    void IUiActionExecution.Register() => _registered = true;
 
     internal UiActionState State { get; private set; } = UiActionState.Available;
     internal UiActionAvailability Availability { get; private set; } = UiActionAvailability.Available;
     internal UiActionResult<TResult>? LastResult { get; private set; }
     internal Exception? LastObserverError { get; private set; }
     internal int WaitingCount => _waiting.Count;
-    internal bool IsRetired => _retired || _owner.IsDisposed;
+    internal bool IsRetired => _retired || _owner.IsDisposed || _publication?.IsDisposed == true ||
+                               (_registered && !_owner.Contains(this));
     internal bool CanInvoke => !IsRetired && Availability.CanExecute &&
         (_operation is null || _action.Concurrency.Kind != UiActionConcurrencyKind.RejectWhileRunning) &&
         (_action.Concurrency.Kind != UiActionConcurrencyKind.Queue ||
          _waiting.Count < _action.Concurrency.Capacity);
 
-    internal UiActionSubmission<TResult> Invoke(TRequest request)
-        => InvokeCore(request, capture: null);
-
-    internal UiActionSubmission<TResult> InvokeCaptured(Func<TRequest> capture)
+    internal void AcceptLegacyAvailability(bool available)
     {
-        ArgumentNullException.ThrowIfNull(capture);
-        return InvokeCore(default!, capture);
+        if (IsRetired) return;
+        Availability = available ? UiActionAvailability.Available
+            : UiLegacyActionAvailability.Disabled;
+        if (!available) State = UiActionState.Disabled;
+        else if (State == UiActionState.Disabled) State = UiActionState.Available;
     }
 
-    private UiActionSubmission<TResult> InvokeCore(TRequest request, Func<TRequest>? capture)
+    internal UiActionSubmission<TResult> Invoke(TRequest request)
+        => InvokeCore(request, capture: null, isCurrent: null);
+
+    internal UiActionSubmission<TResult> InvokeCaptured(Func<TRequest> capture, Func<bool>? isCurrent = null)
+    {
+        ArgumentNullException.ThrowIfNull(capture);
+        return InvokeCore(default!, capture, isCurrent);
+    }
+
+    private UiActionSubmission<TResult> InvokeCore(TRequest request, Func<TRequest>? capture, Func<bool>? isCurrent)
     {
         _owner.RequireOwner();
         if (IsRetired) return Reject("UIA001", "The action owner has retired.");
+        if (!_registered) return Reject("UIA008", "The action registration has not been accepted.");
         if (_dispatching) return Reject("UIA002", "Reentrant action dispatch is unavailable.");
         _dispatching = true;
         try
@@ -61,6 +78,7 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
                 ? Reject("UIA001", "The action owner has retired.")
                 : new(false, _owner.SessionId, _owner.GenerationId, UnavailableResult());
             if (IsRetired) return Reject("UIA001", "The action owner has retired.");
+            if (isCurrent?.Invoke() == false) return Reject("UIA007", "The accepted UI frame changed during action admission.");
             if (_operation is not null && _action.Concurrency.Kind == UiActionConcurrencyKind.RejectWhileRunning)
                 return Reject("UIA003", "The action is already running.");
             if ((_operation is not null || _waiting.Count != 0) && _action.Concurrency.Kind == UiActionConcurrencyKind.Queue
@@ -82,6 +100,7 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
                     return new(false, _owner.SessionId, _owner.GenerationId, failure);
                 }
                 if (IsRetired) return Reject("UIA001", "The action owner has retired.");
+                if (isCurrent?.Invoke() == false) return Reject("UIA007", "The accepted UI frame changed during action admission.");
             }
             var submission = new UiActionSubmission<TResult>(true, _owner.SessionId, _owner.GenerationId);
             var pending = new Pending(request, submission);
@@ -95,6 +114,8 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
                     RecordCancellationError(_operation?.Cancel());
                     if (IsRetired)
                     { submission.Complete(UiActionResult<TResult>.Cancelled(UiActionCancellationReason.OwnerRetired)); return submission; }
+                    if (isCurrent?.Invoke() == false)
+                        return Reject("UIA007", "The accepted UI frame changed during action admission.");
                 }
                 _waiting.Enqueue(pending);
             }

@@ -6,6 +6,7 @@ using Hatifect.UI.Runtime.Hosting;
 using Hatifect.UI.Runtime.Input;
 using Hatifect.UI.Runtime.Layout;
 using Hatifect.UI.Runtime.Scene;
+using Hatifect.UI.Runtime.Actions;
 
 namespace Hatifect.UI.Runtime.Accessibility;
 
@@ -105,28 +106,29 @@ internal sealed class UiAccessibilitySnapshotBuilder
     public UiAccessibilitySnapshot Build(
         UiScene scene,
         UiLayoutSnapshot layout,
-        UiInteractionSnapshot interaction)
+        UiInteractionSnapshot interaction,
+        IUiActionResolver? actions = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(interaction);
         return new UiAccessibilitySnapshot(
             scene.Experience,
-            BuildNode(scene, scene.Root, layout, interaction));
+            BuildNode(scene, scene.Root, layout, interaction, actions));
     }
 
     private static UiAccessibilityNodeSnapshot BuildNode(
         UiScene scene,
         UiSceneNode node,
         UiLayoutSnapshot layout,
-        UiInteractionSnapshot interaction)
+        UiInteractionSnapshot interaction, IUiActionResolver? actions)
     {
         if (!layout.TryGetEntry(node.Id, out UiLayoutEntry? entry) || entry == null)
             throw new InvalidOperationException($"Accessibility node '{node.Id}' has no layout entry.");
 
         UiAccessibilityNodeSnapshot[] children = node.Children
             .Where(IsExposed)
-            .Select(child => BuildNode(scene, child, layout, interaction))
+            .Select(child => BuildNode(scene, child, layout, interaction, actions))
             .ToArray();
         if (node is UiCollectionSceneNode collection &&
             layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window) &&
@@ -155,7 +157,7 @@ internal sealed class UiAccessibilitySnapshotBuilder
             Role(node),
             Name(scene, node),
             Value(node),
-            Enabled(node),
+            Enabled(node, actions),
             interaction.Focused == node.Id,
             selected: node is UiRouteButtonSceneNode { IsCurrent: true },
             entry.Bounds,
@@ -206,6 +208,6 @@ internal sealed class UiAccessibilitySnapshotBuilder
             _ => null
         };
 
-    private static bool Enabled(UiSceneNode node)
-        => node is not UiButtonSceneNode button || button.Action.CanExecute;
+    private static bool Enabled(UiSceneNode node, IUiActionResolver? actions)
+        => node is not UiButtonSceneNode button || (actions?.CanInvoke(button.Action) ?? button.Action.CanExecute);
 }

@@ -6,6 +6,7 @@ using Hatifect.UI.Runtime.Layout;
 using Hatifect.UI.Runtime.Scene;
 using Hatifect.UI.Runtime.Visual;
 using Hatifect.UI.Runtime.Visual.Resolution;
+using Hatifect.UI.Runtime.Actions;
 
 namespace Hatifect.UI.Runtime.Input;
 
@@ -111,17 +112,20 @@ internal sealed class UiInteractionSession
     private UiSymbolId[] _focusGroups;
     private CollectionFocus? _collectionFocus;
     private readonly IUiTextMetrics? _textMetrics;
-    private readonly Action? _beforeMutation;
+    private readonly Func<long>? _beforeMutation;
+    private IUiActionResolver? _actions;
 
     public UiInteractionSession(
         UiScene scene,
         UiLayoutSnapshot layout,
         UiInteractionSnapshot? snapshot = null,
         IUiTextMetrics? textMetrics = null,
-        Action? beforeMutation = null)
+        Func<long>? beforeMutation = null,
+        IUiActionResolver? actions = null)
     {
         _scene = scene ?? throw new ArgumentNullException(nameof(scene));
         _layout = layout ?? throw new ArgumentNullException(nameof(layout));
+        _actions = actions;
         _nodes = Index(scene);
         _collectionItems = IndexCollectionItems(_nodes, layout);
         _focusable = Focusable(scene, layout).ToArray();
@@ -132,6 +136,8 @@ internal sealed class UiInteractionSession
     }
 
     public UiInteractionSnapshot Snapshot { get; private set; }
+
+    internal void SetActionResolver(IUiActionResolver actions) => _actions = actions;
 
     internal UiInteractionDiagnosticSnapshot CaptureDiagnostics()
     {
@@ -152,11 +158,13 @@ internal sealed class UiInteractionSession
         ReconcileCore(scene, layout);
     }
 
-    internal UiInteractionSession PrepareReconcile(UiScene scene, UiLayoutSnapshot layout)
+    internal UiInteractionSession PrepareReconcile(UiScene scene, UiLayoutSnapshot layout,
+        IUiActionResolver? actions = null)
     {
         // Indexes are replaced, never changed in place. Preserve the offscreen focus hint as well
         // as the immutable snapshot; candidate callbacks cannot mutate the accepted session.
         var candidate = (UiInteractionSession)MemberwiseClone();
+        candidate._actions = actions ?? _actions;
         candidate.ReconcileCore(scene, layout);
         return candidate;
     }
@@ -164,6 +172,7 @@ internal sealed class UiInteractionSession
     internal void CommitReconcile(UiInteractionSession candidate)
     {
         _scene = candidate._scene;
+        _actions = candidate._actions;
         _layout = candidate._layout;
         _nodes = candidate._nodes;
         _collectionItems = candidate._collectionItems;
@@ -387,7 +396,10 @@ internal sealed class UiInteractionSession
 
     private UiInteractionUpdate ActivateButton(UiButtonSceneNode button, bool stateChanged)
     {
-        bool invoked = button.Action.TryExecute(_beforeMutation);
+        long? version = _beforeMutation?.Invoke();
+        bool invoked = _actions?.Invoke(button.Action) ?? button.Action.TryExecute(_beforeMutation);
+        if (!invoked && _beforeMutation?.Invoke() != version)
+            throw new InvalidOperationException("The accepted UI frame changed during action admission.");
         return new UiInteractionUpdate(invoked, StateChanged: stateChanged, ActionInvoked: invoked);
     }
 
@@ -738,7 +750,7 @@ internal sealed class UiInteractionSession
     private static Dictionary<UiSymbolId, UiSceneNode> Index(UiScene scene)
         => Nodes(scene.Root).ToDictionary(node => node.Id);
 
-    private static IEnumerable<UiSymbolId> Focusable(UiScene scene, UiLayoutSnapshot layout)
+    private IEnumerable<UiSymbolId> Focusable(UiScene scene, UiLayoutSnapshot layout)
         => Focusable(scene.Root, layout);
 
     private static IEnumerable<UiSymbolId> HitTestTargets(
@@ -764,7 +776,7 @@ internal sealed class UiInteractionSession
             if (visible.Contains(id)) yield return id;
     }
 
-    private static IEnumerable<UiSymbolId> Focusable(UiSceneNode node, UiLayoutSnapshot layout)
+    private IEnumerable<UiSymbolId> Focusable(UiSceneNode node, UiLayoutSnapshot layout)
     {
         if (IsFocusable(node)) yield return node.Id;
         if (node is UiCollectionSceneNode { IsSelectable: true } collection &&
@@ -780,10 +792,10 @@ internal sealed class UiInteractionSession
             yield return descendant;
     }
 
-    private static bool IsFocusable(UiSceneNode node)
+    private bool IsFocusable(UiSceneNode node)
         => node switch
         {
-            UiButtonSceneNode button => button.Action.CanExecute,
+            UiButtonSceneNode button => _actions?.CanInvoke(button.Action) ?? button.Action.CanExecute,
             UiRouteButtonSceneNode => true,
             UiTextInputSceneNode => true,
             UiCollectionSceneNode { IsSelectable: true, Count: 0 } => true,

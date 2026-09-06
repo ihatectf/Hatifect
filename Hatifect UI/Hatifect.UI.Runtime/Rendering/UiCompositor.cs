@@ -76,29 +76,29 @@ internal sealed class UiSceneRenderPlanner
     private static readonly UiSurface TransparentSurface = UiSurface.Solid(new UiColor(0, 0, 0, 0));
 
     public UiRenderFrame Build(UiScene scene, UiLayoutSnapshot layout)
-        => BuildCore(scene, layout, interaction: null, UnusedTextMetrics.Instance);
+        => BuildCore(scene, layout, interaction: null, UnusedTextMetrics.Instance, null);
 
     public UiRenderFrame Build(
         UiScene scene,
         UiLayoutSnapshot layout,
         UiInteractionSnapshot interaction,
-        IUiTextMetrics textMetrics)
+        IUiTextMetrics textMetrics, Hatifect.UI.Runtime.Actions.IUiActionResolver? actions = null)
     {
         ArgumentNullException.ThrowIfNull(interaction);
-        return BuildCore(scene, layout, interaction, textMetrics);
+        return BuildCore(scene, layout, interaction, textMetrics, actions);
     }
 
     private static UiRenderFrame BuildCore(
         UiScene scene,
         UiLayoutSnapshot layout,
         UiInteractionSnapshot? interaction,
-        IUiTextMetrics textMetrics)
+        IUiTextMetrics textMetrics, Hatifect.UI.Runtime.Actions.IUiActionResolver? actions)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(textMetrics);
         var primitives = new List<UiRenderPrimitive>();
-        Visit(scene.Root, layout, interaction, textMetrics, primitives);
+        Visit(scene.Root, layout, interaction, textMetrics, primitives, actions);
         return new UiRenderFrame(primitives.ToArray());
     }
 
@@ -107,12 +107,16 @@ internal sealed class UiSceneRenderPlanner
         UiLayoutSnapshot layout,
         UiInteractionSnapshot? interaction,
         IUiTextMetrics textMetrics,
-        ICollection<UiRenderPrimitive> primitives)
+        ICollection<UiRenderPrimitive> primitives, Hatifect.UI.Runtime.Actions.IUiActionResolver? actions)
     {
         if (layout.TryGetEntry(node.Id, out UiLayoutEntry? entry) && entry != null)
         {
-            UiVisualResolution visual = node is UiCollectionSceneNode currentCollection
-                ? currentCollection.ContainerVisualFor(interaction) : node.Visual;
+            UiVisualResolution visual = node switch
+            {
+                UiCollectionSceneNode currentCollection => currentCollection.ContainerVisualFor(interaction),
+                UiButtonSceneNode button when actions is not null => button.VisualFor(actions.CanInvoke(button.Action), interaction),
+                _ => node.Visual
+            };
             UiRect bounds = entry.Bounds;
             UiOpacity opacity = Value(visual, "opacity", new UiOpacity(1));
             UiTransform transform = Value(visual, "transform", new UiTransform(0, 0));
@@ -262,7 +266,7 @@ internal sealed class UiSceneRenderPlanner
         }
 
         foreach (UiSceneNode child in node.Children)
-            Visit(child, layout, interaction, textMetrics, primitives);
+            Visit(child, layout, interaction, textMetrics, primitives, actions);
     }
 
     private static void AddSelection(

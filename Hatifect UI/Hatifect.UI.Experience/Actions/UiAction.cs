@@ -23,6 +23,15 @@ public sealed class UiAction<TRequest, TResult>
     public UiSymbolId Id { get; }
     public string Title { get; }
     public UiActionConcurrency Concurrency { get; }
+
+    /// <summary>Creates a reusable host action. Capture runs once for admitted input on the UI
+    /// thread. Completion runs on that host's thread and is detached when it or the optional
+    /// publication owner retires. Keep the returned definition through ordinary recomposition.</summary>
+    public UiActionDefinition Bind(Func<TRequest> capture,
+        Action<TRequest, UiActionResult<TResult>>? completed = null, UiPublication? owner = null)
+        => new(Id, Title, new UiTypedActionBinding<TRequest, TResult>(this,
+            capture ?? throw new ArgumentNullException(nameof(capture)), completed, owner));
+
     internal UiActionAvailability ReadAvailability() => _availability()
         ?? throw new InvalidOperationException("An action must return an availability result.");
     internal ValueTask<UiActionResult<TResult>> Execute(TRequest request, CancellationToken cancellation)

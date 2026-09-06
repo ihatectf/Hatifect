@@ -4,6 +4,9 @@ namespace Hatifect.UI.Runtime.Actions;
 
 internal interface IUiActionExecution
 {
+    UiActionDispatcher Owner { get; }
+    UiSymbolId Id { get; }
+    void Register();
     bool Pump();
     void Retire();
 }
@@ -14,7 +17,7 @@ internal sealed class UiActionDispatcher : IDisposable
 {
     internal const int MaximumActions = 4096;
     private readonly int _thread = Environment.CurrentManagedThreadId;
-    private readonly Dictionary<UiSymbolId, IUiActionExecution> _actions = new();
+    private Dictionary<UiSymbolId, IUiActionExecution> _actions = new();
     private bool _pumping;
     internal UiActionDispatcher(Guid sessionId, Guid generationId)
     {
@@ -43,6 +46,7 @@ internal sealed class UiActionDispatcher : IDisposable
         if (_actions.ContainsKey(action.Id)) throw new ArgumentException("An action is already bound in this host.", nameof(action));
         var execution = new UiActionExecution<TRequest, TResult>(this, action, completed);
         _actions.Add(action.Id, execution);
+        ((IUiActionExecution)execution).Register();
         return execution;
     }
 
@@ -63,6 +67,23 @@ internal sealed class UiActionDispatcher : IDisposable
         finally { _pumping = false; if (IsDisposed) _actions.Clear(); }
         return changed;
     }
+
+    // Prepared maps are private and never mutated after installation. Pump can therefore
+    // finish enumerating its old map if a completion accepts a replacement scene.
+    internal void Install(Dictionary<UiSymbolId, IUiActionExecution> actions)
+    {
+        RequireOwner();
+        if (IsDisposed) throw new ObjectDisposedException(nameof(UiActionDispatcher));
+        if (actions.Count > MaximumActions) throw new InvalidOperationException("The host action capacity is exhausted.");
+        foreach (var (id, execution) in actions)
+            if (!ReferenceEquals(execution.Owner, this) || execution.Id != id)
+                throw new ArgumentException("The registration belongs to another action owner.", nameof(actions));
+        foreach (IUiActionExecution execution in actions.Values) execution.Register();
+        _actions = actions;
+    }
+
+    internal bool Contains(IUiActionExecution execution)
+        => _actions.TryGetValue(execution.Id, out var current) && ReferenceEquals(current, execution);
 
     public void Dispose()
     {

@@ -5,6 +5,8 @@ using Hatifect.UI.Runtime.Identity;
 using Hatifect.UI.Runtime.Layout;
 using Hatifect.UI.Runtime.Visual.Resolution;
 using Hatifect.UI.Semantics;
+using Hatifect.UI.Runtime.Actions;
+using Hatifect.UI.Runtime.Input;
 
 namespace Hatifect.UI.Runtime.Scene;
 
@@ -22,7 +24,9 @@ internal sealed record UiSceneDiff(
 /// <summary>Compares immutable scene snapshots by stable semantic node identity.</summary>
 internal sealed class UiSceneReconciler
 {
-    public UiSceneDiff Compare(UiScene previous, UiScene next)
+    public UiSceneDiff Compare(UiScene previous, UiScene next,
+        UiInteractionSnapshot? interaction = null, IUiActionResolver? previousActions = null,
+        IUiActionResolver? nextActions = null)
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(next);
@@ -53,6 +57,10 @@ internal sealed class UiSceneReconciler
         {
             UiSceneNode newNode = newNodes[id].Node;
             UiPropertyEffects nodeEffects = newNode.Visual.InvalidationFrom(oldNode.Node.Visual);
+            if (oldNode.Node is UiButtonSceneNode oldButton && newNode is UiButtonSceneNode newButton &&
+                previousActions is not null && nextActions is not null)
+                nodeEffects |= newButton.VisualFor(nextActions.CanInvoke(newButton.Action), interaction)
+                    .InvalidationFrom(oldButton.VisualFor(previousActions.CanInvoke(oldButton.Action), interaction));
             if (!string.Equals(UiSceneLayoutEngine.Text(oldNode.Node), UiSceneLayoutEngine.Text(newNode), StringComparison.Ordinal))
                 nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
             if (oldNode.Node is UiRouteButtonSceneNode oldRoute && newNode is UiRouteButtonSceneNode newRoute

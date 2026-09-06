@@ -367,9 +367,7 @@ internal sealed class UiSceneComposer
         UiSceneNode[] buttons = actions.Select(action =>
         {
             UiSymbolId nodeId = action.Id.Child("scene/button");
-            return (UiSceneNode)new UiButtonSceneNode(
-                nodeId, buttonRole,
-                Resolve(buttonRole, UiSceneNodeKind.Button, nodeId, invocation, visual, interaction, action.CanExecute), action);
+            return (UiSceneNode)Button(nodeId, buttonRole, action, invocation, visual, interaction);
         }).ToArray();
         UiSymbolId barRole = Role(invocation.Experience, element.Alias, UiSceneRoles.ActionBar);
         UiSymbolId barId = element.Id.Child("scene/action-bar");
@@ -398,10 +396,8 @@ internal sealed class UiSceneComposer
                     contribution is UiActionContributionDescriptor ? "scene/button" : "scene/route");
                 UiSceneNode node = contribution switch
                 {
-                    UiActionContributionDescriptor action => new UiButtonSceneNode(
-                        nodeId, UiSceneRoles.Button,
-                        Resolve(UiSceneRoles.Button, UiSceneNodeKind.Button, nodeId, invocation, visual, interaction,
-                            action.Action.CanExecute), action.Action),
+                    UiActionContributionDescriptor action => Button(
+                        nodeId, UiSceneRoles.Button, action.Action, invocation, visual, interaction),
                     UiRouteContributionDescriptor route => new UiRouteButtonSceneNode(
                         nodeId, UiSceneRoles.Button,
                         Resolve(UiSceneRoles.Button, UiSceneNodeKind.RouteButton, nodeId, invocation, visual, interaction),
@@ -468,6 +464,29 @@ internal sealed class UiSceneComposer
         if (_registry == null)
             throw new InvalidOperationException("Terminal composition requires the frozen UI registry.");
         return _registry.TerminalSections().Where(section => section.IsAvailable).ToArray();
+    }
+
+    private UiButtonSceneNode Button(UiSymbolId node, UiSymbolId role, UiActionDefinition action,
+        UiInvocationResult invocation, UiVisualDefinition? visual, UiInteractionSnapshot? interaction)
+    {
+        if (action.Binding is not null && visual is not null)
+        foreach (var recipe in visual.Recipes)
+            if (recipe.Target == role && recipe.State is { } state &&
+                (state == UiVisualStates.Disabled.Id || state == UiVisualStates.Focused.Id ||
+                 state == UiVisualStates.Hover.Id || state == UiVisualStates.Pressed.Id) &&
+                (recipe.Property.Effects & ~UiPropertyEffects.Render) != UiPropertyEffects.None)
+                throw new InvalidOperationException($"Typed button state '{state}' changes layout geometry through '{recipe.Property.Name}'.");
+        UiVisualResolution normal = Resolve(role, UiSceneNodeKind.Button, node, invocation, visual, null);
+        UiTheme theme = _theme;
+        UiVisualResolver resolver = _visualResolver;
+        UiFoundationVisuals foundation = _foundationVisuals;
+        UiSymbolId profile = invocation.Plan.Host.Profile;
+        var host = invocation.Descriptor.Host;
+        var states = new UiButtonStateVisuals(node, normal, active =>
+            resolver.Resolve(new UiVisualContext(role, profile, null, active), theme, visual,
+                foundation.For(UiSceneNodeKind.Button, host, null, active)), renderOnly: action.Binding is not null);
+        bool enabled = action.Binding is not null || action.CanExecute;
+        return new(node, role, states.Resolve(enabled, interaction), action, states);
     }
 
     private UiVisualResolution Resolve(
