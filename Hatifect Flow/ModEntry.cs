@@ -13,6 +13,8 @@ public sealed partial class ModEntry : Mod
     private DurableFlowHost? _host;
     private FlowHostAcceptance? _acceptance;
     private FlowChestRoundtripAcceptance? _chestAcceptance;
+    private FlowChestCancellationAcceptance? _cancellationAcceptance;
+    private FlowChestReturnAcceptance? _returnAcceptance;
     private bool _attached;
     private bool _startupFailed;
 
@@ -34,6 +36,8 @@ public sealed partial class ModEntry : Mod
         {
             _acceptance = FlowHostAcceptance.TryCreate(Helper, Monitor);
             _chestAcceptance = FlowChestRoundtripAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
+            _cancellationAcceptance = FlowChestCancellationAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
+            _returnAcceptance = FlowChestReturnAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
         }
         catch (Exception error)
         {
@@ -46,7 +50,14 @@ public sealed partial class ModEntry : Mod
 
     private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
     {
-        if (_acceptance is null) { OpenGameSession(); _chestAcceptance?.OnSaveLoaded(); return; }
+        if (_acceptance is null)
+        {
+            OpenGameSession();
+            _chestAcceptance?.OnSaveLoaded();
+            _cancellationAcceptance?.OnSaveLoaded();
+            _returnAcceptance?.OnSaveLoaded();
+            return;
+        }
         try
         {
             if (!Context.IsMainPlayer || !Context.IsWorldReady)
@@ -74,6 +85,8 @@ public sealed partial class ModEntry : Mod
                 _host.Tick(!Context.IsWorldReady || !Context.IsMainPlayer || !Game1.shouldTimePass());
             _acceptance?.Tick(_host);
             _chestAcceptance?.Tick();
+            _cancellationAcceptance?.Tick();
+            _returnAcceptance?.Tick();
         }
         catch (Exception error) { ReportFailure(error); }
     }
@@ -86,6 +99,8 @@ public sealed partial class ModEntry : Mod
             CloseHost();
             _acceptance?.OnReturnedToTitle();
             _chestAcceptance?.OnReturnedToTitle();
+            _cancellationAcceptance?.OnReturnedToTitle();
+            _returnAcceptance?.OnReturnedToTitle();
         }
         catch (Exception error) { ReportFailure(error); }
     }
@@ -109,7 +124,15 @@ public sealed partial class ModEntry : Mod
                 try { DisposeGameSessions(); }
                 finally { CloseHost(); }
             }
-            finally { try { _acceptance?.Dispose(); } finally { _chestAcceptance?.Dispose(); } }
+            finally
+            {
+                try { _acceptance?.Dispose(); }
+                finally
+                {
+                    try { _chestAcceptance?.Dispose(); }
+                    finally { try { _cancellationAcceptance?.Dispose(); } finally { _returnAcceptance?.Dispose(); } }
+                }
+            }
         }
         finally { base.Dispose(disposing); }
     }
@@ -127,5 +150,7 @@ public sealed partial class ModEntry : Mod
         Monitor.Log("Hatifect Flow host failed: " + error, LogLevel.Error);
         _acceptance?.Fail(error);
         _chestAcceptance?.Fail(error);
+        _cancellationAcceptance?.Fail(error);
+        _returnAcceptance?.Fail(error);
     }
 }

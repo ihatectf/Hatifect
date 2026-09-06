@@ -163,7 +163,12 @@ internal sealed class UiAutomatedAcceptanceController : IDisposable
         if (string.Equals(scenario, "flow.route.basic", StringComparison.Ordinal)
             || string.Equals(scenario, "flow.save.isolation", StringComparison.Ordinal)
             || string.Equals(scenario, "flow.chest.roundtrip", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.crash-after-save", StringComparison.Ordinal))
+            || string.Equals(scenario, "flow.chest.crash-after-save", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.chest.crash-after-delivery", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.chest.crash-after-unsaved-extraction", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.chest.crash-after-unsaved-delivery", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.chest.cancellation", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.chest.return", StringComparison.Ordinal))
         {
             return null;
         }

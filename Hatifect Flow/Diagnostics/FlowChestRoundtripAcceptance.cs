@@ -45,7 +45,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
     private int _verificationFrames;
     private bool _disposed;
     private bool _returning;
-    private enum Stage { Startup, Loading, Transit, SavingTransit, ReturnTransit, ReloadTransit, Delivery, SavingDelivered, ReturnDelivered, ReloadDelivered, Verify, AwaitCrash, Exit }
+    private enum Stage { Startup, Loading, Transit, SavingTransit, ReturnTransit, ReloadTransit, Delivery, SavingDelivered, ReturnDelivered, ReloadDelivered, Verify, AwaitUnsavedExtraction, AwaitUnsavedDelivery, AwaitCrash, Exit }
 
     private FlowChestRoundtripAcceptance(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current, string scenario)
     {
@@ -64,7 +64,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
     {
         string? scenario = Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO");
         return Environment.GetEnvironmentVariable("HATIFECT_TEST_MODE") == "1" && Environment.GetEnvironmentVariable("HATIFECT_TEST_AUTOMATED") == "1"
-            && scenario is Scenario or CrashScenario ? new(helper, monitor, current, scenario) : null;
+            && scenario is Scenario or CrashScenario or DeliveryCrashScenario or ExtractionCrashScenario or UnsavedDeliveryCrashScenario ? new(helper, monitor, current, scenario) : null;
     }
 
     internal void OnSaveLoaded()
@@ -75,7 +75,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             ValidateLoadedSave();
             FlowGameSession session = Session();
             Require(!session.IsFaulted && session.ReadSnapshot().SessionId != _sessionId, "SaveLoaded did not create a fresh production session.");
-            if (_crashPhase == "resume" && _loads == 1) _passed.Add("process-restart");
+            if (_crashPhase == "resume" && _loads == CrashSavedEvents) _passed.Add("process-restart");
             _sessionId = session.ReadSnapshot().SessionId;
             _loads++;
             if (_loads == 1)
@@ -109,12 +109,27 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                 Require(partial.Stack == 13, "Partial admission extracted units before the scheduled effect.");
                 _passed.Add("loaded");
                 _stage = Stage.Transit;
+                if (CrashAfterUnsavedExtraction)
+                {
+                    VerifyReservedSource();
+                    // Freeze before returning from SaveLoaded: the production tick precedes this driver's next Tick.
+                    session.BeginSave();
+                    BeginGameSave(Stage.SavingTransit);
+                }
             }
             else if (_loads == 2)
             {
-                Require(BothAt(ParcelState.InTransit), "In-flight parcels did not survive the actual game save.");
-                VerifyRemainder();
-                Require(Items(_destinationTile).Length == 0, "In-flight cargo appeared in the destination chest.");
+                if (CrashAfterUnsavedExtraction)
+                {
+                    VerifyReservedSource();
+                }
+                else
+                {
+                    Require(BothAt(ParcelState.InTransit), "In-flight parcels did not survive the actual game save.");
+                    VerifyRemainder();
+                    Require(Items(_destinationTile).Length == 0, "In-flight cargo appeared in the destination chest.");
+                }
+                if (CrashAfterUnsavedEffect) _passed.Add("unsaved-rollback");
                 _passed.Add("reload");
                 _stage = Stage.Delivery;
             }
@@ -151,6 +166,14 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                     _passed.Add("custody");
                     BeginGameSave(Stage.SavingTransit);
                     break;
+                case Stage.AwaitUnsavedExtraction when BothAt(ParcelState.InTransit):
+                    VerifyCrashInventory();
+                    _passed.Add("custody");
+                    PrepareCrashBoundary();
+                    break;
+                case Stage.AwaitUnsavedDelivery when BothAt(ParcelState.Delivered):
+                    PrepareCrashBoundary();
+                    break;
                 case Stage.ReturnTransit:
                 case Stage.ReturnDelivered:
                     if (_returning) break;
@@ -178,8 +201,8 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                     _stage = Stage.Exit;
                     break;
                 case Stage.AwaitCrash:
-                    Require(Session().IsSaving && BothAt(ParcelState.InTransit), "The saved crash boundary advanced before termination.");
-                    VerifyRemainder();
+                    Require(Session().IsSaving && BothAt(CrashParcelState), "The saved crash boundary advanced before termination.");
+                    VerifyCrashInventory();
                     break;
             }
         }
@@ -217,6 +240,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             Require(_stage is Stage.SavingTransit or Stage.SavingDelivered, "Unexpected Saving event.");
             ValidateLoadedSave();
             Require(Session().IsSaving, "Production session did not enter its save barrier.");
+            if (CrashAfterUnsavedExtraction && _stage == Stage.SavingTransit) VerifyReservedSource();
             _savings++;
             _passed.Add("saving");
         }
@@ -233,7 +257,20 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             Require(_saveHash != HashFile(Path.Combine(_request.SavePath, Path.GetFileName(_request.SavePath))), "Saved event did not update the owned on-disk game save.");
             _saves++;
             _passed.Add("saved");
-            if (_crashPhase == "prepare" && _stage == Stage.SavingTransit)
+            if (CrashAfterUnsavedEffect && _stage == Stage.SavingTransit)
+            {
+                if (CrashAfterUnsavedExtraction) VerifyReservedSource();
+                else
+                {
+                    Require(BothAt(ParcelState.InTransit), "The confirmed save must retain in-flight custody before unsaved delivery.");
+                    VerifyRemainder();
+                    Require(Items(_destinationTile).Length == 0, "Delivery preceded its confirmed InTransit save.");
+                }
+                _confirmedEffectSaveHash = HashFile(Path.Combine(_request.SavePath, Path.GetFileName(_request.SavePath)));
+                _stage = CrashAfterUnsavedExtraction ? Stage.AwaitUnsavedExtraction : Stage.AwaitUnsavedDelivery;
+                return;
+            }
+            if (_crashPhase == "prepare" && _stage == (CrashAfterDelivery ? Stage.SavingDelivered : Stage.SavingTransit))
             {
                 PrepareCrashBoundary();
                 return;
@@ -316,7 +353,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             FormatVersion = 3, PerformanceFormatVersion = 3, CapturedAtUtc = captured,
             RuntimeFingerprintAlgorithm = "sha256-flow-runtime-v1", RuntimeFingerprint = _fingerprint,
             GameVersion = Game1.GetVersionString(), SmapiVersion = Constants.ApiVersion.ToString(), Scenarios = Array.Empty<object>(),
-            HostChecks = (_crashPhase is null ? Checks : Checks.Concat(new[] { "process-restart" })).Select(id => new { Id = _scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
+            HostChecks = (_crashPhase is null ? Checks : Checks.Concat(CrashAfterUnsavedEffect ? new[] { "process-restart", "unsaved-rollback" } : new[] { "process-restart" })).Select(id => new { Id = _scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
                 CapturedAtUtc = captured, Note = _errors.Count == 0 ? "Whole and partial stacks, real chests, two actual game saves and reloads; total quantity conserved." : string.Join("\n", _errors) }).ToArray()
         });
         AtomicJson(Path.Combine(_request.Artifact, "diagnostics", "flow-chest-roundtrip.json"), new

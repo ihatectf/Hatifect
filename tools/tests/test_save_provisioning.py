@@ -24,19 +24,21 @@ class SaveProvisioningTests(unittest.TestCase):
         self._bootstrap(save_xml=original)
         manifest, golden = SAVE.validate_fixture(self.isolated, self.smapi)
         before = SAVE._inventory(golden)
-        run_id = str(uuid.uuid4())
-        path = SAVE.prepare_working_copy(self.isolated, self.smapi, run_id, 'flow.chest.roundtrip')
-        self.assertEqual(f'HatifectHarness{uuid.UUID(run_id).hex}_4242424242', path.name)
-        self.assertEqual(original, (path / path.name).read_bytes())
-        self.assertEqual(before, SAVE._inventory(golden))
-        self.assertEqual(path, SAVE.validate_working_copy(self.isolated, path, manifest['runtimeId'], run_id, 'flow.chest.roundtrip'))
-        for scenario in ('', 'flow.route.basic', 'flow.save.isolation', 'flow.chest.unknown'):
-            with self.subTest(scenario=scenario), self.assertRaises(SAVE.SaveProvisioningError):
-                SAVE.cleanup_working_copy(self.isolated, path, manifest['runtimeId'], run_id, scenario)
-        self.assertTrue(path.exists())
-        SAVE.cleanup_working_copy(self.isolated, path, manifest['runtimeId'], run_id, 'flow.chest.roundtrip')
-        self.assertFalse(path.exists())
-        self.assertEqual(before, SAVE._inventory(golden))
+        for owning_scenario in ('flow.chest.roundtrip', 'flow.chest.cancellation', 'flow.chest.return'):
+            with self.subTest(owning_scenario=owning_scenario):
+                run_id = str(uuid.uuid4())
+                path = SAVE.prepare_working_copy(self.isolated, self.smapi, run_id, owning_scenario)
+                self.assertEqual(f'HatifectHarness{uuid.UUID(run_id).hex}_4242424242', path.name)
+                self.assertEqual(original, (path / path.name).read_bytes())
+                self.assertEqual(before, SAVE._inventory(golden))
+                self.assertEqual(path, SAVE.validate_working_copy(self.isolated, path, manifest['runtimeId'], run_id, owning_scenario))
+                for scenario in ('', 'flow.route.basic', 'flow.save.isolation', 'flow.chest.unknown'):
+                    with self.subTest(scenario=scenario), self.assertRaises(SAVE.SaveProvisioningError):
+                        SAVE.cleanup_working_copy(self.isolated, path, manifest['runtimeId'], run_id, scenario)
+                self.assertTrue(path.exists())
+                SAVE.cleanup_working_copy(self.isolated, path, manifest['runtimeId'], run_id, owning_scenario)
+                self.assertFalse(path.exists())
+                self.assertEqual(before, SAVE._inventory(golden))
 
     def test_roundtrip_collision_does_not_acquire_foreign_cleanup_authority(self) -> None:
         self._bootstrap()

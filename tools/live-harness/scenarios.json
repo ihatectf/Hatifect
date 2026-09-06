@@ -128,6 +128,124 @@
       "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
     },
     {
+      "id": "flow.chest.crash-after-delivery",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": ["Hatifect.Flow"],
+      "checks": [
+        "flow.chest.crash-after-delivery.loaded",
+        "flow.chest.crash-after-delivery.custody",
+        "flow.chest.crash-after-delivery.saving",
+        "flow.chest.crash-after-delivery.saved",
+        "flow.chest.crash-after-delivery.delivery",
+        "flow.chest.crash-after-delivery.lifecycle",
+        "flow.chest.crash-after-delivery.reload",
+        "flow.chest.crash-after-delivery.no-duplication",
+        "flow.chest.crash-after-delivery.process-restart"
+      ],
+      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+    },
+    {
+      "id": "flow.chest.crash-after-unsaved-extraction",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": ["Hatifect.Flow"],
+      "checks": [
+        "flow.chest.crash-after-unsaved-extraction.loaded",
+        "flow.chest.crash-after-unsaved-extraction.custody",
+        "flow.chest.crash-after-unsaved-extraction.saving",
+        "flow.chest.crash-after-unsaved-extraction.saved",
+        "flow.chest.crash-after-unsaved-extraction.delivery",
+        "flow.chest.crash-after-unsaved-extraction.lifecycle",
+        "flow.chest.crash-after-unsaved-extraction.reload",
+        "flow.chest.crash-after-unsaved-extraction.no-duplication",
+        "flow.chest.crash-after-unsaved-extraction.process-restart",
+        "flow.chest.crash-after-unsaved-extraction.unsaved-rollback"
+      ],
+      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+    },
+    {
+      "id": "flow.chest.crash-after-unsaved-delivery",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": ["Hatifect.Flow"],
+      "checks": [
+        "flow.chest.crash-after-unsaved-delivery.loaded",
+        "flow.chest.crash-after-unsaved-delivery.custody",
+        "flow.chest.crash-after-unsaved-delivery.saving",
+        "flow.chest.crash-after-unsaved-delivery.saved",
+        "flow.chest.crash-after-unsaved-delivery.delivery",
+        "flow.chest.crash-after-unsaved-delivery.lifecycle",
+        "flow.chest.crash-after-unsaved-delivery.reload",
+        "flow.chest.crash-after-unsaved-delivery.no-duplication",
+        "flow.chest.crash-after-unsaved-delivery.process-restart",
+        "flow.chest.crash-after-unsaved-delivery.unsaved-rollback"
+      ],
+      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+    },
+    {
+      "id": "flow.chest.cancellation",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.cancellation.loaded",
+        "flow.chest.cancellation.duplicate-admission",
+        "flow.chest.cancellation.cancellation",
+        "flow.chest.cancellation.source-conflict",
+        "flow.chest.cancellation.saving",
+        "flow.chest.cancellation.saved",
+        "flow.chest.cancellation.lifecycle",
+        "flow.chest.cancellation.reload",
+        "flow.chest.cancellation.re-admission",
+        "flow.chest.cancellation.no-late-effect"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.return",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.return.loaded",
+        "flow.chest.return.custody",
+        "flow.chest.return.capacity",
+        "flow.chest.return.delivery-retry",
+        "flow.chest.return.return-requested",
+        "flow.chest.return.return-rejected",
+        "flow.chest.return.returned",
+        "flow.chest.return.saving",
+        "flow.chest.return.saved",
+        "flow.chest.return.lifecycle",
+        "flow.chest.return.reload",
+        "flow.chest.return.no-auto-retry",
+        "flow.chest.return.no-duplication",
+        "flow.chest.return.taken-items"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
       "id": "semantic.lifecycle",
       "kind": "ui",
       "requiresSave": false,
