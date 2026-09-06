@@ -2,6 +2,8 @@
 
 Ограниченная общая приёмка alpha.43 — **PASS**. P2 повторного захвата keyboard lease после неуспешного Hide подтверждён нативным RED→GREEN и исправлен. Итоговый source commit — [`6c30713`](https://github.com/ihatectf/Hatifect/commit/6c307137287a9a5634c4383d9773cc873bf1a068). Полные U03 и Q01 остаются **IN_PROGRESS**.
 
+Публикация отчёта `dc79fc7` выявила отдельный CI race общего harness. Исправление [`3043c67`](https://github.com/ihatectf/Hatifect/commit/3043c67) прошло локальные tools/C и свежий игровой crash/restart; CI исправленной публикации ещё ожидается. Первоначальный failed run сохранён ниже.
+
 ## Исходники и границы
 
 Общая интеграция [`6444fe5`](https://github.com/ihatectf/Hatifect/commit/6444fe5) объединяет проверенный UI checkpoint [`f2f5a03`](https://github.com/ihatectf/Hatifect/commit/f2f5a032a36a56bd70ab9c3b9f74ac55025589c9) с GQ [`a85c8ce`](https://github.com/ihatectf/Hatifect/commit/a85c8ceb55ea985b6107d9c7ab27c09789f945e6). Сохранена исходная FLOWLINE regression ancestry `a7be299`. Все30 входящих non-Markdown postimages равны immutable checkpoint UI; единственный конфликт разрешён объединением обоих дополнений `ROADMAP-STATUS.md`. Документация package identity и verifier `c36a0d1` сохранены.
@@ -70,3 +72,22 @@ Correction интегрирована как [`6c30713`](https://github.com/ihat
 ## Оставшийся объём
 
 UI передал следующий alpha.44 checkpoint для явных Open/Follow generations; его общая приёмка выполняется отдельно. U03 сохраняет active reload, concrete typed consumer и полную reload/save-switch runtime acceptance. Общий Q01 также сохраняет незавершённую физическую Backspace-проверку. Предыдущие alpha.42 fingerprints и game evidence остаются историческими. GQ отвечает за общую приёмку и публикацию; продуктовые UI/Flowline срезы остаются у профильных задач.
+
+## CI — временная граница запуска процесса
+
+Exact CI [`34048617203`](https://github.com/ihatectf/Hatifect/actions/runs/34048617203) на `dc79fc7` — **FAIL**: `test_real_returned_boundary_restarts_from_the_fourth_confirmed_save` отверг marker с сообщением `Saved-crash marker timestamp predates its process or is in the future.` Architecture/tooling stage завершилась с одной ошибкой из365 Python tests; build и .NET matrix были пропущены. Исходные `ci-dc79fc7.json` и `ci-dc79fc7-failed.log` сохранены; этот run не перезаписывается успешным повтором.
+
+Причина находится в общем `run_process.py` / `direct_runtime.py`: child может записать confirmed-save marker до завершения родительского `on_started`, который раньше вычислял `startedAtUtc` после записи ownership state. Исправление `3043c67` фиксирует UTC непосредственно перед `Popen` и передаёт эту нижнюю границу через внутренний callback в process journal. Каждый повторный запуск получает собственную метку. Проверки stale/future marker, request/PID/save identity, SIGKILL и сохранённых bytes не менялись. Формат transport documents, CLI, UI/Flow API, версии пакетов и persistence совместимость сохранены; внутренний Python callback теперь принимает третий аргумент datetime, все его callers обновлены.
+
+| Требование | Доказательство |
+|---|---|
+| Маркер быстрого child принимается до позднего уведомления родителя | `test_child_save_before_launch_notification_still_authorizes_owned_restart`: реальный child пишет marker до разрешения callback; до исправления ERROR1/1, после PASS1/1. Проверены отдельные PID, SIGKILL137/raw−9, resume0, одинаковые save bytes, cleanup и порядок обеих timestamps. |
+| Журнал сохраняет метку runner | `test_execute_request_uses_fixed_argument_list_and_game_directory`: существующая проверка дополнена точным равенством `startedAtUtc` переданной метке; scoped PASS1/1. |
+| Чужое или устаревшее evidence не разрешает crash | Существующий `test_marker_requires_current_process_save_bytes_and_actual_fixture_owner` и остальные отрицательные cases сохранены; полный `rtk proxy ./tools/hatifect-test tools`, `run-dyy_2ve1`, **PASS366**, failures/skips0. |
+| Общая проверка проходит на исправленных исходниках | `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-check`, host run `run-mktjcq83`, **PASS1457 .NET +366 Python**. Все семь actual TRX проверены по counters и индивидуальным Passed outcomes. |
+
+Свежий canonical `hatifect-live-runner smoke flow.chest.crash-after-return` — **PASS15**, request `8d376841-169b-4a7a-86fa-29577f58f57b`,50.405s. Prepare PID29437 подтвердил четыре saves и завершён принадлежащим runner SIGKILL; отдельный resume PID29661 завершился0. В обоих process reports нет teardown errors, result exceptions пусты. Все15 actual host checks Passed. Working copy удалена, два isolated options files восстановлены по bytes/modes. Flow DLL fingerprint остаётся `2f7a0c223f4941373ade08b25f33ec16ee0b3553081e488b53c4dfe55c58731f`: game binaries взяты из предыдущей принятой alpha.43 поставки, а Python harness использует исправление. `ci-race-source.json` связывает четыре точных postimages с последующим commit3043c67; запуск выполнялся на этих изменениях поверх HEADdc79fc7. `ci-race-audit.json` содержит source/TRX/runtime hashes и проверку timestamp ordering.
+
+Перед этим запросом прежний idle supervisor отказался загружать worker: source digest изменился между его вычислением и загрузкой исходников. Worker log содержит точный `Worker source digest does not match the supervisor launch contract.` Диагностика сохранена в `ci-race-executor-fault.json` / `ci-race-executor-worker14.log`; протокол не менялся. Проверенный supervisor29126 без active request и worker штатно завершён SIGTERM, затем канонический `rtk proxy ./tools/hatifect-runtime-executor serve` создал supervisor29043 / worker29051 и подтвердил Ready. Lock не удалялся; процессы других worktree не затронуты.
+
+Повторный source/caller/diff review GQ не выявил открытых замечаний в этом исправлении. G/P и VISUAL/PERF product baseline выше сохраняют прежнюю точную привязку: они не объявляются новыми прогонами Python correction. Следующий шаг — завершить CI новой публикации и затем интегрировать immutable alpha.44; полные U03/Q01 остаются IN_PROGRESS.
