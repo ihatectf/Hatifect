@@ -43,14 +43,15 @@ internal sealed class UiSurfaceObservationState
             Array.Empty<UiSemanticSurfaceElement>(), Array.Empty<UiSemanticSurfaceText>(), false, false);
     }
 
-    internal UiSemanticSurfaceSnapshot Capture(UiHostRuntimeSession runtime, UiEnvironment environment, bool visible,
-        int unobservedPortalCount = 0)
+    internal UiSemanticSurfaceSnapshot Capture(UiPortalHostSession host, UiEnvironment environment, bool visible)
     {
         RequireOwner();
         if (_retired is not null) return _retired;
-        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(host);
+        UiHostRuntimeSession runtime = host.Root;
         runtime.RequireOwner();
         if (!runtime.IsActive) return Retire();
+        int unobservedPortalCount = host.ActivePortalCount;
         bool truncated = false;
         bool unmapped = false;
         var origins = new Dictionary<UiSymbolId, (UiSymbolId? Semantic, UiSymbolId? Action)>();

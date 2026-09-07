@@ -5,6 +5,7 @@ using System.Threading;
 using Hatifect.UI.Experience;
 using Hatifect.UI.Runtime.Diagnostics;
 using Hatifect.UI.Runtime.Invocation;
+using Hatifect.UI.Runtime.Hosting;
 using Hatifect.UI.Runtime.Layout;
 using Hatifect.UI.Runtime.Platform;
 using Hatifect.UI.Runtime.Registration;
@@ -206,11 +207,70 @@ public sealed class SurfaceObservationTests
         using var fixture = new Fixture();
         fixture.Source.Text = new string('x', length);
         fixture.Refresh();
-        UiSemanticSurfaceSnapshot snapshot = fixture.Observation.Capture(fixture.Runtime, fixture.Environment, true, 2);
+        using var first = fixture.PresentPortal(0);
+        using var second = fixture.PresentPortal(1);
+        UiSemanticSurfaceSnapshot snapshot = fixture.Capture();
         Assert.Equal(truncated, snapshot.Truncated);
         Assert.Equal(new string('x', Math.Min(length, 4096)),
             Assert.Single(snapshot.Elements, row => row.SemanticId == fixture.Status).Value);
         Assert.Equal(2, snapshot.UnobservedPortalCount);
+    }
+
+    [Fact]
+    public void CapturingRootDoesNotAllocatePerUnobservedPortal()
+    {
+        using var fixture = new Fixture();
+        UiSemanticSurfaceSnapshot before = fixture.Capture();
+        long emptyBytes = CaptureBytes(fixture);
+        var handles = Enumerable.Range(0, 128).Select(index => fixture.PresentPortal(index)).ToArray();
+        int reads = fixture.Source.Reads;
+        fixture.Source.Reject = fixture.RejectAvailability = true;
+        long populatedBytes = CaptureBytes(fixture);
+        UiSemanticSurfaceSnapshot populated = fixture.Capture();
+        Assert.Equal(128, populated.UnobservedPortalCount);
+        Assert.Equal(before.Elements, populated.Elements);
+        Assert.Equal(before.Texts, populated.Texts);
+        Assert.Equal(reads, fixture.Source.Reads);
+        Assert.Equal(emptyBytes, populatedBytes);
+        foreach (var handle in handles) handle.Dispose();
+        Assert.Equal(0, fixture.Capture().UnobservedPortalCount);
+    }
+
+    [Fact]
+    public void RealPortalCountTracksClosureAndHostRetirementAndRejectsForeignThread()
+    {
+        using var fixture = new Fixture();
+        using var first = fixture.PresentPortal(0);
+        using var second = fixture.PresentPortal(1);
+        Assert.Equal(2, fixture.Capture().UnobservedPortalCount);
+        first.Dispose();
+        Assert.Equal(1, fixture.Capture().UnobservedPortalCount);
+        Exception? failure = null;
+        Exception? countFailure = null;
+        var thread = new Thread(() =>
+        {
+            failure = Record.Exception(() => fixture.Capture());
+            countFailure = Record.Exception(() => fixture.Host.ActivePortalCount);
+        });
+        thread.Start();
+        thread.Join();
+        Assert.IsType<InvalidOperationException>(failure);
+        Assert.IsType<InvalidOperationException>(countFailure);
+        fixture.Host.Deactivate();
+        Assert.Equal(0, fixture.Host.ActivePortalCount);
+        UiSemanticSurfaceSnapshot retired = fixture.Capture();
+        Assert.True(retired.Retired);
+        Assert.Equal(0, retired.UnobservedPortalCount);
+        Assert.Empty(retired.Texts);
+        Assert.Empty(retired.Elements);
+    }
+
+    private static long CaptureBytes(Fixture fixture)
+    {
+        for (int i = 0; i < 32; i++) fixture.Capture();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 32; i++) fixture.Capture();
+        return GC.GetAllocatedBytesForCurrentThread() - before;
     }
 
     private sealed class Fixture : IDisposable
@@ -223,7 +283,8 @@ public sealed class SurfaceObservationTests
         internal readonly UiEnvironment Environment = new(new(960, 700), 1, UiInputMode.MouseKeyboard, "en", UiThemePresets.Dark().Id);
         internal readonly UiExperienceDefinition Experience;
         internal readonly UiActionDefinition Action;
-        internal readonly UiHostRuntimeSession Runtime;
+        internal readonly UiPortalHostSession Host;
+        internal UiHostRuntimeSession Runtime => Host.Root;
         private readonly UiInvocationResult _invocation;
         private readonly UiSceneComposer _composer;
         internal bool Enabled = true;
@@ -242,13 +303,25 @@ public sealed class SurfaceObservationTests
             var registry = new UiRegistryBuilder().Window(Id, Experience.DisplayName, () => Experience).Freeze();
             _invocation = new UiInvocationService(registry).InvokeInEnvironment(Id, Environment);
             _composer = new UiSceneComposer(UiThemePresets.Dark(), registry);
-            Runtime = new UiHostRuntimeSession(Compose(), Viewport, Platform);
+            Host = new UiPortalHostSession(Compose(), new UiHostPlacementContext(Viewport), Platform);
         }
         internal UiScene Compose() => _composer.Compose(_invocation, locale: Environment.Locale);
         internal void Refresh() => Runtime.Update(Compose(), Viewport);
-        internal UiSemanticSurfaceSnapshot Capture() => Observation.Capture(Runtime, Environment, true);
+        internal UiSemanticSurfaceSnapshot Capture() => Observation.Capture(Host, Environment, true);
         internal void Draw() { Runtime.Render(); Observation.CompleteRender(Runtime.LastCompletedRender); }
-        public void Dispose() => Runtime.Deactivate();
+        internal UiPortalHandle PresentPortal(int index)
+        {
+            UiSymbolId id = Id.Child("portal/" + index);
+            var experience = new UiExperienceBuilder(id, "Unobserved portal")
+                .Monitor("Secret", new UiConstantSource<string>("Portal-only content")).Build();
+            var registry = new UiRegistryBuilder().Window(id, experience.DisplayName, () => experience, UiHostPolicies.Popup).Freeze();
+            var scene = new UiSceneComposer(UiThemePresets.Dark(), registry).Compose(
+                new UiInvocationService(registry).InvokeInEnvironment(id, Environment));
+            UiSymbolId owner = Runtime.Scene.Root.Id;
+            return Host.Present(new UiPortalRequest(id, new UiPortalOwner(owner), scene,
+                new UiHostPlacementContext(Viewport, pointer: new UiPoint(200, 200))));
+        }
+        public void Dispose() => Host.Deactivate();
     }
 
     private sealed class Source : IUiSemanticSource<string>

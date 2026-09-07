@@ -96,7 +96,7 @@ internal sealed class UiSemanticStardewOverlaySession : IDisposable
         // synchronization, closing the surface, or invoking consumer callbacks.
         if (Visible && !OwnsCurrentMenuContext())
             throw new InvalidOperationException("The observed overlay no longer owns its native menu context.");
-        return observation.Capture(Host.Session.Root, environment, Visible, Host.Session.Accessibility.Portals.Count);
+        return observation.Capture(Host.Session, environment, Visible);
     }
 
     /// <summary>Optional platform backdrop drawn before the semantic host.</summary>
