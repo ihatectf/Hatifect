@@ -29,7 +29,9 @@ internal sealed record UiLayoutEntry(
     UiRect ContentBounds,
     UiRect Clip,
     UiSize DesiredSize,
-    UiTextOverflow Overflow);
+    UiTextOverflow Overflow,
+    string? Heading = null,
+    UiRect? HeadingBounds = null);
 
 internal sealed class UiLayoutSnapshot
 {
@@ -116,7 +118,7 @@ internal sealed class UiSceneLayoutEngine
         ArgumentNullException.ThrowIfNull(collections);
 
         var measured = new Dictionary<UiSymbolId, MeasuredNode>();
-        Measure(scene.Root, context.Viewport.Width, scene.MeasurementContext, measured);
+        Measure(scene.Root, context.Viewport.Width, scene.MeasurementContext, measured, scene.DisplayName);
         MeasuredNode root = measured[scene.Root.Id];
         UiHostPlacementResult placement = _placement.Place(
             scene.Root.Policy, context, root.Desired, root.Minimum);
@@ -134,7 +136,8 @@ internal sealed class UiSceneLayoutEngine
         UiSceneNode node,
         float availableWidth,
         UiSceneMeasurementContext measurementContext,
-        IDictionary<UiSymbolId, MeasuredNode> measured)
+        IDictionary<UiSymbolId, MeasuredNode> measured,
+        string? hostTitle = null)
     {
         UiThickness inset = Insets(node.Visual);
         float contentWidth = Math.Max(0, availableWidth - inset.Left - inset.Right);
@@ -226,7 +229,7 @@ internal sealed class UiSceneLayoutEngine
                             : line.Width),
                     itemExtent);
         }
-        else if (text != null)
+        else if (text != null && !(node is UiSourceSceneNode && text.Length == 0))
         {
             UiTypography typography = Required<UiTypography>(node.Visual, "typography", node.Id);
             float iconSpace = node is UiRouteButtonSceneNode route ? route.IconSpace : 0;
@@ -255,6 +258,19 @@ internal sealed class UiSceneLayoutEngine
             minimumContent = default;
         }
 
+        // Headings reserve one measured line. Ellipsis keeps that height valid when
+        // host placement narrows the final content box; values retain their wrap policy.
+        string? heading = node is UiHostSceneNode ? hostTitle : Heading(node);
+        float headingHeight = 0;
+        if (!string.IsNullOrEmpty(heading))
+        {
+            UiTypography typography = Required<UiTypography>(node.Visual, "typography", node.Id);
+            UiSize headingSize = _textMetrics.Measure(heading, typography, contentWidth, UiTextOverflow.Ellipsis);
+            headingHeight = headingSize.Height;
+            desiredContent = new UiSize(Math.Max(desiredContent.Width, headingSize.Width), desiredContent.Height + headingHeight);
+            minimumContent = new UiSize(minimumContent.Width, minimumContent.Height + headingHeight);
+        }
+
         UiSize desired = AddInsets(desiredContent, inset);
         UiSize minimum = AddInsets(minimumContent, inset);
         if (IsInteractive(node))
@@ -275,7 +291,9 @@ internal sealed class UiSceneLayoutEngine
             itemExtent,
             itemLineHeight,
             preferredItemWidth,
-            collectionTypography);
+            collectionTypography,
+            heading,
+            headingHeight);
         measured.Add(node.Id, result);
         return result;
     }
@@ -300,7 +318,15 @@ internal sealed class UiSceneLayoutEngine
         if (IsInteractive(node) && (bounds.Width <= 0 || bounds.Height <= 0))
             throw new UiLayoutException($"Interactive node '{node.Id}' resolved to non-positive geometry.");
 
-        entries.Add(node.Id, new UiLayoutEntry(bounds, content, clip, own.Desired, own.Overflow));
+        UiRect? headingBounds = null;
+        if (own.HeadingHeight > 0)
+        {
+            headingBounds = new UiRect(content.X, content.Y, content.Width, own.HeadingHeight);
+            content = new UiRect(content.X, content.Y + own.HeadingHeight,
+                content.Width, Math.Max(0, content.Height - own.HeadingHeight));
+        }
+        entries.Add(node.Id, new UiLayoutEntry(bounds, content, clip, own.Desired, own.Overflow,
+            own.Heading, headingBounds));
         if (node is UiCollectionSceneNode collection)
         {
             collectionWindows.Add(
@@ -668,6 +694,11 @@ internal sealed class UiSceneLayoutEngine
             _ => null
         };
 
+    internal static string? Heading(UiSceneNode node)
+        => node is UiSourceSceneNode source &&
+           source.Kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form
+            ? source.SemanticName : null;
+
     internal static string? RuntimeText(UiSceneNode node)
         => node is UiTextInputSceneNode input ? input.CurrentText : Text(node);
 
@@ -703,5 +734,7 @@ internal sealed class UiSceneLayoutEngine
         float ItemExtent,
         float ItemLineHeight,
         float PreferredItemWidth,
-        UiTypography? CollectionTypography);
+        UiTypography? CollectionTypography,
+        string? Heading = null,
+        float HeadingHeight = 0);
 }

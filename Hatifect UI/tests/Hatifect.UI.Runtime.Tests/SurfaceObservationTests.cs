@@ -40,6 +40,8 @@ public sealed class SurfaceObservationTests
         Assert.Same(fixture.Environment, snapshot.Environment);
         var status = Assert.Single(snapshot.Elements, row => row.SemanticId == fixture.Status);
         Assert.Equal("Status", status.Name);
+        Assert.Contains(snapshot.Texts, row => row.SemanticId == Fixture.Id && row.Text == "Parcel observation");
+        Assert.Contains(snapshot.Texts, row => row.SemanticId == fixture.Status && row.Text == "Status");
         Assert.Equal("Accepted parcel", status.Value);
         Assert.Contains(snapshot.Texts, row => row.SemanticId == fixture.Status && row.Text == "Accepted parcel");
         var action = Assert.Single(snapshot.Elements, row => row.ActionId == fixture.Action.Id);
