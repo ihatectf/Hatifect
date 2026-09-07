@@ -63,6 +63,9 @@ internal sealed class UiSceneReconciler
                     .InvalidationFrom(oldButton.VisualFor(previousActions.CanInvoke(oldButton.Action), interaction));
             if (!string.Equals(UiSceneLayoutEngine.Text(oldNode.Node), UiSceneLayoutEngine.Text(newNode), StringComparison.Ordinal))
                 nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
+            if (!string.Equals(UiSceneLayoutEngine.Heading(oldNode.Node), UiSceneLayoutEngine.Heading(newNode), StringComparison.Ordinal) ||
+                (id == next.Root.Id && !string.Equals(previous.DisplayName, next.DisplayName, StringComparison.Ordinal)))
+                nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
             if (oldNode.Node is UiRouteButtonSceneNode oldRoute && newNode is UiRouteButtonSceneNode newRoute
                 && oldRoute.Icon != newRoute.Icon)
                 nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;

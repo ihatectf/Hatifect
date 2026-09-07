@@ -134,13 +134,20 @@ internal sealed class UiSceneRenderPlanner
                     transform));
             }
 
+            if (entry.Heading is { } heading && entry.HeadingBounds is { } headingBounds &&
+                TryValue(visual, "foreground", out UiColor headingForeground) &&
+                TryValue(visual, "typography", out UiTypography headingTypography))
+                primitives.Add(new UiTextPrimitive(node.Id, headingBounds,
+                    UiRect.Intersect(entry.Clip, headingBounds), heading, headingForeground, headingTypography,
+                    UiTextOverflow.Ellipsis, opacity, transform));
+
             string? text = UiSceneLayoutEngine.RuntimeText(node);
-            if (text != null &&
+            if (text != null && !(node is UiSourceSceneNode && text.Length == 0) &&
                 TryValue(visual, "foreground", out UiColor foreground) &&
                 TryValue(visual, "typography", out UiTypography typography))
             {
                 UiRect textBounds = entry.ContentBounds;
-                UiRect textClip = entry.Clip;
+                UiRect textClip = entry.HeadingBounds is null ? entry.Clip : UiRect.Intersect(entry.Clip, textBounds);
                 UiTextOverflow overflow = entry.Overflow;
                 if (node is UiRouteButtonSceneNode { Icon: { } icon } route)
                 {

@@ -61,6 +61,8 @@ internal abstract class UiSceneNode
     }
 
     public UiSymbolId Id { get; }
+    // Immutable authoring origin; consumers never infer this from renderer node suffixes.
+    internal UiSymbolId? SemanticId { get; init; }
     public UiSceneNodeKind Kind { get; }
     public UiSymbolId Role { get; }
     public UiVisualResolution Visual { get; }

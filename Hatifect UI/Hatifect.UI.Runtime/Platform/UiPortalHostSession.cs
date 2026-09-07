@@ -142,6 +142,14 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession, IUiHostScen
     }
 
     public UiHostRuntimeSession Root { get; }
+    internal int ActivePortalCount
+    {
+        get
+        {
+            Root.RequireOwner();
+            return _portals.Count;
+        }
+    }
     internal bool PumpActions()
     {
         Root.RequireOwner();

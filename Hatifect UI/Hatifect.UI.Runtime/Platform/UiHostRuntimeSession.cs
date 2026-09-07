@@ -99,6 +99,8 @@ internal sealed class UiHostRuntimeSession
     internal UiHostUpdate? LastUpdate { get; private set; }
     internal bool IsActive => _active;
     internal long AcceptedVersion { get; private set; }
+    internal long FrameVersion { get; private set; }
+    internal UiSurfaceRenderStamp LastCompletedRender { get; private set; }
     internal void RequireOwner() => _actions.RequireOwner();
     internal void RequireSceneMutation() => EnsureNotPreparing();
     // No callbacks: portal ownership can fence a whole tree before cancelling any operation.
@@ -139,7 +141,7 @@ internal sealed class UiHostRuntimeSession
                 UiRenderFrame frame = BuildFrame(_scene, Layout, interaction.Snapshot);
                 EnsureActive();
                 Interactions.CommitReconcile(interaction);
-                _frame = frame;
+                AcceptFrame(frame);
                 Accessibility = accessibility;
                 _actionPresentationDirty = false;
                 return true;
@@ -224,7 +226,7 @@ internal sealed class UiHostRuntimeSession
             interaction.SetActionResolver(actions.Map);
             Layout = layout;
             Interactions.CommitReconcile(interaction);
-            _frame = frame;
+            AcceptFrame(frame);
             Accessibility = accessibility;
             _collections = collections;
             _scene = next;
@@ -265,7 +267,7 @@ internal sealed class UiHostRuntimeSession
         Layout = BuildLayout(_scene, _placement);
         _collections.Synchronize(Layout);
         Interactions.Reconcile(_scene, Layout);
-        _frame = BuildFrame(_scene);
+        AcceptFrame(BuildFrame(_scene));
         Accessibility = BuildAccessibility(_scene, Layout, Interactions.Snapshot);
         LastUpdate = new UiHostUpdate(
             LayoutChanged: true,
@@ -334,7 +336,7 @@ internal sealed class UiHostRuntimeSession
         {
             if (textChanged)
                 return RefreshLiveText();
-            _frame = BuildFrame(_scene);
+            AcceptFrame(BuildFrame(_scene));
             Accessibility = BuildAccessibility(_scene, Layout, Interactions.Snapshot);
             UiSymbolId[] changed = Interactions.Snapshot.Focused is { } focused
                 ? new[] { focused }
@@ -362,7 +364,7 @@ internal sealed class UiHostRuntimeSession
         Layout = BuildLayout(_scene, _placement);
         _collections.Synchronize(Layout);
         Interactions.Reconcile(_scene, Layout);
-        _frame = BuildFrame(_scene);
+        AcceptFrame(BuildFrame(_scene));
         Accessibility = BuildAccessibility(_scene, Layout, Interactions.Snapshot);
         UiSymbolId[] changed = Interactions.Snapshot.TextEditing is { } editing
             ? new[] { editing.Input }
@@ -380,7 +382,7 @@ internal sealed class UiHostRuntimeSession
     public UiHostUpdate RefreshTextEditingVisuals()
     {
         EnsureNotPreparing();
-        _frame = BuildFrame(_scene);
+        AcceptFrame(BuildFrame(_scene));
         Accessibility = BuildAccessibility(_scene, Layout, Interactions.Snapshot);
         UiSymbolId[] changed = Interactions.Snapshot.TextEditing is { } editing
             ? new[] { editing.Input }
@@ -395,7 +397,19 @@ internal sealed class UiHostRuntimeSession
 
     public void Render()
     {
-        if (_active) _compositor.Render(_frame, _platform);
+        if (!_active) return;
+        UiRenderFrame frame = _frame;
+        long sceneVersion = AcceptedVersion;
+        long frameVersion = FrameVersion;
+        _compositor.Render(frame, _platform);
+        LastCompletedRender = new(LastCompletedRender.Sequence + 1, sceneVersion, frameVersion);
+    }
+
+    private void AcceptFrame(UiRenderFrame frame)
+    {
+        if (ReferenceEquals(_frame, frame)) return;
+        _frame = frame;
+        FrameVersion++;
     }
 
     private UiLayoutSnapshot BuildLayout(UiScene scene, UiHostPlacementContext placement)

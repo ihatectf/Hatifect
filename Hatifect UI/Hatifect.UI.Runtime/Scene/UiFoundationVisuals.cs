@@ -25,6 +25,7 @@ internal sealed class UiFoundationVisuals
         switch (kind)
         {
             case UiSceneNodeKind.Host:
+                values.Add(Token("typography", UiThemeTokens.TypographyTitle.Id, UiSemanticType.TypographyToken));
                 values.Add(Token("surface", HostSurface(host), UiSemanticType.SurfaceToken));
                 values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
                 values.Add(Token("padding", UiThemeTokens.SpaceL.Id, UiSemanticType.SpaceToken));

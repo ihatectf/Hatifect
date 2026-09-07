@@ -37,5 +37,23 @@
         "Sha256": "9de29d5a7c53964ae192efb4f4f7590e1dc75a64d2fe94605f86dac3861c6335"
       }
     ]
+  },
+  "SurfaceObservation": {
+    "Assembly": "Hatifect.UI.Experience",
+    "Policy": "optional-exact-harness-facet",
+    "PublicTypes": [
+      "IUiSemanticSurfaceObservationApi",
+      "IUiSemanticSurfaceObservation",
+      "UiSemanticSurfaceFrame",
+      "UiSemanticSurfaceElement",
+      "UiSemanticSurfaceText",
+      "UiSemanticSurfaceSnapshot"
+    ],
+    "Files": [
+      {
+        "Path": "Hosting/UiSemanticSurfaceObservation.cs",
+        "Sha256": "bb353b8c9d854358cf624eb5dbc1b18c469aa464d339666a0b759e2ed4964279"
+      }
+    ]
   }
 }
