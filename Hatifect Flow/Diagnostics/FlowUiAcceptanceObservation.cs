@@ -27,11 +27,13 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
     private long _armedRenderPass;
     private string? _ready;
     private Exception? _failure;
+    private FailedFrame? _failedFrame;
     private bool _disposed;
 
     private sealed record Captured(IUiSemanticSurfaceSession Surface, string Name, long Publication,
         UiSemanticSurfaceSnapshot Snapshot, string Json, string Screenshot, string ScreenshotSha256,
         string UiLayer, string UiLayerSha256);
+    private sealed record FailedFrame(string Name, UiSemanticSurfaceSnapshot Snapshot, string? Screenshot, string? UiLayer);
 
     internal FlowUiAcceptanceObservation(IUiSemanticSurfaceObservation observation, string artifact)
     {
@@ -98,9 +100,10 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
     private void CaptureCompletedFrame()
     {
         if (_disposed || _failure is not null || _pending is not { } expected) return;
+        UiSemanticSurfaceSnapshot? observed = null;
         try
         {
-            UiSemanticSurfaceSnapshot actual = _observation.Capture(expected.Surface);
+            UiSemanticSurfaceSnapshot actual = observed = _observation.Capture(expected.Surface);
             Require(actual.InstanceId == _armedInstance, "The armed Flow surface changed its instance identity.");
             if (actual.CompletedRenderPass <= _armedRenderPass) return;
             if (!actual.IsAcceptedFrameRendered || Game1.fadeToBlackAlpha > 0) return;
@@ -136,6 +139,16 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
         catch (Exception error)
         {
             _failure = error;
+            if (observed is not null)
+            {
+                _failedFrame = new(expected.Name, observed, null, null);
+                try
+                {
+                    (string screenshot, string layer) = CapturePixels("failed-" + expected.Name);
+                    _failedFrame = _failedFrame with { Screenshot = screenshot, UiLayer = layer };
+                }
+                catch (Exception capture) { _failure = new AggregateException(error, capture); }
+            }
             try { WriteEvidence(); }
             catch (Exception write) { _failure = new AggregateException(error, write); }
         }
@@ -239,7 +252,7 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
             scenarioId = FlowUiAcceptance.Scenario, captureSource = "completed-composed-back-buffer-and-ui-layer",
             captures = _captures.Select(value => new { value.Name, value.Publication, value.Snapshot,
                 value.Screenshot, value.ScreenshotSha256, value.UiLayer, value.UiLayerSha256 }).ToArray(),
-            retired = _retired.Values.ToArray(), error = _failure?.ToString()
+            retired = _retired.Values.ToArray(), failedFrame = _failedFrame, error = _failure?.ToString()
         });
 
     public void Dispose()

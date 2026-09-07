@@ -41,6 +41,7 @@ internal sealed class FlowUiAcceptance : IDisposable
     private FlowUiAcceptanceWorld? _world;
     private Stage _stage;
     private int _frames, _loads, _titles, _stableFrames;
+    private (int Width, int Height, int UiWidth, int UiHeight)? _readySize;
     private long _publicationBeforeLocale, _publicationBeforeUpdate;
     private float _requestedScale;
     private bool _requestedController;
@@ -53,7 +54,7 @@ internal sealed class FlowUiAcceptance : IDisposable
     private bool _originalGamepad;
     private Options.GamepadModes _originalGamepadMode;
 
-    private enum Stage { Startup, Loading, EmptyEnglish, EmptyRussian, Missing, CargoRussian, CargoEnglish,
+    private enum Stage { Startup, Loading, AwaitNativeReady, EmptyEnglish, EmptyRussian, Missing, CargoRussian, CargoEnglish,
         Scale75, Scale100, Scale125, Scale150, Controller, Paused, Recovery, Resumed, Updated,
         Faulted, Closed, Retry, BeforeReturn, Returning, Reload, ReopenedWorld, Final, Exit }
 
@@ -150,13 +151,37 @@ internal sealed class FlowUiAcceptance : IDisposable
         _loads++;
         _world = new FlowUiAcceptanceWorld(index == 1);
         _worlds.Add(_world);
+        _readySize = null;
+        _stage = Stage.AwaitNativeReady;
+        _passed.Add("loaded");
+    }
+
+    private bool NativeWorldReady()
+    {
+        // Initial native window normalization may reconstruct an exact GameMenu. Wait for
+        // consecutive settled post-load ticks before binding the overlay to its menu owner.
+        if (!Context.IsWorldReady || Game1.gameMode != 3 || Game1.gameModeTicks <= 1 || Game1.fadeToBlackAlpha > 0)
+        { _readySize = null; return false; }
+        var bounds = Game1.game1.Window.ClientBounds;
+        var size = (bounds.Width, bounds.Height, Game1.uiViewport.Width, Game1.uiViewport.Height);
+        if (size.Item1 <= 0 || size.Item2 <= 0 || size.Item3 <= 0 || size.Item4 <= 0)
+        { _readySize = null; return false; }
+        bool settled = _readySize == size;
+        _readySize = size;
+        return settled;
+    }
+
+    private void BeginWorldView()
+    {
         CaptureSettings();
-        SetEnvironment(false, 1, false);
         Game1.activeClickableMenu = new GameMenu();
+        // Native OptionsPage construction reloads gamepadMode from StartupPreferences.
+        // Apply the owned test profile after that constructor, preserving the pre-menu lease.
+        SetEnvironment(false, 1, false);
         if (_loads == 1) { Open(null); _stage = Stage.EmptyEnglish; }
         else
         {
-            _world.Seed();
+            _world!.Seed();
             Open(_world.Parcel);
             foreach (FlowUiAcceptanceWorld prior in _worlds.Take(_worlds.Count - 1))
             {
@@ -169,7 +194,6 @@ internal sealed class FlowUiAcceptance : IDisposable
             }
             _stage = Stage.ReopenedWorld;
         }
-        _passed.Add("loaded");
     }
 
     internal void Tick()
@@ -187,6 +211,9 @@ internal sealed class FlowUiAcceptance : IDisposable
                     _stage = Stage.Loading;
                     SaveGame.Load(Path.GetFileName(SavePath(_loads == 1 ? 1 : 0)));
                     Game1.exitActiveMenu();
+                    break;
+                case Stage.AwaitNativeReady:
+                    if (NativeWorldReady()) BeginWorldView();
                     break;
                 case Stage.EmptyEnglish:
                     if (!Observe("empty-en", false, "", "", "No shipment selected", "Select a shipment to inspect")) break;
@@ -333,10 +360,11 @@ internal sealed class FlowUiAcceptance : IDisposable
     {
         var view = _view!;
         if (view.Renders == 0 || Game1.fadeToBlackAlpha > 0 || Game1.options.uiScale != _requestedScale) return false;
-        Require(Game1.options.desiredUIScale == _requestedScale && Game1.options.gamepadControls == _requestedController
-            && Game1.options.gamepadMode == (_requestedController ? Options.GamepadModes.ForceOn : Options.GamepadModes.ForceOff)
-            && LocalizedContentManager.CurrentLanguageCode == (russian ? LocalizedContentManager.LanguageCode.ru : LocalizedContentManager.LanguageCode.en),
-            "The driver's requested environment is no longer active.");
+        if (Game1.options.desiredUIScale != _requestedScale || Game1.options.gamepadControls != _requestedController
+            || Game1.options.gamepadMode != (_requestedController ? Options.GamepadModes.ForceOn : Options.GamepadModes.ForceOff)
+            || LocalizedContentManager.CurrentLanguageCode != (russian ? LocalizedContentManager.LanguageCode.ru : LocalizedContentManager.LanguageCode.en))
+            throw new InvalidOperationException(FormattableString.Invariant(
+                $"The driver's requested environment is no longer active at {name}: requested scale={_requestedScale}, controller={_requestedController}, russian={russian}; actual base={Game1.options.baseUIScale}, desired={Game1.options.desiredUIScale}, applied={Game1.options.uiScale}, controller={Game1.options.gamepadControls}, mode={Game1.options.gamepadMode}, language={LocalizedContentManager.CurrentLanguageCode}, sameOptions={ReferenceEquals(_originalOptions, Game1.options)}."));
         Require(view.Surface.Visible && view.Experience.IsActive && view.World.Subscribers == 1, "The current Flow view retired prematurely.");
         Require(view.Sources.SequenceEqual(view.Experience.Experience.Elements.Select(element => element.Source))
             && view.Actions.SequenceEqual(view.Experience.Experience.Actions), "The retained experience replaced source/action identity.");
