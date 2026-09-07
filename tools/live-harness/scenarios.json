@@ -804,6 +804,38 @@
         "protocolVersion": 1,
         "driver": "Hatifect.TestHarness"
       }
+    },
+    {
+      "id": "flow.ui.isolation",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 420,
+      "includeInAll": false,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.isolation.loaded",
+        "flow.ui.isolation.empty",
+        "flow.ui.isolation.missing",
+        "flow.ui.isolation.publication",
+        "flow.ui.isolation.locale",
+        "flow.ui.isolation.scale",
+        "flow.ui.isolation.controller-profile",
+        "flow.ui.isolation.unavailable",
+        "flow.ui.isolation.faulted",
+        "flow.ui.isolation.close",
+        "flow.ui.isolation.unsubscribe-retry",
+        "flow.ui.isolation.save-isolation",
+        "flow.ui.isolation.retired-handles",
+        "flow.ui.isolation.restored",
+        "flow.ui.isolation.read-only"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
     }
   ]
 }

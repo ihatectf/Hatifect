@@ -402,9 +402,9 @@ def _is_acceptance_storage(document: Any) -> bool:
 
 def _working_name(run_id: str, scenario_id: str = "", *, role: str = "primary") -> str:
     token = uuid.UUID(_canonical_run_id(run_id)).hex
-    if role not in ("primary", "secondary") or (role == "secondary" and scenario_id not in ("flow.chest.isolation", "semantic.actions.save-switch")):
+    if role not in ("primary", "secondary") or (role == "secondary" and scenario_id not in ("flow.chest.isolation", "semantic.actions.save-switch", "flow.ui.isolation")):
         raise SaveProvisioningError("HARNESS-SAVE-PATH", "Secondary role needs an exact world-switch scenario.")
-    if scenario_id in ("flow.chest.isolation", "semantic.actions.save-switch"):
+    if scenario_id in ("flow.chest.isolation", "semantic.actions.save-switch", "flow.ui.isolation"):
         return f"HatifectHarness{token}_{4242424243 if role == 'secondary' else 4242424242}"
     # Stardew loads the base before '_' and saves base + '_' + world identity.
     return f"HatifectHarness{token}_4242424242" if scenario_id in {"flow.chest.roundtrip", "flow.chest.crash-after-save", "flow.chest.crash-after-delivery", "flow.chest.crash-after-unsaved-extraction", "flow.chest.crash-after-unsaved-delivery", "flow.chest.cancellation", "flow.chest.return", "flow.chest.crash-after-return", "flow.chest.performance", "flow.chest.resources"} else f"HatifectHarness_{token}"
@@ -577,7 +577,7 @@ def _reseed_flow_secondary(isolated_root: Path, save: Path, runtime_id: str, run
 
 
 def prepare_secondary(isolated_root: Path, smapi_path: Path, parent_run_id: str, scenario_id: str) -> Path:
-    if scenario_id not in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch"):
+    if scenario_id not in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch", "flow.ui.isolation"):
         raise SaveProvisioningError("HARNESS-SAVE-PATH", "Secondary preparation needs an exact isolation scenario.")
     role = "primary" if scenario_id == "flow.save.isolation" else "secondary"
     run_id = secondary_run_id(parent_run_id)

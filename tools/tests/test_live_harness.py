@@ -655,6 +655,19 @@ class LiveHarnessTests(unittest.TestCase):
                     HARNESS.validate_report(resolved, report, started_at=0)
                 check["Passed"] = True
 
+    def test_flow_ui_isolation_requires_exact_lifecycle_checks_and_both_mods(self) -> None:
+        resolved = HARNESS.resolve_scenario(self.scenarios, "flow.ui.isolation", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.UI", "Hatifect.Flow"])
+        self.assertEqual(resolved["timeoutSeconds"], 420)
+        self.assertFalse(self.scenarios["flow.ui.isolation"]["includeInAll"])
+        self.assertNotIn("flow.ui.isolation", self.scenarios["all"]["includes"])
+        self.assertEqual(resolved["checks"], ["flow.ui.isolation." + suffix for suffix in (
+            "loaded", "empty", "missing", "publication", "locale", "scale", "controller-profile",
+            "unavailable", "faulted", "close", "unsubscribe-retry", "save-isolation", "retired-handles",
+            "restored", "read-only")])
+        self._verify_each_flow_check_is_required(resolved)
+
     def test_save_isolation_preserves_lifecycle_checks_and_requires_separate_save_check(self) -> None:
         resolved = HARNESS.resolve_scenario(self.scenarios, "flow.save.isolation", "smoke")
         self.assertTrue(resolved["requiresSave"])

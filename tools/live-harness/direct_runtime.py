@@ -756,7 +756,7 @@ def _minimal_environment(request: dict[str, Any], metadata: dict[str, Any]) -> d
     )
     if request["savePath"] is not None:
         environment["HATIFECT_SMAPI_TEST_SAVE"] = request["savePath"]
-        if request["scenarioId"] in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch"):
+        if request["scenarioId"] in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch", "flow.ui.isolation"):
             provisioner = _load_module(
                 "hatifect_direct_runtime_companion_environment",
                 Path(metadata["saveProvisionerExecutable"]),
@@ -879,7 +879,7 @@ def _complete_save_lifecycle(
             "fixtureRuntimeId": fixture["runtimeId"],
             "completedAtUtc": _timestamp(),
         }
-        if request["scenarioId"] in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch"):
+        if request["scenarioId"] in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch", "flow.ui.isolation"):
             evidence["workingCopies"] = [{"runId": run_id, "savePath": str(path), "role": role, "status": "PASS"} for path, run_id, role in copies]
     elif request["scenarioId"] == "save.bootstrap" and process_succeeded and report_exists:
         provisioner = _load_module(
@@ -918,7 +918,7 @@ def _request_save_copies(request: dict[str, Any], provisioner) -> list[tuple[Pat
     primary = Path(request["savePath"])
     copies = [(primary, request["requestId"], "primary")]
     scenario = request["scenarioId"]
-    if scenario in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch"):
+    if scenario in ("flow.save.isolation", "flow.chest.isolation", "semantic.actions.save-switch", "flow.ui.isolation"):
         secondary_id = provisioner.secondary_run_id(request["requestId"])
         role = "primary" if scenario == "flow.save.isolation" else "secondary"
         secondary = primary.parent / provisioner._working_name(secondary_id, scenario, role=role)
@@ -982,7 +982,7 @@ def _prepared_request_saves(request: dict[str, Any], metadata: dict[str, Any]):
 def _acceptance_report_source(isolated: Path, scenario_id: str) -> Path:
     # Fixed ownership for the allowlisted asynchronous Flow lifecycle scenario.
     # The request cannot supply an arbitrary report path or module name.
-    module = "Hatifect Flow" if scenario_id in {"flow.ui.names", "flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip", "flow.chest.cancellation", "flow.chest.return", "flow.chest.isolation", "flow.chest.performance", "flow.chest.resources", *SAVED_CRASH_BOUNDARIES} else "Hatifect UI"
+    module = "Hatifect Flow" if scenario_id in {"flow.ui.isolation", "flow.ui.names", "flow.route.basic", "flow.save.isolation", "flow.chest.roundtrip", "flow.chest.cancellation", "flow.chest.return", "flow.chest.isolation", "flow.chest.performance", "flow.chest.resources", *SAVED_CRASH_BOUNDARIES} else "Hatifect UI"
     return isolated / "Mods" / "Hatifect" / module / ".acceptance" / "host-acceptance-report.json"
 
 

@@ -228,7 +228,9 @@ class DirectRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(DIRECT_RUNTIME._acceptance_report_source(isolated, 'flow.chest.roundtrip'),
                          isolated / 'Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json')
-        for scenario in ("runtime.boot", "semantic.terminal", "flow.route.unknown", "flow.ui.names.extra", "../escape"):
+        self.assertEqual(DIRECT_RUNTIME._acceptance_report_source(isolated, "flow.ui.isolation"),
+                         isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")
+        for scenario in ("runtime.boot", "semantic.terminal", "flow.route.unknown", "flow.ui.names.extra", "flow.ui.isolation.extra", "../escape"):
             with self.subTest(scenario=scenario):
                 self.assertEqual(
                     DIRECT_RUNTIME._acceptance_report_source(isolated, scenario),
@@ -257,8 +259,8 @@ class DirectRuntimeTests(unittest.TestCase):
             provisioner.cleanup_working_copy.assert_called_once_with(
                 isolated, path, "runtime", fixture.request["requestId"], scenario, role="primary")
 
-    def _ui_save_switch_provisioner(self, fixture):
-        fixture.request["scenarioId"] = "semantic.actions.save-switch"
+    def _world_switch_provisioner(self, fixture, scenario):
+        fixture.request["scenarioId"] = scenario
         isolated = Path(fixture.request["isolatedRoot"])
         primary, secondary = isolated / "primary", isolated / "secondary"
         primary.mkdir()
@@ -275,8 +277,14 @@ class DirectRuntimeTests(unittest.TestCase):
         return provisioner, primary, secondary
 
     def test_ui_save_switch_environment_derives_companion_without_mutating_request(self) -> None:
+        self._assert_world_switch_environment_derives_companion_without_mutating_request("semantic.actions.save-switch")
+
+    def test_flow_ui_isolation_environment_derives_companion_without_mutating_request(self) -> None:
+        self._assert_world_switch_environment_derives_companion_without_mutating_request("flow.ui.isolation")
+
+    def _assert_world_switch_environment_derives_companion_without_mutating_request(self, scenario):
         with _RequestFixture() as fixture:
-            provisioner, primary, secondary = self._ui_save_switch_provisioner(fixture)
+            provisioner, primary, secondary = self._world_switch_provisioner(fixture, scenario)
             before = dict(fixture.request)
             with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner), mock.patch.dict(
                 os.environ, {"HATIFECT_SMAPI_TEST_SECONDARY_SAVE": "/foreign", "HATIFECT_TEST_SECONDARY_RUN_ID": "foreign"}
@@ -287,12 +295,18 @@ class DirectRuntimeTests(unittest.TestCase):
             self.assertEqual(environment["HATIFECT_SMAPI_TEST_SAVE"], str(primary))
             self.assertEqual(environment["HATIFECT_TEST_RUN_ID"], before["requestId"])
             self.assertEqual(fixture.request, before)
-            provisioner._working_name.assert_called_once_with("secondary-id", "semantic.actions.save-switch", role="secondary")
+            provisioner._working_name.assert_called_once_with("secondary-id", scenario, role="secondary")
             provisioner.prepare_secondary.assert_not_called()
 
     def test_ui_save_switch_preparation_collision_preserves_foreign_secondary(self) -> None:
+        self._assert_world_switch_preparation_collision_preserves_foreign_secondary("semantic.actions.save-switch")
+
+    def test_flow_ui_isolation_preparation_collision_preserves_foreign_secondary(self) -> None:
+        self._assert_world_switch_preparation_collision_preserves_foreign_secondary("flow.ui.isolation")
+
+    def _assert_world_switch_preparation_collision_preserves_foreign_secondary(self, scenario):
         with _RequestFixture() as fixture:
-            provisioner, primary, secondary = self._ui_save_switch_provisioner(fixture)
+            provisioner, primary, secondary = self._world_switch_provisioner(fixture, scenario)
             (secondary / "foreign").write_text("preserve")
             provisioner.prepare_secondary.side_effect = ValueError("foreign secondary collision")
             with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
@@ -302,12 +316,18 @@ class DirectRuntimeTests(unittest.TestCase):
             self.assertEqual((secondary / "foreign").read_text(), "preserve")
             provisioner.cleanup_working_copy.assert_called_once_with(
                 Path(fixture.request["isolatedRoot"]), primary, "runtime", fixture.request["requestId"],
-                "semantic.actions.save-switch", role="primary")
+                scenario, role="primary")
 
     def test_ui_save_switch_cleans_both_owned_roles_on_launch_failure_and_success(self) -> None:
+        self._assert_world_switch_cleans_both_owned_roles_on_launch_failure_and_success("semantic.actions.save-switch")
+
+    def test_flow_ui_isolation_cleans_both_owned_roles_on_launch_failure_and_success(self) -> None:
+        self._assert_world_switch_cleans_both_owned_roles_on_launch_failure_and_success("flow.ui.isolation")
+
+    def _assert_world_switch_cleans_both_owned_roles_on_launch_failure_and_success(self, scenario):
         for fail_launch in (True, False):
             with self.subTest(fail_launch=fail_launch), _RequestFixture() as fixture:
-                provisioner, primary, secondary = self._ui_save_switch_provisioner(fixture)
+                provisioner, primary, secondary = self._world_switch_provisioner(fixture, scenario)
                 def run():
                     with DIRECT_RUNTIME._prepared_request_saves(fixture.request, fixture.metadata):
                         self.assertTrue(primary.exists())
@@ -326,10 +346,10 @@ class DirectRuntimeTests(unittest.TestCase):
                 self.assertFalse(secondary.exists())
                 isolated = Path(fixture.request["isolatedRoot"])
                 self.assertEqual(provisioner.cleanup_working_copy.call_args_list, [
-                    mock.call(isolated, primary, "runtime", fixture.request["requestId"], "semantic.actions.save-switch", role="primary"),
-                    mock.call(isolated, secondary, "runtime", "secondary-id", "semantic.actions.save-switch", role="secondary")])
+                    mock.call(isolated, primary, "runtime", fixture.request["requestId"], scenario, role="primary"),
+                    mock.call(isolated, secondary, "runtime", "secondary-id", scenario, role="secondary")])
                 provisioner.prepare_secondary.assert_called_once_with(isolated, Path(fixture.metadata["smapiPath"]),
-                                                                       fixture.request["requestId"], "semantic.actions.save-switch")
+                                                                       fixture.request["requestId"], scenario)
                 if not fail_launch:
                     evidence = json.loads((Path(fixture.request["artifactDirectory"]) / "diagnostics/save-provisioning.json").read_text())
                     self.assertEqual(evidence["workingCopies"], [

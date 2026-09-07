@@ -115,6 +115,9 @@ class SaveProvisioningTests(unittest.TestCase):
     def test_ui_save_switch_derives_owned_world_and_preserves_primary_and_golden(self) -> None:
         self._assert_isolation_copies("semantic.actions.save-switch", SAVE.prepare_secondary)
 
+    def test_flow_ui_isolation_derives_owned_world_and_preserves_primary_and_golden(self) -> None:
+        self._assert_isolation_copies("flow.ui.isolation", SAVE.prepare_secondary)
+
     def test_production_isolation_derives_two_world_names_and_preserves_every_other_byte(self) -> None:
         self._assert_isolation_copies("flow.chest.isolation", SAVE.prepare_flow_secondary)
 
@@ -151,6 +154,9 @@ class SaveProvisioningTests(unittest.TestCase):
     def test_ui_save_switch_reseed_failure_and_collision_release_only_acquired_copy(self) -> None:
         self._assert_secondary_failure_ownership("semantic.actions.save-switch", SAVE.prepare_secondary)
 
+    def test_flow_ui_isolation_reseed_failure_and_collision_release_only_acquired_copy(self) -> None:
+        self._assert_secondary_failure_ownership("flow.ui.isolation", SAVE.prepare_secondary)
+
     def test_production_secondary_collision_and_invalid_xml_preserve_existing_paths(self) -> None:
         self._assert_secondary_failure_ownership("flow.chest.isolation", SAVE.prepare_flow_secondary)
 
@@ -177,7 +183,7 @@ class SaveProvisioningTests(unittest.TestCase):
     def test_secondary_preparation_rejects_unadmitted_scenarios_before_copying(self) -> None:
         self._bootstrap()
         run_id = str(uuid.uuid4())
-        for scenario in ("", "semantic.actions.reload", "semantic.actions.save-switch.extra", "flow.ui.isolation"):
+        for scenario in ("", "semantic.actions.reload", "semantic.actions.save-switch.extra", "flow.ui.isolation.extra"):
             with self.subTest(scenario=scenario), mock.patch.object(SAVE, "prepare_working_copy") as prepare:
                 with self.assertRaises(SAVE.SaveProvisioningError) as caught:
                     SAVE.prepare_secondary(self.isolated, self.smapi, run_id, scenario)
