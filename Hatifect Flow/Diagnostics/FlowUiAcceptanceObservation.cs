@@ -150,7 +150,7 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
                 catch (Exception capture) { _failure = new AggregateException(error, capture); }
             }
             try { WriteEvidence(); }
-            catch (Exception write) { _failure = new AggregateException(error, write); }
+            catch (Exception write) { _failure = new AggregateException(_failure ?? error, write); }
         }
     }
 
