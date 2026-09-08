@@ -31,6 +31,8 @@ Flow UI подтверждает diagnostic fake-session lifecycle и выбра
 
 [U04 owner-приёмка](U04_ACCEPTANCE.md) на source `04def9e` завершена и независимо проверена по восстановленным raw C/G/P/Planning/native evidence. Это закрывает исходный U04; общая alpha47 integration acceptance, U03 и физический ввод остаются отдельными незавершёнными требованиями.
 
+[Исходный F12](F12_ACCEPTANCE.md) завершён на общем08ecdb9: независимый requirement audit подтвердил все его C/F/U/G/P/runtime условия и product requirements. U03, Q01 и публикация общей alpha47 продолжаются.
+
 Далее сохранена история предыдущих checkpoints. Их PENDING/FAIL/PASS относятся к указанным source и не заменяют текущую таблицу.
 
 ## Состав и владение
