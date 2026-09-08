@@ -5,6 +5,7 @@ namespace Hatifect.UI.Experience;
 /// <summary>Immutable display text with exact, ordinal locale matching and an explicit fallback.</summary>
 public sealed class UiLocalizedText
 {
+    private readonly Dictionary<string, string> _translations;
     public UiLocalizedText(string fallback, IEnumerable<KeyValuePair<string, string>> translations)
     {
         if (string.IsNullOrWhiteSpace(fallback)) throw new ArgumentException("A fallback label is required.", nameof(fallback));
@@ -17,6 +18,7 @@ public sealed class UiLocalizedText
             if (!copy.TryAdd(translation.Key, translation.Value))
                 throw new ArgumentException($"Duplicate translation locale '{translation.Key}'.", nameof(translations));
         }
+        _translations = copy;
         Fallback = fallback;
         Translations = new ReadOnlyDictionary<string, string>(copy);
     }
@@ -24,11 +26,21 @@ public sealed class UiLocalizedText
     public string Fallback { get; }
     public IReadOnlyDictionary<string, string> Translations { get; }
 
+    internal bool HasSameContent(UiLocalizedText other)
+    {
+        if (ReferenceEquals(this, other)) return true;
+        if (Fallback != other.Fallback || _translations.Count != other._translations.Count) return false;
+        // Use the owned concrete map so repeated eligibility comparison does not box an enumerator.
+        foreach (var pair in _translations)
+            if (!other._translations.TryGetValue(pair.Key, out string? value) || pair.Value != value) return false;
+        return true;
+    }
+
     /// <summary>No parent-culture inference is performed; an unknown or invariant locale uses Fallback.</summary>
     public string Resolve(string locale)
     {
         ArgumentNullException.ThrowIfNull(locale);
-        return Translations.TryGetValue(locale, out string? value) ? value : Fallback;
+        return _translations.TryGetValue(locale, out string? value) ? value : Fallback;
     }
 }
 

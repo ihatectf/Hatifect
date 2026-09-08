@@ -29,7 +29,7 @@ internal enum UiSemanticStardewOverlayRenderLayer
 /// Provisional SMAPI lifecycle owner for one semantic Overlay host. Runtime retains scene, layout,
 /// input, focus, dismissal, and render policy; this owner only binds SMAPI events and resources.
 /// </summary>
-internal sealed class UiSemanticStardewOverlaySession : IDisposable
+internal sealed partial class UiSemanticStardewOverlaySession : IDisposable
 {
     private UiSemanticStardewRuntime? _runtime;
     private readonly IModHelper _helper;

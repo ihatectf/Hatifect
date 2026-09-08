@@ -15,7 +15,7 @@ using Xunit;
 
 namespace Hatifect.UI.Runtime.Tests;
 
-public sealed class ActionBindingTests
+public sealed partial class ActionBindingTests
 {
     [Fact]
     public void SharedDescriptionHasIndependentHostStateAndOwningThreadCompletions()
@@ -436,12 +436,16 @@ public sealed class ActionBindingTests
             Assert.Same(error, Assert.Throws<InvalidOperationException>(() => host.PumpActions()));
             Assert.Same(frame, host.Frame);
             Assert.Same(accessibility, host.Accessibility);
+            Assert.Null(FindAccessibility(host, definition).Value);
+            Assert.DoesNotContain(host.Frame.Primitives.OfType<UiTextPrimitive>(), p => p.Text == "Select a target.");
             Assert.False(host.Actions.CanInvoke(definition));
 
             platform.OnMeasure = null;
             Assert.True(host.PumpActions());
             Assert.NotSame(frame, host.Frame);
             Assert.False(FindAccessibility(host, definition).Enabled);
+            Assert.Equal("Select a target.", FindAccessibility(host, definition).Value);
+            Assert.Contains(host.Frame.Primitives.OfType<UiTextPrimitive>(), p => p.Text == "Select a target.");
             Assert.NotEqual(enabledSurface.Opacity, ButtonSurface(host, definition).Opacity);
             Assert.False(host.PumpActions());
         }

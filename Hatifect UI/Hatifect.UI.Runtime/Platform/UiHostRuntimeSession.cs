@@ -45,6 +45,7 @@ internal sealed class UiHostRuntimeSession
     private UiScene _scene;
     private UiHostPlacementContext _placement;
     private UiRenderFrame _frame;
+    private UiActionPresentationSnapshot _actionPresentation = null!;
     private long _layoutBuilds;
     private long _frameBuilds;
     private bool _preparingUpdate;
@@ -82,8 +83,12 @@ internal sealed class UiHostRuntimeSession
             Layout = BuildLayout(scene, placement);
             _collections.Synchronize(Layout);
             Interactions = new UiInteractionSession(scene, Layout, interaction, platform, CaptureInputOwnerVersion, actions.Resolver);
-            Accessibility = BuildAccessibility(scene, Layout, Interactions.Snapshot, actions.Resolver);
-            _frame = BuildFrame(scene, Layout, Interactions.Snapshot, actions.Map);
+            _actionPresentation = actions.Map.CapturePresentation(scene.MeasurementContext.Locale, actions.Resolver);
+            if (actions.Map.HasLegacyBindings)
+                Interactions.CommitReconcile(Interactions.PrepareReconcile(scene, Layout, _actionPresentation));
+            Accessibility = BuildAccessibility(scene, Layout, Interactions.Snapshot, _actionPresentation);
+            _frame = BuildFrame(scene, Layout, Interactions.Snapshot, _actionPresentation);
+            _actionPresentation.RequireCurrent(actions.Map, scene.MeasurementContext.Locale);
             actions.Commit();
             Interactions.SetActionResolver(actions.Map);
         }
@@ -137,12 +142,15 @@ internal sealed class UiHostRuntimeSession
                 // Availability/execution may already have advanced. Retain the presentation
                 // debt until all callback-bearing preparation succeeds, just like scene Update.
                 UiInteractionSession interaction = Interactions.PrepareReconcile(_scene, Layout);
-                UiAccessibilitySnapshot accessibility = BuildAccessibility(_scene, Layout, interaction.Snapshot);
-                UiRenderFrame frame = BuildFrame(_scene, Layout, interaction.Snapshot);
+                var presentation = _actions.CapturePresentation(_scene.MeasurementContext.Locale);
+                UiAccessibilitySnapshot accessibility = BuildAccessibility(_scene, Layout, interaction.Snapshot, presentation);
+                UiRenderFrame frame = BuildFrame(_scene, Layout, interaction.Snapshot, presentation);
                 EnsureActive();
+                _actions.ValidatePresentation(presentation, _scene.MeasurementContext.Locale);
                 Interactions.CommitReconcile(interaction);
                 AcceptFrame(frame);
                 Accessibility = accessibility;
+                _actionPresentation = presentation;
                 _actionPresentationDirty = false;
                 return true;
             }
@@ -206,10 +214,15 @@ internal sealed class UiHostRuntimeSession
             UiLayoutSnapshot layout = layoutChanged ? BuildLayout(next, placement) : Layout;
             UiInteractionSession interaction = Interactions.PrepareReconcile(next, layout, actions.Resolver);
             EnsureActive();
-            UiAccessibilitySnapshot accessibility = BuildAccessibility(next, layout, interaction.Snapshot, actions.Resolver);
-            bool frameChanged = _actionPresentationDirty || layoutChanged || diff.RequiresRender || actions.RequiresRender ||
+            var presentation = actions.Map.CapturePresentation(next.MeasurementContext.Locale, actions.Resolver);
+            // Legacy callbacks may have retired a sibling since the first focus preparation.
+            // Reconcile the candidate against the same callback-free state used by its frame.
+            if (actions.Map.HasLegacyBindings)
+                interaction = interaction.PrepareReconcile(next, layout, presentation);
+            UiAccessibilitySnapshot accessibility = BuildAccessibility(next, layout, interaction.Snapshot, presentation);
+            bool frameChanged = !presentation.HasSamePresentation(_actionPresentation) || _actionPresentationDirty || layoutChanged || diff.RequiresRender || actions.RequiresRender ||
                                 interaction.Snapshot != Interactions.Snapshot;
-            UiRenderFrame frame = frameChanged ? BuildFrame(next, layout, interaction.Snapshot, actions.Map) : _frame;
+            UiRenderFrame frame = frameChanged ? BuildFrame(next, layout, interaction.Snapshot, presentation) : _frame;
             UiCollectionViewportState collections = _collections;
             if (layoutChanged)
             {
@@ -219,6 +232,7 @@ internal sealed class UiHostRuntimeSession
             var update = new UiHostUpdate(layoutChanged, frameChanged, diff);
             validatePreparedOwner?.Invoke();
             EnsureActive();
+            presentation.RequireCurrent(actions.Map, next.MeasurementContext.Locale);
 
             // All callback-bearing work succeeded. Publish the prepared state without calling
             // consumers between assignments, retaining the input session's existing identity.
@@ -228,6 +242,7 @@ internal sealed class UiHostRuntimeSession
             Interactions.CommitReconcile(interaction);
             AcceptFrame(frame);
             Accessibility = accessibility;
+            _actionPresentation = presentation;
             _collections = collections;
             _scene = next;
             _placement = placement;
@@ -428,7 +443,7 @@ internal sealed class UiHostRuntimeSession
         IUiActionResolver? actions = null)
     {
         EnsureActive();
-        UiRenderFrame frame = _renderPlanner.Build(scene, layout, interaction, _platform, actions ?? _actions.Current);
+        UiRenderFrame frame = _renderPlanner.Build(scene, layout, interaction, _platform, actions ?? _actionPresentation);
         EnsureActive();
         _frameBuilds++;
         return frame;
@@ -439,7 +454,7 @@ internal sealed class UiHostRuntimeSession
         IUiActionResolver? actions = null)
     {
         EnsureActive();
-        UiAccessibilitySnapshot snapshot = _accessibilityBuilder.Build(scene, layout, interaction, actions ?? _actions.Current);
+        UiAccessibilitySnapshot snapshot = _accessibilityBuilder.Build(scene, layout, interaction, actions ?? _actionPresentation);
         EnsureActive();
         return snapshot;
     }

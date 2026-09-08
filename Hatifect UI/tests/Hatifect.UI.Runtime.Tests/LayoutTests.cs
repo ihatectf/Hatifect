@@ -215,6 +215,53 @@ public sealed class LayoutTests
         Assert.True(layout.HostPlacement.Bounds.Height <= (viewport.Height - 24) * 0.6f + 0.01f);
     }
 
+    [Theory]
+    [InlineData(16.8f)]
+    [InlineData(15.6f)]
+    [InlineData(19.2f)]
+    [InlineData(38.4f)]
+    public void TypedActionBarWithFractionalLineHeightRetainsUsableGeometry(float lineHeight)
+    {
+        UiSymbolId id = RegistryTests.Id("fractional-actions");
+        var actions = Enumerable.Range(0, 8).Select(index =>
+            new UiAction<int, int>(id.Child($"action/{index}"), "Action",
+                (request, _) => new(UiActionResult<int>.Success(request)),
+                UiActionConcurrency.RejectWhileRunning).Bind(() => index)).ToArray();
+        var experience = new UiExperienceBuilder(id, "Fractional actions")
+            .Monitor("Status", new UiState<string>("Ready"))
+            .Monitor("Details", new UiState<string>("Selected storage"))
+            .Actions("Actions", actions).Build();
+        var registry = new UiRegistryBuilder().Window(id, "Fractional actions", () => experience,
+            UiProvisionalHostPolicies.OverlayTopRight).Freeze();
+        var scene = new UiSceneComposer(UiThemePresets.Dark(), registry).Compose(
+            new UiInvocationService(registry).Invoke(id, UiPresentationProfiles.Wide));
+        var viewport = new UiRect(0, 0, 1280, 720);
+        var layout = new UiSceneLayoutEngine(new FractionalTextMetrics(lineHeight)).Build(scene, viewport);
+        var frame = new UiSceneRenderPlanner().Build(scene, layout);
+        var buttons = Nodes(scene.Root).OfType<UiButtonSceneNode>().ToArray();
+        Assert.Equal(8, buttons.Length);
+        foreach (var button in buttons)
+        {
+            Assert.True(layout.TryGetEntry(button.Id, out var entry));
+            Assert.True(entry!.ContentBounds.Width > 0);
+            Assert.True(entry.ContentBounds.Height >= 2 * lineHeight - 0.01f);
+            Assert.True(entry.Bounds.Right <= viewport.Right + 0.01f);
+            Assert.True(entry.Bounds.Bottom <= viewport.Bottom + 0.01f);
+            var label = Assert.Single(frame.Primitives.OfType<UiTextPrimitive>(),
+                primitive => primitive.Node == button.Id && primitive.Text == "Action");
+            Assert.True(label.Bounds.Width > 0 && label.Bounds.Height > 0);
+            Assert.True(label.Clip.Width > 0 && label.Clip.Height > 0);
+        }
+    }
+
+    private sealed class FractionalTextMetrics : IUiTextMetrics
+    {
+        private readonly float _lineHeight;
+        internal FractionalTextMetrics(float lineHeight) => _lineHeight = lineHeight;
+        public UiSize Measure(string text, UiTypography typography, float availableWidth, UiTextOverflow overflow)
+            => new(Math.Min(text.Length * 8, availableWidth), _lineHeight);
+    }
+
     private static UiScene Scene(string actionTitle, UiHostPolicy? host = null)
     {
         UiSymbolId id = RegistryTests.Id("layout-window");

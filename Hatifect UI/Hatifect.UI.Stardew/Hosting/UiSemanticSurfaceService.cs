@@ -27,7 +27,7 @@ namespace Hatifect.UI.Stardew;
 /// Consumers receive only opaque lifecycle handles; every Scene/platform object stays private.
 /// </summary>
 internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemanticSurfaceAutomation,
-    IUiSemanticSurfaceObservationApi, IUiSemanticSurfaceObservation
+    IUiSemanticSurfaceActionAutomationApi, IUiSemanticSurfaceObservation, IUiSemanticSurfaceActionAutomation
 {
     private readonly IModHelper _helper;
 
@@ -37,6 +37,7 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
     public int ApiVersion => 1;
     public IUiSemanticSurfaceAutomation Automation => this;
     public IUiSemanticSurfaceObservation Observation => this;
+    public IUiSemanticSurfaceActionAutomation ActionAutomation => this;
     public bool IsEnabled => UiAutomatedAcceptanceScenarioRegistry.IsRegistrationEnabled;
 
     public IUiSemanticSurfaceSession CreateSurface(
@@ -93,6 +94,17 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
         if (session is not UiActiveMenuSemanticSurfaceSession owned || !owned.IsOwnedBy(this))
             throw new ArgumentException("The semantic surface session belongs to another UI API instance.", nameof(session));
         owned.CancelForAutomatedAcceptance(input);
+    }
+
+    public bool Activate(IUiSemanticSurfaceSession session, UiSymbolId action)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (!action.IsValid) throw new ArgumentException("A valid action ID is required.", nameof(action));
+        if (!IsEnabled)
+            throw new InvalidOperationException("Surface action input is available only in the exact automated TestHarness environment.");
+        if (session is not UiActiveMenuSemanticSurfaceSession owned || !owned.IsOwnedBy(this))
+            throw new ArgumentException("The active-menu surface session belongs to another UI API instance.", nameof(session));
+        return owned.ActivateForAutomatedAcceptance(action);
     }
 
     public UiSemanticSurfaceSnapshot Capture(IUiSemanticSurfaceSession session)
@@ -366,6 +378,12 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
     {
         ThrowIfUnavailable();
         _overlay!.CancelForAutomatedAcceptance(input);
+    }
+
+    internal bool ActivateForAutomatedAcceptance(UiSymbolId action)
+    {
+        ThrowIfUnavailable();
+        return _overlay!.ActivateForAutomatedAcceptance(action);
     }
 
     internal bool IsOwnedBy(UiSemanticSurfaceService owner)

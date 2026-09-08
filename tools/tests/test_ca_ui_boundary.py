@@ -317,7 +317,19 @@ class ChestsAnywhereUiBoundaryTests(unittest.TestCase):
         self.assertIn("OpenThroughNativeToggle(adapter, controller)", source)
         self.assertIn("_automatedTogglePulsePending = true", (CA_ROOT / "Integration" / "ChestsAnywhereAdapter.cs").read_text(encoding="utf-8"))
         self.assertNotIn("controller.Show()", source)
-        self.assertIn("handoffSurface.Synchronize();", source)
+        self.assertIn('Activate(frontend, actionApi, handoffExperience, "open", activations);', source)
+        self.assertNotIn("handoffSurface.Synchronize();", source)
+        activation = source.split("private static void Activate(", 1)[1].split(
+            "private static void ExecuteAbsent(", 1
+        )[0]
+        self.assertIn("api.ActionAutomation.Activate(surface, action)", activation)
+        self.assertEqual(2, activation.count("frontend.PumpAutomatedAcceptance();"))
+        self.assertLess(activation.index("frontend.PumpAutomatedAcceptance();"),
+                        activation.index("api.ActionAutomation.Activate(surface, action)"))
+        self.assertGreater(activation.rindex("frontend.PumpAutomatedAcceptance();"),
+                           activation.index("api.ActionAutomation.Activate(surface, action)"))
+        self.assertIn("handoff?.StorageId == handoffStorage.Id", source)
+        self.assertIn("afterHandoff.CurrentStorageKey == handoffStorage.Key", source)
         self.assertIn("controller.Shutdown();", source)
         self.assertIn("bool shutdownRestored = IsRestored", source)
         self.assertIn(

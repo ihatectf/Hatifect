@@ -48,6 +48,11 @@ internal sealed partial class UiAutomatedAcceptanceController
         _actionRuntime = new UiSemanticStardewRuntime(Game1.graphics.GraphicsDevice,
             typography => typography.Family == "Display" ? Game1.dialogueFont : Game1.smallFont,
             asset => throw new InvalidOperationException($"Action acceptance has no texture '{asset}'."));
+        BeginActionMessageFrames();
+    }
+
+    private void BeginActionPumpLifecycle()
+    {
         ActionPumpProbe root = NewActionProbe("menu-root");
         OpenActionMenu(root);
         ActionPumpProbe portal = NewActionProbe("menu-portal");
@@ -68,11 +73,14 @@ internal sealed partial class UiAutomatedAcceptanceController
                 throw new TimeoutException($"Native action Update did not complete phase {_actionPhase}.");
             switch (_actionPhase)
             {
+                case -2:
+                case -1:
+                    return AdvanceActionMessageFrames();
                 case 1:
                     if (!Delivered("menu-root") || !Delivered("menu-portal")) return true;
                     Record("semantic.actions.pump.menu",
                         ReferenceEquals(Game1.activeClickableMenu, _actionMenu) &&
-                        ReferenceEquals(_actionAcceptedScene, _actionHost!.Session.Root.Scene),
+                        ReferenceEquals(_actionAcceptedScene, _actionHost!.Session.Root.Scene) && _actionMessageCaptures.Count == 4,
                         "Root and popup worker results returned through native menu.update without scene recomposition.");
                     CloseActionPresentation();
                     ActionPumpProbe lateMenu = NewActionProbe("retired-menu");
@@ -176,18 +184,18 @@ internal sealed partial class UiAutomatedAcceptanceController
         return true;
     }
     private static UiSymbolId ActionId(string path) => new("Hatifect.UI", "acceptance/action-pump/" + path);
-    private static UiScene ActionScene(string id, UiHostPolicy policy, UiActionDefinition action)
+    private static UiScene ActionScene(string id, UiHostPolicy policy, UiActionDefinition action, string? locale = null)
     {
         var experience = new UiExperienceBuilder(ActionId(id), "Action lifecycle")
             .Monitor("Status", new UiConstantSource<string>("Controlled async acceptance"))
             .Actions("Actions", action).Build();
         var registry = new UiRegistryBuilder().Window(ActionId(id), "Action lifecycle", () => experience, policy).Freeze();
         return new UiSceneComposer(UiSemanticStardewTheme.Default, registry).Compose(
-            new UiInvocationService(registry).Invoke(ActionId(id), UiPresentationProfiles.Wide));
+            new UiInvocationService(registry).Invoke(ActionId(id), UiPresentationProfiles.Wide), locale: locale);
     }
-    private void OpenActionMenu(ActionPumpProbe probe)
+    private void OpenActionMenu(ActionPumpProbe probe, string? locale = null)
     {
-        UiScene scene = ActionScene("menu", UiHostPolicies.Window, probe.Definition);
+        UiScene scene = ActionScene("menu", UiHostPolicies.Window, probe.Definition, locale);
         UiRect viewport = UiSemanticStardewMenu.CaptureViewport();
         UiSemanticStardewHost host = _actionRuntime!.CreateHost(scene, new UiHostPlacementContext(viewport));
         _actionHost = host;
@@ -235,6 +243,7 @@ internal sealed partial class UiAutomatedAcceptanceController
     private void StopActionPump()
     {
         _actionPhase = 0;
+        RestoreActionMessageLanguage();
         CloseActionPresentation();
         if (ReferenceEquals(Game1.activeClickableMenu, _actionCover)) Game1.activeClickableMenu = null;
         _actionCover = null;

@@ -102,7 +102,7 @@ internal static class ChestsAnywhereNavigatorIdentity
 /// intents while deliberately excluding selector suppression, native-toggle interception, menu
 /// handoff confirmation, geometry, focus, and portal ownership from the Experience.
 /// </summary>
-internal sealed class ChestsAnywhereNavigatorExperienceSession : IDisposable
+internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDisposable
 {
     private readonly IChestsAnywhereNavigatorPort _port;
     private readonly Action? _onClose;
@@ -187,7 +187,7 @@ internal sealed class ChestsAnywhereNavigatorExperienceSession : IDisposable
         foreach (UiActionDefinition action in actions.Where(action => action.Id == id.Child("action/open") || action.Id == id.Child("action/toggle-favorite")))
         {
             builder.Action(action, action.Id == id.Child("action/open") ? "OpenStorage" : "FavoriteStorage",
-                    UiDataTypes.Action(action.Id.Child("contract"), UiDataTypes.Unit, UiDataTypes.Unit,
+                    UiDataTypes.Action(action.Id.Child("contract"), RequestType.Descriptor, ReceiptType.Descriptor,
                         UiSourceTypes.Selection(storageType).Descriptor, UiCapabilities.Select.Id))
                 .Relation(new(action.Id.Child("target"), UiRelationKind.ActionTarget, action.Id, storage));
         }
@@ -205,58 +205,26 @@ internal sealed class ChestsAnywhereNavigatorExperienceSession : IDisposable
     public bool IsCompleted => _completed;
 
     public void SelectMode(ChestsAnywhereNavigatorMode mode)
-        => Request(() =>
-    {
-        if (!Enum.IsDefined(typeof(ChestsAnywhereNavigatorMode), mode))
-            throw new ArgumentOutOfRangeException(nameof(mode));
-        NavigatorProjection next = Project(_port.ChangeView(mode, _selectedCategory.Value));
-        ApplyProjection(next, preserveView: false);
-    });
+        => Request(() => ExecuteRequest(CaptureRequest(NavigatorCommand.ChangeView, mode: mode)));
 
     public void SelectCategory(string categoryKey)
         => Request(() =>
-    {
-        if (string.IsNullOrWhiteSpace(categoryKey)) throw new ArgumentException("A category key is required.", nameof(categoryKey));
-        if (!_projection.Value.Categories.Any(category => string.Equals(category.Key, categoryKey, StringComparison.Ordinal)))
-            throw new ArgumentException($"Unknown storage category '{categoryKey}'.", nameof(categoryKey));
-        NavigatorProjection next = Project(_port.ChangeView(ChestsAnywhereNavigatorMode.Category, categoryKey));
-        ApplyProjection(next, preserveView: false);
-    });
+        {
+            if (string.IsNullOrWhiteSpace(categoryKey)) throw new ArgumentException("A category key is required.", nameof(categoryKey));
+            ExecuteRequest(CaptureRequest(NavigatorCommand.SelectCategory, categoryKey: categoryKey));
+        });
 
     public void Refresh(bool preserveView = true)
-        => Request(() =>
-    {
-        NavigatorProjection next = Project(_port.Refresh());
-        ApplyProjection(next, preserveView);
-    });
+        => Request(() => ExecuteRequest(CaptureRequest(NavigatorCommand.Refresh, preserveView: preserveView)));
 
     public void OpenSelectedStorage()
-        => Request(() =>
-    {
-        ChestsAnywhereNavigatorStorage storage = SelectedStorage();
-        ChestsAnywhereNavigatorMutationResult result = _port.RequestOpenStorage(storage.Key);
-        NavigatorProjection next = Project(result.Snapshot);
-        ChestsAnywhereStorageHandoff? handoff = result.Succeeded
-            ? new ChestsAnywhereStorageHandoff(storage.Id, storage.Key)
-            : null;
-        ApplyProjection(next, preserveView: true, handoff, replaceHandoff: true);
-    });
+        => Request(() => ExecuteRequest(CaptureRequest(NavigatorCommand.Open)));
 
     public void ToggleSelectedFavorite()
-        => Request(() =>
-    {
-        ChestsAnywhereNavigatorStorage storage = SelectedStorage();
-        NavigatorProjection next = Project(_port.ToggleFavorite(storage.Key));
-        ApplyProjection(next, preserveView: true);
-    });
+        => Request(() => ExecuteRequest(CaptureRequest(NavigatorCommand.Favorite)));
 
     public void Close()
-        => Request(() =>
-    {
-        _completed = true;
-        _publication.Dispose();
-        _onClose?.Invoke();
-    });
+        => Request(() => ExecuteRequest(CaptureRequest(NavigatorCommand.Close)));
 
     public void Dispose()
     {
@@ -265,32 +233,9 @@ internal sealed class ChestsAnywhereNavigatorExperienceSession : IDisposable
         _disposed = true;
     }
 
-    private UiActionDefinition[] CreateActions(UiSymbolId id)
-        => new[]
-        {
-            Action(id, "mode-categories", Text("navigator.categories", "Categories"), () => SelectMode(ChestsAnywhereNavigatorMode.Category)),
-            Action(id, "mode-favorites", Text("navigator.favorites", "Favorites"), () => SelectMode(ChestsAnywhereNavigatorMode.Favorites)),
-            Action(id, "mode-recent", Text("navigator.recent", "Recent"), () => SelectMode(ChestsAnywhereNavigatorMode.Recent)),
-            Action(id, "select-category", Text("navigator.category.select", "Select category"), SelectSelectedCategory, CanSelectCategory),
-            Action(id, "refresh", Text("navigator.refresh", "Refresh"), () => Refresh()),
-            Action(id, "open", Text("navigator.open", "Open storage"), OpenSelectedStorage, HasSelectedStorage),
-            Action(id, "toggle-favorite", Text("navigator.favorite", "Toggle favorite"), ToggleSelectedFavorite, HasSelectedStorage),
-            Action(id, "close", Text("navigator.close", "Close"), Close)
-        };
-
-    private UiActionDefinition Action(UiSymbolId id, string name, string title, Action execute, Func<bool>? canExecute = null)
-        => new(id.Child($"action/{name}"), title, execute, canExecute ?? (() => Available));
-
     private bool Available => !_disposed && !_completed && !_publication.IsDisposed;
     private bool HasSelectedStorage() => Available && _storages.SelectedItemId != null;
     private bool CanSelectCategory() => Available && _categories.SelectedItemId != null;
-
-    private void SelectSelectedCategory()
-    {
-        if (_categories.SelectedItemId is not { } id) return;
-        ChestsAnywhereNavigatorCategory? category = _categories.Value.FirstOrDefault(value => value.Id == id);
-        if (category != null) SelectCategory(category.Key);
-    }
 
     private bool RequestCategory(UiSymbolId id)
     {
@@ -328,13 +273,14 @@ internal sealed class ChestsAnywhereNavigatorExperienceSession : IDisposable
         finally { _requesting = false; }
     }
 
-    private void ApplyProjection(NavigatorProjection next, bool preserveView,
+    private void ApplyProjection(NavigatorProjection next, NavigatorRequestContext context, bool preserveView,
         ChestsAnywhereStorageHandoff? handoff = null, bool replaceHandoff = false)
     {
-        ChestsAnywhereNavigatorMode nextMode = preserveView ? _mode.Value : next.Mode;
-        string nextCategory = NormalizeCategory(next, preserveView ? _selectedCategory.Value : next.SelectedCategoryKey);
+        RequireCurrent(context);
+        ChestsAnywhereNavigatorMode nextMode = preserveView ? context.Mode : next.Mode;
+        string nextCategory = NormalizeCategory(next, preserveView ? context.CategoryKey : next.SelectedCategoryKey);
         IReadOnlyList<ChestsAnywhereNavigatorStorage> visible = VisibleStorages(next, nextMode, nextCategory);
-        UiSymbolId? prior = _storages.SelectedItemId;
+        UiSymbolId? prior = context.StorageId;
         UiSymbolId? selection = prior is { } selected && visible.Any(storage => storage.Id == selected)
             ? selected : visible.Count == 0 ? null : visible[0].Id;
         UiPublicationResult result = _publication.BeginUpdate()
@@ -342,7 +288,7 @@ internal sealed class ChestsAnywhereNavigatorExperienceSession : IDisposable
             .Set(_mode, nextMode)
             .Set(_selectedCategory, nextCategory)
             .Set(_status, next.StatusText)
-            .Set(_handoff, replaceHandoff ? handoff : _handoff.Value)
+            .Set(_handoff, replaceHandoff ? handoff : context.Handoff)
             .Replace(_categories, next.Categories)
             .Select(_categories, CategoryId(nextCategory))
             .Replace(_storages, visible)
@@ -486,14 +432,6 @@ internal sealed class ChestsAnywhereNavigatorExperienceSession : IDisposable
 
     private static UiSymbolId? CategoryId(string categoryKey)
         => string.IsNullOrWhiteSpace(categoryKey) ? null : ChestsAnywhereNavigatorIdentity.Category(categoryKey);
-
-    private ChestsAnywhereNavigatorStorage SelectedStorage()
-    {
-        if (_storages.SelectedItemId is not { } id)
-            throw new InvalidOperationException("No storage is selected.");
-        return _storages.Value.FirstOrDefault(storage => storage.Id == id)
-            ?? throw new InvalidOperationException("The selected storage is no longer visible.");
-    }
 
     private static string StorageSupportingText(ChestsAnywhereNavigatorStorage storage)
         => string.IsNullOrWhiteSpace(storage.Location) ? storage.CategoryKey : storage.Location;

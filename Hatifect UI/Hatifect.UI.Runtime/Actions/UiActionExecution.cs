@@ -139,7 +139,10 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
             return enabled != CanInvoke || state != State ||
                 before.Reason?.Code != Availability.Reason?.Code ||
                 before.Reason?.Message != Availability.Reason?.Message ||
-                before.Reason?.Field != Availability.Reason?.Field;
+                before.Reason?.Field != Availability.Reason?.Field ||
+                !(before.Reason?.LocalizedMessage is { } message
+                    ? message.HasSameContent(Availability.Reason?.LocalizedMessage)
+                    : Availability.Reason?.LocalizedMessage is null);
         }
         finally { _dispatching = false; }
     }

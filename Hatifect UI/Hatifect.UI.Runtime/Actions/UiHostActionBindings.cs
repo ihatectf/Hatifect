@@ -17,7 +17,7 @@ internal interface IUiActionResolver
 }
 
 internal sealed record UiHostActionStatus(UiActionState State, bool Enabled, int WaitingCount,
-    UiActionRejection? Reason, UiActionOutcome? Outcome, Exception? Error, Exception? ObserverError);
+    UiActionRejection? Reason, UiActionOutcome? Outcome, Exception? Error, Exception? ObserverError, UiActionMessage? FailureMessage = null, string? Message = null);
 
 internal abstract class UiHostActionBinding
 {
@@ -63,7 +63,7 @@ internal sealed class UiHostActionBinding<TRequest, TResult> : UiHostActionBindi
     internal override void AcceptLegacyAvailability(bool available) => _execution.AcceptLegacyAvailability(available);
     internal override UiHostActionStatus Status => new(_execution.State, CanInvoke, _execution.WaitingCount,
         _execution.Availability.Reason ?? _execution.LastResult?.Rejection, _execution.LastResult?.Outcome,
-        _execution.LastResult?.Error, _execution.LastObserverError);
+        _execution.LastResult?.Error, _execution.LastObserverError, _execution.LastResult?.FailureMessage);
     internal override bool Invoke()
     {
         Execution.Owner.RequireOwner();
@@ -96,6 +96,7 @@ internal sealed class UiActionBindingMap : IUiActionResolver
     private readonly Dictionary<UiSymbolId, bool> _preparedLegacyAvailability = new();
     internal Dictionary<UiSymbolId, UiHostActionBinding> Bindings { get; } = new();
     internal Dictionary<UiSymbolId, IUiActionExecution> Executions { get; } = new();
+    internal bool HasLegacyBindings => Bindings.Values.Any(binding => binding.Definition.Binding is null);
     internal bool LegacyAvailabilityChanged => _preparedLegacyAvailability.Any(pair => pair.Value != Bindings[pair.Key].CanInvoke);
     public bool CanInvoke(UiActionDefinition definition)
         => Find(definition) is { } binding &&
@@ -107,6 +108,14 @@ internal sealed class UiActionBindingMap : IUiActionResolver
     private UiHostActionBinding? Find(UiActionDefinition definition)
         => Bindings.TryGetValue(definition.Id, out var binding) && ReferenceEquals(binding.Definition, definition)
             ? binding : null;
+
+    internal UiActionPresentationSnapshot CapturePresentation(string locale, IUiActionResolver? resolver = null)
+    {
+        // Finish consumer callbacks before reading any member of the coherent snapshot.
+        if (resolver is not null)
+            foreach (var binding in Bindings.Values) resolver.CanInvoke(binding.Definition);
+        return UiActionPresentationSnapshot.Capture(Bindings.Values, this, locale);
+    }
 
     internal IUiActionResolver ForPreparation() => new PreparationResolver(this);
     internal void AcceptLegacyAvailability()
@@ -145,6 +154,9 @@ internal sealed class UiHostActionBindings : IDisposable
     private bool _disposed;
     internal UiHostActionBindings(Func<long> acceptedVersion) => _acceptedVersion = acceptedVersion;
     internal IUiActionResolver Current => _current;
+    internal UiActionPresentationSnapshot CapturePresentation(string locale) => _current.CapturePresentation(locale);
+    internal void ValidatePresentation(UiActionPresentationSnapshot snapshot, string locale)
+        => snapshot.RequireCurrent(_current, locale);
     internal int Count => _current.Bindings.Count;
     internal void RequireOwner() => _dispatcher.RequireOwner();
     internal void FenceRetirement() => _dispatcher.FenceRetirement();
