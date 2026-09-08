@@ -418,9 +418,6 @@ internal sealed class UiCollectionVirtualizer
         var themeMetrics = new ThemeMetricIdentity(typography, lineHeight);
         var key = new MeasurementKey(
             item.Id,
-            item.ContentVersion,
-            item.Label,
-            item.SupportingText,
             item.Icon != null,
             itemWidth,
             context.Profile,
@@ -429,7 +426,11 @@ internal sealed class UiCollectionVirtualizer
             themeMetrics,
             collection.Recipe.ItemSizing,
             collection.Recipe.Density);
-        if (state.Measurements.TryGetValue(key, out MeasuredItem measured)) return measured;
+        if (state.Measurements.TryGetValue(key, out CachedMeasurement cached) &&
+            cached.ContentVersion == item.ContentVersion &&
+            string.Equals(cached.Label, item.Label, StringComparison.Ordinal) &&
+            string.Equals(cached.SupportingText, item.SupportingText, StringComparison.Ordinal))
+            return cached.Measurement;
 
         RecipeMetrics recipe = Metrics(collection.Recipe, lineHeight, context.Profile, context.Locale);
         float contentWidth = Math.Max(1, itemWidth - recipe.HorizontalPadding * 2 - (item.Icon != null ? lineHeight + 4 : 0));
@@ -446,14 +447,15 @@ internal sealed class UiCollectionVirtualizer
             supportingHeight = Math.Max(lineHeight, supporting.Height);
         }
         float gap = supportingHeight > 0 ? recipe.SupportingGap : 0;
-        measured = new MeasuredItem(
+        var measured = new MeasuredItem(
             recipe.VerticalPadding * 2 + labelHeight + gap + supportingHeight,
             labelHeight,
             supportingHeight,
             recipe.HorizontalPadding,
             recipe.VerticalPadding,
             gap);
-        state.Measurements.Set(key, measured);
+        state.Measurements.Set(key, new CachedMeasurement(
+            item.ContentVersion, item.Label, item.SupportingText, measured));
         return measured;
     }
 
@@ -668,9 +670,6 @@ internal sealed class UiCollectionVirtualizer
 
     private readonly record struct MeasurementKey(
         UiSymbolId Item,
-        long ContentVersion,
-        string Label,
-        string? SupportingText,
         bool HasIcon,
         float Width,
         UiSymbolId Profile,
@@ -691,6 +690,12 @@ internal sealed class UiCollectionVirtualizer
         ThemeMetricIdentity ThemeMetrics,
         UiSymbolId ItemSizing,
         string Density);
+
+    private readonly record struct CachedMeasurement(
+        long ContentVersion,
+        string Label,
+        string? SupportingText,
+        MeasuredItem Measurement);
 
     private readonly record struct MeasuredItem(
         float Height,
@@ -717,12 +722,12 @@ internal sealed class UiCollectionVirtualizer
 
         public CollectionState(int measurementCapacity, int exactRowCapacity)
         {
-            Measurements = new UiBoundedCache<MeasurementKey, MeasuredItem>(measurementCapacity);
+            Measurements = new UiBoundedCache<MeasurementKey, CachedMeasurement>(measurementCapacity);
             _exactRowCapacity = exactRowCapacity;
             Heights = new AdaptiveRowHeightIndex(0, 1, exactRowCapacity);
         }
 
-        public UiBoundedCache<MeasurementKey, MeasuredItem> Measurements { get; }
+        public UiBoundedCache<MeasurementKey, CachedMeasurement> Measurements { get; }
         public HashSet<UiSymbolId> MaterializedIds { get; } = new();
         public AdaptiveRowHeightIndex Heights { get; private set; }
 
@@ -788,8 +793,9 @@ internal sealed class UiCollectionVirtualizer
         {
             bool ownerChanged = !ReferenceEquals(_source, collection.SourceIdentity);
             bool sourceChanged = ownerChanged || _sourceRevision != collection.SourceRevision;
-            // Item keys include exact text for external sources without content versions.
-            // A revision still resets row heights, but unaffected item measurements survive.
+            // Cached values validate exact text without hashing it, including external
+            // sources without content versions. Each item/geometry slot replaces old text.
+            // A revision still resets row heights, but unaffected measurements survive.
             if (ownerChanged) Measurements.Clear();
             _source = collection.SourceIdentity;
             _sourceRevision = collection.SourceRevision;

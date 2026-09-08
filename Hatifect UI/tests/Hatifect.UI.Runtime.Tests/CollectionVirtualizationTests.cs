@@ -546,6 +546,36 @@ Items@Checked
     }
 
     [Fact]
+    public void CachedOffscreenItemUsesCurrentTextWhenScrolledBackIntoView()
+    {
+        UiSymbolId owner = RegistryTests.Id("adaptive-cached-offscreen-change");
+        var source = new MutableMeasurementSource(owner, 80);
+        CollectionFixture fixture = ListFixture(source, "Adaptive", owner);
+        var viewport = new UiRect(0, 0, 360, 240);
+        var runtime = new UiHostRuntimeSession(fixture.Scene, viewport, new CountingPlatform());
+        var collection = Assert.Single(Nodes(fixture.Scene.Root).OfType<UiCollectionSceneNode>());
+        UiSymbolId firstId = owner.Child("item/0");
+        Assert.True(runtime.Layout.TryGetCollection(collection.Id, out var initial));
+        float initialHeight = Assert.Single(initial!.Items, item => item.Item.Id == firstId).Bounds.Height;
+        runtime.ScrollCollection(collection.Id, 2_000);
+        Assert.True(runtime.Layout.TryGetCollection(collection.Id, out var scrolled));
+        Assert.DoesNotContain(scrolled!.Items, item => item.Item.Id == firstId);
+
+        string current = string.Join(" ", Enumerable.Repeat("Changed while outside viewport", 20));
+        source.ChangeSupportingText(0, current);
+        runtime.Update(fixture.Composer.Compose(fixture.Invocation, locale: "en-US"), viewport);
+        Assert.True(runtime.Layout.TryGetCollection(collection.Id, out var updated));
+        runtime.ScrollCollection(collection.Id, -updated!.ScrollOffset);
+
+        Assert.True(runtime.Layout.TryGetCollection(collection.Id, out var returned));
+        var first = Assert.Single(returned!.Items, item => item.Item.Id == firstId);
+        Assert.Equal(current, first.Item.SupportingText);
+        Assert.Equal(0, first.Item.ContentVersion);
+        Assert.True(first.Bounds.Height > initialHeight);
+        Assert.Equal(initial.Items[0].Bounds.Y, first.Bounds.Y);
+    }
+
+    [Fact]
     public void ReplacingCollectionOwnerDiscardsItsMeasuredItems()
     {
         UiSymbolId owner = RegistryTests.Id("adaptive-new-owner");
