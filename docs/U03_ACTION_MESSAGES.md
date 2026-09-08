@@ -38,7 +38,7 @@ Initial native save.bootstrap e9274e14-1b02-46a1-b9bb-74662d23c899 at f8ea was d
 
 The second bootstrap 21160d19-c08e-4788-9c16-e64a5ef08ae6 used the supported short root /private/tmp/hatifect-smapi-test.u03.VcZPkP. Managed diagnostics connected and twice showed main thread in MonoGame GraphicsDevice.PlatformPresent. CUA independently reported a locked Mac and failed automatic unlock; causal linkage is not proven. Owned executor was interrupted after 323,003 ms (BLOCKED/exit 130), all three owned processes terminated, options restored, no saves created. After desktop became accessible, canonical recover-bootstrap recovered that exact reservation; the fresh bootstrap and action-message runs above passed. Historical BLOCKED results remain unchanged.
 
-Next ready work: actual CA typed input acceptance and appropriate PERF. Existing compatible CA native acceptance invokes public session facades for mode/favorite/open; it does not prove typed binding dispatch and cannot substitute for this remaining check. Full U03 stays IN_PROGRESS until all required acceptance is verified.
+The facade-based CA scenario was insufficient at the earlier checkpoint. The final typed-input implementation and evidence below supersede that pending item; full U03 closure still requires the original roadmap acceptance audit.
 
 
 ## Literal ellipsis repair
@@ -58,3 +58,40 @@ The six focused regression cases first produced FAIL 5 / PASS 60 (`run-zvhhpfaq`
 Fresh `semantic.actions.pump` run `25cb2662-ba8c-493c-bfec-f9300e68a39e` at this checkpoint passed four assertions with fingerprint `8d0744635cac2a8cf8929d5694069d90beb2ddf45e1ab191d937141126cf3f2d`. Both RU Running images now visibly show periods instead of the fallback-cross. The process exited 0, teardown errors were empty and both temporary options files were restored. Broader final C/G/P and PERF still refer to the explicitly named earlier candidate until repeated for the completed CA input slice; they are not relabeled as checks of this repair.
 
 Independent follow-up review closed the literal-ellipsis P2: source diff, all 65 TRX outcomes, all eight fresh message PNGs and options/save cleanup were checked. No remaining finding in this bounded repair.
+
+
+## Typed native input and final candidate
+
+Implementation `028b999a8647975805b4c71b0024619ef7852086` adds the optional `IUiSemanticSurfaceActionAutomationApi` facet without changing v1. The exact harness traverses at most 256 normalized Tab inputs and submits Enter once to a unique accepted root button. Disabled automation, foreign handles, wrong owner thread/screen, retired owners, portals and replaced action identities are rejected. Consumer obtains one richer API instance for both creation and automation because separate SMAPI API requests create separate owners. Production direct delegates are not exposed. Admission does not claim asynchronous completion, completed rendering or physical OS events.
+
+CA acceptance now exercises all eight typed command IDs through that input facet. It retains exact native storage handoff, Controller B/Escape, single-owner, fresh reopen and lease restoration assertions; Close additionally proves refusal of input to its retired handle. Review caught and removed redundant synchronization of an already retired handoff surface. The static boundary assertion was updated in `2a24545`; `run-cpcoa8ty` passed all 381 Python tests. Earlier C `run-6cnbie6l` remains FAIL 380/381 for its obsolete synchronization expectation.
+
+Native `83ec5b02-91b3-4324-a711-bec8b1fe0230` was BLOCKED before game launch by absent isolated Chests Anywhere. All 19 files of the existing isolated dependency were verified against the GQ handoff inventory, copied only to the new isolated Mods root, and verified again. The next run `863a5727-54e4-4982-bbca-f933e4c19a61` exposed an owning layout defect: FAIL 5 before the first input, `Layout constraints cannot be satisfied.` No assertion or consumer layout policy was weakened.
+
+Source `32298890a4b5f652c45231989d0fe11392b8860e` makes the allocation compression test use the existing 0.01 minimum tolerance. Subtracting headings/insets can otherwise leave a tiny deficit with zero compressible slack. Typed buttons keep their reserved second line. No API change, new allocation, callback or traversal is introduced by this repair. `TypedActionBarWithFractionalLineHeightRetainsUsableGeometry` reproduces the error through real composition and Build: RED `run-7i7_vt8y` 527 Passed / 1 Failed out of 528; GREEN `run-nx20m8ii` 528 Passed, zero skipped. Four fractional metrics retain all eight button geometries and rendered labels. The impossible-viewport regression remains unchanged. Initial fixture build `run-tpvs13_w` failed on C# 12 syntax; it was corrected to the existing C# 10 without changing project settings. The earlier simpler fixture `run-zotot6bq` passed 527 and did not reproduce the native failure.
+
+Final checks below all refer to immutable source `3229889`, not the earlier message checkpoint:
+
+| Gate | Result and retained evidence |
+|---|---|
+| C | `run-0g3fyooi`: PASS 1,623 .NET + 381 Python; seven TRX independently audited |
+| G | `run-cyphd2kx`: PASS 1,952 .NET + 381 Python; ten TRX independently audited |
+| P | `5b8s8yi4`: PASS 101 CA tests, 46 projected files, eight alpha.47 packages, two CA DLLs, no UI source/deployed UI copies |
+| Native CA | `2845c6c5-fa7b-46b6-bec0-784b79bd573b`: PASS 5; eight typed action IDs and exact lifecycle assertions |
+| Native messages/Pump | `114b2918-bdb8-41db-b8aa-cdb3603e4080`: PASS 4, 105 ticks; all eight EN/RU composed/UI-layer PNGs independently viewed without findings |
+| PERF | `3450c271-f315-4189-9706-4b5602e005e2`: PASS 2, 620 frames; p95 0.052959 ms, p99 0.421459 ms, 5338.194 bytes/frame; measure/arrange miss ratio 0.0016129 |
+
+The three native requests share UI runtime fingerprint `e166a1213096194c2a858a94ea086b44580ce555d596dfb08c547672cfd45778`, exit 0, empty teardown errors and restored options. Request-owned saves are absent after cleanup where a save was requested; PERF is title-only. Twelve process observations spanning active PERF and completion found no dotnet/MSBuild/testhost competition; eight include only the owned game and four follow its exit. GQ and FLOWLINE held a quiet window. This is the existing terminal diagnostic workload, not CA throughput.
+
+Independent audits verified 35 source postimages, all 1,303 retained P file hashes, eight package revisions/DLL hashes, three restore assets, four resolved UI cache DLLs, and both deployed CA DLLs. Parent verified all eight package/producer/game DLL identities and retained separate producer/game snapshots after the final run. Artifacts: `artifacts/u03-action-messages/{source-3229889.json,c-3229889-trx-audit.json,g-3229889-trx-audit.json,isolated-p-3229889-audit.json,native-3229889-audit.json,producer-game-3229889/}`.
+
+| Requirement | Evidence |
+|---|---|
+| Captured typed requests reject stale versions before provider effects | `CapturedStorageRequestRejectsChangedPublicationBeforeAnyEffect` |
+| Provider retirement preserves committed effects without late publication | `RetirementInsideProviderPreservesCommittedEffectWithoutPublishingLateResult` |
+| Safe messages remain separate from diagnostic exceptions | `TypedProviderFailureKeepsAcceptedProjectionAndSeparatesDiagnosticText`, `WorkerCompletionKeepsAcceptedRunningMessageUntilPumpAndHidesDiagnosticException` |
+| Production action automation refuses access before native helpers | `ProductionApiRejectsActionInputBeforeTouchingTheHandleOrNativeHelper` |
+| Fractional layout retains typed button geometry while impossible layouts fail | `TypedActionBarWithFractionalLineHeightRetainsUsableGeometry`, `ImpossibleViewportFailsInsteadOfCollapsingInteractiveControls` |
+| Concrete native consumer traverses typed input and retires owners | Native CA `2845c6c5`: five checks, all eight command IDs |
+
+The action-message and concrete typed CA slice is implemented and verified. Full U03 remains IN_PROGRESS pending the original acceptance closure audit and shared integration. Native CA is synchronous and its final capture occurs after retirement; no intermediate CA visual matrix or physical input acceptance is claimed. Q01 physical input and full product localization remain separate work. Next ready step: hand off this candidate, reconcile the original U03 criteria with earlier reload/save-switch evidence, then proceed to the next dependency-ready UI slice.
