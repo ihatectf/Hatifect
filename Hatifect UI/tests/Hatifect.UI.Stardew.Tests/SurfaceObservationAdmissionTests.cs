@@ -18,6 +18,37 @@ public sealed class SurfaceObservationAdmissionTests
         Assert.Contains("exact automated TestHarness", error.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ProductionApiRejectsActionInputBeforeTouchingTheHandleOrNativeHelper()
+    {
+        var helper = DispatchProxy.Create<IModHelper, RejectNativeAccess>();
+        IUiSemanticSurfaceActionAutomationApi api = new UiStardewApiBridge(helper);
+        Assert.False(api.ActionAutomation.IsEnabled);
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            api.ActionAutomation.Activate(new RejectSessionAccess(), new("test", "action/run")));
+        Assert.Contains("exact automated TestHarness", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ActionInputRejectsNullHandleBeforeNativeAccess()
+    {
+        var helper = DispatchProxy.Create<IModHelper, RejectNativeAccess>();
+        IUiSemanticSurfaceActionAutomationApi api = new UiStardewApiBridge(helper);
+        var error = Assert.Throws<ArgumentNullException>(() =>
+            api.ActionAutomation.Activate(null!, new("test", "action/run")));
+        Assert.Equal("session", error.ParamName);
+    }
+
+    [Fact]
+    public void ActionInputRejectsInvalidIdentityBeforeNativeAccess()
+    {
+        var helper = DispatchProxy.Create<IModHelper, RejectNativeAccess>();
+        IUiSemanticSurfaceActionAutomationApi api = new UiStardewApiBridge(helper);
+        var error = Assert.Throws<ArgumentException>(() =>
+            api.ActionAutomation.Activate(new RejectSessionAccess(), default));
+        Assert.Equal("action", error.ParamName);
+    }
+
     public class RejectNativeAccess : DispatchProxy
     {
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)

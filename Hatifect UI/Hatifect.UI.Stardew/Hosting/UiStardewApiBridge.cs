@@ -4,7 +4,7 @@ using StardewModdingAPI;
 namespace Hatifect.UI.Stardew;
 
 /// <summary>SMAPI transport for the public semantic surface contract.</summary>
-public sealed class UiStardewApiBridge : IUiSemanticHostApi, IUiSemanticSurfaceObservationApi
+public sealed class UiStardewApiBridge : IUiSemanticHostApi, IUiSemanticSurfaceActionAutomationApi
 {
     private readonly UiSemanticSurfaceService _semanticSurfaces;
 
@@ -14,6 +14,7 @@ public sealed class UiStardewApiBridge : IUiSemanticHostApi, IUiSemanticSurfaceO
     public int ApiVersion => _semanticSurfaces.ApiVersion;
     public IUiSemanticSurfaceAutomation Automation => _semanticSurfaces.Automation;
     public IUiSemanticSurfaceObservation Observation => _semanticSurfaces.Observation;
+    public IUiSemanticSurfaceActionAutomation ActionAutomation => _semanticSurfaces.ActionAutomation;
 
     public IUiSemanticSurfaceSession CreateActiveMenuOverlay(
         UiExperienceDefinition experience,

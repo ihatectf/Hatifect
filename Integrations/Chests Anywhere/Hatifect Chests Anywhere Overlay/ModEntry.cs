@@ -32,7 +32,8 @@ public sealed class ModEntry : Mod
 
         _adapter = ChestsAnywhereAdapter.CreateForCurrentHost(Helper, Monitor);
         _navigator = new ChestsAnywhereOverlayController(Helper, _adapter, () => _config);
-        IUiSemanticSurfaceApi? ui = Helper.ModRegistry.GetApi<IUiSemanticSurfaceApi>("Hatifect.UI");
+        IUiSemanticSurfaceApi? ui = Helper.ModRegistry.GetApi<IUiSemanticSurfaceActionAutomationApi>("Hatifect.UI")
+            ?? (IUiSemanticSurfaceApi?)Helper.ModRegistry.GetApi<IUiSemanticSurfaceApi>("Hatifect.UI");
         if (ui == null || ui.ApiVersion < 1)
         {
             Monitor.Log(
@@ -48,7 +49,7 @@ public sealed class ModEntry : Mod
             _adapter,
             _navigator,
             _semanticFrontend,
-            ui.Automation);
+            ui);
 
         Helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
         Helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;

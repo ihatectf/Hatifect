@@ -32,12 +32,13 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
         ChestsAnywhereAdapter adapter,
         ChestsAnywhereOverlayController controller,
         SemanticChestsAnywhereOverlayFrontend frontend,
-        IUiSemanticSurfaceAutomation automation)
+        IUiSemanticSurfaceApi ui)
     {
         ArgumentNullException.ThrowIfNull(adapter);
         ArgumentNullException.ThrowIfNull(controller);
         ArgumentNullException.ThrowIfNull(frontend);
-        ArgumentNullException.ThrowIfNull(automation);
+        ArgumentNullException.ThrowIfNull(ui);
+        IUiSemanticSurfaceAutomation automation = ui.Automation;
         if (!automation.IsEnabled) return;
 
         automation.Register(
@@ -46,7 +47,7 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
                 order: 700,
                 requiresWorld: true,
                 CompatibleChecks,
-                context => ExecuteCompatible(adapter, controller, frontend, automation, context)));
+                context => ExecuteCompatible(adapter, controller, frontend, ui, context)));
         automation.Register(
             new UiAutomatedAcceptanceScenario(
                 AbsentScenario,
@@ -121,16 +122,22 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
         ChestsAnywhereAdapter adapter,
         ChestsAnywhereOverlayController controller,
         SemanticChestsAnywhereOverlayFrontend frontend,
-        IUiSemanticSurfaceAutomation automation,
+        IUiSemanticSurfaceApi ui,
         IUiAutomatedAcceptanceContext context)
     {
         var recorder = new CheckRecorder(context, CompatibleChecks);
         Exception? failure = null;
         string? favoriteKey = null;
         bool favoriteInitiallySet = false;
+        var activations = new List<string>();
 
         try
         {
+            var actionApi = ui as IUiSemanticSurfaceActionAutomationApi
+                ?? throw new InvalidOperationException("Typed CA acceptance requires the optional action-input API.");
+            if (!actionApi.ActionAutomation.IsEnabled)
+                throw new InvalidOperationException("Typed CA acceptance requires enabled action input.");
+            IUiSemanticSurfaceAutomation automation = ui.Automation;
             controller.Hide();
             adapter.EndSession();
             OpenThroughNativeToggle(adapter, controller);
@@ -164,14 +171,16 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
             ChestsAnywhereNavigatorStorage selected = Selected(active);
             favoriteKey = selected.Key;
             favoriteInitiallySet = controller.IsFavorite(favoriteKey);
-            if (favoriteInitiallySet) active.ToggleSelectedFavorite();
-            active.ToggleSelectedFavorite();
-            active.SelectMode(ChestsAnywhereNavigatorMode.Favorites);
+            if (favoriteInitiallySet) Activate(frontend, actionApi, active, "toggle-favorite", activations);
+            Activate(frontend, actionApi, active, "toggle-favorite", activations);
+            Activate(frontend, actionApi, active, "mode-favorites", activations);
             bool favorites = active.Mode.Value == ChestsAnywhereNavigatorMode.Favorites
                 && active.Storages.Value.Any(storage => storage.Key == favoriteKey);
-            active.SelectMode(ChestsAnywhereNavigatorMode.Recent);
+            Activate(frontend, actionApi, active, "mode-recent", activations);
             bool recent = active.Mode.Value == ChestsAnywhereNavigatorMode.Recent;
-            active.SelectMode(ChestsAnywhereNavigatorMode.Category);
+            Activate(frontend, actionApi, active, "mode-categories", activations);
+            Activate(frontend, actionApi, active, "select-category", activations);
+            Activate(frontend, actionApi, active, "refresh", activations);
             bool category = active.Mode.Value == ChestsAnywhereNavigatorMode.Category
                 && active.Categories.Value.Count > 0;
             bool views = category && favorites && recent;
@@ -179,7 +188,7 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
                 CompatibleChecks[1],
                 views,
                 views
-                    ? "Category, Favorites, and Recent are the complete semantic view set."
+                    ? "Category, Favorites, Recent, category selection and refresh used normalized Tab/Enter through typed host bindings: " + string.Join("; ", activations)
                     : "The narrow Category/Favorites/Recent view contract did not round-trip through the product port.");
             if (!views) return;
 
@@ -223,8 +232,7 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
             if (handoffExperience is not { IsCompleted: false } || handoffSurface is not { Visible: true })
                 throw new InvalidOperationException("The semantic handoff session did not open.");
             ChestsAnywhereNavigatorStorage handoffStorage = Selected(handoffExperience);
-            handoffExperience.OpenSelectedStorage();
-            handoffSurface.Synchronize();
+            Activate(frontend, actionApi, handoffExperience, "open", activations);
             controller.Update();
             ChestsAnywhereStorageHandoff? handoff = handoffExperience.Handoff.Value;
             ChestsAnywhereOverlayApplicationSnapshot afterHandoff = controller.CaptureApplicationSnapshot();
@@ -239,7 +247,7 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
                 CompatibleChecks[2],
                 handedOff,
                 handedOff
-                    ? "Open delegated to SelectChest, retired the stale semantic menu identity, and left the selected native Chests Anywhere chest current and open."
+                    ? "Typed Open via normalized Tab/Enter delegated to SelectChest, retired the stale semantic menu identity and left the native chest open: " + activations[^1]
                     : "The semantic handoff did not leave the selected native Chests Anywhere menu current with all Hatifect leases restored.");
             if (!handedOff) return;
 
@@ -249,6 +257,16 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
             IUiSemanticSurfaceSession? postHandoffSurface = frontend.AcceptanceSurface;
             bool freshAfterHandoff = postHandoffSurface is { Visible: true }
                 && !ReferenceEquals(handoffSurface, postHandoffSurface);
+            ChestsAnywhereNavigatorExperienceSession postHandoffExperience = frontend.AcceptanceExperience
+                ?? throw new InvalidOperationException("The typed close session did not open.");
+            Activate(frontend, actionApi, postHandoffExperience, "close", activations);
+            bool typedCloseRestored = IsRestored(controller, frontend, adapter);
+            bool retiredInputRejected = false;
+            try { actionApi.ActionAutomation.Activate(postHandoffSurface!, postHandoffExperience.Experience.Id.Child("action/refresh")); }
+            catch (InvalidOperationException) { retiredInputRejected = true; }
+            CloseAutomatedNativeSession(adapter, controller);
+            OpenThroughNativeToggle(adapter, controller);
+            frontend.PumpAutomatedAcceptance();
             controller.Shutdown();
             bool shutdownRestored = IsRestored(controller, frontend, adapter);
             string closeDiagnostic = string.Empty;
@@ -264,6 +282,7 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
                 nativeClosed = false;
             }
             bool lifecycle = freshAfterHandoff
+                && typedCloseRestored && retiredInputRejected
                 && shutdownRestored
                 && nativeClosed
                 && !adapter.IsOverlayActive
@@ -272,7 +291,7 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
                 CompatibleChecks[4],
                 lifecycle,
                 lifecycle
-                    ? "Identity-loss retirement, fresh reopen, the same Shutdown path used by ReturnedToTitle, and native menu close returned every owner exactly once."
+                    ? "Typed Close restored every owner, retired input was rejected, fresh reopen and Shutdown/native close also restored ownership: " + activations[^1]
                     : "Overlay shutdown/close lifecycle did not fully reset: " + closeDiagnostic);
         }
         catch (Exception error)
@@ -307,6 +326,26 @@ internal static class SemanticChestsAnywhereOverlayAcceptanceScenarios
             }
             recorder.Complete(failure);
         }
+    }
+
+    private static void Activate(
+        SemanticChestsAnywhereOverlayFrontend frontend,
+        IUiSemanticSurfaceActionAutomationApi api,
+        ChestsAnywhereNavigatorExperienceSession experience,
+        string actionName,
+        ICollection<string> evidence)
+    {
+        frontend.PumpAutomatedAcceptance();
+        IUiSemanticSurfaceSession surface = frontend.AcceptanceSurface
+            ?? throw new InvalidOperationException("The typed input surface is missing.");
+        if (!ReferenceEquals(experience, frontend.AcceptanceExperience))
+            throw new InvalidOperationException("The typed input experience was replaced.");
+        UiSymbolId action = experience.Experience.Id.Child("action/" + actionName);
+        UiSemanticSurfaceSnapshot before = api.Observation.Capture(surface);
+        bool admitted = api.ActionAutomation.Activate(surface, action);
+        if (!admitted) throw new InvalidOperationException("The host did not admit typed action " + action);
+        evidence.Add($"{action}; surface={before.InstanceId}; initialScene={before.AcceptedFrame?.SceneVersion}; initialFrame={before.AcceptedFrame?.FrameVersion}; input=Tab/Enter; admitted=true");
+        frontend.PumpAutomatedAcceptance();
     }
 
     private static void ExecuteAbsent(
