@@ -47,6 +47,8 @@ Active-menu semantic surface владеет private source-change binding: disti
 
 CA Overlay получает UI через NuGet packages с точной версией из `Hatifect.UI.Packages.props`. `Hatifect.UI.Packages.json` задаёт состав и зависимости. Локальная проверка создаёт пакеты из текущих исходников, а проверка изоляции собирает consumer в каталоге без исходников UI. UI runtime DLL поставляются одним модулем UI; адаптер не распространяет собственные копии.
 
+Planning также принимает `UiPlanningInput`: immutable owner, упорядоченные предъявленные элементы, capabilities и явный признак collection source. `Capture(experience)` сохраняет эти факты без чтений/подписок и не удерживает sources/actions. `PlanInput` и прежний `Plan(experience)` используют один алгоритм; runtime-путь обращается к исходному Experience через value-type view без копирования всех элементов. Binding metadata само по себе не заменяет этот вход: legacy metadata не сохраняет collection source-kind и порядок предъявления. Tooling сохраняет зависимости только от Language/Semantics и принимает внутренний planner provider. Tooling.Server связывает его с Planning/Experience через request-scoped metadata (presented order и collection source-kind) и явно заданное окружение. Запрос trace привязан к текущему compiler snapshot; DevTools экспортирует supplement из настоящего Experience. Server не получает Runtime, sources или callbacks.
+
 ## Flowline
 
 `Hatifect.Flow.Core` владеет транспортным состоянием и правилами dispatch, routing и recovery. `Hatifect.Flow.Persistence` зависит от Core и сохраняет модель с идентичностью сейва. Игровой host управляет загрузкой, сохранением и окончанием сессии. Core и Persistence не зависят от UI, SMAPI или CA.

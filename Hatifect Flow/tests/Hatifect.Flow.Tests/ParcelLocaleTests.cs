@@ -29,6 +29,8 @@ public sealed class ParcelLocaleTests
         using var view = new ParcelExperience(Id, app, Parcel.Value, russianFallback,
             stationName: station => { names++; return station == Origin.Value ? "Mine" : "Farm"; },
             itemName: _ => { names++; return "Copper ore"; });
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         var experience = view.Experience;
         var sources = experience.Elements.Select(element => element.Source).ToArray();
         var actions = experience.Actions.ToArray();
@@ -36,7 +38,7 @@ public sealed class ParcelLocaleTests
         host.Compose("en");
         try
         {
-            Assert.True(actions[0].TryExecute());
+            Assert.True(actionHost.Invoke(actions[0]));
             Assert.True(view.Pump());
             long publication = view.Publication.Version;
             FlowSnapshot snapshot = app.ReadSnapshot();
@@ -73,7 +75,7 @@ public sealed class ParcelLocaleTests
             }
             Assert.Equal(1, host.Activations);
             Assert.Equal(ParcelState.Reserved, runtime.GetParcel(Parcel).State);
-            Assert.True(actions[1].CanExecute);
+            Assert.True(actionHost.CanInvoke(actions[1]));
         }
         finally { host.Dispose(); }
     }
@@ -90,6 +92,8 @@ public sealed class ParcelLocaleTests
         var runtime = CreateRuntime();
         using var app = new FlowApplication(runtime, action => action(runtime), _ => { });
         using var view = new ParcelExperience(Id, app, Parcel.Value, fallback);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var probe = new ExperienceTextProbe(view.Experience);
         var scene = probe.Compose(locale);
         Assert.Equal(russian ? "Отправление Flowline · диагностика" : "Flowline shipment · diagnostic", scene.DisplayName);
@@ -108,6 +112,8 @@ public sealed class ParcelLocaleTests
         int captures = 0;
         using var view = new ParcelExperience(Id, app, Parcel.Value,
             localizedItemName: _ => { captures++; return new UiLocalizedText("Copper ore", translations); });
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var probe = new ExperienceTextProbe(view.Experience);
         var compose = probe.Compose;
         long version = view.Publication.Version;
@@ -133,11 +139,13 @@ public sealed class ParcelLocaleTests
         using var app = new FlowApplication(runtime, action => { effects++; action(runtime); }, _ => { },
             () => { admissionChecks++; return false; });
         using var view = new ParcelExperience(Id, app, Parcel.Value);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var probe = new ExperienceTextProbe(view.Experience);
         var compose = probe.Compose;
         var before = compose("en");
         var snapshot = app.ReadSnapshot();
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
         Assert.True(view.Pump());
         long publication = view.Publication.Version;
         foreach (string locale in new[] { "en", "ru-RU", "en" })
@@ -164,11 +172,13 @@ public sealed class ParcelLocaleTests
         var runtime = CreateRuntime();
         using var app = new FlowApplication(runtime, action => action(runtime), _ => { });
         using var view = new ParcelExperience(Id, app, Parcel.Value);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var probe = new ExperienceTextProbe(view.Experience);
         var compose = probe.Compose;
         var englishBefore = compose("en");
         var russianBefore = compose("ru-RU");
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
         Assert.True(view.Pump());
         var russianAfter = compose("ru-RU");
         AssertValue(englishBefore, "state", "State", "Ready to dispatch");

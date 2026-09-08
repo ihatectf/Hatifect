@@ -5,6 +5,7 @@ using Hatifect.Flow.Domain.Shipments;
 using Hatifect.Flow.UI.Semantic;
 using Hatifect.UI;
 using Hatifect.UI.Experience;
+using Hatifect.UI.Runtime.Tests;
 using Xunit;
 
 namespace Hatifect.Flow.Tests;
@@ -20,17 +21,19 @@ public sealed class ParcelExperienceTests
         var fixture = new CheckpointFixture();
         using var app = new FlowApplication(fixture.Runtime, action => action(fixture.Runtime), _ => { });
         using var view = Create(app, russian);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         Assert.Equal("Copper ore × 7", Value(view, cargo));
         UiActionDefinition reserve = view.Experience.Actions[0];
-        Assert.True(reserve.CanExecute);
+        Assert.True(actionHost.CanInvoke(reserve));
 
-        Assert.True(reserve.TryExecute());
-        Assert.False(reserve.CanExecute);
+        Assert.True(actionHost.Invoke(reserve));
+        Assert.False(actionHost.CanInvoke(reserve));
         Assert.True(view.Pump());
 
         Assert.Equal(scheduled, Value(view, state));
         Assert.Equal(ParcelState.Reserved, fixture.Runtime.GetParcel(CheckpointFixture.Parcel).State);
-        Assert.True(view.Experience.Actions[1].CanExecute);
+        Assert.True(actionHost.CanInvoke(view.Experience.Actions[1]));
         Assert.False(view.Pump());
     }
 
@@ -40,13 +43,15 @@ public sealed class ParcelExperienceTests
         var fixture = new CheckpointFixture();
         using var app = new FlowApplication(fixture.Runtime, action => action(fixture.Runtime), _ => { });
         using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         UiActionDefinition cancel = view.Experience.Actions[1];
         app.Execute(FlowApplicationTests.Command(app.ReadSnapshot(), FlowParcelAction.Reserve));
-        Assert.False(cancel.TryExecute());
+        Assert.False(actionHost.Invoke(cancel));
         view.Pump();
-        Assert.True(cancel.CanExecute);
+        Assert.True(actionHost.CanInvoke(cancel));
         view.Dispose();
-        Assert.False(cancel.TryExecute());
+        Assert.False(actionHost.Invoke(cancel));
         Assert.False(view.Pump());
         Assert.Equal(ParcelState.Reserved, fixture.Runtime.GetParcel(CheckpointFixture.Parcel).State);
     }
@@ -57,10 +62,14 @@ public sealed class ParcelExperienceTests
         var fixture = new CheckpointFixture();
         using var app = new FlowApplication(fixture.Runtime, action => action(fixture.Runtime), _ => { });
         using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         var api = new SurfaceApi();
         using var surface = new ParcelSurface(view);
         surface.Show(api);
         surface.Pump();
+        Assert.Equal(1, api.OverlayCreations);
+        Assert.Equal(0, api.WindowCreations);
         Assert.Equal(1, api.Session.Synchronizations);
         Assert.Equal(0, api.Session.Refreshes);
         app.Execute(FlowApplicationTests.Command(app.ReadSnapshot(), FlowParcelAction.Reserve));
@@ -74,31 +83,73 @@ public sealed class ParcelExperienceTests
         Assert.Equal(1, api.Session.Refreshes);
         Assert.Equal(2, api.Session.Synchronizations);
         app.Dispose();
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         surface.Pump();
         Assert.True(surface.IsClosed);
         Assert.Equal(1, api.Session.Disposals);
         Assert.False(api.Session.Visible);
     }
 
-    [Fact]
-    public void FailedShowAndCleanup_RetainHandleForRetryAndRetireActions()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedShowAndCleanup_RetainHandleForRetryAndRetireActions(bool standalone)
     {
         var fixture = new CheckpointFixture();
         using var app = new FlowApplication(fixture.Runtime, action => action(fixture.Runtime), _ => { });
         using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         var api = new SurfaceApi();
         api.Session.FailShow = true;
         api.Session.FailDispose = true;
-        using var surface = new ParcelSurface(view);
+        using var surface = new ParcelSurface(view, standalone ? UiSemanticHostKind.Window : null);
         Assert.Throws<InvalidOperationException>(() => surface.Show(api));
         Assert.Throws<InvalidOperationException>(surface.Dispose);
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         api.Session.FailDispose = false;
         surface.Pump();
         Assert.Equal(2, api.Session.Disposals);
         Assert.Equal(1, api.Creations);
+        Assert.Equal(standalone ? 0 : 1, api.OverlayCreations);
+        Assert.Equal(standalone ? 1 : 0, api.WindowCreations);
         Assert.False(api.Session.Visible);
+    }
+
+    [Fact]
+    public void StandaloneNetworkUsesOwningWindowAndFreshSessionAfterDismissal()
+    {
+        using var app = new NetworkTestApplication();
+        var id = new UiSymbolId("Hatifect.Flow", "network");
+        using var first = new NetworkExperience(id, app);
+        var api = new SurfaceApi();
+        using var surface = new ParcelSurface(first, UiSemanticHostKind.Window);
+        surface.Show(api);
+        surface.Show(api);
+        Assert.Equal(1, api.Creations);
+        Assert.Equal(0, api.OverlayCreations);
+        Assert.Equal(1, api.WindowCreations);
+        Assert.Equal(UiSemanticHostKind.Window, api.Kind);
+        Assert.Same(first.Experience, api.Experience);
+        Assert.Equal(id, api.Options!.Id);
+        Assert.True(api.Session.Visible);
+
+        api.Session.Hide();
+        Assert.True(surface.IsClosed);
+        Assert.All(first.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.Throws<InvalidOperationException>(() => surface.Show(api));
+        surface.Pump();
+        Assert.Equal(1, api.Session.Disposals);
+
+        using var reopened = new NetworkExperience(id, app);
+        var nextApi = new SurfaceApi();
+        using var next = new ParcelSurface(reopened, UiSemanticHostKind.Window);
+        next.Show(nextApi);
+        Assert.True(nextApi.Session.Visible);
+        Assert.NotSame(api.Experience, nextApi.Experience);
+        Assert.Equal(1, nextApi.Creations);
+        Assert.Null(app.NetworkCommand);
+        Assert.Null(app.SendCommand);
     }
 
     [Fact]
@@ -116,14 +167,23 @@ public sealed class ParcelExperienceTests
     private static object? Value(ParcelExperience view, string name)
         => view.Experience.Elements.Single(element => element.Name == name).Source.UntypedValue?.ToString();
 
-    private sealed class SurfaceApi : IUiSemanticSurfaceApi
+    private sealed class SurfaceApi : IUiSemanticHostApi
     {
         internal SurfaceSession Session { get; } = new();
         internal int Creations { get; private set; }
+        internal int OverlayCreations { get; private set; }
+        internal int WindowCreations { get; private set; }
+        internal UiSemanticHostKind? Kind { get; private set; }
+        internal UiExperienceDefinition? Experience { get; private set; }
+        internal UiSemanticSurfaceOptions? Options { get; private set; }
         public int ApiVersion => 1;
         public IUiSemanticSurfaceAutomation Automation => throw new NotSupportedException();
         public IUiSemanticSurfaceSession CreateActiveMenuOverlay(UiExperienceDefinition experience, UiSemanticSurfaceOptions options)
-        { Creations++; return Session; }
+        { Creations++; OverlayCreations++; Experience = experience; Options = options; return Session; }
+        public IUiSemanticSurfaceSession CreateSurface(UiExperienceDefinition experience, UiSemanticHostKind kind, UiSemanticSurfaceOptions options)
+        { Creations++; WindowCreations++; Kind = kind; Experience = experience; Options = options; return Session; }
+        public IUiSemanticTerminalSession CreateTerminal(UiSemanticTerminalDefinition terminal, UiSemanticSurfaceOptions options)
+            => throw new NotSupportedException();
     }
 
     private sealed class SurfaceSession : IUiSemanticSurfaceSession

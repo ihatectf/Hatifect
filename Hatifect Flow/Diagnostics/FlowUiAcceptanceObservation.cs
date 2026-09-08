@@ -18,13 +18,30 @@ namespace Hatifect.Flow.Diagnostics;
 internal sealed class FlowUiAcceptanceObservation : IDisposable
 {
     private readonly IUiSemanticSurfaceObservation _observation;
-    private readonly string _artifact;
+    private readonly IUiSemanticSurfaceRevealAutomation? _reveal;
+    private readonly string _artifact, _scenario;
     private readonly CompletedFrameCapture _component;
     private readonly List<Captured> _captures = new(24);
     private readonly Dictionary<IUiSemanticSurfaceSession, UiSemanticSurfaceSnapshot> _retired = new();
-    private FlowUiAcceptance.Frame? _pending;
+    private readonly FlowUiNativeFrameSettling _nativeFrames = new();
+    internal FlowUiNativeFrame? SettledNativeFrame
+    {
+        get
+        {
+            if (_failure is not null) throw new InvalidOperationException("Native Flow frame capture failed.", _failure);
+            return _nativeFrames.Settled;
+        }
+    }
+    internal void ResetNativeSettling() => _nativeFrames.Reset();
+    internal bool SettleNativeProfile(Action apply)
+    {
+        _ = SettledNativeFrame; // Propagate a capture failure before another profile write.
+        return _nativeFrames.CompleteProfile(apply);
+    }
+    private Frame? _pending;
     private Guid _armedInstance;
     private long _armedRenderPass;
+    private FlowUiRevealFrame? _revealedFrame;
     private string? _ready;
     private Exception? _failure;
     private FailedFrame? _failedFrame;
@@ -32,19 +49,30 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
 
     private sealed record Captured(IUiSemanticSurfaceSession Surface, string Name, long Publication,
         UiSemanticSurfaceSnapshot Snapshot, string Json, string Screenshot, string ScreenshotSha256,
-        string UiLayer, string UiLayerSha256);
+        string UiLayer, string UiLayerSha256, FlowUiNativeFrame NativeFrame, UiSymbolId? RevealedSemantic);
     private sealed record FailedFrame(string Name, UiSemanticSurfaceSnapshot Snapshot, string? Screenshot, string? UiLayer);
 
-    internal FlowUiAcceptanceObservation(IUiSemanticSurfaceObservation observation, string artifact)
+    internal FlowUiAcceptanceObservation(IUiSemanticSurfaceObservation observation, string artifact,
+        string scenario = FlowUiAcceptance.Scenario, IUiSemanticSurfaceRevealAutomation? reveal = null)
     {
         Require(observation.IsEnabled, "The owning UI observation API is disabled for this request.");
         _observation = observation;
-        _artifact = artifact;
+        _reveal = reveal;
+        _artifact = artifact; _scenario = scenario;
         _component = new CompletedFrameCapture(CaptureCompletedFrame);
         _component.Game.Components.Add(_component);
     }
 
+    internal sealed record Frame(string Name, UiExperienceDefinition Experience, IUiSemanticSurfaceSession Surface,
+        string Locale, float Scale, bool Controller, long PublicationVersion, Func<long> CurrentPublication,
+        Action<UiSemanticSurfaceSnapshot> VerifyContents, UiSymbolId? RevealTarget = null);
+
     internal bool Observe(FlowUiAcceptance.Frame expected)
+        => Observe(new Frame(expected.Name, expected.Experience.Experience, expected.Surface,
+            expected.Locale, expected.Scale, expected.Controller, expected.PublicationVersion,
+            () => expected.Experience.Publication.Version, actual => VerifyContents(expected, actual)));
+
+    internal bool Observe(Frame expected)
     {
         Require(!_disposed, "Flow observation was already disposed.");
         if (_failure is not null) throw new InvalidOperationException("Completed Flow UI observation failed.", _failure);
@@ -60,7 +88,7 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
         Require(_ready is null, "The driver skipped completed Flow observation evidence.");
         if (_pending is not null)
             Require(_pending.Name == expected.Name && ReferenceEquals(_pending.Surface, expected.Surface)
-                && _pending.PublicationVersion == expected.PublicationVersion,
+                && _pending.PublicationVersion == expected.PublicationVersion && _pending.RevealTarget == expected.RevealTarget,
                 "The driver replaced a pending Flow observation.");
         else
         {
@@ -69,6 +97,16 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
             _armedInstance = armed.InstanceId;
             _armedRenderPass = armed.CompletedRenderPass;
         }
+        if (expected.RevealTarget is { } target)
+        {
+            Require(_reveal is { IsEnabled: true } && _reveal.Reveal(expected.Surface, target),
+                "The owning UI could not reveal the Flow result inside its accepted clip.");
+            UiSemanticSurfaceSnapshot revealed = _observation.Capture(expected.Surface);
+            Require(revealed.InstanceId == _armedInstance && revealed.Visible && !revealed.Retired
+                && revealed.AcceptedFrame is not null, "Reveal lost the armed Flow surface.");
+            _revealedFrame = new(revealed.InstanceId, revealed.AcceptedFrame!, revealed.CompletedRenderPass);
+        }
+        else _revealedFrame = null;
         _pending = expected;
         return false;
     }
@@ -99,7 +137,17 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
 
     private void CaptureCompletedFrame()
     {
-        if (_disposed || _failure is not null || _pending is not { } expected) return;
+        if (_disposed || _failure is not null) return;
+        try { _nativeFrames.ObserveCompletedDraw(FlowUiNativeFrame.Capture()); }
+        catch (Exception error)
+        {
+            _failure = error;
+            try { WriteEvidence(); }
+            catch (Exception write) { _failure = new AggregateException(error, write); }
+            return;
+        }
+        if (!_nativeFrames.ProfileReady || _pending is not { } expected || _nativeFrames.Settled is not { } native
+            || native.AppliedScale != expected.Scale) return;
         UiSemanticSurfaceSnapshot? observed = null;
         try
         {
@@ -107,15 +155,18 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
             Require(actual.InstanceId == _armedInstance, "The armed Flow surface changed its instance identity.");
             if (actual.CompletedRenderPass <= _armedRenderPass) return;
             if (!actual.IsAcceptedFrameRendered || Game1.fadeToBlackAlpha > 0) return;
+            if (expected.RevealTarget is not null && (_revealedFrame is not { } revealed
+                || !revealed.IsCompletedBy(actual.InstanceId, actual.AcceptedFrame, actual.RenderedFrame,
+                    actual.CompletedRenderPass))) return;
             UiEnvironment environment = actual.Environment ?? throw new InvalidOperationException("The accepted scene has no environment.");
             if (environment.Locale != expected.Locale || environment.Scale != expected.Scale
                 || environment.InputMode != (expected.Controller ? UiInputMode.Controller : UiInputMode.MouseKeyboard)) return;
-            Require(expected.Experience.Publication.Version == expected.PublicationVersion,
+            Require(expected.CurrentPublication() == expected.PublicationVersion,
                 "The Flow publication changed before completed-frame capture.");
             Require(actual.InstanceId != Guid.Empty && actual.Visible && !actual.Retired && !actual.Truncated
                 && !actual.HasUnmappedContent && actual.UnobservedPortalCount == 0
-                && actual.SurfaceId == expected.Experience.Experience.Id
-                && actual.ExperienceId == expected.Experience.Experience.Id && actual.CompletedRenderPass > 0,
+                && actual.SurfaceId == expected.Experience.Id
+                && actual.ExperienceId == expected.Experience.Id && actual.CompletedRenderPass > 0,
                 "Flow UI capture has incomplete identity, content or lifecycle evidence.");
             Captured? prior = _captures.LastOrDefault(value => ReferenceEquals(value.Surface, expected.Surface));
             if (prior is not null)
@@ -125,13 +176,14 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
             else
                 Require(_captures.All(value => value.Snapshot.InstanceId != actual.InstanceId),
                     "A new native surface reused an earlier instance identity.");
-            VerifyContents(expected, actual);
+            expected.VerifyContents(actual);
             VerifyRetained();
             Require(_captures.Count < 24 && _captures.All(value => value.Name != expected.Name),
                 "Flow frame evidence repeated a name or exceeded its fixed matrix.");
             (string screenshot, string layer) = CapturePixels(expected.Name);
             _captures.Add(new(expected.Surface, expected.Name, expected.PublicationVersion, actual,
-                JsonSerializer.Serialize(actual), screenshot, HashFile(screenshot), layer, HashFile(layer)));
+                JsonSerializer.Serialize(actual), screenshot, HashFile(screenshot), layer, HashFile(layer), native,
+                expected.RevealTarget));
             WriteEvidence();
             _pending = null;
             _ready = expected.Name;
@@ -249,9 +301,10 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
     private void WriteEvidence()
         => AtomicJson(Path.Combine(_artifact, "diagnostics", "flow-ui-observations.json"), new
         {
-            scenarioId = FlowUiAcceptance.Scenario, captureSource = "completed-composed-back-buffer-and-ui-layer",
+            scenarioId = _scenario, captureSource = "completed-composed-back-buffer-and-ui-layer",
             captures = _captures.Select(value => new { value.Name, value.Publication, value.Snapshot,
-                value.Screenshot, value.ScreenshotSha256, value.UiLayer, value.UiLayerSha256 }).ToArray(),
+                value.Screenshot, value.ScreenshotSha256, value.UiLayer, value.UiLayerSha256, value.NativeFrame,
+                value.RevealedSemantic }).ToArray(),
             retired = _retired.Values.ToArray(), failedFrame = _failedFrame, error = _failure?.ToString()
         });
 

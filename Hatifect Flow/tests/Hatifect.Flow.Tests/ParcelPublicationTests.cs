@@ -6,6 +6,7 @@ using Hatifect.Flow.Domain.Shipments;
 using Hatifect.Flow.UI.Semantic;
 using Hatifect.UI;
 using Hatifect.UI.Experience;
+using Hatifect.UI.Runtime.Tests;
 using Xunit;
 
 namespace Hatifect.Flow.Tests;
@@ -18,13 +19,15 @@ public sealed class ParcelPublicationTests
     {
         using var app = new ObservedApplication();
         using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         UiPublicationView before = view.Publication.Capture();
         var observations = new List<(string State, string Result, bool Nested)>();
         foreach (var element in view.Experience.Elements)
             element.Source.Changed += () => observations.Add((Value(view, "State"), Value(view, "Result"),
-                view.Experience.Actions[1].TryExecute()));
+                actionHost.Invoke(view.Experience.Actions[1])));
 
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
         Assert.Equal(before.Version, view.Publication.Version);
         Assert.Empty(observations);
         Assert.True(view.Pump());
@@ -40,7 +43,7 @@ public sealed class ParcelPublicationTests
         Assert.Equal(before.Version + 1, view.Publication.Version);
         Assert.Equal("Ready to dispatch", Read(before, Source(view, "State")));
         Assert.Equal(string.Empty, Read(before, Source(view, "Result")));
-        Assert.True(view.Experience.Actions[1].CanExecute);
+        Assert.True(actionHost.CanInvoke(view.Experience.Actions[1]));
         Assert.Empty(view.Publication.LastResult.ObserverErrors);
         Assert.False(view.Pump());
     }
@@ -51,11 +54,13 @@ public sealed class ParcelPublicationTests
         using var app = new ObservedApplication();
         bool fail = false;
         using var view = Create(app, stationName: _ => fail ? throw new InvalidOperationException("station unavailable") : "Station");
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         UiPublicationView before = view.Publication.Capture();
         object?[] values = view.Experience.Elements.Select(element => element.Source.UntypedValue).ToArray();
         int notifications = 0;
         view.Publication.Changed += () => notifications++;
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
         fail = true;
 
         Assert.Throws<InvalidOperationException>(() => view.Pump());
@@ -80,12 +85,14 @@ public sealed class ParcelPublicationTests
     {
         using var app = new ObservedApplication();
         using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         bool? nested = null;
-        Action callback = () => nested = view.Experience.Actions[0].TryExecute();
+        Action callback = () => nested = actionHost.Invoke(view.Experience.Actions[0]);
         if (duringExecute) app.BeforeExecute = callback;
         else app.AfterRead = callback;
 
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
 
         Assert.False(nested);
         Assert.Equal(1, app.Commands);
@@ -98,21 +105,24 @@ public sealed class ParcelPublicationTests
     {
         using var app = new ObservedApplication();
         ParcelExperience? current = null;
+        ExperienceTextProbe? actionHost = null;
         bool? nested = null;
         using var view = Create(app, itemName: key =>
         {
-            if (current is not null) nested = current.Experience.Actions[1].TryExecute();
+            if (current is not null) nested = actionHost!.Invoke(current.Experience.Actions[1]);
             return key;
         });
+        using var actionHostOwner = actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         current = view;
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
 
         Assert.True(view.Pump());
 
         Assert.False(nested);
         Assert.Equal(1, app.Commands);
         Assert.Equal("Scheduled", Value(view, "State"));
-        Assert.True(view.Experience.Actions[1].CanExecute);
+        Assert.True(actionHost.CanInvoke(view.Experience.Actions[1]));
     }
 
     [Fact]
@@ -120,10 +130,12 @@ public sealed class ParcelPublicationTests
     {
         using var app = new ObservedApplication();
         using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         UiPublicationView before = view.Publication.Capture();
         app.AfterExecute = view.Dispose;
 
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
 
         Assert.Equal(ParcelState.Reserved, app.Inner.ReadSnapshot().Parcels.Single().State);
         Assert.Equal(1, app.Commands);
@@ -131,7 +143,7 @@ public sealed class ParcelPublicationTests
         Assert.False(view.Pump());
         Assert.Equal(before.Version, view.Publication.Version);
         Assert.Equal(string.Empty, Value(view, "Result"));
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
     }
 
     [Fact]
@@ -139,10 +151,12 @@ public sealed class ParcelPublicationTests
     {
         using var app = new ObservedApplication();
         using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         int reads = app.Reads;
         view.Publication.Dispose();
 
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         Assert.False(view.IsActive);
         Assert.False(view.Pump());
         Assert.Equal(reads, app.Reads);
@@ -169,8 +183,10 @@ public sealed class ParcelPublicationTests
             return value;
         }
         using var view = Create(app, stationName: _ => Format("Station"), itemName: Format);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         UiPublicationView before = view.Publication.Capture();
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
         retire = publicationOnly ? view.Publication.Dispose : view.Dispose;
         if (phase == 0) app.AfterRead = retire;
 
@@ -193,10 +209,12 @@ public sealed class ParcelPublicationTests
     {
         using var app = new ObservedApplication();
         using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         Action invalidate = () => app.Inner.Refresh(force: true);
         app.AfterRead = secondRead ? () => app.AfterRead = invalidate : invalidate;
 
-        Assert.Equal(secondRead, view.Experience.Actions[0].TryExecute());
+        Assert.Equal(secondRead, actionHost.Invoke(view.Experience.Actions[0]));
 
         Assert.Equal(0, app.Commands);
         Assert.True(view.Pump());

@@ -42,6 +42,8 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
                 return new FlowCommandResult(FlowCommandStatus.Conflict, ReadSnapshot().Revision);
             return new FlowCommandResult(FlowCommandStatus.Applied, ReadSnapshot().Revision);
         }
+        catch (SendAdmissionFailure error)
+        { return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, error.Code); }
         catch (ArgumentOutOfRangeException)
         { return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision); }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException)
@@ -52,6 +54,24 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
     internal void CaptureTarget(string location, int x, int y, Chest chest)
     {
         _target = CapturePeerTarget(location, x, y, chest);
+        Application.Refresh(force: true);
+    }
+
+    // Opening the network away from a chest must not reuse a previous physical capability.
+    // Inspection is also available during recovery; clearing a target does not mutate inventory.
+    internal void PreparePlayerTarget(string location, int x, int y, Chest? chest)
+    {
+        ClearTarget();
+        if (ReadSnapshot().State == FlowApplicationState.Active && chest is not null && ChestInventoryAccess.IsSupported(chest))
+            CaptureTarget(location, x, y, chest);
+    }
+
+    private void ClearTarget()
+    {
+        RequireOwnerIdle();
+        if (_closed) throw new InvalidOperationException("The game session is closed.");
+        if (_target is null) return;
+        _target = null;
         Application.Refresh(force: true);
     }
 
@@ -136,4 +156,13 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
 
     private StationBinding RequireStation(Guid id) => _stations.TryGetValue(id, out StationBinding? station)
         ? station : throw new ArgumentException("Unknown station identity.");
+
+    private sealed class SendAdmissionFailure : InvalidOperationException
+    {
+        internal SendAdmissionFailure(FlowRejectionCode code)
+            : base(code == FlowRejectionCode.RouteSearchLimit
+                ? "The route search exceeded its supported bound."
+                : "No route connects the selected stations.") => Code = code;
+        internal FlowRejectionCode Code { get; }
+    }
 }

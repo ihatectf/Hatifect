@@ -7,6 +7,8 @@ using Hatifect.Flow.Application;
 using Hatifect.Flow.Domain.Shipments;
 using Hatifect.Flow.Inventory;
 using Hatifect.Flow.Sessions;
+using Hatifect.Flow.UI.Semantic;
+using Hatifect.UI.Experience;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -20,6 +22,11 @@ namespace Hatifect.Flow.Diagnostics;
 internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
 {
     internal const string Scenario = "flow.chest.roundtrip";
+    internal const string PlayerScenario = "flow.ui.player";
+    private FlowPlayerWindowSequence? _playerSequence;
+    private Func<FlowGameSession, IUiSemanticHostApi, NetworkExperience>? _openPlayer;
+    private Action? _closePlayer;
+    private bool _playerReopened;
     private static readonly string[] Checks = { "loaded", "custody", "saving", "saved", "delivery", "lifecycle", "reload", "no-duplication" };
     private readonly IModHelper _helper;
     private readonly string _scenario;
@@ -45,7 +52,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
     private int _verificationFrames;
     private bool _disposed;
     private bool _returning;
-    private enum Stage { Startup, Loading, Transit, SavingTransit, ReturnTransit, ReloadTransit, Delivery, SavingDelivered, ReturnDelivered, ReloadDelivered, Verify, AwaitUnsavedExtraction, AwaitUnsavedDelivery, AwaitCrash, Exit }
+    private enum Stage { Startup, Loading, PlayerAdmission, Transit, SavingTransit, ReturnTransit, ReloadTransit, Delivery, SavingDelivered, ReturnDelivered, ReloadDelivered, Verify, AwaitUnsavedExtraction, AwaitUnsavedDelivery, AwaitCrash, Exit }
 
     private FlowChestRoundtripAcceptance(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current, string scenario)
     {
@@ -60,11 +67,13 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
         helper.Events.GameLoop.Saved += OnSaved;
     }
 
-    internal static FlowChestRoundtripAcceptance? TryCreate(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current)
+    internal static FlowChestRoundtripAcceptance? TryCreate(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current,
+        Func<FlowGameSession, IUiSemanticHostApi, NetworkExperience>? openPlayer = null, Action? closePlayer = null)
     {
         string? scenario = Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO");
         return Environment.GetEnvironmentVariable("HATIFECT_TEST_MODE") == "1" && Environment.GetEnvironmentVariable("HATIFECT_TEST_AUTOMATED") == "1"
-            && scenario is Scenario or CrashScenario or DeliveryCrashScenario or ExtractionCrashScenario or UnsavedDeliveryCrashScenario ? new(helper, monitor, current, scenario) : null;
+            && scenario is Scenario or PlayerScenario or CrashScenario or DeliveryCrashScenario or ExtractionCrashScenario or UnsavedDeliveryCrashScenario
+            ? new(helper, monitor, current, scenario) { _openPlayer = openPlayer, _closePlayer = closePlayer } : null;
     }
 
     internal void OnSaveLoaded()
@@ -95,6 +104,12 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                 Item expectedRemainder = FlowItemCodec.Decode(FlowItemCodec.Encode(partial));
                 expectedRemainder.Stack = 8;
                 _remainderXml = FlowItemCodec.Encode(expectedRemainder);
+                if (_scenario == PlayerScenario)
+                {
+                    Require(_openPlayer is not null && _closePlayer is not null, "Player acceptance requires the production Window factory.");
+                    _stage = Stage.PlayerAdmission;
+                    return;
+                }
                 session.RegisterStation("accept_source", "Farm", (int)_sourceTile.X, (int)_sourceTile.Y, source);
                 session.RegisterStation("accept_destination", "Farm", (int)_destinationTile.X, (int)_destinationTile.Y, destination);
                 session.Link("accept_source", "accept_destination", transitTicks: 180);
@@ -160,6 +175,15 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                     SaveGame.Load(Path.GetFileName(_request.SavePath));
                     Game1.exitActiveMenu();
                     break;
+                case Stage.PlayerAdmission:
+                    _playerSequence ??= new(_helper, _request.Artifact, _openPlayer!, _closePlayer!);
+                    if (!_playerSequence.Admit(Session(), (Chest)Game1.getFarm().Objects[_sourceTile],
+                        (Chest)Game1.getFarm().Objects[_destinationTile], (int)_sourceTile.X, (int)_sourceTile.Y,
+                        (int)_destinationTile.X, (int)_destinationTile.Y)) break;
+                    _parcel = _playerSequence.WholeParcel; _partialParcel = _playerSequence.PartialParcel;
+                    _passed.Add("loaded"); _passed.Add("window-actions"); _passed.Add("visible-results");
+                    _stage = Stage.Transit;
+                    break;
                 case Stage.Transit when BothAt(ParcelState.InTransit):
                     VerifyRemainder();
                     Require(Items(_destinationTile).Length == 0, "Extraction did not move exclusive custody into the parcels.");
@@ -188,6 +212,11 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                     break;
                 case Stage.Verify:
                     VerifyDelivery();
+                    if (_scenario == PlayerScenario && !_playerReopened)
+                    {
+                        if (!_playerSequence!.ObserveDelivered(Session())) break;
+                        _playerReopened = true; _passed.Add("window-reopen");
+                    }
                     if (++_verificationFrames < 120) break;
                     FlowSnapshot snapshot = Session().ReadSnapshot();
                     Require(Session().Execute(new FlowParcelCommand(snapshot.SessionId, snapshot.Revision, _parcel, FlowParcelAction.RetryDelivery)).Status == FlowCommandStatus.Rejected,
@@ -340,6 +369,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
     internal void Fail(Exception error)
     {
         _errors.Add(error.ToString());
+        try { _playerSequence?.Dispose(); } catch (Exception cleanup) { _errors.Add(cleanup.ToString()); }
         _monitor.Log("Flowline " + _scenario + " failed: " + error, LogLevel.Error);
         try { WriteReport(); }
         finally { _stage = Stage.Exit; }
@@ -353,13 +383,22 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             FormatVersion = 3, PerformanceFormatVersion = 3, CapturedAtUtc = captured,
             RuntimeFingerprintAlgorithm = "sha256-flow-runtime-v1", RuntimeFingerprint = _fingerprint,
             GameVersion = Game1.GetVersionString(), SmapiVersion = Constants.ApiVersion.ToString(), Scenarios = Array.Empty<object>(),
-            HostChecks = (_crashPhase is null ? Checks : Checks.Concat(CrashAfterUnsavedEffect ? new[] { "process-restart", "unsaved-rollback" } : new[] { "process-restart" })).Select(id => new { Id = _scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
+            HostChecks = (_crashPhase is null ? (_scenario == PlayerScenario ? Checks.Concat(new[] { "window-actions", "visible-results", "window-reopen" }) : Checks) : Checks.Concat(CrashAfterUnsavedEffect ? new[] { "process-restart", "unsaved-rollback" } : new[] { "process-restart" })).Select(id => new { Id = _scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
                 CapturedAtUtc = captured, Note = _errors.Count == 0 ? "Whole and partial stacks, real chests, two actual game saves and reloads; total quantity conserved." : string.Join("\n", _errors) }).ToArray()
         });
         AtomicJson(Path.Combine(_request.Artifact, "diagnostics", "flow-chest-roundtrip.json"), new
         { requestId = _request.RunId, scenarioId = _scenario, frames = _frames, loads = _loads, savingEvents = _savings, savedEvents = _saves,
             parcelId = _parcel, partialParcelId = _partialParcel, partialSourceQuantity = 13, partialCargoQuantity = 5, partialRemainderQuantity = 8,
-            errors = _errors.ToArray() });
+            errors = _errors.ToArray(),
+            window = _scenario == PlayerScenario ? new
+            {
+                entry = "production Window factory after prepared chest targeting; not ordinary keybind input proof",
+                forms = "prepared semantic form values and collection selection; not native input",
+                actions = "owning normalized Tab/Enter; not OS-injected or human physical input",
+                profile = "EN/100% only; temporary ForceOff/false restored with fresh native frames before saves and final completion",
+                inputRestorations = _playerSequence?.InputRestorations,
+                milestones = _playerSequence?.Milestones
+            } : null });
     }
 
     public void Dispose()
@@ -368,5 +407,6 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
         _disposed = true;
         _helper.Events.GameLoop.Saving -= OnSaving;
         _helper.Events.GameLoop.Saved -= OnSaved;
+        _playerSequence?.Dispose();
     }
 }

@@ -33,6 +33,12 @@ internal sealed record UiLayoutEntry(
     string? Heading = null,
     UiRect? HeadingBounds = null);
 
+// Root content remains in logical coordinates; only its viewport is visible/hit-testable.
+internal sealed record UiRootScrollLayout(UiRect Viewport, float Extent, float Offset)
+{
+    public float MaximumOffset => Math.Max(0, Extent - Viewport.Height);
+}
+
 internal sealed class UiLayoutSnapshot
 {
     private readonly IReadOnlyDictionary<UiSymbolId, UiLayoutEntry> _entries;
@@ -42,11 +48,13 @@ internal sealed class UiLayoutSnapshot
     public UiLayoutSnapshot(
         IDictionary<UiSymbolId, UiLayoutEntry> entries,
         UiHostPlacementResult hostPlacement,
-        IDictionary<UiSymbolId, UiCollectionLayoutWindow>? collections = null)
+        IDictionary<UiSymbolId, UiCollectionLayoutWindow>? collections = null,
+        UiRootScrollLayout? rootScroll = null)
     {
         _entries = new ReadOnlyDictionary<UiSymbolId, UiLayoutEntry>(
             new Dictionary<UiSymbolId, UiLayoutEntry>(entries ?? throw new ArgumentNullException(nameof(entries))));
         HostPlacement = hostPlacement ?? throw new ArgumentNullException(nameof(hostPlacement));
+        RootScroll = rootScroll;
         _collections = new ReadOnlyDictionary<UiSymbolId, UiCollectionLayoutWindow>(
             new Dictionary<UiSymbolId, UiCollectionLayoutWindow>(
                 collections ?? new Dictionary<UiSymbolId, UiCollectionLayoutWindow>()));
@@ -58,6 +66,7 @@ internal sealed class UiLayoutSnapshot
     }
 
     public UiHostPlacementResult HostPlacement { get; }
+    public UiRootScrollLayout? RootScroll { get; }
     public IReadOnlyList<UiCollectionLayoutWindow> CollectionWindows => _collectionWindows;
 
     public bool TryGet(UiSymbolId node, out UiRect bounds)
@@ -111,11 +120,13 @@ internal sealed class UiSceneLayoutEngine
     public UiLayoutSnapshot Build(
         UiScene scene,
         UiHostPlacementContext context,
-        UiCollectionViewportSnapshot collections)
+        UiCollectionViewportSnapshot collections,
+        float rootOffset = 0)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(collections);
+        if (!float.IsFinite(rootOffset)) throw new ArgumentOutOfRangeException(nameof(rootOffset));
 
         var measured = new Dictionary<UiSymbolId, MeasuredNode>();
         Measure(scene.Root, context.Viewport.Width, scene.MeasurementContext, measured, scene.DisplayName);
@@ -123,13 +134,26 @@ internal sealed class UiSceneLayoutEngine
         UiHostPlacementResult placement = _placement.Place(
             scene.Root.Policy, context, root.Desired, root.Minimum);
 
+        UiRootScrollLayout? rootScroll = null;
+        if (scene.Root.Policy.CustomPolicy == UiProvisionalHostPolicies.OverlayCenteredId &&
+            placement.WasClamped && root.Minimum.Height > placement.Bounds.Height + .01f)
+        {
+            UiRect content = placement.Bounds.Inset(root.Inset);
+            float height = content.Height - root.HeadingHeight;
+            // Scrolling cannot repair an unusable viewport or insufficient horizontal space.
+            if (height <= 0 || placement.Bounds.Width + .01f < root.Minimum.Width)
+                throw new UiLayoutException($"Node '{scene.Root.Id}' has space smaller than required minimum viewport.");
+            var viewport = new UiRect(content.X, content.Y + root.HeadingHeight, content.Width, height);
+            float extent = root.Desired.Height - root.Inset.Top - root.Inset.Bottom - root.HeadingHeight;
+            rootScroll = new(viewport, extent, Math.Clamp(rootOffset, 0, Math.Max(0, extent - height)));
+        }
         var entries = new Dictionary<UiSymbolId, UiLayoutEntry>();
         var collectionWindows = new Dictionary<UiSymbolId, UiCollectionLayoutWindow>();
         Arrange(
             scene.Root, placement.Bounds, context.Viewport, measured, entries,
-            collections, collectionWindows, scene.MeasurementContext);
+            collections, collectionWindows, scene.MeasurementContext, rootScroll);
         _collections.Synchronize(collectionWindows.Keys);
-        return new UiLayoutSnapshot(entries, placement, collectionWindows);
+        return new UiLayoutSnapshot(entries, placement, collectionWindows, rootScroll);
     }
 
     private MeasuredNode Measure(
@@ -313,10 +337,12 @@ internal sealed class UiSceneLayoutEngine
         IDictionary<UiSymbolId, UiLayoutEntry> entries,
         UiCollectionViewportSnapshot collectionViewport,
         IDictionary<UiSymbolId, UiCollectionLayoutWindow> collectionWindows,
-        UiSceneMeasurementContext measurementContext)
+        UiSceneMeasurementContext measurementContext,
+        UiRootScrollLayout? rootScroll = null)
     {
         MeasuredNode own = measured[node.Id];
-        if (bounds.Width + 0.01f < own.Minimum.Width || bounds.Height + 0.01f < own.Minimum.Height)
+        if (bounds.Width + 0.01f < own.Minimum.Width ||
+            (rootScroll == null && bounds.Height + 0.01f < own.Minimum.Height))
             throw new UiLayoutException(
                 $"Node '{node.Id}' has space smaller than required minimum " +
                 $"{own.Minimum.Width:0.##}x{own.Minimum.Height:0.##}.");
@@ -352,6 +378,13 @@ internal sealed class UiSceneLayoutEngine
             return;
         }
         if (node.Children.Count == 0) return;
+        if (rootScroll != null)
+        {
+            // Keep the root surface/header stationary. Children retain their full measured
+            // extent, clipped below the header, even when their bounds are outside the window.
+            clip = UiRect.Intersect(clip, rootScroll.Viewport);
+            content = new UiRect(content.X, content.Y - rootScroll.Offset, content.Width, rootScroll.Extent);
+        }
 
         if (node is UiHostSceneNode { Policy.Kind: UiHostKind.Terminal })
         {

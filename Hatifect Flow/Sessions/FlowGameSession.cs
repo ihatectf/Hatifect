@@ -137,8 +137,11 @@ internal sealed partial class FlowGameSession : IDisposable
         using HostOperation operation = EnterHostMutation();
         StationBinding from = FindStation(source), to = FindStation(destination);
         if (_payloads.Count >= MaxCargo) throw RejectResource(FlowAdmissionResource.RetainedCargo, _payloads.Count, MaxCargo);
-        if (from.Id == to.Id || _runtime.PlanRoute(new StationId(from.Id), new StationId(to.Id)).Status != RouteStatus.Found)
-            throw new InvalidOperationException("No route connects the selected stations.");
+        RouteStatus route = from.Id == to.Id ? RouteStatus.NoRoute
+            : _runtime.PlanRoute(new StationId(from.Id), new StationId(to.Id)).Status;
+        if (route != RouteStatus.Found)
+            throw new SendAdmissionFailure(route == RouteStatus.SearchLimitExceeded
+                ? FlowRejectionCode.RouteSearchLimit : FlowRejectionCode.RouteUnavailable);
         using IDisposable access = _inventory.EnterStation(from.Id);
         Item item = _inventory.ReadSource(from.Id, slot);
         if (expectedFingerprint is not null

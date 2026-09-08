@@ -6,6 +6,7 @@ using Hatifect.Flow.Domain.Shipments;
 using Hatifect.Flow.UI.Semantic;
 using Hatifect.UI;
 using Hatifect.UI.Experience;
+using Hatifect.UI.Runtime.Tests;
 using Xunit;
 
 namespace Hatifect.Flow.Tests;
@@ -22,9 +23,11 @@ public sealed class ParcelTextCaptureTests
         using var app = new FlowApplication(fixture.Runtime, action => { commands++; action(fixture.Runtime); }, _ => { });
         using var view = new ParcelExperience(Id, app, CheckpointFixture.Parcel.Value,
             localizedItemName: _ => { captures++; return fail ? null! : Name(); });
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         long before = view.Publication.Version;
         object?[] values = view.Experience.Elements.Select(element => element.Source.UntypedValue).ToArray();
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
         fail = true;
 
         Assert.Throws<InvalidOperationException>(() => view.Pump());
@@ -64,7 +67,9 @@ public sealed class ParcelTextCaptureTests
                 retire?.Invoke();
                 return retire is not null && returnNull ? null! : Name();
             });
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
         long before = view.Publication.Version;
         retire = publicationOnly ? view.Publication.Dispose : view.Dispose;
 
@@ -76,7 +81,7 @@ public sealed class ParcelTextCaptureTests
         Assert.Equal("Ready to dispatch", Value(view, "State").Format("en"));
         Assert.Equal(string.Empty, Value(view, "Result").Format("ru-RU"));
         Assert.False(view.IsActive);
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         Assert.Equal(ParcelState.Reserved, fixture.Runtime.GetParcel(CheckpointFixture.Parcel).State);
     }
 

@@ -1,10 +1,11 @@
 using Hatifect.Flow.Application;
 using Hatifect.UI;
 using Hatifect.UI.Experience;
+using Hatifect.UI.Semantics;
 
 namespace Hatifect.Flow.UI.Semantic;
 
-internal sealed class ParcelExperience : IFlowExperience
+internal sealed partial class ParcelExperience : IFlowExperience
 {
     private readonly IFlowApplication _application;
     private readonly Guid? _parcelId;
@@ -61,6 +62,14 @@ internal sealed class ParcelExperience : IFlowExperience
             bool diagnostic = Snapshot.ProviderMode == FlowProviderMode.DiagnosticFake;
             UiLocalizedText title = Localized("Flowline shipment" + (diagnostic ? " · diagnostic" : ""),
                 "Отправление Flowline" + (diagnostic ? " · диагностика" : ""));
+            var actions = new[]
+            {
+                Action(id, "reserve", FlowParcelAction.Reserve, Text("Dispatch", "Отправить")),
+                Action(id, "cancel", FlowParcelAction.Cancel, Text("Cancel", "Отменить")),
+                Action(id, "retry", FlowParcelAction.RetryDelivery, Text("Retry delivery", "Повторить доставку")),
+                Action(id, "reconcile", FlowParcelAction.ReconcileTransfer, Text("Check transfer", "Проверить передачу")),
+                Action(id, "return", FlowParcelAction.ReturnToSource, Text("Return cargo to source", "Вернуть груз в источник"))
+            };
             var builder = new UiExperienceBuilder(id, title.Fallback)
                 .LocalizeDisplayName(title)
                 .Element(id.Child("element/cargo"), "Cargo", Text("Cargo", "Груз"), _cargo, textType, UiCapabilities.Inspect)
@@ -68,12 +77,11 @@ internal sealed class ParcelExperience : IFlowExperience
                 .Element(id.Child("element/state"), "State", Text("State", "Состояние"), _state, textType, UiCapabilities.Monitor)
                 .Element(id.Child("element/result"), "Result", Text("Result", "Результат"), _result, textType, UiCapabilities.Monitor)
                 .Element(id.Child("element/availability"), "Availability", Text("Availability", "Доступность"), _availability, textType, UiCapabilities.Monitor)
-                .Actions(id.Child("element/actions"), "Actions", Text("Actions", "Действия"),
-                    Action(id, "reserve", FlowParcelAction.Reserve, Text("Dispatch", "Отправить")),
-                    Action(id, "cancel", FlowParcelAction.Cancel, Text("Cancel", "Отменить")),
-                    Action(id, "retry", FlowParcelAction.RetryDelivery, Text("Retry delivery", "Повторить доставку")),
-                    Action(id, "reconcile", FlowParcelAction.ReconcileTransfer, Text("Check transfer", "Проверить передачу")),
-                    Action(id, "return", FlowParcelAction.ReturnToSource, Text("Return cargo to source", "Вернуть груз в источник")));
+                .Actions(id.Child("element/actions"), "Actions", Text("Actions", "Действия"), actions);
+            string[] aliases = { "Dispatch", "Cancel", "RetryDelivery" };
+            for (int index = 0; index < aliases.Length; index++)
+                builder.Action(actions[index], aliases[index], UiDataTypes.Action(actions[index].Id.Child("contract"),
+                    ActionRequestType.Descriptor, ActionResultType.Descriptor));
             Present("cargo", "Cargo", "Груз");
             Present("route", "Route", "Маршрут");
             Present("state", "State", "Состояние");
@@ -147,7 +155,9 @@ internal sealed class ParcelExperience : IFlowExperience
     }
 
     private UiActionDefinition Action(UiSymbolId id, string key, FlowParcelAction action, string title)
-        => new(id.Child("action/" + key), title, () => Execute(action), () => Can(action));
+        => action is FlowParcelAction.Reserve or FlowParcelAction.Cancel or FlowParcelAction.RetryDelivery
+            ? TypedAction(id, key, action, title)
+            : new(id.Child("action/" + key), title, () => Execute(action), () => Can(action));
 
     private bool Can(FlowParcelAction action)
     {

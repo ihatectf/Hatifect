@@ -27,7 +27,8 @@ namespace Hatifect.UI.Stardew;
 /// Consumers receive only opaque lifecycle handles; every Scene/platform object stays private.
 /// </summary>
 internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemanticSurfaceAutomation,
-    IUiSemanticSurfaceActionAutomationApi, IUiSemanticSurfaceObservation, IUiSemanticSurfaceActionAutomation
+    IUiSemanticSurfaceRevealAutomationApi, IUiSemanticSurfaceObservation, IUiSemanticSurfaceActionAutomation,
+    IUiSemanticSurfaceRevealAutomation
 {
     private readonly IModHelper _helper;
 
@@ -38,6 +39,7 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
     public IUiSemanticSurfaceAutomation Automation => this;
     public IUiSemanticSurfaceObservation Observation => this;
     public IUiSemanticSurfaceActionAutomation ActionAutomation => this;
+    public IUiSemanticSurfaceRevealAutomation RevealAutomation => this;
     public bool IsEnabled => UiAutomatedAcceptanceScenarioRegistry.IsRegistrationEnabled;
 
     public IUiSemanticSurfaceSession CreateSurface(
@@ -105,6 +107,17 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
         if (session is not UiActiveMenuSemanticSurfaceSession owned || !owned.IsOwnedBy(this))
             throw new ArgumentException("The active-menu surface session belongs to another UI API instance.", nameof(session));
         return owned.ActivateForAutomatedAcceptance(action);
+    }
+
+    public bool Reveal(IUiSemanticSurfaceSession session, UiSymbolId semantic)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (!semantic.IsValid) throw new ArgumentException("A valid semantic ID is required.", nameof(semantic));
+        if (!IsEnabled)
+            throw new InvalidOperationException("Surface reveal input is available only in the exact automated TestHarness environment.");
+        if (session is not UiActiveMenuSemanticSurfaceSession owned || !owned.IsOwnedBy(this))
+            throw new ArgumentException("The active-menu surface session belongs to another UI API instance.", nameof(session));
+        return owned.RevealForAutomatedAcceptance(semantic);
     }
 
     public UiSemanticSurfaceSnapshot Capture(IUiSemanticSurfaceSession session)
@@ -407,6 +420,12 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
     {
         ThrowIfUnavailable();
         return _overlay!.ActivateForAutomatedAcceptance(action);
+    }
+
+    internal bool RevealForAutomatedAcceptance(UiSymbolId semantic)
+    {
+        ThrowIfUnavailable();
+        return _overlay!.RevealForAutomatedAcceptance(semantic);
     }
 
     internal bool IsOwnedBy(UiSemanticSurfaceService owner)

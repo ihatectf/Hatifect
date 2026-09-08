@@ -25,8 +25,23 @@ public sealed class UiPresentationPlanner
         UiPresentationDefinition? presentation = null)
     {
         ArgumentNullException.ThrowIfNull(experience);
-        ArgumentNullException.ThrowIfNull(host);
+        return PlanCore(new PlanningSource(experience), host, presentation);
+    }
 
+    /// <summary>Plans detached authoring facts using the same policy as a live Experience.</summary>
+    public UiPresentationPlan PlanInput(
+        UiPlanningInput input,
+        UiHostContext host,
+        UiPresentationDefinition? presentation = null)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        return PlanCore(new PlanningSource(input), host, presentation);
+    }
+
+    private UiPresentationPlan PlanCore(PlanningSource experience, UiHostContext host,
+        UiPresentationDefinition? presentation)
+    {
+        ArgumentNullException.ThrowIfNull(host);
         PlanIndexes indexes = PlanIndexes.Create(experience, presentation);
         var globalDecisions = new List<UiPlanDecision>();
         if (host.Environment is { } environment)
@@ -36,13 +51,14 @@ public sealed class UiPresentationPlanner
             ExplainEnvironment(environment, host.Profile, globalDecisions);
         }
         UiSymbolId pattern = ResolvePattern(indexes, globalDecisions);
-        var planned = new List<UiPlannedElement>(experience.Elements.Count);
+        var planned = new List<UiPlannedElement>(experience.Count);
         var collectionRecipes = new Dictionary<UiSymbolId, UiPlannedCollectionRecipe>();
-        foreach (UiSemanticElementDefinition element in experience.Elements)
+        for (int i = 0; i < experience.Count; i++)
         {
+            PlanningElementView element = experience.ElementAt(i);
             UiPlannedElement plannedElement = PlanElement(element, host, indexes);
             planned.Add(plannedElement);
-            if (element.Source is IUiSemanticCollectionSource)
+            if (element.IsCollection)
                 collectionRecipes.Add(
                     element.Id,
                     ResolveCollectionRecipe(element, plannedElement.Presentation, host, indexes));
@@ -81,7 +97,7 @@ public sealed class UiPresentationPlanner
     }
 
     private UiPlannedElement PlanElement(
-        UiSemanticElementDefinition element,
+        PlanningElementView element,
         UiHostContext host,
         PlanIndexes indexes)
     {
@@ -108,7 +124,7 @@ public sealed class UiPresentationPlanner
     }
 
     private UiSymbolId ResolvePresentation(
-        UiSemanticElementDefinition element,
+        PlanningElementView element,
         UiHostContext host,
         PlanIndexes indexes,
         List<UiPlanDecision> decisions)
@@ -157,7 +173,7 @@ public sealed class UiPresentationPlanner
         return presentation.Id;
     }
 
-    private void RequireCoverage(UiSemanticElementDefinition element, UiSymbolValue value,
+    private void RequireCoverage(PlanningElementView element, UiSymbolValue value,
         UiSourceProvenance source, List<UiPlanDecision> decisions)
     {
         UiPresentationSymbol? candidate = TryCover(element, value.Name, decisions, source);
@@ -169,7 +185,7 @@ public sealed class UiPresentationPlanner
         throw new UiPlanningException(element.Id, decisions.ToArray());
     }
 
-    private UiPresentationSymbol? TryCover(UiSemanticElementDefinition element, string name,
+    private UiPresentationSymbol? TryCover(PlanningElementView element, string name,
         List<UiPlanDecision> decisions, UiSourceProvenance? source = null)
     {
         if (!_catalog.TryGetPresentation(name, out UiPresentationSymbol? candidate) || candidate == null)
@@ -212,7 +228,7 @@ public sealed class UiPresentationPlanner
     }
 
     private UiPlannedCollectionRecipe ResolveCollectionRecipe(
-        UiSemanticElementDefinition element,
+        PlanningElementView element,
         UiSymbolId presentation,
         UiHostContext host,
         PlanIndexes indexes)
@@ -244,7 +260,7 @@ public sealed class UiPresentationPlanner
         return new UiPlannedCollectionRecipe(sizing, density);
     }
 
-    private static string DefaultRegion(UiSemanticElementDefinition element, PlanIndexes indexes)
+    private static string DefaultRegion(PlanningElementView element, PlanIndexes indexes)
     {
         if (indexes.Has(element, UiCapabilities.Actions)) return "Actions";
         if (indexes.Has(element, UiCapabilities.Navigate)) return "Navigation";
@@ -255,7 +271,7 @@ public sealed class UiPresentationPlanner
     }
 
     private static string DefaultPresentation(
-        UiSemanticElementDefinition element,
+        PlanningElementView element,
         UiSymbolId profile,
         PlanIndexes indexes)
     {
@@ -269,13 +285,39 @@ public sealed class UiPresentationPlanner
         if (indexes.Has(element, UiCapabilities.Monitor)) return "Status";
         if (indexes.Has(element, UiCapabilities.Navigate)) return "NavigationList";
         if (indexes.Has(element, UiCapabilities.Actions)) return "ActionBar";
-        if (indexes.Has(element, UiCapabilities.Select) && element.Source is IUiSemanticCollectionSource) return "List";
+        if (indexes.Has(element, UiCapabilities.Select) && element.IsCollection) return "List";
         return "Value";
     }
 
-    private static bool IsAdaptive(UiSemanticElementDefinition element, UiSymbolId profile, PlanIndexes indexes)
+    private static bool IsAdaptive(PlanningElementView element, UiSymbolId profile, PlanIndexes indexes)
         => (indexes.Has(element, UiCapabilities.Browse) || indexes.Has(element, UiCapabilities.Inspect)) &&
            (profile == UiPresentationProfiles.Compact.Id || profile == UiPresentationProfiles.Controller.Id);
+
+    private readonly record struct PlanningElementView(
+        UiSymbolId Id, IReadOnlyList<UiCapability> Capabilities, bool IsCollection);
+
+    // Value-type view of either input; the existing runtime path does not copy elements.
+    private readonly struct PlanningSource
+    {
+        private readonly UiExperienceDefinition? _experience;
+        private readonly UiPlanningInput? _input;
+
+        internal PlanningSource(UiExperienceDefinition experience) { _experience = experience; _input = null; }
+        internal PlanningSource(UiPlanningInput input) { _experience = null; _input = input; }
+        internal UiSymbolId Id => _experience?.Id ?? _input!.Id;
+        internal int Count => _experience?.Elements.Count ?? _input!.Elements.Count;
+
+        internal PlanningElementView ElementAt(int index)
+        {
+            if (_experience is { } experience)
+            {
+                UiSemanticElementDefinition element = experience.Elements[index];
+                return new PlanningElementView(element.Id, element.Capabilities, element.Source is IUiSemanticCollectionSource);
+            }
+            UiPlanningElement detached = _input!.Elements[index];
+            return new PlanningElementView(detached.Id, detached.Capabilities, detached.IsCollection);
+        }
+    }
 
     private readonly record struct AssignmentKey(UiSymbolId? Target, string Property, UiSymbolId? Profile);
 
@@ -299,7 +341,7 @@ public sealed class UiPresentationPlanner
         }
 
         internal static PlanIndexes Create(
-            UiExperienceDefinition experience,
+            PlanningSource experience,
             UiPresentationDefinition? definition)
         {
             var placements = new Dictionary<UiSymbolId, UiPlacementIr>();
@@ -320,10 +362,11 @@ public sealed class UiPresentationPlanner
                 }
             }
 
-            var elementCapabilities = new Dictionary<UiSymbolId, HashSet<UiSymbolId>>(experience.Elements.Count);
+            var elementCapabilities = new Dictionary<UiSymbolId, HashSet<UiSymbolId>>(experience.Count);
             var capabilities = new HashSet<UiSymbolId>();
-            foreach (UiSemanticElementDefinition element in experience.Elements)
+            for (int i = 0; i < experience.Count; i++)
             {
+                PlanningElementView element = experience.ElementAt(i);
                 var indexed = new HashSet<UiSymbolId>();
                 foreach (UiCapability capability in element.Capabilities)
                 {
@@ -348,7 +391,7 @@ public sealed class UiPresentationPlanner
                 ? assignment
                 : null;
 
-        internal bool Has(UiSemanticElementDefinition element, UiCapability capability)
+        internal bool Has(PlanningElementView element, UiCapability capability)
             => _elementCapabilities[element.Id].Contains(capability.Id);
 
         internal bool HasAny(UiCapability capability)

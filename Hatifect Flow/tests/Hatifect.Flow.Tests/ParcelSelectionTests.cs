@@ -25,6 +25,8 @@ public sealed class ParcelSelectionTests
         using var view = new ParcelExperience(Id, app,
             stationName: _ => { captures++; return "Unexpected"; },
             itemName: _ => { captures++; return "Unexpected"; });
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var probe = new ExperienceTextProbe(view.Experience);
         var snapshot = app.ReadSnapshot();
         var scene = probe.Compose(locale);
@@ -33,7 +35,7 @@ public sealed class ParcelSelectionTests
         AssertText(scene, "availability", availability);
         AssertText(scene, "cargo", string.Empty);
         AssertText(scene, "route", string.Empty);
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         Assert.Equal(0, commands);
         Assert.Equal(0, captures);
         Assert.Same(snapshot, app.ReadSnapshot());
@@ -41,7 +43,7 @@ public sealed class ParcelSelectionTests
         app.Dispose();
         Assert.True(view.Pump());
         Assert.False(view.IsActive);
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         AssertText(scene, "state", state);
     }
 
@@ -54,11 +56,13 @@ public sealed class ParcelSelectionTests
             action => { effects++; action(fixture.Runtime); }, _ => { });
         using var view = new ParcelExperience(Id, app,
             itemName: _ => { captures++; return "Unexpected"; });
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var probe = new ExperienceTextProbe(view.Experience);
         var before = probe.Compose("en");
         var actions = view.Experience.Actions.ToArray();
         var sources = view.Experience.Elements.Select(element => element.Source).ToArray();
-        Assert.All(actions, action => Assert.False(action.TryExecute()));
+        Assert.All(actions, action => Assert.False(actionHost.Invoke(action)));
         Assert.Equal(0, effects);
         Assert.Equal(FlowCommandStatus.Applied,
             app.Execute(FlowApplicationTests.Command(app.ReadSnapshot(), FlowParcelAction.Reserve)).Status);
@@ -69,7 +73,7 @@ public sealed class ParcelSelectionTests
         AssertText(after, "cargo", string.Empty);
         Assert.Equal(actions, view.Experience.Actions);
         Assert.Equal(sources, view.Experience.Elements.Select(element => element.Source));
-        Assert.All(actions, action => Assert.False(action.TryExecute()));
+        Assert.All(actions, action => Assert.False(actionHost.Invoke(action)));
         Assert.Equal(1, effects);
         Assert.Equal(0, captures);
         Assert.False(view.Pump());
@@ -99,19 +103,21 @@ public sealed class ParcelSelectionTests
         app.SetAvailability(availability);
         using var view = new ParcelExperience(Id, app,
             itemName: _ => { captures++; return "Unexpected"; });
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var probe = new ExperienceTextProbe(view.Experience);
         var english = probe.Compose("en");
         var russian = probe.Compose("ru-RU");
         AssertText(english, "state", "No shipment selected");
         AssertText(english, "availability", englishReason);
         AssertText(russian, "availability", russianReason);
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
 
         app.SetAvailability(FlowApplicationState.Active);
         Assert.True(view.Pump());
         var resumed = probe.Compose("en");
         AssertText(resumed, "availability", "Select a shipment to inspect");
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         Assert.Equal(0, attempts);
 
         var command = FlowApplicationTests.Command(app.ReadSnapshot(), FlowParcelAction.Reserve);
@@ -122,7 +128,7 @@ public sealed class ParcelSelectionTests
         AssertText(faulted, "state", "Ошибка перевозки; см. журнал диагностики");
         AssertText(faulted, "availability", "Ошибка перевозки; см. журнал диагностики");
         AssertText(faulted, "result", string.Empty);
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         app.Dispose();
         Assert.True(view.Pump());
         Assert.False(view.IsActive);

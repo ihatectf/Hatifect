@@ -20,6 +20,7 @@ public sealed partial class ModEntry : Mod
     private FlowGameResourceAcceptance? _resourceAcceptance;
     private FlowItemNamesAcceptance? _itemNamesAcceptance;
     private FlowUiAcceptance? _uiAcceptance;
+    private FlowUiActionsAcceptance? _uiActionsAcceptance;
     private bool _attached;
     private bool _startupFailed;
 
@@ -42,8 +43,11 @@ public sealed partial class ModEntry : Mod
             _itemNamesAcceptance = FlowItemNamesAcceptance.TryCreate(Helper, Monitor);
             _uiAcceptance = FlowUiAcceptance.TryCreate(Helper, Monitor,
                 (application, parcel, names, api) => ShowParcel(application, parcel, names, api), CloseParcelSurface);
+            _uiActionsAcceptance = FlowUiActionsAcceptance.TryCreate(Helper, Monitor,
+                (application, api) => ShowNetwork(application, api),
+                (application, parcel, names, api) => ShowParcel(application, parcel, names, api), CloseParcelSurface);
             _acceptance = FlowHostAcceptance.TryCreate(Helper, Monitor);
-            _chestAcceptance = FlowChestRoundtripAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
+            _chestAcceptance = FlowChestRoundtripAcceptance.TryCreate(Helper, Monitor, () => _gameSession, OpenPlayerNetwork, CloseParcelSurface);
             _cancellationAcceptance = FlowChestCancellationAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
             _returnAcceptance = FlowChestReturnAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
             _isolationAcceptance = FlowChestIsolationAcceptance.TryCreate(Helper, Monitor, () => _gameSession);
@@ -61,6 +65,12 @@ public sealed partial class ModEntry : Mod
 
     private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
     {
+        if (_uiActionsAcceptance is not null)
+        {
+            try { RequireReadOnlyUiSession(); _uiActionsAcceptance.OnSaveLoaded(); }
+            catch (Exception error) { ReportFailure(error); }
+            return;
+        }
         if (_uiAcceptance is not null)
         {
             try { RequireReadOnlyUiSession(); _uiAcceptance.OnSaveLoaded(); }
@@ -110,6 +120,13 @@ public sealed partial class ModEntry : Mod
         }
         try
         {
+            if (_uiActionsAcceptance is not null)
+            {
+                RequireReadOnlyUiSession();
+                TickGameSession(e);
+                _uiActionsAcceptance.Tick();
+                return;
+            }
             if (_uiAcceptance is not null)
             {
                 RequireReadOnlyUiSession();
@@ -145,6 +162,7 @@ public sealed partial class ModEntry : Mod
             CloseGameSession();
             CloseHost();
             _uiAcceptance?.OnReturnedToTitle();
+            _uiActionsAcceptance?.OnReturnedToTitle();
             _acceptance?.OnReturnedToTitle();
             _chestAcceptance?.OnReturnedToTitle();
             _cancellationAcceptance?.OnReturnedToTitle();
@@ -195,7 +213,7 @@ public sealed partial class ModEntry : Mod
             {
                 if (disposing)
                     try { _itemNamesAcceptance?.Dispose(); }
-                    finally { _uiAcceptance?.Dispose(); }
+                    finally { try { _uiAcceptance?.Dispose(); } finally { _uiActionsAcceptance?.Dispose(); } }
             }
             finally { base.Dispose(disposing); }
         }
@@ -218,8 +236,10 @@ public sealed partial class ModEntry : Mod
     private bool RejectReadOnlySaveLifecycle(string lifecycle)
     {
         if (RejectNamesLifecycle(lifecycle)) return true;
-        if (_uiAcceptance is null) return false;
-        _uiAcceptance.Fail(new InvalidOperationException("Unexpected read-only Flow UI lifecycle: " + lifecycle));
+        if (_uiAcceptance is null && _uiActionsAcceptance is null) return false;
+        var error = new InvalidOperationException("Unexpected read-only Flow UI lifecycle: " + lifecycle);
+        _uiAcceptance?.Fail(error);
+        _uiActionsAcceptance?.Fail(error);
         return true;
     }
 
@@ -244,5 +264,6 @@ public sealed partial class ModEntry : Mod
         _resourceAcceptance?.Fail(error);
         _itemNamesAcceptance?.Fail(error);
         _uiAcceptance?.Fail(error);
+        _uiActionsAcceptance?.Fail(error);
     }
 }

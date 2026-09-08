@@ -10,7 +10,7 @@ using Hatifect.Flow.Domain.Shipments;
 namespace Hatifect.Flow.Diagnostics;
 
 // Exact native UI acceptance owns this fake world; no game inventory, checkpoint or save is touched.
-internal sealed class FlowUiAcceptanceWorld : IFlowApplication, IDisposable
+internal sealed partial class FlowUiAcceptanceWorld : IFlowApplication, IDisposable
 {
     private readonly FlowRuntime _runtime;
     private readonly FlowApplication _owner;
@@ -73,7 +73,13 @@ internal sealed class FlowUiAcceptanceWorld : IFlowApplication, IDisposable
     }
 
     public FlowSnapshot ReadSnapshot() { ReadCalls++; return _owner.ReadSnapshot(); }
-    public FlowCommandResult Execute(FlowParcelCommand command) { Commands++; return _owner.Execute(command); }
+    public FlowCommandResult Execute(FlowParcelCommand command)
+    {
+        _owner.ReadSnapshot(); // Preserve the owner-thread fence even when create is already running.
+        if (_creating) return NetworkResult(FlowCommandStatus.Rejected, FlowRejectionCode.OperationPending);
+        Commands++;
+        return _owner.Execute(command);
+    }
     internal string StationName(Guid station) => station == Id(2) ? World + " source"
         : station == Id(3) ? World + " destination" : throw new InvalidOperationException("A foreign station reached the UI fixture.");
 

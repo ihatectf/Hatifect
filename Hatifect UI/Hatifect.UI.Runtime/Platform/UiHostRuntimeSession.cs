@@ -304,12 +304,130 @@ internal sealed class UiHostRuntimeSession
                 continue;
             return ScrollCollection(window.Collection, delta);
         }
-        return new UiHostScrollUpdate(false, false, false, 0);
+        return Layout.RootScroll is { } root && root.Viewport.Contains(point)
+            ? ScrollRoot(delta)
+            : new UiHostScrollUpdate(false, false, false, 0);
+    }
+
+    private UiHostScrollUpdate ScrollRoot(float delta)
+    {
+        if (!float.IsFinite(delta)) throw new ArgumentOutOfRangeException(nameof(delta));
+        UiRootScrollLayout root = Layout.RootScroll!;
+        float offset = Math.Clamp(root.Offset + delta, 0, root.MaximumOffset);
+        if (offset == root.Offset) return new(true, false, false, root.Offset);
+        _preparingUpdate = true;
+        try
+        {
+            UiLayoutSnapshot layout = BuildLayout(_scene, _placement, offset);
+            UiInteractionSession interaction = Interactions.PrepareReconcile(_scene, layout, _actions.Current);
+            UiAccessibilitySnapshot accessibility = BuildAccessibility(_scene, layout, interaction.Snapshot);
+            UiRenderFrame frame = BuildFrame(_scene, layout, interaction.Snapshot);
+            var collections = new UiCollectionViewportState();
+            collections.Synchronize(layout);
+            EnsureActive();
+            Layout = layout;
+            Interactions.CommitReconcile(interaction);
+            Accessibility = accessibility;
+            AcceptFrame(frame);
+            _collections = collections;
+            LastUpdate = new(true, true, new UiSceneDiff(
+                UiPropertyEffects.Arrange | UiPropertyEffects.Render, new[] { _scene.Root.Id }));
+            return new(true, true, true, layout.RootScroll?.Offset ?? 0);
+        }
+        catch
+        {
+            _layoutEngine.RestoreCollectionTransitions(_scene);
+            throw;
+        }
+        finally { _preparingUpdate = false; }
+    }
+
+    private static float RootFocusOffset(UiInteractionSession interaction, UiLayoutSnapshot layout)
+    {
+        UiRootScrollLayout root = layout.RootScroll!;
+        if (interaction.Snapshot.Focused is not { } focused) return root.Offset;
+        // Reveal the collection viewport before navigating its own virtualized items.
+        UiSymbolId target = interaction.TryGetFocusedCollectionItem(out UiCollectionSceneNode owner, out _, out _)
+            ? owner.Id : focused;
+        if (!layout.TryGetEntry(target, out UiLayoutEntry? entry) || entry == null) return root.Offset;
+        UiRect bounds = entry.Bounds;
+        if (bounds.Y >= root.Viewport.Y && bounds.Bottom <= root.Viewport.Bottom) return root.Offset;
+        float delta = bounds.Height > root.Viewport.Height || bounds.Y < root.Viewport.Y
+            ? bounds.Y - root.Viewport.Y : bounds.Bottom - root.Viewport.Bottom;
+        return Math.Clamp(root.Offset + delta, 0, root.MaximumOffset);
+    }
+
+    private UiInteractionUpdate MoveFocusInScrollableRoot(UiNavigationDirection direction)
+    {
+        _preparingUpdate = true;
+        try
+        {
+            UiInteractionSession interaction = Interactions.PrepareMoveFocus(direction, out UiInteractionUpdate update);
+            if (!update.Consumed) return update;
+            UiLayoutSnapshot layout = Layout;
+            float offset = RootFocusOffset(interaction, layout);
+            if (offset != layout.RootScroll!.Offset)
+            {
+                layout = BuildLayout(_scene, _placement, offset);
+                interaction = interaction.PrepareReconcile(_scene, layout);
+            }
+            UiCollectionViewportState? collections = null;
+            if (interaction.TryGetFocusedCollectionItem(out UiCollectionSceneNode collection, out UiSymbolId item, out int index) &&
+                layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window) && window != null &&
+                layout.TryGetEntry(collection.Id, out UiLayoutEntry? entry) && entry != null)
+            {
+                UiVirtualizedItemLayout? target = null;
+                foreach (UiVirtualizedItemLayout row in window.Items)
+                    if (row.Item.Id == item) { target = row; break; }
+                float top = Math.Max(entry.ContentBounds.Y, entry.Clip.Y);
+                float bottom = Math.Min(entry.ContentBounds.Bottom, entry.Clip.Bottom);
+                if (target is not { } visible || visible.Bounds.Y < top || visible.Bounds.Bottom > bottom)
+                {
+                    collections = new UiCollectionViewportState();
+                    collections.Synchronize(layout);
+                    if (target is { } row)
+                    {
+                        float delta = row.Bounds.Height > bottom - top || row.Bounds.Y < top
+                            ? row.Bounds.Y - top : row.Bounds.Bottom - bottom;
+                        collections.SetOffset(collection.Id, Math.Max(0, window.ScrollOffset + delta));
+                    }
+                    else collections.Reveal(collection.Id, item, index);
+                    layout = BuildLayout(_scene, _placement, offset, collections);
+                    interaction = interaction.PrepareReconcile(_scene, layout);
+                }
+            }
+            bool layoutChanged = !ReferenceEquals(layout, Layout);
+            if (layoutChanged)
+            {
+                collections ??= new UiCollectionViewportState();
+                collections.Synchronize(layout);
+                UiAccessibilitySnapshot accessibility = BuildAccessibility(_scene, layout, interaction.Snapshot);
+                UiRenderFrame frame = BuildFrame(_scene, layout, interaction.Snapshot);
+                EnsureActive();
+                // Root and nested collection reveal are one acceptance transaction.
+                Layout = layout;
+                Accessibility = accessibility;
+                AcceptFrame(frame);
+                _collections = collections;
+                LastUpdate = new(true, true, new UiSceneDiff(
+                    UiPropertyEffects.Arrange | UiPropertyEffects.Render, new[] { _scene.Root.Id }));
+            }
+            EnsureActive();
+            Interactions.CommitReconcile(interaction);
+            return update with { StateChanged = update.StateChanged || layoutChanged };
+        }
+        catch
+        {
+            _layoutEngine.RestoreCollectionTransitions(_scene);
+            throw;
+        }
+        finally { _preparingUpdate = false; }
     }
 
     public UiInteractionUpdate MoveFocus(UiNavigationDirection direction)
     {
         EnsureNotPreparing();
+        if (Layout.RootScroll != null) return MoveFocusInScrollableRoot(direction);
         UiInteractionUpdate update = Interactions.MoveFocus(direction);
         if (!update.Consumed ||
             !Interactions.TryGetFocusedCollectionItem(out UiCollectionSceneNode collection, out UiSymbolId item, out int index) ||
@@ -427,10 +545,12 @@ internal sealed class UiHostRuntimeSession
         FrameVersion++;
     }
 
-    private UiLayoutSnapshot BuildLayout(UiScene scene, UiHostPlacementContext placement)
+    private UiLayoutSnapshot BuildLayout(UiScene scene, UiHostPlacementContext placement,
+        float? rootOffset = null, UiCollectionViewportState? collections = null)
     {
         EnsureActive();
-        UiLayoutSnapshot layout = _layoutEngine.Build(scene, placement, _collections.Snapshot());
+        float offset = rootOffset ?? (scene.Root.Id == _scene.Root.Id ? Layout?.RootScroll?.Offset ?? 0 : 0);
+        UiLayoutSnapshot layout = _layoutEngine.Build(scene, placement, (collections ?? _collections).Snapshot(), offset);
         EnsureActive();
         _layoutBuilds++;
         return layout;

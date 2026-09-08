@@ -26,7 +26,7 @@ ALLOWED_DEPENDENCIES = {
     "Hatifect.UI.Planning": {"Hatifect.UI.Experience", "Hatifect.UI.Semantics"},
     "Hatifect.UI.Runtime": {"Hatifect.UI.Experience", "Hatifect.UI.Planning", "Hatifect.UI.Semantics"},
     "Hatifect.UI.Tooling": {"Hatifect.UI.Language", "Hatifect.UI.Semantics"},
-    "Hatifect.UI.Tooling.Server": {"Hatifect.UI.Tooling"},
+    "Hatifect.UI.Tooling.Server": {"Hatifect.UI.Tooling", "Hatifect.UI.Planning", "Hatifect.UI.Semantics", "Hatifect.UI.Experience"},
     "Hatifect.UI.DevTools": {
         "Hatifect.UI.Experience", "Hatifect.UI.Planning", "Hatifect.UI.Runtime",
         "Hatifect.UI.Semantics", "Hatifect.UI.Tooling",

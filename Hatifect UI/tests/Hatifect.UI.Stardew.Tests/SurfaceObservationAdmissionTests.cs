@@ -49,6 +49,43 @@ public sealed class SurfaceObservationAdmissionTests
         Assert.Equal("action", error.ParamName);
     }
 
+    [Fact]
+    public void ProductionApiRejectsRevealBeforeTouchingTheHandleOrNativeHelper()
+    {
+        var helper = DispatchProxy.Create<IModHelper, RejectNativeAccess>();
+        IUiSemanticSurfaceRevealAutomationApi api = new UiStardewApiBridge(helper);
+        Assert.False(api.RevealAutomation.IsEnabled);
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            api.RevealAutomation.Reveal(new RejectSessionAccess(), new("test", "element/result")));
+
+        Assert.Contains("exact automated TestHarness", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RevealRejectsNullHandleBeforeNativeAccess()
+    {
+        var helper = DispatchProxy.Create<IModHelper, RejectNativeAccess>();
+        IUiSemanticSurfaceRevealAutomationApi api = new UiStardewApiBridge(helper);
+
+        var error = Assert.Throws<ArgumentNullException>(() =>
+            api.RevealAutomation.Reveal(null!, new("test", "element/result")));
+
+        Assert.Equal("session", error.ParamName);
+    }
+
+    [Fact]
+    public void RevealRejectsInvalidSemanticIdentityBeforeNativeAccess()
+    {
+        var helper = DispatchProxy.Create<IModHelper, RejectNativeAccess>();
+        IUiSemanticSurfaceRevealAutomationApi api = new UiStardewApiBridge(helper);
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            api.RevealAutomation.Reveal(new RejectSessionAccess(), default));
+
+        Assert.Equal("semantic", error.ParamName);
+    }
+
     public class RejectNativeAccess : DispatchProxy
     {
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)

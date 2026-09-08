@@ -6,11 +6,13 @@ namespace Hatifect.Flow.UI.Semantic;
 internal sealed class ParcelSurface : IDisposable
 {
     private readonly IFlowExperience _experience;
+    private readonly UiSemanticHostKind? _hostKind;
     private IUiSemanticSurfaceSession? _surface;
     private bool _closed;
     private bool _disposing;
 
-    internal ParcelSurface(IFlowExperience experience) => _experience = experience;
+    internal ParcelSurface(IFlowExperience experience, UiSemanticHostKind? hostKind = null)
+    { _experience = experience; _hostKind = hostKind; }
 
     internal void Show(IUiSemanticSurfaceApi api)
     {
@@ -19,7 +21,11 @@ internal sealed class ParcelSurface : IDisposable
         {
             if (_surface is null)
             {
-                _surface = api.CreateActiveMenuOverlay(_experience.Experience, new UiSemanticSurfaceOptions(_experience.Experience.Id));
+                var options = new UiSemanticSurfaceOptions(_experience.Experience.Id);
+                _surface = _hostKind is { } kind
+                    ? (api as IUiSemanticHostApi ?? throw new InvalidOperationException("The standalone UI host API is unavailable."))
+                        .CreateSurface(_experience.Experience, kind, options)
+                    : api.CreateActiveMenuOverlay(_experience.Experience, options);
                 _surface.Closed += OnClosed;
             }
             _surface.Show();

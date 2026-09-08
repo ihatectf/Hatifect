@@ -169,6 +169,15 @@ internal sealed class UiInteractionSession
         return candidate;
     }
 
+    internal UiInteractionSession PrepareMoveFocus(UiNavigationDirection direction, out UiInteractionUpdate update)
+    {
+        // The owning runtime holds its preparation guard. Navigation replaces only the
+        // snapshot/hint; legacy text reads cannot mutate the accepted host through callbacks.
+        var candidate = (UiInteractionSession)MemberwiseClone();
+        update = candidate.MoveFocusCore(direction);
+        return candidate;
+    }
+
     internal void CommitReconcile(UiInteractionSession candidate)
     {
         _scene = candidate._scene;
@@ -249,6 +258,11 @@ internal sealed class UiInteractionSession
     public UiInteractionUpdate MoveFocus(UiNavigationDirection direction)
     {
         _beforeMutation?.Invoke();
+        return MoveFocusCore(direction);
+    }
+
+    private UiInteractionUpdate MoveFocusCore(UiNavigationDirection direction)
+    {
         UiSymbolId? next = FindFocus(direction);
         if (next == null) return new UiInteractionUpdate(Consumed: false, StateChanged: false);
         bool changed = Snapshot.Focused != next;

@@ -26,6 +26,8 @@ public sealed class ParcelStateTests
         using var view = new ParcelExperience(Id, app, CheckpointFixture.Parcel.Value,
             stationName: _ => { names++; return "Unexpected station"; },
             itemName: _ => { names++; return "Unexpected item"; });
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var api = new SurfaceProbe(locale);
         using var surface = new ParcelSurface(view);
         surface.Show(api);
@@ -40,7 +42,7 @@ public sealed class ParcelStateTests
         AssertText(api.Current!, "availability", reason);
         AssertText(api.Current!, "cargo", string.Empty);
         AssertText(api.Current!, "route", string.Empty);
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         Assert.Equal(0, commands);
         Assert.Equal(0, names);
         var oldScene = api.Current!;
@@ -64,6 +66,8 @@ public sealed class ParcelStateTests
         using var owner = new FlowApplication(runtime, _ => commands++, _ => { });
         owner.SetAvailability(state);
         using var view = new ParcelExperience(Id, owner, CheckpointFixture.Parcel.Value);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var api = new SurfaceProbe("en");
         using var surface = new ParcelSurface(view);
         surface.Show(api);
@@ -74,12 +78,12 @@ public sealed class ParcelStateTests
             Assert.False(surface.IsClosed);
             AssertText(api.Current!, "state", locale == "en" ? "Shipment is no longer available" : "Отправление больше недоступно");
             AssertText(api.Current!, "availability", locale == "en" ? englishReason : russianReason);
-            Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+            Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         }
         owner.SetAvailability(FlowApplicationState.Active);
         surface.Pump();
         AssertText(api.Current!, "availability", "Отправление больше недоступно");
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         Assert.Equal(0, commands);
         Assert.False(surface.IsClosed);
     }
@@ -92,6 +96,8 @@ public sealed class ParcelStateTests
         int names = 0;
         using var view = new ParcelExperience(Id, app, CheckpointFixture.Parcel.Value,
             itemName: _ => { names++; return "Copper ore"; });
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var api = new SurfaceProbe("en");
         using var surface = new ParcelSurface(view);
         surface.Show(api);
@@ -112,7 +118,7 @@ public sealed class ParcelStateTests
         AssertText(empty, "availability", "Shipment is no longer available");
         AssertText(empty, "cargo", string.Empty);
         AssertText(empty, "route", string.Empty);
-        Assert.All(actions, action => Assert.False(action.TryExecute()));
+        Assert.All(actions, action => Assert.False(actionHost.Invoke(action)));
         Assert.Equal(0, app.Commands);
         AssertText(initial, "cargo", "Copper ore × 7");
         app.Publish(new FlowSnapshot(full.SessionId, full.NetworkId, full.Revision + 2,
@@ -124,12 +130,12 @@ public sealed class ParcelStateTests
         AssertText(empty, "cargo", string.Empty);
         Assert.Equal(sources, view.Experience.Elements.Select(element => element.Source));
         Assert.Equal(actions, view.Experience.Actions);
-        Assert.True(actions[0].CanExecute);
+        Assert.True(actionHost.CanInvoke(actions[0]));
         Assert.Equal(0, app.Commands);
         Assert.Equal(2, names);
         surface.Dispose();
         Assert.Equal(0, app.Subscribers);
-        Assert.All(actions, action => Assert.False(action.TryExecute()));
+        Assert.All(actions, action => Assert.False(actionHost.Invoke(action)));
     }
 
     [Fact]
@@ -141,10 +147,12 @@ public sealed class ParcelStateTests
             _ => { commands++; throw new InvalidOperationException("provider failed"); }, _ => errors++);
         var app = new ObservedApplication(owner);
         using var view = new ParcelExperience(Id, app, CheckpointFixture.Parcel.Value);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
         using var api = new SurfaceProbe("en");
         using var surface = new ParcelSurface(view);
         surface.Show(api);
-        Assert.True(view.Experience.Actions[0].TryExecute());
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
         surface.Pump();
 
         Assert.Equal(FlowApplicationState.Faulted, owner.ReadSnapshot().State);
@@ -161,7 +169,7 @@ public sealed class ParcelStateTests
             AssertText(api.Current!, "result", reason);
             AssertText(api.Current!, "cargo", string.Empty);
             AssertText(api.Current!, "route", string.Empty);
-            Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+            Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
             Assert.Equal(version, view.Publication.Version);
             Assert.Equal(1, commands);
             Assert.Equal(1, errors);
@@ -174,7 +182,7 @@ public sealed class ParcelStateTests
         Assert.Equal(FlowApplicationState.Closed, owner.ReadSnapshot().State);
         Assert.Equal(0, app.Subscribers);
         Assert.False(api.Visible);
-        Assert.All(view.Experience.Actions, action => Assert.False(action.TryExecute()));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
         Assert.Equal(1, commands);
     }
 

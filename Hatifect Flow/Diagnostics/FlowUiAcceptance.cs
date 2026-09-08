@@ -37,7 +37,9 @@ internal sealed class FlowUiAcceptance : IDisposable
     private readonly List<Exception> _errors = new();
     private readonly HashSet<string> _passed = new(StringComparer.Ordinal);
     private readonly List<object> _observations = new(19);
+    private readonly List<object> _restorations = new(3);
     private View? _view;
+    private IClickableMenu? _coverMenu;
     private FlowUiAcceptanceWorld? _world;
     private Stage _stage;
     private int _frames, _loads, _titles, _stableFrames;
@@ -56,7 +58,11 @@ internal sealed class FlowUiAcceptance : IDisposable
 
     private enum Stage { Startup, Loading, AwaitNativeReady, EmptyEnglish, EmptyRussian, Missing, CargoRussian, CargoEnglish,
         Scale75, Scale100, Scale125, Scale150, Controller, Paused, Recovery, Resumed, Updated,
-        Faulted, Closed, Retry, BeforeReturn, Returning, Reload, ReopenedWorld, Final, Exit }
+        Faulted, Closed, Retry, BeforeReturn, Returning, Reload, ReopenedWorld, Final, RestoringForTitle, RestoringFinal, Exit }
+
+    // Same stable native owner fixture used by UI environment acceptance. Game1.SetWindowSize
+    // reconstructs an exact GameMenu; that correctly retires an overlay and cannot test retention.
+    private sealed class FlowUiAcceptanceCoverMenu : IClickableMenu { }
 
     internal sealed record Frame(string Name, ParcelExperience Experience, IUiSemanticSurfaceSession Surface,
         string Locale, float Scale, bool Controller, string Cargo, string Route, string State,
@@ -95,6 +101,8 @@ internal sealed class FlowUiAcceptance : IDisposable
     {
         private readonly IUiSemanticSurfaceApi _inner;
         internal SurfaceApi(IUiSemanticSurfaceApi inner) => _inner = inner;
+        internal IUiSemanticSurfaceActionAutomation ActionAutomation
+            => ((IUiSemanticSurfaceActionAutomationApi)_inner).ActionAutomation;
         internal IUiSemanticSurfaceSession? Last { get; private set; }
         public int ApiVersion => _inner.ApiVersion;
         public IUiSemanticSurfaceAutomation Automation => _inner.Automation;
@@ -109,8 +117,9 @@ internal sealed class FlowUiAcceptance : IDisposable
             || Environment.GetEnvironmentVariable("HATIFECT_TEST_AUTOMATED") != "1"
             || Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO") != Scenario) return null;
         AcceptanceRequest request = ReadAcceptanceRequest(helper, Scenario);
-        var api = helper.ModRegistry.GetApi<IUiSemanticSurfaceObservationApi>("Hatifect.UI")
-            ?? throw new InvalidOperationException("Flow UI acceptance needs the owning observation API.");
+        var api = helper.ModRegistry.GetApi<IUiSemanticSurfaceActionAutomationApi>("Hatifect.UI")
+            ?? throw new InvalidOperationException("Flow UI acceptance needs the owning observation and action automation API.");
+        Require(api.ActionAutomation.IsEnabled, "Flow UI acceptance needs enabled exact-harness action input.");
         var observation = new FlowUiAcceptanceObservation(api.Observation, request.Artifact);
         try { return new(helper, monitor, api, show, close, observation, request); }
         catch { observation.Dispose(); throw; }
@@ -174,9 +183,9 @@ internal sealed class FlowUiAcceptance : IDisposable
     private void BeginWorldView()
     {
         CaptureSettings();
-        Game1.activeClickableMenu = new GameMenu();
-        // Native OptionsPage construction reloads gamepadMode from StartupPreferences.
-        // Apply the owned test profile after that constructor, preserving the pre-menu lease.
+        Game1.activeClickableMenu = _coverMenu = new FlowUiAcceptanceCoverMenu();
+        // Retain the native menu identity while the real game scale/render-target path changes.
+        // Input/options are still leased before menu creation and restored after the matrix.
         SetEnvironment(false, 1, false);
         if (_loads == 1) { Open(null); _stage = Stage.EmptyEnglish; }
         else
@@ -322,7 +331,15 @@ internal sealed class FlowUiAcceptance : IDisposable
                     Require(_loads == 3 && _titles == 2, "Flow UI did not complete A to B to A.");
                     Require(_observations.Count == 19 && _views.Count == 6 && _worlds.Count == 4,
                         "Flow UI did not observe its complete bounded state and reopening matrix.");
-                    RestoreSettings(); RequireSavesUnchanged();
+                    RestoreSettings(); _stage = Stage.RestoringFinal;
+                    break;
+                case Stage.RestoringForTitle:
+                    if (!ObserveRestoration()) break;
+                    _stage = Stage.Returning; RequestReturnToTitle();
+                    break;
+                case Stage.RestoringFinal:
+                    if (!ObserveRestoration()) break;
+                    RequireSavesUnchanged();
                     _passed.Add("retired-handles"); _passed.Add("restored"); _passed.Add("read-only");
                     WriteReport(); _stage = Stage.Exit;
                     break;
@@ -360,12 +377,15 @@ internal sealed class FlowUiAcceptance : IDisposable
     {
         var view = _view!;
         if (view.Renders == 0 || Game1.fadeToBlackAlpha > 0 || Game1.options.uiScale != _requestedScale) return false;
+        if (!_observation.SettleNativeProfile(ApplyRequestedInput)) return false;
         if (Game1.options.desiredUIScale != _requestedScale || Game1.options.gamepadControls != _requestedController
             || Game1.options.gamepadMode != (_requestedController ? Options.GamepadModes.ForceOn : Options.GamepadModes.ForceOff)
             || LocalizedContentManager.CurrentLanguageCode != (russian ? LocalizedContentManager.LanguageCode.ru : LocalizedContentManager.LanguageCode.en))
             throw new InvalidOperationException(FormattableString.Invariant(
                 $"The driver's requested environment is no longer active at {name}: requested scale={_requestedScale}, controller={_requestedController}, russian={russian}; actual base={Game1.options.baseUIScale}, desired={Game1.options.desiredUIScale}, applied={Game1.options.uiScale}, controller={Game1.options.gamepadControls}, mode={Game1.options.gamepadMode}, language={LocalizedContentManager.CurrentLanguageCode}, sameOptions={ReferenceEquals(_originalOptions, Game1.options)}."));
-        Require(view.Surface.Visible && view.Experience.IsActive && view.World.Subscribers == 1, "The current Flow view retired prematurely.");
+        Require(ReferenceEquals(Game1.activeClickableMenu, _coverMenu), "The retained scale fixture lost its native menu owner.");
+        Require(view.Surface.Visible && view.Experience.IsActive && view.World.Subscribers == 1,
+            $"The current Flow view retired prematurely at {name}: visible={view.Surface.Visible}, active={view.Experience.IsActive}, subscribers={view.World.Subscribers}, renders={view.Renders}, closes={view.Closes}.");
         Require(view.Sources.SequenceEqual(view.Experience.Experience.Elements.Select(element => element.Source))
             && view.Actions.SequenceEqual(view.Experience.Experience.Actions), "The retained experience replaced source/action identity.");
         var expected = new Frame(name, view.Experience, view.Surface, russian ? "ru-RU" : "en",
@@ -380,7 +400,7 @@ internal sealed class FlowUiAcceptance : IDisposable
 
     private void BeginReturn()
     {
-        RestoreSettings(); _stage = Stage.Returning; RequestReturnToTitle();
+        RestoreSettings(); _stage = Stage.RestoringForTitle;
     }
 
     internal void OnReturnedToTitle()
@@ -398,7 +418,14 @@ internal sealed class FlowUiAcceptance : IDisposable
         Require(view.RetiredValues is not null && version == view.RetiredVersion
             && view.RetiredValues.SequenceEqual(view.Sources.Select(source => source?.UntypedValue)),
             "A retired Flow source changed its final captured value.");
-        Require(view.Actions.All(action => !action.TryExecute()) && !view.Experience.Pump(), "A retired Flow action/source remained active.");
+        foreach (UiActionDefinition action in view.Actions)
+        {
+            bool admitted = false;
+            try { admitted = _api.ActionAutomation.Activate(view.Surface, action.Id); }
+            catch (ObjectDisposedException) { /* The owning host rejects its disposed opaque handle. */ }
+            Require(!admitted, "A retired Flow action remained active.");
+        }
+        Require(!view.Experience.Pump(), "A retired Flow source remained active.");
         Require(view.World.ReadCalls == reads && view.World.Commands == commands && view.Experience.Publication.Version == version,
             "A retired view read or mutated its previous application.");
         _observation.VerifyRetired(view.Surface);
@@ -433,10 +460,23 @@ internal sealed class FlowUiAcceptance : IDisposable
     private void SetEnvironment(bool russian, float scale, bool controller)
     {
         _requestedScale = scale; _requestedController = controller;
-        Game1.options.baseUIScale = Game1.options.desiredUIScale = scale;
-        Game1.options.gamepadMode = controller ? Options.GamepadModes.ForceOn : Options.GamepadModes.ForceOff;
-        Game1.options.gamepadControls = controller;
+        // Let the native mismatch path invalidate and rebuild its UI render target.
+        Game1.options.desiredUIScale = scale;
+        _observation.ResetNativeSettling();
+        ApplyRequestedInput();
         LocalizedContentManager.CurrentLanguageCode = russian ? LocalizedContentManager.LanguageCode.ru : LocalizedContentManager.LanguageCode.en;
+    }
+
+    private void ApplyRequestedInput()
+    {
+        Game1.options.gamepadMode = _requestedController ? Options.GamepadModes.ForceOn : Options.GamepadModes.ForceOff;
+        Game1.options.gamepadControls = _requestedController;
+    }
+
+    private void ApplyOriginalInput()
+    {
+        Game1.options.gamepadMode = _originalGamepadMode;
+        Game1.options.gamepadControls = _originalGamepad;
     }
 
     private void RestoreSettings()
@@ -456,7 +496,23 @@ internal sealed class FlowUiAcceptance : IDisposable
             && ReferenceEquals(LocalizedContentManager.CurrentModLanguage, _originalModLanguage)
             && LocalizedContentManager.LanguageCodeString(_originalLanguage) == _originalLocale,
             "The original native locale was not restored.");
+        Game1.game1.refreshWindowSettings();
+        _observation.ResetNativeSettling();
         _settingsOwned = false;
+    }
+
+    private bool ObserveRestoration()
+    {
+        if (!_observation.SettleNativeProfile(ApplyOriginalInput)
+            || _observation.SettledNativeFrame is not { } frame) return false;
+        Require(ReferenceEquals(_originalOptions, Game1.options)
+            && frame.DesiredScale == _originalDesiredScale
+            && Game1.options.gamepadControls == _originalGamepad && Game1.options.gamepadMode == _originalGamepadMode,
+            "The restored native settings changed before their completed draw.");
+        Require(_restorations.Count < 3, "Restoration observations exceeded the three-world bound.");
+        _restorations.Add(new { capturedBase = _originalBaseScale, capturedDesired = _originalDesiredScale,
+            pendingAtCapture = _originalBaseScale != _originalDesiredScale, exactSnapshotRestored = true, settledFrame = frame });
+        return true;
     }
 
     internal void Fail(Exception error)
@@ -486,7 +542,8 @@ internal sealed class FlowUiAcceptance : IDisposable
         AtomicJson(Path.Combine(_request.Artifact, "diagnostics", "flow-ui-lifecycle.json"), new
         {
             requestId = _request.RunId, scenarioId = Scenario, frames = _frames, loads = _loads, titles = _titles,
-            settingsRestored = !_settingsOwned, saveHashes = _saveHashes, observations = _observations.ToArray(),
+            settingsRestored = !_settingsOwned, restorationFrames = _restorations.ToArray(),
+            saveHashes = _saveHashes, observations = _observations.ToArray(),
             worlds = _worlds.Select(world => new { world.World, world.Subscribers, world.Commands, world.EffectAttempts }).ToArray(),
             views = _views.Select(view => new { world = view.World.World, view.Renders, view.Closes, view.RetiredRenders }).ToArray(),
             errors = _errors.Select(error => error.ToString()).ToArray()

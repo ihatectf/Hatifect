@@ -668,6 +668,31 @@ class LiveHarnessTests(unittest.TestCase):
             "restored", "read-only")])
         self._verify_each_flow_check_is_required(resolved)
 
+    def test_flow_ui_actions_requires_each_native_action_check_and_both_mods(self) -> None:
+        resolved = HARNESS.resolve_scenario(self.scenarios, "flow.ui.actions", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.UI", "Hatifect.Flow"])
+        self.assertEqual(resolved["timeoutSeconds"], 420)
+        self.assertFalse(self.scenarios["flow.ui.actions"]["includeInAll"])
+        self.assertNotIn("flow.ui.actions", self.scenarios["all"]["includes"])
+        self.assertEqual(resolved["checks"], ["flow.ui.actions." + suffix for suffix in (
+            "loaded", "create", "repeated", "domain-rejection", "dispatch", "cancel", "retry", "stale",
+            "retired", "restored", "read-only")])
+        self._verify_each_flow_check_is_required(resolved)
+
+    def test_flow_ui_player_preserves_chest_lifecycle_and_requires_visible_window_checks(self) -> None:
+        resolved = HARNESS.resolve_scenario(self.scenarios, "flow.ui.player", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.UI", "Hatifect.Flow"])
+        self.assertEqual(resolved["timeoutSeconds"], 600)
+        self.assertFalse(self.scenarios["flow.ui.player"]["includeInAll"])
+        self.assertNotIn("flow.ui.player", self.scenarios["all"]["includes"])
+        original = [check.replace("flow.chest.roundtrip.", "flow.ui.player.")
+                    for check in self.scenarios["flow.chest.roundtrip"]["checks"]]
+        self.assertEqual(resolved["checks"], original + ["flow.ui.player." + suffix
+                         for suffix in ("window-actions", "visible-results", "window-reopen")])
+        self._verify_each_flow_check_is_required(resolved)
+
     def test_save_isolation_preserves_lifecycle_checks_and_requires_separate_save_check(self) -> None:
         resolved = HARNESS.resolve_scenario(self.scenarios, "flow.save.isolation", "smoke")
         self.assertTrue(resolved["requiresSave"])

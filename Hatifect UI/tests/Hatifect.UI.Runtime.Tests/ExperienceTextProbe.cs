@@ -14,7 +14,7 @@ using Hatifect.UI.Semantics;
 namespace Hatifect.UI.Runtime.Tests;
 
 // Test-only observations of the real compositor/host, with no consumer dependency or private production API exposure.
-public sealed class ExperienceTextProbe : IDisposable
+public sealed partial class ExperienceTextProbe : IDisposable
 {
     private readonly UiSymbolId _id;
     private readonly UiInvocationService _invoker;
@@ -23,11 +23,12 @@ public sealed class ExperienceTextProbe : IDisposable
     private bool _disposed;
     private static readonly UiHostPlacementContext Placement = new(new UiRect(0, 0, 1280, 720));
 
-    public ExperienceTextProbe(UiExperienceDefinition experience)
+    public ExperienceTextProbe(UiExperienceDefinition experience, bool centeredOverlay = false)
     {
         _id = experience.Id;
         var registry = new UiRegistryBuilder().Window(_id, "Test", () => { Activations++; return experience; },
-            lifetime: UiExperienceLifetime.Cached).Freeze();
+            lifetime: UiExperienceLifetime.Cached,
+            host: centeredOverlay ? UiProvisionalHostPolicies.OverlayCentered(true) : null).Freeze();
         _invoker = new UiInvocationService(registry);
         _composer = new UiSceneComposer(UiThemePresets.Dark(), registry);
     }

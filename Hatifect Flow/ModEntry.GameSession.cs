@@ -34,6 +34,8 @@ public sealed partial class ModEntry
 
     private void AttachGameSessionEvents()
     {
+        _config = Helper.ReadConfig<FlowConfig>();
+        Helper.Events.Input.ButtonsChanged += OnFlowButtonsChanged;
         Helper.Events.GameLoop.Saving += OnGameSaving;
         Helper.Events.GameLoop.Saved += OnGameSaved;
         Helper.Events.GameLoop.SaveCreated += OnGameCreated;
@@ -42,6 +44,7 @@ public sealed partial class ModEntry
 
     private void DetachGameSessionEvents()
     {
+        Helper.Events.Input.ButtonsChanged -= OnFlowButtonsChanged;
         Helper.Events.GameLoop.Saving -= OnGameSaving;
         Helper.Events.GameLoop.Saved -= OnGameSaved;
         Helper.Events.GameLoop.SaveCreated -= OnGameCreated;
@@ -49,6 +52,7 @@ public sealed partial class ModEntry
 
     private void ResolveFlowUi()
     {
+        _flowHostUi = Helper.ModRegistry.GetApi<IUiSemanticHostApi>("Hatifect.UI");
         _flowUi = Helper.ModRegistry.GetApi<IUiSemanticSurfaceApi>("Hatifect.UI");
         if (_flowUi is null || _flowUi.ApiVersion < 1)
             Monitor.Log("Flowline shipment surfaces need Hatifect UI API v1.", LogLevel.Warn);
@@ -172,6 +176,7 @@ public sealed partial class ModEntry
     {
         Monitor.Log("Flowline game session: " + error, LogLevel.Error);
         _uiAcceptance?.Fail(error);
+        _chestAcceptance?.Fail(error);
     }
 
     private void OnFlowCommand(string command, string[] args)
@@ -214,13 +219,7 @@ public sealed partial class ModEntry
                     Monitor.Log("Chest captured for Flowline network controls.", LogLevel.Info);
                     break;
                 case "network" when args.Length == 1:
-                    if (_flowUi is null || _flowUi.ApiVersion < 1 || Game1.activeClickableMenu is null)
-                        throw new InvalidOperationException("Open a game menu; the Hatifect UI surface API must be available.");
-                    CloseParcelSurface();
-                    _parcelSurface = new ParcelSurface(new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network"), session,
-                        LocalizedContentManager.CurrentLanguageCode == LocalizedContentManager.LanguageCode.ru,
-                        key => ItemRegistry.GetDataOrErrorItem(key).DisplayName));
-                    _parcelSurface.Show(_flowUi);
+                    ShowNetwork(session);
                     break;
                 case "rename" when args.Length == 3:
                     session.RenameStation(args[1], args[2]);
@@ -271,6 +270,21 @@ public sealed partial class ModEntry
     }
 
     // Production and exact native acceptance share the same consumer opening/retirement path.
+    private NetworkExperience ShowNetwork(IFlowNetworkApplication application, IUiSemanticSurfaceApi? api = null)
+    {
+        api ??= _flowUi;
+        if (api is null || api.ApiVersion < 1 || Game1.activeClickableMenu is null)
+            throw new InvalidOperationException("Open a game menu; the Hatifect UI surface API must be available.");
+        var experience = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network"), application,
+            LocalizedContentManager.CurrentLanguageCode == LocalizedContentManager.LanguageCode.ru,
+            key => ItemRegistry.GetDataOrErrorItem(key).DisplayName);
+        try { CloseParcelSurface(); }
+        catch { experience.Dispose(); throw; }
+        _parcelSurface = new ParcelSurface(experience);
+        _parcelSurface.Show(api);
+        return experience;
+    }
+
     private ParcelExperience ShowParcel(IFlowApplication application, Guid? selected, Func<Guid, string> stationName,
         IUiSemanticSurfaceApi? api = null)
     {

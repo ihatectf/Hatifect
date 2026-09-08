@@ -859,6 +859,62 @@
         "protocolVersion": 1,
         "driver": "Hatifect.TestHarness"
       }
+    },
+    {
+      "id": "flow.ui.actions",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 420,
+      "includeInAll": false,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.actions.loaded",
+        "flow.ui.actions.create",
+        "flow.ui.actions.repeated",
+        "flow.ui.actions.domain-rejection",
+        "flow.ui.actions.dispatch",
+        "flow.ui.actions.cancel",
+        "flow.ui.actions.retry",
+        "flow.ui.actions.stale",
+        "flow.ui.actions.retired",
+        "flow.ui.actions.restored",
+        "flow.ui.actions.read-only"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.loaded",
+        "flow.ui.player.custody",
+        "flow.ui.player.saving",
+        "flow.ui.player.saved",
+        "flow.ui.player.delivery",
+        "flow.ui.player.lifecycle",
+        "flow.ui.player.reload",
+        "flow.ui.player.no-duplication",
+        "flow.ui.player.window-actions",
+        "flow.ui.player.visible-results",
+        "flow.ui.player.window-reopen"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
     }
   ]
 }
