@@ -21,6 +21,7 @@ CA_MODULE = "Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay"
 CA_PROJECT = f"{CA_MODULE}/Hatifect.ChestsAnywhereOverlay.csproj"
 ROOT_INFRASTRUCTURE = (
     "Directory.Build.props",
+    "Directory.Build.targets",
     "global.json",
     "Hatifect.Build.targets",
     "Hatifect.UI.Packages.props",

@@ -240,8 +240,11 @@ class ValidationTests(unittest.TestCase):
         with patch.object(run, "command", side_effect=command):
             run.build(inventory, selected, "/sdk/dotnet")
             run.tests(selected, "/sdk/dotnet")
-        self.assertEqual(["restore", "build", selected[0].identifier], [name for name, _ in calls])
-        for _, arguments in calls:
+        self.assertEqual(["build-metadata-tests", "restore", "build", selected[0].identifier],
+                         [name for name, _ in calls])
+        self.assertEqual([sys.executable, str(self.root / "tools/build_metadata_tests.py")], calls[0][1])
+        self.assertEqual("/sdk/dotnet", run.environment["HATIFECT_DOTNET"])
+        for _, arguments in calls[1:]:
             for flag in ("-p:EnableModDeploy=false", "-p:HatifectBuildSuite=false", "-p:HatifectDeploySuite=false"):
                 self.assertIn(flag, arguments)
             self.assertNotIn("--filter", arguments)
@@ -252,6 +255,16 @@ class ValidationTests(unittest.TestCase):
         self.assertIn("-warnaserror", build_arguments)
         self.assertEqual(["-warnNotAsError:NETSDK1138"],
                          [value for value in build_arguments if value.startswith("-warnNotAsError:")])
+
+    def test_failed_metadata_regression_stops_before_package_restore_and_build(self) -> None:
+        project = self.project("Hatifect.Flow.Tests", test=True)
+        inventory = test_inventory.Inventory(self.solution(project))
+        run = validation.Run(self.root)
+        with patch.object(run, "command", side_effect=validation.ValidationError("metadata regression")) as command:
+            with self.assertRaisesRegex(validation.ValidationError, "metadata regression"):
+                run.build(inventory, inventory.select(tests=True), "/sdk/dotnet")
+        command.assert_called_once_with(
+            "build-metadata-tests", [sys.executable, str(self.root / "tools/build_metadata_tests.py")])
 
     def platform_graph(self) -> test_inventory.Inventory:
         production = self.project("Hatifect.Flow", packages=("Pathoschild.Stardew.ModBuildConfig",))
@@ -292,7 +305,7 @@ class ValidationTests(unittest.TestCase):
                         run.build(inventory, inventory.select(platform=True), "/sdk/dotnet")
                 self.assertEqual("BLOCKED", caught.exception.status)
                 self.assertIn("game references", str(caught.exception))
-                self.assertEqual(["restore", "game-path"], calls)
+                self.assertEqual(["build-metadata-tests", "restore", "game-path"], calls)
                 self.assertEqual("BLOCKED", run.stages[-1]["status"])
 
     def test_platform_preflight_accepts_complete_automatically_resolved_game(self) -> None:
@@ -312,8 +325,8 @@ class ValidationTests(unittest.TestCase):
 
         with patch.dict("os.environ", {}, clear=True), patch.object(run, "command", side_effect=command):
             run.build(inventory, inventory.select(platform=True), "/sdk/dotnet")
-        self.assertEqual(["restore", "game-path", "build"], [stage for stage, _ in calls])
-        query = calls[1][1]
+        self.assertEqual(["build-metadata-tests", "restore", "game-path", "build"], [stage for stage, _ in calls])
+        query = next(arguments for stage, arguments in calls if stage == "game-path")
         self.assertIn("-getItem:Reference", query)
         self.assertFalse(any(argument.startswith("-p:GamePath=") for argument in query))
         self.assertEqual("PASS", run.stages[-1]["status"])

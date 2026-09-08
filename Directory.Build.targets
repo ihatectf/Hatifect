@@ -1,0 +1,76 @@
+<Project>
+  <!-- SDK 8 can discover a linked worktree but lose RevisionId/Roots when its
+       branch is stored in the common packed-refs file. Recover only that missing
+       projection, before SourceLink translates URLs and the SDK consumes it for
+       assembly/package metadata and deterministic source paths. -->
+  <Target Name="_HatifectRecoverGitSourceControlInformation"
+          AfterTargets="InitializeSourceControlInformationFromSourceControlManager"
+          Condition="'$(EnableSourceControlManagerQueries)' == 'true' and '$(_GitRepositoryId)' != '' and '@(SourceRoot->WithMetadataValue('SourceControl', 'git'))' == ''">
+    <!-- Fixed commands plus WorkingDirectory avoid shell interpolation of paths.
+         Failure is an error: an identified repository must not silently produce
+         packages without revision metadata. Source archives/no-Git CA projections
+         never enter this target. No refs, configuration or index are modified. -->
+    <!-- Git environment variables can redirect CLI discovery independently of
+         the SDK. Verify both identities instead of trusting WorkingDirectory. -->
+    <!-- A common-directory override can redirect refs while git-dir/root still
+         match. Read the process environment, which project properties cannot
+         shadow. Normal linked worktrees use their commondir file instead. -->
+    <Error Condition="!$([System.String]::IsNullOrEmpty($([System.Environment]::GetEnvironmentVariable('GIT_COMMON_DIR'))))"
+           Text="Hatifect Git metadata recovery does not support GIT_COMMON_DIR; unset the environment override." />
+    <Exec Command="git rev-parse --absolute-git-dir"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          EnvironmentVariables="GIT_OPTIONAL_LOCKS=0"
+          ConsoleToMSBuild="true" StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" ItemName="_HatifectGitDirectoryOutput" />
+    </Exec>
+    <Error Condition="'@(_HatifectGitDirectoryOutput->Count())' != '1' or !Exists('@(_HatifectGitDirectoryOutput)')"
+           Text="Hatifect could not recover the Git repository directory." />
+    <PropertyGroup>
+      <_HatifectGitDirectory>@(_HatifectGitDirectoryOutput)</_HatifectGitDirectory>
+      <_HatifectGitDirectory>$([MSBuild]::NormalizeDirectory('$(_HatifectGitDirectory)'))</_HatifectGitDirectory>
+      <_HatifectSdkGitDirectory>$([MSBuild]::NormalizeDirectory('$(_GitRepositoryId)'))</_HatifectSdkGitDirectory>
+    </PropertyGroup>
+    <Error Condition="!$([System.String]::Equals('$(_HatifectGitDirectory)', '$(_HatifectSdkGitDirectory)'))"
+           Text="Hatifect Git metadata query selected a different repository than the SDK." />
+
+    <Exec Command="git rev-parse --verify HEAD"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          EnvironmentVariables="GIT_OPTIONAL_LOCKS=0"
+          ConsoleToMSBuild="true" StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" ItemName="_HatifectGitRevisionOutput" />
+    </Exec>
+    <PropertyGroup>
+      <_HatifectGitRevision>@(_HatifectGitRevisionOutput)</_HatifectGitRevision>
+    </PropertyGroup>
+    <Error Condition="'@(_HatifectGitRevisionOutput->Count())' != '1' or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(_HatifectGitRevision)', '\A[0-9a-fA-F]{40}([0-9a-fA-F]{24})?\z'))"
+           Text="Hatifect could not recover Git revision from the discovered repository." />
+
+    <Exec Command="git rev-parse --show-toplevel"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          EnvironmentVariables="GIT_OPTIONAL_LOCKS=0"
+          ConsoleToMSBuild="true" StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" ItemName="_HatifectGitRootOutput" />
+    </Exec>
+    <Error Condition="'@(_HatifectGitRootOutput->Count())' != '1' or !Exists('@(_HatifectGitRootOutput)')"
+           Text="Hatifect could not recover the Git source root from the discovered repository." />
+
+    <PropertyGroup>
+      <_HatifectGitRoot>@(_HatifectGitRootOutput)</_HatifectGitRoot>
+      <_HatifectGitSourceRoot>$([MSBuild]::NormalizeDirectory('$(_HatifectGitRoot)'))</_HatifectGitSourceRoot>
+      <_HatifectExpectedSourceRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)'))</_HatifectExpectedSourceRoot>
+    </PropertyGroup>
+    <Error Condition="!$([System.String]::Equals('$(_HatifectGitSourceRoot)', '$(_HatifectExpectedSourceRoot)'))"
+           Text="Hatifect Git source root does not match this checkout." />
+    <PropertyGroup>
+      <!-- Match the SDK: an explicit assembly/package revision wins, while the
+           source root's RevisionId describes the actual checked-out sources. -->
+      <SourceRevisionId Condition="'$(SourceRevisionId)' == ''">$(_HatifectGitRevision)</SourceRevisionId>
+    </PropertyGroup>
+    <ItemGroup>
+      <SourceRoot Include="$(_HatifectGitSourceRoot)"
+                  SourceControl="git"
+                  RevisionId="$(_HatifectGitRevision)"
+                  ScmRepositoryUrl="$(ScmRepositoryUrl)" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -19,6 +19,7 @@ from validation import ValidationError, read_trx
 ROOT = Path(__file__).resolve().parents[1]
 PROJECTION_ROOT_FILES = (
     "Directory.Build.props",
+    "Directory.Build.targets",
     "global.json",
     "Hatifect.Build.targets",
     "Hatifect.UI.Packages.props",

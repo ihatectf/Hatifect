@@ -36,6 +36,8 @@ UI authoring: [подключение language server, экспорт метад
 
 После упаковки всего выбранного графа `hatifect-pack-ui` сверяет DLL каждого пакета с итоговым `bin/Release/net6.0` owning project. Отсутствующий output или несовпадение байтов означает FAIL; для расхождения выводятся обе SHA-256. Это же условие действует при отдельном `ui_packages.py verify-feed`: сохранённый feed проверяется относительно текущих producer outputs. Проверка не пересобирает и не заменяет артефакты при отказе. Подробный разбор исходного смешанного feed — в [отчёте проверки идентичности пакетов](Q01_PACKAGE_IDENTITY.md).
 
+Общий `Directory.Build.targets` восстанавливает revision/source-root metadata, если SDK обнаружил Git repository, но потерял metadata в linked worktree с packed refs. Recovery использует только read-only Git queries и завершает сборку ошибкой при их отказе; обычные source archives и CA projection без Git не требуют этих запросов. Канонический build запускает `tools/build_metadata_tests.py` после выбора SDK; статическая стадия остаётся Python-only. [Контракт, регрессии и статус фактической приёмки](BUILD_SOURCE_IDENTITY.md).
+
 ## CI и ветки
 
 GitHub Actions запускает текущую статическую проверку, build и автоматически полученную из solution матрицу .NET тестов без игры. Финальный обязательный check — `Hatifect CI / CI Gate`; любой неуспешный или пропущенный prerequisite блокирует его. После публикации новой истории настрой branch protection на этот check и удали старые required checks, которых больше нет в workflow.

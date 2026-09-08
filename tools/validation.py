@@ -216,6 +216,9 @@ class Run:
 
     def build(self, inventory: Inventory, projects: tuple[Project, ...], dotnet: str) -> None:
         self.environment["HATIFECT_DOTNET"] = dotnet
+        # These tests execute MSBuild, so keep them in the SDK-equipped build
+        # stage rather than adding an SDK dependency to Python-only static CI.
+        self.command("build-metadata-tests", [sys.executable, str(self.root / "tools/build_metadata_tests.py")])
         closure = set()
 
         def visit(relative: str) -> None:
