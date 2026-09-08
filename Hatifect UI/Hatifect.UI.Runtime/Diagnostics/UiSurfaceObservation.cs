@@ -14,6 +14,8 @@ internal readonly record struct UiSurfaceRenderStamp(long Sequence, long SceneVe
 /// <summary>One exact-harness owner. No scene/source/frame references or history are retained.</summary>
 internal sealed class UiSurfaceObservationState
 {
+    // Retain the finite role labels: Enum.ToString can rebuild its runtime metadata cache after GC.
+    private static readonly Dictionary<UiAccessibilityRole, string> RoleNames = CreateRoleNames();
     internal const int MaxRows = 256;
     internal const int MaxNodes = 1024;
     internal const int MaxPrimitives = 4096;
@@ -85,7 +87,8 @@ internal sealed class UiSurfaceObservationState
             {
                 if (elements.Count < MaxRows)
                 {
-                    elements.Add(new(node.Id, origin.Semantic, node.Role.ToString(),
+                    elements.Add(new(node.Id, origin.Semantic,
+                        RoleNames.TryGetValue(node.Role, out string? roleName) ? roleName : node.Role.ToString(),
                         Limit(node.Name, ref truncated), Limit(node.Value, ref truncated), node.Enabled, origin.Action));
                     unmapped |= origin.Semantic is null;
                 }
@@ -114,6 +117,13 @@ internal sealed class UiSurfaceObservationState
             new(runtime.AcceptedVersion, runtime.FrameVersion), _passes,
             _passes == 0 ? null : new(_rendered.SceneVersion, _rendered.FrameVersion),
             elements.ToArray(), texts.ToArray(), truncated, unmapped);
+    }
+
+    private static Dictionary<UiAccessibilityRole, string> CreateRoleNames()
+    {
+        var names = new Dictionary<UiAccessibilityRole, string>();
+        foreach (UiAccessibilityRole role in Enum.GetValues<UiAccessibilityRole>()) names[role] = role.ToString();
+        return names;
     }
 
     private static string? Limit(string? text, ref bool truncated)

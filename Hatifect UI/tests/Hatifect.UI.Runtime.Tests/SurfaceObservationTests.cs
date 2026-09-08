@@ -239,6 +239,29 @@ public sealed class SurfaceObservationTests
     }
 
     [Fact]
+    public void CapturingRootKeepsAllocationStableAfterGarbageCollection()
+    {
+        using var fixture = new Fixture();
+        UiSemanticSurfaceSnapshot expected = fixture.Capture();
+        int reads = fixture.Source.Reads;
+        fixture.Source.Reject = fixture.RejectAvailability = true;
+        long warmBytes = CaptureBytes(fixture);
+        for (int i = 0; i < 8; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            UiSemanticSurfaceSnapshot actual = fixture.Capture();
+            long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.Equal(warmBytes, bytes * 32);
+            Assert.Equal(expected.Elements, actual.Elements);
+            Assert.Equal(expected.Texts, actual.Texts);
+            Assert.Equal(reads, fixture.Source.Reads);
+        }
+    }
+
+    [Fact]
     public void RealPortalCountTracksClosureAndHostRetirementAndRejectsForeignThread()
     {
         using var fixture = new Fixture();
