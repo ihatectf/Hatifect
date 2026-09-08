@@ -33,8 +33,10 @@ class AgentSetupTests(unittest.TestCase):
         self.write_config()
         self.roles = {
             "explorer": {"name": "hatifect_explorer", "description": "Explore assigned ownership",
+                         "model": "gpt-5.6-luna", "model_reasoning_effort": "medium",
                          "sandbox_mode": "read-only", "developer_instructions": "Inspect without edits"},
             "reviewer": {"name": "hatifect_reviewer", "description": "Review assigned evidence",
+                         "model": "gpt-5.6-sol", "model_reasoning_effort": "xhigh",
                          "sandbox_mode": "read-only", "developer_instructions": "Report without edits"},
         }
         for filename, role in self.roles.items():
@@ -53,11 +55,14 @@ class AgentSetupTests(unittest.TestCase):
         path.write_text(text, encoding="utf-8")
         return path
 
-    def write_config(self, budget=32768, threads=2, extra=None) -> None:
+    def write_config(self, budget=32768, threads=2, extra=None, agent_overrides=None) -> None:
         entries = {"project_doc_max_bytes": budget, **(extra or {})}
         text = "".join(f"{key} = {json.dumps(value)}\n" for key, value in entries.items())
+        agents = {"max_concurrent_threads_per_session": threads,
+                  "default_subagent_model": "gpt-5.6-luna", "default_subagent_reasoning_effort": "medium",
+                  **(agent_overrides or {})}
         self.write(".codex/config.toml", text + "\n[agents]\n"
-                   f"max_concurrent_threads_per_session = {json.dumps(threads)}\n")
+                   + "".join(f"{key} = {json.dumps(value)}\n" for key, value in agents.items()))
 
     def write_role(self, name: str, role: dict) -> None:
         self.write(f".codex/agents/{name}.toml",
@@ -67,7 +72,9 @@ class AgentSetupTests(unittest.TestCase):
         self.write(agent_setup.ROUTING, json.dumps(self.registry if registry is None else registry))
 
     def responses(self) -> tuple[dict, dict]:
-        config = {"config": {"mcp_servers": {"private": {"env": {"TOKEN": SECRET}}}}, "layers": [
+        config = {"config": {"mcp_servers": {"private": {"env": {"TOKEN": SECRET}}},
+                             "agents": {"default_subagent_model": "gpt-5.6-luna",
+                                        "default_subagent_reasoning_effort": "medium"}}, "layers": [
             {"name": {"type": "user"}, "config": {"api_key": SECRET}},
             {"name": {"type": "project", "dotCodexFolder": str(self.root / ".codex")},
              "disabledReason": None},
@@ -97,6 +104,11 @@ class AgentSetupTests(unittest.TestCase):
         self.assertEqual(["tools", "flowline"], [route["id"] for route in result["routes"]])
         self.assertEqual(agent_setup.SKILL, result["projectSkill"])
         self.assertEqual({"tools": 36, "flowline": 36}, result["instructionBytes"])
+        self.assertEqual({"defaultModel": "gpt-5.6-luna", "defaultReasoningEffort": "medium",
+                          "allowedModels": ["gpt-5.6-luna", "gpt-5.6-sol"], "maxReasoningEffort": "xhigh",
+                          "roles": {"hatifect_explorer": {"model": "gpt-5.6-luna", "reasoningEffort": "medium"},
+                                    "hatifect_reviewer": {"model": "gpt-5.6-sol", "reasoningEffort": "xhigh"}}},
+                         result["subagentPolicy"])
         self.assertEqual(before, {path.relative_to(self.root): path.read_bytes()
                                   for path in self.root.rglob("*") if path.is_file()})
 
@@ -106,11 +118,40 @@ class AgentSetupTests(unittest.TestCase):
         self.assertNotIn(SECRET, str(error))
 
     def test_project_config_cannot_override_personal_model_or_mcp(self) -> None:
-        for extra in ({"model": "personal-model"}, {"mcp_servers": {}}, {"api_key": SECRET}):
+        for extra in ({"model": "personal-model"}, {"model_reasoning_effort": "max"},
+                      {"mcp_servers": {}}, {"api_key": SECRET}):
             with self.subTest(extra=next(iter(extra))):
                 self.write_config(extra=extra)
                 error = self.assert_rejected(lambda: agent_setup.check_repository(self.root))
                 self.assertNotIn(SECRET, str(error))
+
+    def test_subagent_defaults_accept_luna_sol_and_efforts_through_xhigh(self) -> None:
+        for model in ("gpt-5.6-luna", "gpt-5.6-sol"):
+            for effort in ("none", "low", "medium", "high", "xhigh"):
+                with self.subTest(model=model, effort=effort):
+                    self.write_config(agent_overrides={"default_subagent_model": model,
+                                                       "default_subagent_reasoning_effort": effort})
+                    result = agent_setup.check_repository(self.root)
+                    self.assertEqual("PASS", result["status"])
+                    self.assertEqual((model, effort), (result["subagentPolicy"]["defaultModel"],
+                                                      result["subagentPolicy"]["defaultReasoningEffort"]))
+
+    def test_subagent_defaults_reject_other_models_and_effort_above_xhigh(self) -> None:
+        for field, values in (("default_subagent_model", ("gpt-6-astra", "gpt-5.6-terra", "", True, [])),
+                              ("default_subagent_reasoning_effort", ("max", "ultra", "unknown", "", True, []))):
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    self.write_config(agent_overrides={field: value})
+                    self.assert_rejected(lambda: agent_setup.check_repository(self.root), contains="subagent defaults")
+
+    def test_subagent_defaults_require_model_and_reasoning(self) -> None:
+        for field in ("default_subagent_model", "default_subagent_reasoning_effort"):
+            with self.subTest(missing=field):
+                self.write_config()
+                path = self.root / ".codex/config.toml"
+                path.write_text("\n".join(line for line in path.read_text().splitlines()
+                                          if not line.startswith(field + " =")), encoding="utf-8")
+                self.assert_rejected(lambda: agent_setup.check_repository(self.root), contains="model/reasoning defaults")
 
     def test_instruction_budget_and_concurrency_reject_invalid_types_and_ranges(self) -> None:
         for budget in (0, -1, 32769, True, "32768"):
@@ -130,12 +171,24 @@ class AgentSetupTests(unittest.TestCase):
         original = self.roles["explorer"]
         cases = [original | {"sandbox_mode": "workspace-write"}, original | {"model": "override"},
                  original | {"name": "Invalid-Name"}, original | {"description": " "},
-                 original | {"developer_instructions": False},
+                 original | {"developer_instructions": False}, original | {"api_key": SECRET},
                  {key: value for key, value in original.items() if key != "description"}]
         for role in cases:
             with self.subTest(role=role):
                 self.write_role("explorer", role)
                 self.assert_rejected(lambda: agent_setup.check_repository(self.root), contains="read-only role")
+
+    def test_roles_reject_other_models_or_reasoning_above_xhigh(self) -> None:
+        for name, original in self.roles.items():
+            cases = [original | {"model": "gpt-6-astra"}, original | {"model": "gpt-5.6-terra"},
+                     original | {"model_reasoning_effort": "max"}, original | {"model_reasoning_effort": "ultra"},
+                     {key: value for key, value in original.items() if key != "model"},
+                     {key: value for key, value in original.items() if key != "model_reasoning_effort"}]
+            for role in cases:
+                with self.subTest(name=name, role=role):
+                    self.write_role(name, role)
+                    self.assert_rejected(lambda: agent_setup.check_repository(self.root), contains="read-only role")
+            self.write_role(name, original)
 
     def test_duplicate_role_identity_is_rejected_across_different_files(self) -> None:
         self.write_role("copy", self.roles["explorer"])
@@ -241,6 +294,8 @@ class AgentSetupTests(unittest.TestCase):
         self.assertEqual("PASS", result["status"])
         self.assertTrue(result["projectConfigLoaded"])
         self.assertTrue(result["projectSkillLoaded"])
+        self.assertTrue(result["subagentDefaultsLoaded"])
+        self.assertEqual({"model": "gpt-5.6-luna", "reasoningEffort": "medium"}, result["subagentDefaults"])
         self.assertEqual((4, 3), (result["discoveredSkills"], result["enabledSkills"]))
         self.assertEqual({"tools": {"available": True, "unavailable": []},
                           "flowline": {"available": True, "unavailable": []}}, result["routes"])
@@ -249,6 +304,18 @@ class AgentSetupTests(unittest.TestCase):
         self.assertNotIn("mcp_servers", json.dumps(result))
         self.assertNotIn("api_key", json.dumps(result))
         self.assertEqual(original, (config, skills))
+
+    def test_host_requires_effective_subagent_defaults_to_match_project(self) -> None:
+        defaults = self.responses()[0]["config"]["agents"]
+        for agents in (None, {}, defaults | {"default_subagent_model": "gpt-5.6-sol"},
+                       defaults | {"default_subagent_model": "gpt-6-astra"},
+                       defaults | {"default_subagent_reasoning_effort": "xhigh"},
+                       defaults | {"default_subagent_reasoning_effort": "max"}):
+            with self.subTest(agents=agents):
+                config, skills = self.responses()
+                config["config"]["agents"] = agents
+                self.assert_rejected(lambda: agent_setup.audit_host(self.root, config, skills),
+                                     status="BLOCKED", contains="subagent defaults")
 
     def test_host_requires_one_enabled_project_layer_for_exact_checkout(self) -> None:
         for state in ("missing", "disabled", "wrong-checkout", "duplicate"):

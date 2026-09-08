@@ -1,6 +1,8 @@
-# Shared Hatifect settings. Model, reasoning, credentials, MCP and permissions
-# are inherited from the user's installation and managed policy.
+# Shared Hatifect settings. The primary model, credentials, MCP and permissions
+# remain inherited. Working subagents use the Luna/Sol policy in AGENTS.md.
 project_doc_max_bytes = 32768
 
 [agents]
 max_concurrent_threads_per_session = 3
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "medium"
