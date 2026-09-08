@@ -58,7 +58,7 @@ class SemanticPublicApiTests(unittest.TestCase):
             self.assertEqual({"FormatVersion", "SemanticSurface", "FormAuthoring", "SurfaceObservation"}, set(baseline))
             self.assertEqual(1, baseline["SemanticSurface"]["ApiVersion"])
             self.assertEqual(
-            "9de29d5a7c53964ae192efb4f4f7590e1dc75a64d2fe94605f86dac3861c6335",
+                "3eb4b56d0e454e62042d51962594b558f7fef183bfcdc65fca06b7dabfe8a284",
                 baseline["SemanticSurface"]["Files"][0]["Sha256"],
             )
             self.assertEqual([], API.verify(root))

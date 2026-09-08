@@ -507,6 +507,126 @@ Items@Checked
         Assert.True(platform.WrapCalls > afterLocale);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(79)]
+    public void RevisionChangeRemeasuresOnlyChangedVisibleSupportingText(int changedIndex)
+    {
+        UiSymbolId owner = RegistryTests.Id("adaptive-local-change");
+        var source = new MutableMeasurementSource(owner, 80);
+        CollectionFixture fixture = ListFixture(source, "Adaptive", owner);
+        var platform = new CountingPlatform();
+        var engine = new UiSceneLayoutEngine(platform);
+        var viewport = new UiRect(0, 0, 360, 240);
+        var before = engine.Build(fixture.Scene, viewport);
+        var collection = Assert.Single(Nodes(fixture.Scene.Root).OfType<UiCollectionSceneNode>());
+        Assert.True(before.TryGetCollection(collection.Id, out var beforeWindow));
+        var beforeFirst = Assert.Single(beforeWindow!.Items, item => item.Item.Id == owner.Child("item/0"));
+        int wraps = platform.WrapCalls;
+
+        source.ChangeSupportingText(changedIndex, string.Join(" ", Enumerable.Repeat("Long supporting text", 20)));
+        UiScene next = fixture.Composer.Compose(fixture.Invocation, locale: "en-US");
+        var after = engine.Build(next, viewport);
+
+        Assert.Equal(changedIndex == 0 ? 1 : 0, platform.WrapCalls - wraps);
+        Assert.True(after.TryGetCollection(collection.Id, out var afterWindow));
+        var afterFirst = Assert.Single(afterWindow!.Items, item => item.Item.Id == owner.Child("item/0"));
+        Assert.Equal(beforeFirst.Bounds.Y, afterFirst.Bounds.Y);
+        if (changedIndex == 0)
+        {
+            Assert.True(afterFirst.Bounds.Height > beforeFirst.Bounds.Height);
+            Assert.Contains("Long supporting text", afterFirst.Item.SupportingText);
+        }
+        else
+        {
+            Assert.Equal(beforeFirst.Bounds, afterFirst.Bounds);
+            Assert.Equal(beforeWindow.Items.Select(item => item.Item.Id), afterWindow.Items.Select(item => item.Item.Id));
+        }
+        Assert.Equal(0, afterFirst.Item.ContentVersion);
+    }
+
+    [Fact]
+    public void CachedOffscreenItemUsesCurrentTextWhenScrolledBackIntoView()
+    {
+        UiSymbolId owner = RegistryTests.Id("adaptive-cached-offscreen-change");
+        var source = new MutableMeasurementSource(owner, 80);
+        CollectionFixture fixture = ListFixture(source, "Adaptive", owner);
+        var viewport = new UiRect(0, 0, 360, 240);
+        var runtime = new UiHostRuntimeSession(fixture.Scene, viewport, new CountingPlatform());
+        var collection = Assert.Single(Nodes(fixture.Scene.Root).OfType<UiCollectionSceneNode>());
+        UiSymbolId firstId = owner.Child("item/0");
+        Assert.True(runtime.Layout.TryGetCollection(collection.Id, out var initial));
+        float initialHeight = Assert.Single(initial!.Items, item => item.Item.Id == firstId).Bounds.Height;
+        runtime.ScrollCollection(collection.Id, 2_000);
+        Assert.True(runtime.Layout.TryGetCollection(collection.Id, out var scrolled));
+        Assert.DoesNotContain(scrolled!.Items, item => item.Item.Id == firstId);
+
+        string current = string.Join(" ", Enumerable.Repeat("Changed while outside viewport", 20));
+        source.ChangeSupportingText(0, current);
+        runtime.Update(fixture.Composer.Compose(fixture.Invocation, locale: "en-US"), viewport);
+        Assert.True(runtime.Layout.TryGetCollection(collection.Id, out var updated));
+        runtime.ScrollCollection(collection.Id, -updated!.ScrollOffset);
+
+        Assert.True(runtime.Layout.TryGetCollection(collection.Id, out var returned));
+        var first = Assert.Single(returned!.Items, item => item.Item.Id == firstId);
+        Assert.Equal(current, first.Item.SupportingText);
+        Assert.Equal(0, first.Item.ContentVersion);
+        Assert.True(first.Bounds.Height > initialHeight);
+        Assert.Equal(initial.Items[0].Bounds.Y, first.Bounds.Y);
+    }
+
+    [Fact]
+    public void ReplacingCollectionOwnerDiscardsItsMeasuredItems()
+    {
+        UiSymbolId owner = RegistryTests.Id("adaptive-new-owner");
+        var first = ListFixture(new MutableMeasurementSource(owner, 80), "Adaptive", owner);
+        var second = ListFixture(new MutableMeasurementSource(owner, 80), "Adaptive", owner);
+        var platform = new CountingPlatform();
+        var engine = new UiSceneLayoutEngine(platform);
+        var viewport = new UiRect(0, 0, 360, 240);
+        engine.Build(first.Scene, viewport);
+        int wraps = platform.WrapCalls;
+        engine.Build(second.Scene, viewport);
+        Assert.True(platform.WrapCalls > wraps);
+    }
+
+    private sealed class MutableMeasurementSource : IUiSemanticCollectionSource,
+        IUiSemanticSource<IReadOnlyList<int>>, IUiSemanticCollectionMetadata
+    {
+        private readonly UiSymbolId _owner;
+        private readonly string[] _supporting;
+        public MutableMeasurementSource(UiSymbolId owner, int count)
+        {
+            _owner = owner;
+            Value = Enumerable.Range(0, count).ToArray();
+            _supporting = Enumerable.Repeat("Supporting", count).ToArray();
+        }
+        public IReadOnlyList<int> Value { get; }
+        public int Count => Value.Count;
+        public Type ValueType => typeof(IReadOnlyList<int>);
+        public object UntypedValue => Value;
+        public long Revision { get; private set; }
+        public bool HasSupportingText => true;
+        public event Action? Changed;
+        public void ChangeSupportingText(int index, string text)
+        {
+            _supporting[index] = text;
+            Revision++;
+            Changed?.Invoke();
+        }
+        public UiSemanticCollectionItem GetItem(int index)
+            => new(_owner.Child($"item/{index}"), $"Item {index}", index, _supporting[index]);
+        public bool TryGetIndex(UiSymbolId item, out int index)
+        {
+            string prefix = _owner.LocalId + "/item/";
+            if (item.Scope == _owner.Scope && item.LocalId.StartsWith(prefix, StringComparison.Ordinal) &&
+                int.TryParse(item.LocalId[prefix.Length..], out index) && (uint)index < (uint)Count)
+                return true;
+            index = -1;
+            return false;
+        }
+    }
+
     [Fact]
     public void AdaptiveSteadyStateReusesExactRowsWithinTheBoundedHeightScope()
     {
@@ -529,6 +649,80 @@ Items@Checked
         Assert.Equal(
             steadyWindow.Items.Count + expectedNonRowReads,
             source.GetItemCalls - callsAfterInitialLayout);
+    }
+
+    [Theory]
+    [InlineData(58f)]
+    [InlineData(53.125f)]
+    public void LargeAndSmallHeightIndicesKeepEquivalentGeometryThroughRowEviction(float estimate)
+    {
+        const int smallCount = 8_192;
+        const int largeCount = 1_000_000;
+        UiSymbolId owner = RegistryTests.Id("height-index-eviction");
+        CollectionFixture small = ListFixture(new CountingCollectionSource(owner, smallCount), "Adaptive", owner);
+        CollectionFixture large = ListFixture(new CountingCollectionSource(owner, largeCount), "Adaptive", owner);
+        var smallCollection = Assert.Single(Nodes(small.Scene.Root).OfType<UiCollectionSceneNode>());
+        var largeCollection = Assert.Single(Nodes(large.Scene.Root).OfType<UiCollectionSceneNode>());
+        var smallVirtualizer = new UiCollectionVirtualizer(new CountingPlatform());
+        var largeVirtualizer = new UiCollectionVirtualizer(new CountingPlatform());
+        var viewport = new UiRect(0, 0, 360, 240);
+        var typography = new UiTypography("Body", 16, 1.25f);
+
+        for (int visit = 0; visit < 600; visit++)
+        {
+            // Visit more than the 512 retained exact rows, including repeated returns to row0.
+            int index = visit % 125 == 0 ? 0 : visit * 53 % 7_900;
+            var request = new UiCollectionViewportRequest(
+                0, new UiCollectionScrollAnchor(owner.Child($"item/{index}"), 0), index);
+            UiCollectionLayoutWindow expected = smallVirtualizer.Materialize(
+                smallCollection, viewport, viewport, viewport.Width, estimate, 20,
+                typography, small.Scene.MeasurementContext, request);
+            UiCollectionLayoutWindow actual = largeVirtualizer.Materialize(
+                largeCollection, viewport, viewport, viewport.Width, estimate, 20,
+                typography, large.Scene.MeasurementContext, request);
+
+            Assert.Equal(expected.Anchor, actual.Anchor);
+            Assert.Equal(expected.Items.Select(item => item.Item.Id), actual.Items.Select(item => item.Item.Id));
+            Assert.InRange(Math.Abs(expected.ScrollOffset - actual.ScrollOffset), 0, 0.02f);
+            for (int item = 0; item < expected.Items.Count; item++)
+            {
+                Assert.Equal(expected.Items[item].Bounds.Height, actual.Items[item].Bounds.Height);
+                Assert.InRange(Math.Abs(expected.Items[item].Bounds.Y - actual.Items[item].Bounds.Y), 0, 0.02f);
+            }
+            // Total extent is float at ~58 million pixels: allow two units in the last place.
+            double expectedTotal = expected.TotalExtent + (largeCount - smallCount) * (double)estimate;
+            Assert.InRange(Math.Abs(actual.TotalExtent - expectedTotal), 0, 8);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LargeAdaptiveCollectionDoesNotAllocateCountSizedHeightStorage(bool revisionChange)
+    {
+        UiSymbolId owner = RegistryTests.Id("million-item-height-storage");
+        var source = new CountingCollectionSource(owner, 1_000_000);
+        CollectionFixture fixture = ListFixture(source, "Adaptive", owner);
+        var engine = new UiSceneLayoutEngine(new CountingPlatform());
+        var viewport = new UiRect(0, 0, 360, 240);
+        UiScene scene = fixture.Scene;
+        if (revisionChange)
+        {
+            engine.Build(scene, viewport);
+            source.AdvanceRevision();
+            scene = fixture.Composer.Compose(fixture.Invocation, locale: "en-US");
+        }
+        int reads = source.GetItemCalls;
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        UiLayoutSnapshot layout = engine.Build(scene, viewport);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(allocated < 512 * 1024, $"Layout allocated {allocated} bytes for one visible viewport.");
+        Assert.InRange(source.GetItemCalls - reads, 1, 99);
+        var collection = Assert.Single(Nodes(scene.Root).OfType<UiCollectionSceneNode>());
+        Assert.True(layout.TryGetCollection(collection.Id, out var window));
+        Assert.Equal(1_000_000, window!.TotalCount);
+        Assert.InRange(window.Items.Count, 1, 99);
     }
 
     [Fact]
@@ -723,7 +917,8 @@ Items
         public IReadOnlyList<int> Value => Array.Empty<int>();
         public Type ValueType => typeof(IReadOnlyList<int>);
         public object UntypedValue => Value;
-        long IUiSemanticCollectionMetadata.Revision => 0;
+        public long Revision { get; private set; }
+        public void AdvanceRevision() => Revision++;
         bool IUiSemanticCollectionMetadata.HasSupportingText => true;
         public event Action? Changed
         {

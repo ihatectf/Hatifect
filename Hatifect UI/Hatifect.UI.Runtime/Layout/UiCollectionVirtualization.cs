@@ -418,7 +418,6 @@ internal sealed class UiCollectionVirtualizer
         var themeMetrics = new ThemeMetricIdentity(typography, lineHeight);
         var key = new MeasurementKey(
             item.Id,
-            item.ContentVersion,
             item.Icon != null,
             itemWidth,
             context.Profile,
@@ -427,7 +426,11 @@ internal sealed class UiCollectionVirtualizer
             themeMetrics,
             collection.Recipe.ItemSizing,
             collection.Recipe.Density);
-        if (state.Measurements.TryGetValue(key, out MeasuredItem measured)) return measured;
+        if (state.Measurements.TryGetValue(key, out CachedMeasurement cached) &&
+            cached.ContentVersion == item.ContentVersion &&
+            string.Equals(cached.Label, item.Label, StringComparison.Ordinal) &&
+            string.Equals(cached.SupportingText, item.SupportingText, StringComparison.Ordinal))
+            return cached.Measurement;
 
         RecipeMetrics recipe = Metrics(collection.Recipe, lineHeight, context.Profile, context.Locale);
         float contentWidth = Math.Max(1, itemWidth - recipe.HorizontalPadding * 2 - (item.Icon != null ? lineHeight + 4 : 0));
@@ -444,14 +447,15 @@ internal sealed class UiCollectionVirtualizer
             supportingHeight = Math.Max(lineHeight, supporting.Height);
         }
         float gap = supportingHeight > 0 ? recipe.SupportingGap : 0;
-        measured = new MeasuredItem(
+        var measured = new MeasuredItem(
             recipe.VerticalPadding * 2 + labelHeight + gap + supportingHeight,
             labelHeight,
             supportingHeight,
             recipe.HorizontalPadding,
             recipe.VerticalPadding,
             gap);
-        state.Measurements.Set(key, measured);
+        state.Measurements.Set(key, new CachedMeasurement(
+            item.ContentVersion, item.Label, item.SupportingText, measured));
         return measured;
     }
 
@@ -666,7 +670,6 @@ internal sealed class UiCollectionVirtualizer
 
     private readonly record struct MeasurementKey(
         UiSymbolId Item,
-        long ContentVersion,
         bool HasIcon,
         float Width,
         UiSymbolId Profile,
@@ -687,6 +690,12 @@ internal sealed class UiCollectionVirtualizer
         ThemeMetricIdentity ThemeMetrics,
         UiSymbolId ItemSizing,
         string Density);
+
+    private readonly record struct CachedMeasurement(
+        long ContentVersion,
+        string Label,
+        string? SupportingText,
+        MeasuredItem Measurement);
 
     private readonly record struct MeasuredItem(
         float Height,
@@ -713,12 +722,12 @@ internal sealed class UiCollectionVirtualizer
 
         public CollectionState(int measurementCapacity, int exactRowCapacity)
         {
-            Measurements = new UiBoundedCache<MeasurementKey, MeasuredItem>(measurementCapacity);
+            Measurements = new UiBoundedCache<MeasurementKey, CachedMeasurement>(measurementCapacity);
             _exactRowCapacity = exactRowCapacity;
             Heights = new AdaptiveRowHeightIndex(0, 1, exactRowCapacity);
         }
 
-        public UiBoundedCache<MeasurementKey, MeasuredItem> Measurements { get; }
+        public UiBoundedCache<MeasurementKey, CachedMeasurement> Measurements { get; }
         public HashSet<UiSymbolId> MaterializedIds { get; } = new();
         public AdaptiveRowHeightIndex Heights { get; private set; }
 
@@ -782,14 +791,14 @@ internal sealed class UiCollectionVirtualizer
 
         public bool PrepareSource(UiCollectionSceneNode collection)
         {
-            bool sourceChanged = !ReferenceEquals(_source, collection.SourceIdentity) ||
-                                 _sourceRevision != collection.SourceRevision;
-            if (sourceChanged)
-            {
-                Measurements.Clear();
-                _source = collection.SourceIdentity;
-                _sourceRevision = collection.SourceRevision;
-            }
+            bool ownerChanged = !ReferenceEquals(_source, collection.SourceIdentity);
+            bool sourceChanged = ownerChanged || _sourceRevision != collection.SourceRevision;
+            // Cached values validate exact text without hashing it, including external
+            // sources without content versions. Each item/geometry slot replaces old text.
+            // A revision still resets row heights, but unaffected measurements survive.
+            if (ownerChanged) Measurements.Clear();
+            _source = collection.SourceIdentity;
+            _sourceRevision = collection.SourceRevision;
             return sourceChanged;
         }
 
@@ -800,7 +809,9 @@ internal sealed class UiCollectionVirtualizer
     /// <summary>Estimated prefix sums plus bounded exact row deltas.</summary>
     private sealed class AdaptiveRowHeightIndex
     {
-        private readonly float[] _tree;
+        private const int DenseRowLimit = 8_192;
+        private readonly float[]? _dense;
+        private readonly Dictionary<int, FenwickBucket>? _sparse;
         private readonly float _estimate;
         private readonly int _capacity;
         private readonly Dictionary<int, LinkedListNode<RowEntry>> _exact = new();
@@ -814,7 +825,8 @@ internal sealed class UiCollectionVirtualizer
             Count = count;
             _estimate = estimate;
             _capacity = capacity;
-            _tree = new float[count + 1];
+            if (count <= DenseRowLimit) _dense = new float[count + 1];
+            else _sparse = new Dictionary<int, FenwickBucket>();
         }
 
         public int Count { get; }
@@ -840,10 +852,13 @@ internal sealed class UiCollectionVirtualizer
         public float Prefix(int endExclusive)
         {
             if ((uint)endExclusive > (uint)Count) throw new ArgumentOutOfRangeException(nameof(endExclusive));
-            float delta = 0;
+            double delta = 0;
             for (int cursor = endExclusive; cursor > 0; cursor -= cursor & -cursor)
-                delta += _tree[cursor];
-            return endExclusive * _estimate + delta;
+            {
+                if (_dense != null) delta += _dense[cursor];
+                else if (_sparse!.TryGetValue(cursor, out FenwickBucket bucket)) delta += bucket.Delta;
+            }
+            return (float)(endExclusive * (double)_estimate + delta);
         }
 
         public int FindRow(float offset)
@@ -867,7 +882,7 @@ internal sealed class UiCollectionVirtualizer
             if (!float.IsFinite(height) || height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
             if (_exact.TryGetValue(row, out LinkedListNode<RowEntry>? current))
             {
-                Update(row, height - current.Value.Height);
+                Update(row, (double)current.Value.Height - _estimate, (double)height - _estimate);
                 current.Value = new RowEntry(row, height);
                 _recency.Remove(current);
                 _recency.AddLast(current);
@@ -879,19 +894,38 @@ internal sealed class UiCollectionVirtualizer
                     ?? throw new InvalidOperationException("A full exact-height index has no eviction candidate.");
                 _recency.RemoveFirst();
                 _exact.Remove(oldest.Value.Row);
-                Update(oldest.Value.Row, _estimate - oldest.Value.Height);
+                Update(oldest.Value.Row, (double)oldest.Value.Height - _estimate, 0);
             }
             var node = new LinkedListNode<RowEntry>(new RowEntry(row, height));
             _recency.AddLast(node);
             _exact.Add(row, node);
-            Update(row, height - _estimate);
+            Update(row, 0, (double)height - _estimate);
         }
 
-        private void Update(int row, float delta)
+        private void Update(int row, double previous, double next)
         {
-            for (int cursor = row + 1; cursor < _tree.Length; cursor += cursor & -cursor)
-                _tree[cursor] += delta;
+            double delta = next - previous;
+            if (delta == 0) return;
+            int contributors = (next != 0 ? 1 : 0) - (previous != 0 ? 1 : 0);
+            for (int cursor = row + 1; cursor <= Count;)
+            {
+                if (_dense != null) _dense[cursor] += (float)delta;
+                else
+                {
+                    _sparse!.TryGetValue(cursor, out FenwickBucket bucket);
+                    int count = bucket.Contributors + contributors;
+                    // Removing the last live row drops any floating-point residue as well.
+                    // Thus storage follows live exact rows, never the history of visited rows.
+                    if (count == 0) _sparse.Remove(cursor);
+                    else _sparse[cursor] = new FenwickBucket(bucket.Delta + delta, count);
+                }
+                int step = cursor & -cursor;
+                if (cursor > Count - step) break;
+                cursor += step;
+            }
         }
+
+        private readonly record struct FenwickBucket(double Delta, int Contributors);
 
         private readonly record struct RowEntry(int Row, float Height);
     }

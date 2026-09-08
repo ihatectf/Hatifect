@@ -400,11 +400,11 @@ internal sealed partial class UiAutomatedAcceptanceController
             Exception? rejection = null;
             try { surface.Show(); }
             catch (InvalidOperationException error) { rejection = error; }
-            bool retained = rejection != null && !surface.Visible && ReferenceEquals(Game1.activeClickableMenu, replacement)
+            bool retained = rejection != null && source.Subscribers == 0 && !surface.Visible && ReferenceEquals(Game1.activeClickableMenu, replacement)
                 && ReferenceEquals(before, host.Session.Root.Scene)
                 && ReferenceEquals(environment, ReloadField<UiEnvironment>(surface, "_environment"));
             surface.Show();
-            bool retried = surface.Visible && ReferenceEquals(Game1.activeClickableMenu, replacement)
+            bool retried = source.Subscribers == 1 && surface.Visible && ReferenceEquals(Game1.activeClickableMenu, replacement)
                 && !ReferenceEquals(environment, ReloadField<UiEnvironment>(surface, "_environment"));
             Record("semantic.environment.active-menu.show-owner", retained && retried,
                 "First Show rejects a candidate whose callback replaces its native owner; retry binds the new owner.");
@@ -422,6 +422,8 @@ internal sealed partial class UiAutomatedAcceptanceController
 
     private sealed class EnvironmentSource : IUiSemanticSource<string>
     {
+        private Action? _changed;
+        internal int Subscribers => _changed?.GetInvocationList().Length ?? 0;
         internal const string Rejection = "Controlled native environment source rejection.";
         internal bool Reject { get; set; }
         internal Action? OnRead { get; set; }
@@ -438,6 +440,6 @@ internal sealed partial class UiAutomatedAcceptanceController
             }
         }
         public object UntypedValue => Value;
-        public event Action? Changed { add { } remove { } }
+        public event Action? Changed { add => _changed += value; remove => _changed -= value; }
     }
 }
