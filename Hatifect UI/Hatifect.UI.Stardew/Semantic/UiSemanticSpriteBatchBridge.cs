@@ -429,6 +429,15 @@ internal sealed class UiSemanticSpriteBatchBridge : IUiPlatformBridge, IDisposab
         string normalized = (text ?? string.Empty)
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
+        // Resolve unsupported direction before measuring or wrapping. The cached lines
+        // are shared by Measure and DrawText; the semantic string remains unchanged.
+        if (normalized.Contains('→') && !font.Characters.Contains('→'))
+        {
+            if (!font.Characters.Contains('-') || !font.Characters.Contains('>'))
+                throw new UiSemanticStardewCapabilityException(
+                    "The selected font cannot represent rightward direction or its ASCII fallback.");
+            normalized = normalized.Replace("→", "->", StringComparison.Ordinal);
+        }
         if (overflow != RuntimeTextOverflow.Wrap)
         {
             string single = normalized.Replace('\n', ' ');
@@ -471,7 +480,14 @@ internal sealed class UiSemanticSpriteBatchBridge : IUiPlatformBridge, IDisposab
     {
         if (availableWidth <= 0 || text.Length == 0) return string.Empty;
         if (Width(font, text, scale) <= availableWidth) return text;
-        string suffix = ellipsis ? "…" : string.Empty;
+        string suffix = string.Empty;
+        if (ellipsis)
+        {
+            if (font.Characters.Contains('…')) suffix = "…";
+            else if (font.Characters.Contains('.')) suffix = "...";
+            else throw new UiSemanticStardewCapabilityException(
+                "The selected font cannot represent an ellipsis or its ASCII fallback.");
+        }
         float suffixWidth = Width(font, suffix, scale);
         int length = MaximumPrefix(text, font, scale, Math.Max(0, availableWidth - suffixWidth));
         return length <= 0 ? (suffixWidth <= availableWidth ? suffix : string.Empty) : text[..length] + suffix;
