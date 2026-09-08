@@ -10,7 +10,7 @@ using Xunit;
 
 namespace Hatifect.ChestsAnywhereOverlay.Tests;
 
-public sealed class ChestsAnywhereOverlayExperienceTests
+public sealed partial class ChestsAnywhereOverlayExperienceTests
 {
     [Fact]
     public void ExactPackageNavigatorGraphPreservesTwoFilterInputsSelectionAndActionTargets()
@@ -34,6 +34,15 @@ public sealed class ChestsAnywhereOverlayExperienceTests
         Assert.True(new UiCompiler().Compile("presentation Navigator\nStorages -> Primary\nCategories -> Secondary\n", imported).IsValid);
         var selected = Assert.IsType<UiSelectionSource>(session.Experience.Sources.Single(source => source.Alias == "SelectedStorage").Source);
         Assert.Equal(session.Storages.SelectedItemId, selected.Value);
+        Assert.Equal(typeof(UiSymbolId?), selected.ValueType);
+        foreach (string alias in new[] { "OpenStorage", "FavoriteStorage" })
+        {
+            UiDataType type = Assert.Single(graph.Nodes, node => node.Alias == alias).DataType!;
+            Assert.Equal(ChestsAnywhereNavigatorExperienceSession.RequestType.Descriptor, type.InputType);
+            Assert.Equal(ChestsAnywhereNavigatorExperienceSession.ReceiptType.Descriptor, type.ResultType);
+            Assert.Equal(UiDataShape.Selection, type.TargetType!.Shape);
+            Assert.Equal(UiCapabilities.Select.Id, type.TargetCapability);
+        }
 
         JsonNode damaged = JsonNode.Parse(wire)!;
         JsonArray relations = damaged["graph"]!["relations"]!.AsArray();
@@ -109,18 +118,18 @@ public sealed class ChestsAnywhereOverlayExperienceTests
             },
             session.Experience.Actions.Select(ActionName));
 
-        Assert.True(Action(session, "mode-favorites").TryExecute());
+        Assert.Equal(UiActionOutcome.Success, Invoke(Action(session, "mode-favorites")).Outcome);
         Assert.Equal("mine-a", Assert.Single(session.Storages.Value).Key);
-        Assert.True(Action(session, "mode-recent").TryExecute());
+        Assert.Equal(UiActionOutcome.Success, Invoke(Action(session, "mode-recent")).Outcome);
         Assert.Equal(new[] { "mine-a", "farm-a" }, session.Storages.Value.Select(storage => storage.Key));
-        Assert.True(Action(session, "mode-categories").TryExecute());
+        Assert.Equal(UiActionOutcome.Success, Invoke(Action(session, "mode-categories")).Outcome);
         Assert.True(session.Categories.TrySelect(ChestsAnywhereNavigatorIdentity.Category("farm")));
         Assert.Equal("farm-a", Assert.Single(session.Storages.Value).Key);
 
-        Assert.True(Action(session, "open").TryExecute());
+        Assert.Equal(UiActionOutcome.Success, Invoke(Action(session, "open")).Outcome);
         Assert.Equal("farm-a", Assert.Single(port.OpenRequests));
         Assert.Equal("farm-a", session.Handoff.Value!.StorageKey);
-        Assert.True(Action(session, "toggle-favorite").TryExecute());
+        Assert.Equal(UiActionOutcome.Success, Invoke(Action(session, "toggle-favorite")).Outcome);
         Assert.True(Assert.Single(session.Storages.Value).IsFavorite);
         Assert.Equal("farm-a", Assert.Single(port.FavoriteRequests));
     }
@@ -320,7 +329,7 @@ public sealed class ChestsAnywhereOverlayExperienceTests
         Assert.Empty(session.Publication.LastResult.ObserverErrors);
         Assert.False(categories.TrySelect(ChestsAnywhereNavigatorIdentity.Category("mine")));
         Assert.False(storages.TrySelect(ChestsAnywhereNavigatorIdentity.Storage("farm-a")));
-        Assert.All(session.Experience.Actions, action => Assert.False(action.CanExecute));
+        Assert.All(session.Experience.Actions, action => Assert.False(Binding(action).Availability().CanExecute));
         Assert.Single(port.OpenRequests);
         Assert.Empty(port.ViewRequests);
         session.Dispose();
@@ -333,7 +342,7 @@ public sealed class ChestsAnywhereOverlayExperienceTests
         using var session = new ChestsAnywhereNavigatorExperienceSession(Id("retired-publication"), port);
         var before = session.Publication.Capture();
         session.Publication.Dispose();
-        Assert.All(session.Experience.Actions, action => Assert.False(action.CanExecute));
+        Assert.All(session.Experience.Actions, action => Assert.False(Binding(action).Availability().CanExecute));
         Assert.False(session.Categories.TrySelect(ChestsAnywhereNavigatorIdentity.Category("mine")));
         Assert.False(session.Storages.TrySelect(ChestsAnywhereNavigatorIdentity.Storage("farm-a")));
         Assert.Throws<ObjectDisposedException>(() => session.SelectMode(ChestsAnywhereNavigatorMode.Favorites));
@@ -421,10 +430,10 @@ public sealed class ChestsAnywhereOverlayExperienceTests
         var session = new ChestsAnywhereNavigatorExperienceSession(Id("lifecycle"), port, () => closeRequests++);
         UiActionDefinition[] actions = session.Experience.Actions.ToArray();
 
-        Assert.True(Action(session, "close").TryExecute());
+        Assert.Equal(UiActionOutcome.Success, Invoke(Action(session, "close")).Outcome);
         Assert.True(session.IsCompleted);
         Assert.Equal(1, closeRequests);
-        Assert.All(actions, action => Assert.False(action.CanExecute));
+        Assert.All(actions, action => Assert.False(Binding(action).Availability().CanExecute));
         Assert.Throws<InvalidOperationException>(() => session.Refresh());
         session.Dispose();
         session.Dispose();
@@ -512,6 +521,7 @@ public sealed class ChestsAnywhereOverlayExperienceTests
         internal bool ThrowOnChangeView { get; set; }
         internal bool ThrowOnToggleFavorite { get; set; }
         internal bool RejectOpen { get; set; }
+        internal Action? OnOpen { get; set; }
         internal ChestsAnywhereNavigatorSnapshot? NextRefresh { get; set; }
         internal int RefreshRequests { get; private set; }
         internal List<(ChestsAnywhereNavigatorMode Mode, string Category)> ViewRequests { get; } = new();
@@ -558,6 +568,7 @@ public sealed class ChestsAnywhereOverlayExperienceTests
         public ChestsAnywhereNavigatorMutationResult RequestOpenStorage(string storageKey)
         {
             OpenRequests.Add(storageKey);
+            OnOpen?.Invoke();
             CaptureValue = CaptureValue with
             {
                 StatusText = RejectOpen ? "Switch failed" : "Opening",
