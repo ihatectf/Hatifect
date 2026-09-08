@@ -406,7 +406,9 @@ internal sealed class UiSceneLayoutEngine
             throw new UiLayoutException(
                 $"Available layout space {available:0.##} is smaller than required minimum {minimumTotal:0.##}.");
 
-        if (desiredTotal > available)
+        // Use the same tolerance as minimum admission: subtracting headings and
+        // insets can leave a subpixel deficit even when every child is at minimum.
+        if (desiredTotal > available + 0.01f)
         {
             float excess = desiredTotal - available;
             float slack = 0;
