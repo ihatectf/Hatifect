@@ -21,6 +21,8 @@ except ModuleNotFoundError:
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ".agents/skills/hatifect-development/SKILL.md"
 ROUTING = ".agents/skills/hatifect-development/routing.json"
+SUBAGENT_MODELS = ("gpt-5.6-luna", "gpt-5.6-sol")
+SUBAGENT_EFFORTS = ("none", "low", "medium", "high", "xhigh")
 
 
 class AgentSetupError(ValueError):
@@ -63,21 +65,30 @@ def check_repository(root: Path = ROOT) -> dict:
     agents = config["agents"]
     if type(budget) is not int or budget <= 0 or budget > 32768:
         raise AgentSetupError("instruction budget must be a positive integer up to 32768")
-    if (not isinstance(agents, dict) or set(agents) != {"max_concurrent_threads_per_session"}
+    if (not isinstance(agents, dict) or set(agents) != {
+            "max_concurrent_threads_per_session", "default_subagent_model", "default_subagent_reasoning_effort"}
             or type(agents["max_concurrent_threads_per_session"]) is not int
             or not 1 <= agents["max_concurrent_threads_per_session"] <= 3):
-        raise AgentSetupError("agents must cap concurrent subagents between 1 and 3")
+        raise AgentSetupError("agents must declare model/reasoning defaults and cap concurrency between 1 and 3")
+    if (agents["default_subagent_model"] not in SUBAGENT_MODELS
+            or agents["default_subagent_reasoning_effort"] not in SUBAGENT_EFFORTS):
+        raise AgentSetupError("subagent defaults must use Luna/Sol with reasoning no higher than xhigh")
     roles = []
+    role_models = {}
     for path in sorted((root / ".codex/agents").glob("*.toml")):
         role = read_toml(root, str(path.relative_to(root)))
-        if (set(role) != {"name", "description", "sandbox_mode", "developer_instructions"}
+        if (set(role) != {"name", "description", "sandbox_mode", "developer_instructions",
+                         "model", "model_reasoning_effort"}
                 or any(not isinstance(value, str) or not value.strip() for value in role.values())
                 or not re.fullmatch(r"[a-z][a-z0-9_]*", role["name"])
-                or role["sandbox_mode"] != "read-only"):
+                or role["sandbox_mode"] != "read-only"
+                or role["model"] not in SUBAGENT_MODELS
+                or role["model_reasoning_effort"] not in SUBAGENT_EFFORTS):
             raise AgentSetupError(f"invalid read-only role: {path.name}")
         if role["name"] in roles:
             raise AgentSetupError(f"duplicate role name: {role['name']}")
         roles.append(role["name"])
+        role_models[role["name"]] = {"model": role["model"], "reasoningEffort": role["model_reasoning_effort"]}
     if not roles:
         raise AgentSetupError("no project agent roles found")
     repository_file(root, SKILL)
@@ -117,7 +128,11 @@ def check_repository(root: Path = ROOT) -> dict:
             raise AgentSetupError(f"instruction budget exceeded for route {route['id']}: {size} > {budget}")
         instruction_bytes[route["id"]] = size
     return {"status": "PASS", "roles": roles, "routes": registry["routes"],
-            "projectSkill": SKILL, "instructionBytes": instruction_bytes}
+            "projectSkill": SKILL, "instructionBytes": instruction_bytes,
+            "subagentPolicy": {"defaultModel": agents["default_subagent_model"],
+                               "defaultReasoningEffort": agents["default_subagent_reasoning_effort"],
+                               "allowedModels": list(SUBAGENT_MODELS), "maxReasoningEffort": "xhigh",
+                               "roles": role_models}}
 
 
 def audit_host(root: Path, config: dict, skills: dict, route: str | None = None) -> dict:
@@ -137,6 +152,12 @@ def audit_host(root: Path, config: dict, skills: dict, route: str | None = None)
                   and Path(item["name"]["dotCodexFolder"]).resolve() == (root / ".codex").resolve()]
         if len(layers) != 1 or layers[0].get("disabledReason") is not None:
             raise AgentSetupError("project configuration is missing or disabled; trust this exact checkout in Codex", "BLOCKED")
+        effective_agents = config["config"]["agents"]
+        policy = repository["subagentPolicy"]
+        if (not isinstance(effective_agents, dict)
+                or effective_agents.get("default_subagent_model") != policy["defaultModel"]
+                or effective_agents.get("default_subagent_reasoning_effort") != policy["defaultReasoningEffort"]):
+            raise AgentSetupError("effective subagent defaults do not match project policy", "BLOCKED")
         catalogs = [item for item in skills["data"] if Path(item["cwd"]).resolve() == root]
         if len(catalogs) != 1 or catalogs[0].get("errors") != []:
             raise AgentSetupError("skill discovery is missing, duplicated or contains errors", "BLOCKED")
@@ -162,6 +183,9 @@ def audit_host(root: Path, config: dict, skills: dict, route: str | None = None)
             raise AgentSetupError(f"selected route {route} has unavailable or ambiguous skills: "
                                   + ", ".join(availability[route]["unavailable"]), "BLOCKED")
         return {"status": "PASS", "projectConfigLoaded": True, "projectSkillLoaded": True,
+                "subagentDefaultsLoaded": True,
+                "subagentDefaults": {"model": policy["defaultModel"],
+                                     "reasoningEffort": policy["defaultReasoningEffort"]},
                 "discoveredSkills": len(entries), "enabledSkills": sum(item["enabled"] for item in entries),
                 "routes": availability, "selectedRoute": route,
                 "note": "Discovery proves availability, not that a skill was read or applied."}
