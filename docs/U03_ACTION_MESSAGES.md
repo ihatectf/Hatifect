@@ -1,6 +1,6 @@
 # U03 — action messages and captured CA requests
 
-Status: IN_PROGRESS. The implementation checkpoints are local source f8ea1e6dd0c6df3f3ac5f32eae155ac8948a8701 (framework messages) and c262196559a83eb418d60ccab47e27a31c3dd9f3 (typed CA). Candidate ab320dcd6fe4599c6292500b334f045cf62ed959 adds verified owning process-test fix0041788. This document does not close complete U03 or claim native acceptance that has not run.
+Status: **DONE** for the original U03 criteria; see [final common acceptance](U03_ACCEPTANCE.md). The historical implementation checkpoints are local source f8ea1e6dd0c6df3f3ac5f32eae155ac8948a8701 (framework messages) and c262196559a83eb418d60ccab47e27a31c3dd9f3 (typed CA). Candidate ab320dcd6fe4599c6292500b334f045cf62ed959 adds verified owning process-test fix0041788. Historical entries retain their original scope and pending checks; final original U03 closure is recorded below.
 
 ## Contract and ownership
 
@@ -109,3 +109,10 @@ The final criteria audit found that the new public action automation facet was a
 | The accepted contract remains valid | `rtk proxy python3 -m unittest tools.tests.test_semantic_contracts.SemanticPublicApiTests -v`: all nine tests passed; standalone `verify_public_api.py` also passed |
 
 Before the guard fix, the two new tests produced four failing subtests; afterward all nine tests passed. Logs are `api-guard-red.log` and `api-guard-green.log` in the common integration artifact directory. Common tools/C verification of this follow-up remains required. The criteria audit also found that historical reload/save-switch summaries lack retained raw reports; fresh executions of both 18-check scenarios remain required for full U03 closure. Physical input acceptance remains separate.
+
+
+## Final original U03 closure
+
+The historical pending statements above describe their named checkpoints. Common source `9b6028c0561c5e1a8225bcdec7f1bcce64d81ead` subsequently passed C 1,623 .NET +388 Python, G 1,952 .NET +388 Python and P 101. Fresh common save-switch/reload/Pump/typed CA passed 18/18/4/5 checks on one retained package/producer/game identity; all eight message PNGs were viewed. Independent Sol review found no missing original U03 requirement. [U03_ACCEPTANCE.md](U03_ACCEPTANCE.md) records DONE, the exact runs and limits.
+
+A later aggregate preparation changed DLL metadata without changing source and failed the package-identity audit. That new common-publication issue does not overwrite the accepted U03 snapshots; its investigation and remaining aggregate/PERF/physical-input work remain open.

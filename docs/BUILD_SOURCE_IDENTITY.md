@@ -5,7 +5,8 @@ passed independent review, 13 SDK regressions, a real loose/packed linked-worktr
 build comparison, full G and isolated P. A separate unstable UI allocation test
 failed C; its unchanged UI recheck and G passed. The original failure remains
 recorded and is being investigated by the UI owner. Fresh common runtime identity
-and publication remain required. No new commit or push is claimed.
+and publication remain required. The reviewed implementation is local commit
+`ff87f5232ae7a342a0942f104dca325919a99b5a`; it has not been pushed.
 
 ## Failure and ownership
 
@@ -116,9 +117,9 @@ publishing a revision (`actual-foreign-repository.log`); the current packed
 worktree still recovered exact `9b6028c` (`actual-verified-repository.json`).
 
 Those C/G results retain their pre-correction identity in
-`build-metadata-pre-review-source.json`. Final post-correction C/G/P and package/
-runtime identity remain required, as do publication and the existing Q01 physical
-Backspace acceptance. Independent Sol review closed the concrete repository-selection findings after
+`build-metadata-pre-review-source.json`. They are superseded by the executed
+post-correction gates below. Final C closure, common runtime identity, publication
+and the existing Q01 physical Backspace acceptance remain required. Independent Sol review closed the concrete repository-selection findings after
 reading the corrected source and the successful 13-test log. This bounded review
 does not replace final C/G/P or runtime acceptance.
 
