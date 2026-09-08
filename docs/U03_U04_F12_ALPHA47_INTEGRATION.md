@@ -1,6 +1,35 @@
 # Общая интеграция alpha.47: текст, Parcel и смена сохранений
 
-Статус — **IN_PROGRESS**. GQ объединяет готовые срезы U04-c, F12-a–d и U03 actual save-switch поверх опубликованной alpha.46 `eb193b7` с успешным [CI34062754345](https://github.com/ihatectf/Hatifect/actions/runs/34062754345). Публикация `fad455e` добавляет только запись этого результата. Все 17 version authorities переведены GQ на `1.0.0-alpha.47`; общая приёмка новой версии ещё не выполнена.
+Статус — **IN_PROGRESS**. GQ объединяет готовые срезы U04-c, F12-a–d и U03 actual save-switch поверх опубликованной alpha.46 `eb193b7` с успешным [CI34062754345](https://github.com/ihatectf/Hatifect/actions/runs/34062754345). Публикация `fad455e` добавляет только запись этого результата. Все 17 version authorities переведены GQ на `1.0.0-alpha.47`; выполненные стадии общей приёмки перечислены ниже. Публикация alpha.47 ещё не выполнена.
+
+## Текущее состояние общей приёмки, 2026-09-08
+
+Проверенный общий source — `08ecdb94102fb7311c1fe21eabc9843f7e4888ef`: он включает `e355323` и точные source/test postimages glyph correction `04def9e`. Последующие результаты в этой таблице относятся к этому source. Входящие U03 action messages, typed CA requests и literal-ellipsis repair сюда пока не интегрированы.
+
+| Стадия | Фактическое доказательство | Результат |
+|---|---|---|
+| C: `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-check` | `run-gi9nzm7d`, 7 TRX | PASS: 1 604 .NET + 381 Python |
+| G: та же команда с `--platform` | `run-qdvu9v4z`, 10 TRX | PASS: 1 913 .NET + 381 Python |
+| P: `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-isolated-ui-ca --keep` | `hatifect-ui-ca-isolated.xxpaygyu`, постоянная копия `isolated-p` | PASS: 90 CA tests, 44 projection files, 8 exact alpha.47 packages, 3 resolved caches, 2 CA deployment DLL |
+| Изолированная подготовка каноническим harness | `run-0szbratu`, `prepare-audit.json` | PASS: 14 producer/deployed DLL; все 8 UI package DLL совпадают с producer и игровой поставкой |
+| `rtk proxy ./tools/hatifect-smoke flow.ui.isolation` | `1c8eadec-5693-453e-8462-4f5332165a59` | PASS: 15 checks, 19 observations, 6 surfaces, 4 application owners, 3 loads и 2 title transitions |
+| `rtk proxy ./tools/hatifect-smoke flow.ui.names` | `5c2037d8-30b9-4cc9-af0b-7fe7b35642ef` | PASS: 7 checks, actual EN/RU item-name capture и восстановление locale |
+| `rtk proxy ./tools/hatifect-smoke flow.route.basic` | `3d51e021-1071-4b5b-aa97-fa644f34a8e7` | PASS: 6 checks, 2 loads, logical tick 14, 2 receipts |
+| Flow composed PNG | Все 19 оригиналов из `1c8eadec` просмотрены GQ | PASS: видимые title, labels, values, ASCII `->`, состояния и A7 → B13 → A7 |
+
+Audits находятся в `artifacts/alpha47-glyph-integration-preflight/`: `c-audit.json`, `g-audit.json`, `p-audit.json`, `p-retention.json`, `prepare-audit.json`, `flow-ui-native-audit.json`, `flow-ui-visual-review.json` и `flow-smokes-audit.json`. Проверены 117 source/Git postimages, индивидуальные результаты и counters всех 17 TRX. P сохранён с hash inventory 1 315 файлов; исходные абсолютные пути его raw reports сохранены, соответствие постоянной копии задаёт `p-retention.json`.
+
+Для трёх native requests independently audited request/result/transport IDs, source commit, временные границы и PID/PGID; процессы завершились с exit 0 и пустым teardown. Две исходно существовавшие options files восстановлены побайтно; сохранённые originals совпадают с baseline. Request-owned save copies удалены. Golden files и manifest не изменились; checksum `4eb16675dcf00f46c02403a379bd95cd512c1bf3bc1dd92c1c00d9d83d5627d8`. Flow fingerprint во всех трёх отчётах — `c20a53e718454384d6b45051c7919862fb5da184a50d99a0d8e32fab4eab74e8`, algorithm `sha256-flow-runtime-v1`.
+
+Flow UI подтверждает diagnostic fake-session lifecycle и выбранную EN/RU/scale/controller-profile матрицу. Names проверяет Copper Ore через настоящий ItemRegistry; это не полный каталог локализации. Basic проверяет game load/title/reload с fake cargo и durable images, а не перевозку между production chests. Controller profile не означает физический controller input. Фоновый vanilla inventory на части scale images обрезан; найденного clipping в проверяемой панели нет.
+
+Исторические FAIL сохранены. Watcher timeout на `e355323` воспроизведён на одинаковых DLL: четыре default-sandbox попытки завершились FAIL, две разрешённые host-попытки — PASS. Это подтверждает зависимость наблюдаемого результата от режима исполнения; конкретный механизм ОС не доказан. Новый общий C/G выполнен на хосте, watcher и его assertions не изменены. Отдельный Python output-fixture timeout `run-ayh08zxj` также остаётся FAIL. Его последующая диагностика и test-only correction `0041788` относятся к отдельной передаче; passing retry старого source не подменяет исходный результат.
+
+Следующий integration input — завершённый U03 consumer и сообщения. На owner `ab320dc` protocol PASS4 сопровождался реальным RU Running VISUAL FAIL: literal `…` отсутствовал в игровом шрифте. Исправление `68b57e4` проверено отдельным review: RED 5/65 → GREEN 65, свежий native `25cb2662-ba8c-493c-bfec-f9300e68a39e` PASS4; все восемь message PNG просмотрены независимым GQ reviewer, точки видимы. Source fix не расширяет API и исполняет fallback перед measurement/wrap на cache miss. Полные C/G/P и PERF нового owner candidate, а также native input через typed CA binding ещё обязательны; ранее выполненные gates не переименовываются в проверки нового source.
+
+После принятия законченного U03 candidate остаётся общая матрица: `semantic.actions.save-switch`, `semantic.actions.reload`, `semantic.environment`, `semantic.observation`, UI/CA `all` с просмотром 8 PNG, `flow.save.isolation`, `flow.chest.isolation`, `semantic.performance` и физический `semantic.input.native`, включая Backspace. Изменённый общий source требует соответствующей повторной приёмки, проверки packages/producer/game identity, финального source audit и exact published CI. Совокупная стадия 19 Flow + 8 UI/CA images пока не завершена. Старый executor GQ остановлен: оба recorded PID отсутствуют; новый runtime/PERF запуск координируется с владельцем UI.
+
+Далее сохранена история предыдущих checkpoints. Их PENDING/FAIL/PASS относятся к указанным source и не заменяют текущую таблицу.
 
 ## Состав и владение
 
