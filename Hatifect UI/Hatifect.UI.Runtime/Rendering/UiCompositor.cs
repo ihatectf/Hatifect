@@ -149,6 +149,17 @@ internal sealed class UiSceneRenderPlanner
                 UiRect textBounds = entry.ContentBounds;
                 UiRect textClip = entry.HeadingBounds is null ? entry.Clip : UiRect.Intersect(entry.Clip, textBounds);
                 UiTextOverflow overflow = entry.Overflow;
+                if (node is UiButtonSceneNode { Action.Binding: not null } actionButton)
+                {
+                    float lineHeight = textBounds.Height / 2;
+                    var messageBounds = new UiRect(textBounds.X, textBounds.Y + lineHeight, textBounds.Width, lineHeight);
+                    textBounds = new UiRect(textBounds.X, textBounds.Y, textBounds.Width, lineHeight);
+                    textClip = UiRect.Intersect(entry.Clip, textBounds);
+                    if (actions?.Status(actionButton.Action)?.Message is { Length: > 0 } message)
+                        primitives.Add(new UiTextPrimitive(node.Id, messageBounds,
+                            UiRect.Intersect(entry.Clip, messageBounds), message, foreground, typography,
+                            UiTextOverflow.Ellipsis, opacity, transform));
+                }
                 if (node is UiRouteButtonSceneNode { Icon: { } icon } route)
                 {
                     float size = Math.Min(UiRouteButtonSceneNode.IconExtent, textBounds.Height);

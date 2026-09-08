@@ -156,7 +156,7 @@ internal sealed class UiAccessibilitySnapshotBuilder
             node.Id,
             Role(node),
             Name(scene, node),
-            Value(node),
+            node is UiButtonSceneNode button ? actions?.Status(button.Action)?.Message : Value(node),
             Enabled(node, actions),
             interaction.Focused == node.Id,
             selected: node is UiRouteButtonSceneNode { IsCurrent: true },

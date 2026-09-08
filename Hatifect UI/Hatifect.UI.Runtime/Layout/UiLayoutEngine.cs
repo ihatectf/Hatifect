@@ -241,6 +241,13 @@ internal sealed class UiSceneLayoutEngine
             minimumContent = new UiSize(
                 IsInteractive(node) ? Math.Min(contentWidth, Math.Max(1, minimumLine.Width + iconSpace)) : 0,
                 Math.Max(iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 1, minimumLine.Height));
+            if (node is UiButtonSceneNode { Action.Binding: not null })
+            {
+                // Reserve a second line before invocation so status changes retain geometry.
+                desiredContent = new UiSize(Math.Max(desiredContent.Width, Math.Min(contentWidth, minimumLine.Width * 24)),
+                    desiredContent.Height + minimumLine.Height);
+                minimumContent = new UiSize(minimumContent.Width, minimumContent.Height + minimumLine.Height);
+            }
         }
         else if (node is UiHostSceneNode { Policy.Kind: UiHostKind.Terminal })
         {

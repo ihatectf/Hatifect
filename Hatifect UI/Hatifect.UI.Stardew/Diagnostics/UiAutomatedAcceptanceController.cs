@@ -566,6 +566,15 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
 
     private void CaptureCompletedFrame()
     {
+        if (!_disposed && _actionPhase < 0)
+        {
+            if (_actionMessageCaptureError is null)
+            {
+                try { ObserveActionMessageFrame(); }
+                catch (Exception error) { _actionMessageCaptureError = error; }
+            }
+            return;
+        }
         if (!_disposed && _nativeInputGate != null)
         {
             try { ObserveNativeInputFrame(); }
@@ -1369,7 +1378,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             saveSwitch = new { completed = _saveSwitchCompleted, ownerThread = _saveSwitchOwnerThread, titles = _saveSwitchTitles, loads = _saveSwitchLoads, targets = _saveSwitchObservations.ToArray(), effects = _saveSwitchEffects.ToArray() },
             actionReload = new { completed = _reloadCompleted, targets = _reloadObservations.ToArray(), failedCleanup = _reloadFailedCleanup.ToArray() },
             terminalGeneration = new { completed = _terminalGenerationCompleted, ownerThread = _generationOwnerThread, transitions = _terminalGenerationTransitions.ToArray(), actions = _terminalGenerationActions.ToArray() },
-            actionPump = new { completed = _actionPumpCompleted, ownerThread = _actionOwnerThread, ticks = _actionTicks, probes = _actionProbes.ToArray() },
+            actionPump = new { completed = _actionPumpCompleted, ownerThread = _actionOwnerThread, ticks = _actionTicks, messageCaptures = _actionMessageCaptures.ToArray(), messageLanguageRestored = !_actionMessageLanguageSaved, probes = _actionProbes.ToArray() },
             nativeInput = new { completed = _nativeInputCompleted, expectedText = _nativeExpectedText, lastObservation = _nativeLastObservation, captures = _nativeCaptures.ToArray() },
             terminalError = _terminalFailure == null ? null : new
             {
