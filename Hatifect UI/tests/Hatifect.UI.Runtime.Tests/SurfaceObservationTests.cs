@@ -40,6 +40,7 @@ public sealed class SurfaceObservationTests
         Assert.Same(fixture.Environment, snapshot.Environment);
         var status = Assert.Single(snapshot.Elements, row => row.SemanticId == fixture.Status);
         Assert.Equal("Status", status.Name);
+        Assert.Equal("StaticText", status.Role);
         Assert.Contains(snapshot.Texts, row => row.SemanticId == Fixture.Id && row.Text == "Parcel observation");
         Assert.Contains(snapshot.Texts, row => row.SemanticId == fixture.Status && row.Text == "Status");
         Assert.Equal("Accepted parcel", status.Value);
@@ -47,6 +48,7 @@ public sealed class SurfaceObservationTests
         var action = Assert.Single(snapshot.Elements, row => row.ActionId == fixture.Action.Id);
         Assert.Equal(fixture.Action.Id, action.SemanticId);
         Assert.Equal("Send", action.Name);
+        Assert.Equal("Button", action.Role);
         Assert.True(action.Enabled);
         Assert.Equal(reads, fixture.Source.Reads);
         Assert.Equal(availability, fixture.AvailabilityReads);
