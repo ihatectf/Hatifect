@@ -809,7 +809,9 @@ internal sealed class UiCollectionVirtualizer
     /// <summary>Estimated prefix sums plus bounded exact row deltas.</summary>
     private sealed class AdaptiveRowHeightIndex
     {
-        private readonly float[] _tree;
+        private const int DenseRowLimit = 8_192;
+        private readonly float[]? _dense;
+        private readonly Dictionary<int, FenwickBucket>? _sparse;
         private readonly float _estimate;
         private readonly int _capacity;
         private readonly Dictionary<int, LinkedListNode<RowEntry>> _exact = new();
@@ -823,7 +825,8 @@ internal sealed class UiCollectionVirtualizer
             Count = count;
             _estimate = estimate;
             _capacity = capacity;
-            _tree = new float[count + 1];
+            if (count <= DenseRowLimit) _dense = new float[count + 1];
+            else _sparse = new Dictionary<int, FenwickBucket>();
         }
 
         public int Count { get; }
@@ -849,10 +852,13 @@ internal sealed class UiCollectionVirtualizer
         public float Prefix(int endExclusive)
         {
             if ((uint)endExclusive > (uint)Count) throw new ArgumentOutOfRangeException(nameof(endExclusive));
-            float delta = 0;
+            double delta = 0;
             for (int cursor = endExclusive; cursor > 0; cursor -= cursor & -cursor)
-                delta += _tree[cursor];
-            return endExclusive * _estimate + delta;
+            {
+                if (_dense != null) delta += _dense[cursor];
+                else if (_sparse!.TryGetValue(cursor, out FenwickBucket bucket)) delta += bucket.Delta;
+            }
+            return (float)(endExclusive * (double)_estimate + delta);
         }
 
         public int FindRow(float offset)
@@ -876,7 +882,7 @@ internal sealed class UiCollectionVirtualizer
             if (!float.IsFinite(height) || height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
             if (_exact.TryGetValue(row, out LinkedListNode<RowEntry>? current))
             {
-                Update(row, height - current.Value.Height);
+                Update(row, (double)current.Value.Height - _estimate, (double)height - _estimate);
                 current.Value = new RowEntry(row, height);
                 _recency.Remove(current);
                 _recency.AddLast(current);
@@ -888,19 +894,38 @@ internal sealed class UiCollectionVirtualizer
                     ?? throw new InvalidOperationException("A full exact-height index has no eviction candidate.");
                 _recency.RemoveFirst();
                 _exact.Remove(oldest.Value.Row);
-                Update(oldest.Value.Row, _estimate - oldest.Value.Height);
+                Update(oldest.Value.Row, (double)oldest.Value.Height - _estimate, 0);
             }
             var node = new LinkedListNode<RowEntry>(new RowEntry(row, height));
             _recency.AddLast(node);
             _exact.Add(row, node);
-            Update(row, height - _estimate);
+            Update(row, 0, (double)height - _estimate);
         }
 
-        private void Update(int row, float delta)
+        private void Update(int row, double previous, double next)
         {
-            for (int cursor = row + 1; cursor < _tree.Length; cursor += cursor & -cursor)
-                _tree[cursor] += delta;
+            double delta = next - previous;
+            if (delta == 0) return;
+            int contributors = (next != 0 ? 1 : 0) - (previous != 0 ? 1 : 0);
+            for (int cursor = row + 1; cursor <= Count;)
+            {
+                if (_dense != null) _dense[cursor] += (float)delta;
+                else
+                {
+                    _sparse!.TryGetValue(cursor, out FenwickBucket bucket);
+                    int count = bucket.Contributors + contributors;
+                    // Removing the last live row drops any floating-point residue as well.
+                    // Thus storage follows live exact rows, never the history of visited rows.
+                    if (count == 0) _sparse.Remove(cursor);
+                    else _sparse[cursor] = new FenwickBucket(bucket.Delta + delta, count);
+                }
+                int step = cursor & -cursor;
+                if (cursor > Count - step) break;
+                cursor += step;
+            }
         }
+
+        private readonly record struct FenwickBucket(double Delta, int Contributors);
 
         private readonly record struct RowEntry(int Row, float Height);
     }

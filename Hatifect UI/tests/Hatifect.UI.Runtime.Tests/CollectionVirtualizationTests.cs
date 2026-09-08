@@ -651,6 +651,80 @@ Items@Checked
             source.GetItemCalls - callsAfterInitialLayout);
     }
 
+    [Theory]
+    [InlineData(58f)]
+    [InlineData(53.125f)]
+    public void LargeAndSmallHeightIndicesKeepEquivalentGeometryThroughRowEviction(float estimate)
+    {
+        const int smallCount = 8_192;
+        const int largeCount = 1_000_000;
+        UiSymbolId owner = RegistryTests.Id("height-index-eviction");
+        CollectionFixture small = ListFixture(new CountingCollectionSource(owner, smallCount), "Adaptive", owner);
+        CollectionFixture large = ListFixture(new CountingCollectionSource(owner, largeCount), "Adaptive", owner);
+        var smallCollection = Assert.Single(Nodes(small.Scene.Root).OfType<UiCollectionSceneNode>());
+        var largeCollection = Assert.Single(Nodes(large.Scene.Root).OfType<UiCollectionSceneNode>());
+        var smallVirtualizer = new UiCollectionVirtualizer(new CountingPlatform());
+        var largeVirtualizer = new UiCollectionVirtualizer(new CountingPlatform());
+        var viewport = new UiRect(0, 0, 360, 240);
+        var typography = new UiTypography("Body", 16, 1.25f);
+
+        for (int visit = 0; visit < 600; visit++)
+        {
+            // Visit more than the 512 retained exact rows, including repeated returns to row0.
+            int index = visit % 125 == 0 ? 0 : visit * 53 % 7_900;
+            var request = new UiCollectionViewportRequest(
+                0, new UiCollectionScrollAnchor(owner.Child($"item/{index}"), 0), index);
+            UiCollectionLayoutWindow expected = smallVirtualizer.Materialize(
+                smallCollection, viewport, viewport, viewport.Width, estimate, 20,
+                typography, small.Scene.MeasurementContext, request);
+            UiCollectionLayoutWindow actual = largeVirtualizer.Materialize(
+                largeCollection, viewport, viewport, viewport.Width, estimate, 20,
+                typography, large.Scene.MeasurementContext, request);
+
+            Assert.Equal(expected.Anchor, actual.Anchor);
+            Assert.Equal(expected.Items.Select(item => item.Item.Id), actual.Items.Select(item => item.Item.Id));
+            Assert.InRange(Math.Abs(expected.ScrollOffset - actual.ScrollOffset), 0, 0.02f);
+            for (int item = 0; item < expected.Items.Count; item++)
+            {
+                Assert.Equal(expected.Items[item].Bounds.Height, actual.Items[item].Bounds.Height);
+                Assert.InRange(Math.Abs(expected.Items[item].Bounds.Y - actual.Items[item].Bounds.Y), 0, 0.02f);
+            }
+            // Total extent is float at ~58 million pixels: allow two units in the last place.
+            double expectedTotal = expected.TotalExtent + (largeCount - smallCount) * (double)estimate;
+            Assert.InRange(Math.Abs(actual.TotalExtent - expectedTotal), 0, 8);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LargeAdaptiveCollectionDoesNotAllocateCountSizedHeightStorage(bool revisionChange)
+    {
+        UiSymbolId owner = RegistryTests.Id("million-item-height-storage");
+        var source = new CountingCollectionSource(owner, 1_000_000);
+        CollectionFixture fixture = ListFixture(source, "Adaptive", owner);
+        var engine = new UiSceneLayoutEngine(new CountingPlatform());
+        var viewport = new UiRect(0, 0, 360, 240);
+        UiScene scene = fixture.Scene;
+        if (revisionChange)
+        {
+            engine.Build(scene, viewport);
+            source.AdvanceRevision();
+            scene = fixture.Composer.Compose(fixture.Invocation, locale: "en-US");
+        }
+        int reads = source.GetItemCalls;
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        UiLayoutSnapshot layout = engine.Build(scene, viewport);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(allocated < 512 * 1024, $"Layout allocated {allocated} bytes for one visible viewport.");
+        Assert.InRange(source.GetItemCalls - reads, 1, 99);
+        var collection = Assert.Single(Nodes(scene.Root).OfType<UiCollectionSceneNode>());
+        Assert.True(layout.TryGetCollection(collection.Id, out var window));
+        Assert.Equal(1_000_000, window!.TotalCount);
+        Assert.InRange(window.Items.Count, 1, 99);
+    }
+
     [Fact]
     public void TenThousandItemsAreNotFullyMaterializedOrMeasured()
     {
@@ -843,7 +917,8 @@ Items
         public IReadOnlyList<int> Value => Array.Empty<int>();
         public Type ValueType => typeof(IReadOnlyList<int>);
         public object UntypedValue => Value;
-        long IUiSemanticCollectionMetadata.Revision => 0;
+        public long Revision { get; private set; }
+        public void AdvanceRevision() => Revision++;
         bool IUiSemanticCollectionMetadata.HasSupportingText => true;
         public event Action? Changed
         {
