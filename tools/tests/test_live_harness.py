@@ -1233,12 +1233,14 @@ class LiveHarnessTests(unittest.TestCase):
             )
             fake.chmod(0o700)
             log = Path(directory) / "smapi.log"
+            # A new executable can spend several seconds in OS launch assessment.
+            # Allow normal startup here; the timeout/retirement test keeps its short deadline.
             completed = subprocess.run(
                 [
                     sys.executable,
                     str(supervisor),
                     "--timeout-seconds",
-                    "2",
+                    "10",
                     "--grace-seconds",
                     "0.1",
                     "--log",
@@ -1251,7 +1253,7 @@ class LiveHarnessTests(unittest.TestCase):
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=15,
                 check=False,
             )
             evidence = log.read_text(encoding="utf-8")
