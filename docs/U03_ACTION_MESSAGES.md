@@ -95,3 +95,17 @@ Independent audits verified 35 source postimages, all 1,303 retained P file hash
 | Concrete native consumer traverses typed input and retires owners | Native CA `2845c6c5`: five checks, all eight command IDs |
 
 The action-message and concrete typed CA slice is implemented and verified. Full U03 remains IN_PROGRESS pending the original acceptance closure audit and shared integration. Native CA is synchronous and its final capture occurs after retirement; no intermediate CA visual matrix or physical input acceptance is claimed. Q01 physical input and full product localization remain separate work. Next ready step: hand off this candidate, reconcile the original U03 criteria with earlier reload/save-switch evidence, then proceed to the next dependency-ready UI slice.
+
+## Shared integration and action automation API guard
+
+GQ integrated the owner source and documentation at `41c58ce8b13f561f85ef2d8e3841dc9b4de90c80`. Common C `run-q1zrw71a` passed 1,623 .NET and 381 Python tests; G `run-c45p6u_0` passed 1,952 .NET and 381 Python tests. All 17 TRX and individual Python outcomes were checked. Common P `qz11ta6x` passed 101 tests; 46 projected files match Git, eight package DLLs match producer outputs, three restore assets use exact alpha.47 packages, and only two CA DLLs are deployed. Its 1,444 files are retained in `artifacts/alpha47-u03-final-integration/isolated-p-41c58ce`. These results retain source `41c58ce`.
+
+The final criteria audit found that the new public action automation facet was absent from the API baseline. The verifier now includes both action automation interfaces and hashes their existing contract file under the optional exact-harness facet. Neither the C# declarations nor the v1 contract changed. Baseline regeneration cannot conceal removal of either public declaration; a declaration inside a comment does not satisfy the guard.
+
+| Requirement | Evidence |
+|---|---|
+| Changed action method or API property requires explicit review | `test_action_automation_signature_changes_require_explicit_review`: return-type and property-name mutations are rejected; the baseline stays unchanged |
+| Both interfaces stay public even after hash regeneration | `test_action_automation_publicity_cannot_be_removed_even_with_regenerated_hash`: both visibility mutations are rejected despite commented public declarations |
+| The accepted contract remains valid | `rtk proxy python3 -m unittest tools.tests.test_semantic_contracts.SemanticPublicApiTests -v`: all nine tests passed; standalone `verify_public_api.py` also passed |
+
+Before the guard fix, the two new tests produced four failing subtests; afterward all nine tests passed. Logs are `api-guard-red.log` and `api-guard-green.log` in the common integration artifact directory. Common tools/C verification of this follow-up remains required. The criteria audit also found that historical reload/save-switch summaries lack retained raw reports; fresh executions of both 18-check scenarios remain required for full U03 closure. Physical input acceptance remains separate.

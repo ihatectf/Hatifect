@@ -23,6 +23,11 @@ FORM_AUTHORING_TYPES = ('UiSemanticFormField', 'UiFormState')
 SURFACE_OBSERVATION_TYPES = (
     'IUiSemanticSurfaceObservationApi', 'IUiSemanticSurfaceObservation', 'UiSemanticSurfaceFrame',
     'UiSemanticSurfaceElement', 'UiSemanticSurfaceText', 'UiSemanticSurfaceSnapshot',
+    'IUiSemanticSurfaceActionAutomationApi', 'IUiSemanticSurfaceActionAutomation',
+)
+SURFACE_OBSERVATION_FILES = (
+    'Hosting/UiSemanticSurfaceObservation.cs',
+    'Hosting/UiSemanticSurfaceActionAutomation.cs',
 )
 
 
@@ -60,10 +65,8 @@ def make_baseline(root: Path = ROOT) -> dict:
             'Assembly': 'Hatifect.UI.Experience',
             'Policy': 'optional-exact-harness-facet',
             'PublicTypes': list(SURFACE_OBSERVATION_TYPES),
-            'Files': [{
-                'Path': 'Hosting/UiSemanticSurfaceObservation.cs',
-                'Sha256': hashlib.sha256((experience / 'Hosting/UiSemanticSurfaceObservation.cs').read_bytes()).hexdigest(),
-            }],
+            'Files': [{'Path': path, 'Sha256': hashlib.sha256((experience / path).read_bytes()).hexdigest()}
+                      for path in SURFACE_OBSERVATION_FILES],
         },
     }
 
@@ -92,8 +95,9 @@ def verify(root: Path = ROOT) -> list[str]:
         for name in SEMANTIC_SURFACE_TYPES:
             if not re.search(rf'\bpublic\s+(?:sealed\s+)?(?:record|class|interface|enum)\s+{re.escape(name)}\b', source):
                 errors.append(f'public API baseline: missing semantic public type {name}')
-        observation = _scrub_comments(
-            (root / 'Hatifect.UI.Experience/Hosting/UiSemanticSurfaceObservation.cs').read_text(encoding='utf-8')
+        observation = '\n'.join(
+            _scrub_comments((root / 'Hatifect.UI.Experience' / path).read_text(encoding='utf-8'))
+            for path in SURFACE_OBSERVATION_FILES
         )
         for name in SURFACE_OBSERVATION_TYPES:
             if not re.search(rf'\bpublic\s+(?:sealed\s+)?(?:record|class|interface)\s+{re.escape(name)}\b', observation):

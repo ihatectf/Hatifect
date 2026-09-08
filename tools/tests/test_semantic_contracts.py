@@ -38,6 +38,7 @@ class SemanticPublicApiTests(unittest.TestCase):
             "Hatifect.UI.Experience/Hatifect.UI.Experience.csproj",
             "Hatifect.UI.Experience/Hosting/UiSemanticSurfaceContracts.cs",
             "Hatifect.UI.Experience/Hosting/UiSemanticSurfaceObservation.cs",
+            "Hatifect.UI.Experience/Hosting/UiSemanticSurfaceActionAutomation.cs",
             "Hatifect.UI.Experience/State/UiSemanticFormSource.cs",
             "Hatifect.UI.Experience/UiExperienceBuilder.cs",
             "Hatifect.UI.Stardew/Hosting/UiSemanticSurfaceService.cs",
@@ -87,6 +88,46 @@ class SemanticPublicApiTests(unittest.TestCase):
                 encoding="utf-8")
             (root / "PUBLIC_API_BASELINE.json").write_text(json.dumps(API.make_baseline(root)), encoding="utf-8")
             self.assertIn("missing observation public type IUiSemanticSurfaceObservationApi", "\n".join(API.verify(root)))
+
+    def test_action_automation_signature_changes_require_explicit_review(self) -> None:
+        for old, new in (
+            ("bool Activate(", "void Activate("),
+            ("ActionAutomation { get; }", "InputAutomation { get; }"),
+        ):
+            with self.subTest(signature=old), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                self.create_api_fixture(root)
+                baseline = root / "PUBLIC_API_BASELINE.json"
+                before = baseline.read_bytes()
+                self.assertEqual([], API.verify(root))
+                contract = root / "Hatifect.UI.Experience/Hosting/UiSemanticSurfaceActionAutomation.cs"
+                source = contract.read_text(encoding="utf-8")
+                self.assertEqual(1, source.count(old))
+                contract.write_text(source.replace(old, new), encoding="utf-8")
+
+                self.assertIn("semantic surface changed and requires explicit review", "\n".join(API.verify(root)))
+                self.assertEqual(before, baseline.read_bytes())
+
+    def test_action_automation_publicity_cannot_be_removed_even_with_regenerated_hash(self) -> None:
+        for name, suffix in (
+            ("IUiSemanticSurfaceActionAutomationApi", " :"),
+            ("IUiSemanticSurfaceActionAutomation", "\n"),
+        ):
+            with self.subTest(public_type=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                self.create_api_fixture(root)
+                contract = root / "Hatifect.UI.Experience/Hosting/UiSemanticSurfaceActionAutomation.cs"
+                source = contract.read_text(encoding="utf-8")
+                declaration = "public interface " + name + suffix
+                self.assertEqual(1, source.count(declaration))
+                contract.write_text(
+                    source.replace(declaration, "internal interface " + name + suffix)
+                    + "\n// public interface " + name + " {}\n",
+                    encoding="utf-8",
+                )
+                (root / "PUBLIC_API_BASELINE.json").write_text(json.dumps(API.make_baseline(root)), encoding="utf-8")
+
+                self.assertIn("missing observation public type " + name, "\n".join(API.verify(root)))
 
     def test_form_publicity_cannot_be_removed_even_with_regenerated_hash(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -47,12 +47,18 @@
       "UiSemanticSurfaceFrame",
       "UiSemanticSurfaceElement",
       "UiSemanticSurfaceText",
-      "UiSemanticSurfaceSnapshot"
+      "UiSemanticSurfaceSnapshot",
+      "IUiSemanticSurfaceActionAutomationApi",
+      "IUiSemanticSurfaceActionAutomation"
     ],
     "Files": [
       {
         "Path": "Hosting/UiSemanticSurfaceObservation.cs",
         "Sha256": "bb353b8c9d854358cf624eb5dbc1b18c469aa464d339666a0b759e2ed4964279"
+      },
+      {
+        "Path": "Hosting/UiSemanticSurfaceActionAutomation.cs",
+        "Sha256": "b8ac309fd1a93cd801bf1e6669c6d5ada43acdbab4ed5103cec9937459e8f3f5"
       }
     ]
   }
