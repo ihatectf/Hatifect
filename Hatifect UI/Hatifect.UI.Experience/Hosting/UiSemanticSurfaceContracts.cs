@@ -69,8 +69,9 @@ public interface IUiSemanticSurfaceSession : IDisposable
     void Refresh();
 
     /// <summary>
-    /// Apply framework-owned locale/profile/viewport changes when they differ, without forcing a
-    /// semantic recompose on an otherwise unchanged frame. If the exact native menu identity has
+    /// Apply pending semantic source notifications and framework-owned locale/profile/viewport
+    /// changes, without forcing a semantic recompose on an otherwise unchanged frame. Notifications
+    /// are coalesced until owning-screen synchronization. If the exact native menu identity has
     /// changed, this terminally retires the surface without closing or replacing the new native menu.
     /// </summary>
     void Synchronize();

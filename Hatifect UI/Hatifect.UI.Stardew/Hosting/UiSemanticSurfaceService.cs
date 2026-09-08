@@ -136,6 +136,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
     private readonly UiSemanticSurfaceService _owner;
     private readonly UiSurfaceObservationState? _observation;
     private readonly UiExperienceDefinition _experience;
+    private readonly UiSemanticSourceChangeBinding _sourceChanges;
     private readonly UiRegistrySnapshot _registry;
     private UiSceneComposer _composer;
     private readonly UiSemanticTextureCatalog<Texture2D> _textures = UiSemanticTextureResources.Create();
@@ -170,6 +171,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
             () => Context.ScreenId == _screen,
             () => { if (!_retireRequested && !_closedRaised && !_disposeRequested) _watches.Poll(); });
         _experience = experience ?? throw new ArgumentNullException(nameof(experience));
+        _sourceChanges = new UiSemanticSourceChangeBinding(experience.Sources.Select(source => source.Source));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _observation = owner.IsEnabled ? new UiSurfaceObservationState(options.Id) : null;
 
@@ -256,6 +258,14 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
         }
     }
 
+    private void StopSubscriptions()
+    {
+        List<Exception>? failures = null;
+        try { _sourceChanges.Dispose(); } catch (Exception error) { (failures ??= new()).Add(error); }
+        try { StopWatches(); } catch (Exception error) { (failures ??= new()).Add(error); }
+        if (failures is not null) throw new AggregateException(failures);
+    }
+
     private void StopWatches()
     {
         List<Exception>? failures = null;
@@ -271,6 +281,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
         UiSemanticTheme theme = _theme;
         UiSceneComposer composer = ResolveComposer(theme);
         long configurationVersion = _configurationVersion;
+        long sourceVersion = _sourceChanges.Version;
         UiInvocationResult? invocation = null;
         _overlay!.UpdatePrepared(() =>
         {
@@ -279,7 +290,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
         }, viewport, () =>
         {
             _invocation = invocation!;
-            AcceptEnvironment(environment, theme, composer);
+            AcceptEnvironment(environment, theme, composer, sourceVersion);
             acceptAssets();
         }, () => ValidateConfiguration(configurationVersion), renewActionGeneration: true);
     }
@@ -287,8 +298,20 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
     public void Show()
     {
         ThrowIfUnavailable();
-        _overlay!.Show();
-        _shown = true;
+        if (_shown) { _overlay!.Show(); return; }
+        try
+        {
+            _sourceChanges.Activate();
+            // Show synchronizes through the owning overlay before accepting native input ownership.
+            _overlay!.Show();
+            _shown = true;
+        }
+        catch (Exception activation)
+        {
+            try { _sourceChanges.Deactivate(); }
+            catch (Exception cleanup) { throw new AggregateException(activation, cleanup); }
+            throw;
+        }
     }
 
     public void Hide()
@@ -360,7 +383,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
         var failures = new List<Exception>();
         try
         {
-            try { StopWatches(); } catch (Exception error) { failures.Add(error); }
+            try { StopSubscriptions(); } catch (Exception error) { failures.Add(error); }
             DisposeOwnedResources(failures);
             if (_runtime == null) { try { _textures.Dispose(); } catch (Exception error) { failures.Add(error); } }
             if (_overlay == null && _runtime == null)
@@ -416,7 +439,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
     {
         ThrowIfUnavailable();
         UiEnvironment environment = CaptureEnvironment(viewport);
-        if (!force && ReferenceEquals(_environment, environment)) return;
+        if (!force && !_sourceChanges.HasChanges && ReferenceEquals(_environment, environment)) return;
         RecomposePrepared(viewport, environment);
     }
 
@@ -425,6 +448,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
         UiSemanticTheme theme = _theme;
         UiSceneComposer composer = ResolveComposer(theme);
         long configurationVersion = _configurationVersion;
+        long sourceVersion = _sourceChanges.Version;
         UiInvocationResult? invocation = null;
         _overlay!.UpdatePrepared(() =>
         {
@@ -435,7 +459,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
         }, viewport, () =>
         {
             _invocation = invocation!;
-            AcceptEnvironment(environment, theme, composer);
+            AcceptEnvironment(environment, theme, composer, sourceVersion);
         }, () => ValidateConfiguration(configurationVersion));
     }
 
@@ -445,11 +469,13 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
     private UiSceneComposer ResolveComposer(UiSemanticTheme theme)
         => theme == _acceptedTheme ? _composer : new UiSceneComposer(UiSemanticThemes.Resolve(theme), _registry);
 
-    private void AcceptEnvironment(UiEnvironment environment, UiSemanticTheme theme, UiSceneComposer composer)
+    private void AcceptEnvironment(UiEnvironment environment, UiSemanticTheme theme, UiSceneComposer composer,
+        long sourceVersion)
     {
         _environment = environment;
         _acceptedTheme = theme;
         _composer = composer;
+        _sourceChanges.Accept(sourceVersion);
     }
 
     private void ValidateConfiguration(long version)
@@ -466,7 +492,7 @@ internal sealed class UiActiveMenuSemanticSurfaceSession : IUiSemanticAppearance
         if (_closedRaised) return;
         _closedRaised = true;
         _observation?.Retire();
-        try { StopWatches(); } finally { Closed?.Invoke(); }
+        try { StopSubscriptions(); } finally { Closed?.Invoke(); }
     }
 
     private void DisposeOwnedResources(ICollection<Exception> failures)

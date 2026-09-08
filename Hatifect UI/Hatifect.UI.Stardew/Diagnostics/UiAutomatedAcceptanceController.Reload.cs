@@ -42,6 +42,7 @@ internal sealed partial class UiAutomatedAcceptanceController
         using var publication = new UiPublication(id);
         var status = publication.State(id.Child("status"), "Before reload", UiSourceTypes.String);
         var draft = new UiState<string>("Retained draft");
+        var sourceProbe = new ReloadSourceProbe("Created source");
         var operations = new List<ReloadCompletion>();
         var results = new List<int>();
         bool publishDuringAvailability = false;
@@ -65,7 +66,7 @@ internal sealed partial class UiAutomatedAcceptanceController
             return UiActionAvailability.Available;
         }).Bind(() => 7, (_, result) => results.Add(result.Value));
         var model = new UiExperienceBuilder(id, "Reload acceptance").Monitor("Status", status)
-            .Search("Name", draft).Actions("Actions", definition).VisualRole("Name").Build();
+            .Monitor("SourceProbe", sourceProbe).Search("Name", draft).Actions("Actions", definition).VisualRole("Name").Build();
         ActionPumpCoverMenu? cover = null;
         if (kind == "active-menu") Game1.activeClickableMenu = cover = new ActionPumpCoverMenu();
         try
@@ -82,8 +83,25 @@ internal sealed partial class UiAutomatedAcceptanceController
                 : api.CreateSurface(model, kind == "hud" ? UiSemanticHostKind.Hud : UiSemanticHostKind.Window,
                     new UiSemanticSurfaceOptions(id));
             surface = (IUiSemanticReloadSession)created;
+            sourceProbe.Value = "Published before Show";
             surface.Show();
             UiSemanticStardewHost host = CaptureReloadHost(surface);
+            bool firstShowCurrent = sourceProbe.Subscribers == 1 &&
+                host.Session.Root.Frame.Primitives.OfType<UiTextPrimitive>().Any(text => text.Text == sourceProbe.Value);
+            var beforeBurst = host.Session.Root.Frame;
+            long beforeBurstVersion = host.Session.Root.AcceptedVersion;
+            int readsBeforeBurst = sourceProbe.Reads;
+            sourceProbe.Value = "Intermediate source";
+            sourceProbe.Value = "Latest source";
+            bool deferredSource = ReferenceEquals(beforeBurst, host.Session.Root.Frame) && sourceProbe.Reads == readsBeforeBurst;
+            surface.Synchronize();
+            bool burstVisible = host.Session.Root.AcceptedVersion == beforeBurstVersion + 1 &&
+                host.Session.Root.Frame.Primitives.OfType<UiTextPrimitive>().Any(text => text.Text == sourceProbe.Value);
+            var acceptedSourceFrame = host.Session.Root.Frame;
+            int readsBeforeIdle = sourceProbe.Reads;
+            for (int iteration = 0; iteration < 256; iteration++) surface.Synchronize();
+            bool idleSource = ReferenceEquals(acceptedSourceFrame, host.Session.Root.Frame) && sourceProbe.Reads == readsBeforeIdle;
+            Action retiredSourceCallback = sourceProbe.Capture();
             UiSemanticLiveAssets assets = ReloadField<UiSemanticLiveAssets>(surface, "_assets");
             string visual = "visual Reload\n\nName\n    surface = Surface.Hover\n";
             var notifications = new List<UiSemanticReloadResult>();
@@ -92,15 +110,14 @@ internal sealed partial class UiAutomatedAcceptanceController
             UiSemanticReloadResult first = surface.Reload(id, null, visual);
             RequireAction(first.Accepted && first.Changed && publicationCallbacks == 1 &&
                 status.Value == "Published during reload", "The candidate must publish its source during new action availability.");
-            // Hosted surfaces subscribe to source changes. The legacy active-menu contract
-            // requires the consumer to request semantic Refresh; its Synchronize tracks only
-            // environment changes. Neither entry point pumps actions.
-            if (kind == "active-menu") surface.Refresh();
-            else surface.Synchronize();
+            // Every semantic host coalesces source changes until its owning synchronization pass.
+            // Synchronize itself does not pump actions.
+            surface.Synchronize();
             bool publicationVisible = host.Session.Root.Frame.Primitives.OfType<UiTextPrimitive>()
                 .Any(text => text.Text == status.Value);
-            Record("semantic.actions.reload." + kind + ".publication", publicationVisible,
-                "Publication reaches the accepted frame through the owning public synchronization contract.");
+            Record("semantic.actions.reload." + kind + ".publication",
+                firstShowCurrent && deferredSource && burstVisible && idleSource && publicationVisible,
+                "First Show reads current state; source bursts wait for synchronization; 256 unchanged passes do not read sources; publication during reload remains pending.");
 
             RequireAction(host.Session.Root.Actions.Invoke(definition) && operations.Count == 1,
                 "The first accepted generation did not admit pending work.");
@@ -130,12 +147,19 @@ internal sealed partial class UiAutomatedAcceptanceController
             UiSemanticReloadResult closing = surface.Reload(id, null, visual.Replace("Hover", "Raised"));
             operations[1].Fault();
             int assetEvents = notifications.Count - liveAssetEvents;
-            bool retiredObservers = closing.Accepted && closing.Changed && !surface.Visible &&
+            var retiredFrame = host.Session.Root.Frame;
+            int retiredSourceReads = sourceProbe.Reads;
+            retiredSourceCallback();
+            sourceProbe.Value = "After retirement";
+            bool sourceReleased = sourceProbe.Subscribers == 0 &&
+                ReferenceEquals(retiredFrame, host.Session.Root.Frame) && sourceProbe.Reads == retiredSourceReads;
+            bool retiredObservers = sourceReleased && closing.Accepted && closing.Changed && !surface.Visible &&
                 !host.Session.Root.IsActive && closed == 1 && assetEvents == 0 &&
                 operations[1].Token.IsCancellationRequested && operations[1].Reads == 1 && results.Count == 0;
             Record("semantic.actions.reload." + kind + ".retirement", retiredObservers,
                 "Cancellation may dispose the accepted surface; no AssetsReloaded observer is called after its retirement.");
-            _reloadObservations.Add(new { kind, publicationCallbacks, publicationVisible,
+            _reloadObservations.Add(new { kind, firstShowCurrent, deferredSource, burstVisible, idleSource, sourceReleased,
+                publicationCallbacks, publicationVisible,
                 rejectedRetained, generationRetired, retiredObservers, liveAssetEvents, assetEvents, closed,
                 finalVersion = closing.Version, draft = draft.Value, callbacks = results.Count,
                 operations = operations.Select(operation => new { cancelled = operation.Token.IsCancellationRequested,
@@ -148,6 +172,25 @@ internal sealed partial class UiAutomatedAcceptanceController
             foreach (ReloadCompletion operation in operations) operation.Fault();
             if (cover != null && ReferenceEquals(Game1.activeClickableMenu, cover)) Game1.activeClickableMenu = null;
         }
+    }
+
+    private sealed class ReloadSourceProbe : IUiSemanticSource<string>, IUiVersionedSemanticSource
+    {
+        private string _value;
+        private Action? _changed;
+        internal ReloadSourceProbe(string value) => _value = value;
+        internal int Reads { get; private set; }
+        internal int Subscribers => _changed?.GetInvocationList().Length ?? 0;
+        public Type ValueType => typeof(string);
+        public object UntypedValue => Value;
+        public long Version { get; private set; }
+        public string Value
+        {
+            get { Reads++; return _value; }
+            set { _value = value; Version++; _changed?.Invoke(); }
+        }
+        public event Action? Changed { add => _changed += value; remove => _changed -= value; }
+        internal Action Capture() => _changed ?? throw new InvalidOperationException("The source must be subscribed while shown.");
     }
 
     private void ExecuteReloadFailedCleanup(string kind, bool activeMenu, bool dispose)
