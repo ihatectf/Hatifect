@@ -507,6 +507,96 @@ Items@Checked
         Assert.True(platform.WrapCalls > afterLocale);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(79)]
+    public void RevisionChangeRemeasuresOnlyChangedVisibleSupportingText(int changedIndex)
+    {
+        UiSymbolId owner = RegistryTests.Id("adaptive-local-change");
+        var source = new MutableMeasurementSource(owner, 80);
+        CollectionFixture fixture = ListFixture(source, "Adaptive", owner);
+        var platform = new CountingPlatform();
+        var engine = new UiSceneLayoutEngine(platform);
+        var viewport = new UiRect(0, 0, 360, 240);
+        var before = engine.Build(fixture.Scene, viewport);
+        var collection = Assert.Single(Nodes(fixture.Scene.Root).OfType<UiCollectionSceneNode>());
+        Assert.True(before.TryGetCollection(collection.Id, out var beforeWindow));
+        var beforeFirst = Assert.Single(beforeWindow!.Items, item => item.Item.Id == owner.Child("item/0"));
+        int wraps = platform.WrapCalls;
+
+        source.ChangeSupportingText(changedIndex, string.Join(" ", Enumerable.Repeat("Long supporting text", 20)));
+        UiScene next = fixture.Composer.Compose(fixture.Invocation, locale: "en-US");
+        var after = engine.Build(next, viewport);
+
+        Assert.Equal(changedIndex == 0 ? 1 : 0, platform.WrapCalls - wraps);
+        Assert.True(after.TryGetCollection(collection.Id, out var afterWindow));
+        var afterFirst = Assert.Single(afterWindow!.Items, item => item.Item.Id == owner.Child("item/0"));
+        Assert.Equal(beforeFirst.Bounds.Y, afterFirst.Bounds.Y);
+        if (changedIndex == 0)
+        {
+            Assert.True(afterFirst.Bounds.Height > beforeFirst.Bounds.Height);
+            Assert.Contains("Long supporting text", afterFirst.Item.SupportingText);
+        }
+        else
+        {
+            Assert.Equal(beforeFirst.Bounds, afterFirst.Bounds);
+            Assert.Equal(beforeWindow.Items.Select(item => item.Item.Id), afterWindow.Items.Select(item => item.Item.Id));
+        }
+        Assert.Equal(0, afterFirst.Item.ContentVersion);
+    }
+
+    [Fact]
+    public void ReplacingCollectionOwnerDiscardsItsMeasuredItems()
+    {
+        UiSymbolId owner = RegistryTests.Id("adaptive-new-owner");
+        var first = ListFixture(new MutableMeasurementSource(owner, 80), "Adaptive", owner);
+        var second = ListFixture(new MutableMeasurementSource(owner, 80), "Adaptive", owner);
+        var platform = new CountingPlatform();
+        var engine = new UiSceneLayoutEngine(platform);
+        var viewport = new UiRect(0, 0, 360, 240);
+        engine.Build(first.Scene, viewport);
+        int wraps = platform.WrapCalls;
+        engine.Build(second.Scene, viewport);
+        Assert.True(platform.WrapCalls > wraps);
+    }
+
+    private sealed class MutableMeasurementSource : IUiSemanticCollectionSource,
+        IUiSemanticSource<IReadOnlyList<int>>, IUiSemanticCollectionMetadata
+    {
+        private readonly UiSymbolId _owner;
+        private readonly string[] _supporting;
+        public MutableMeasurementSource(UiSymbolId owner, int count)
+        {
+            _owner = owner;
+            Value = Enumerable.Range(0, count).ToArray();
+            _supporting = Enumerable.Repeat("Supporting", count).ToArray();
+        }
+        public IReadOnlyList<int> Value { get; }
+        public int Count => Value.Count;
+        public Type ValueType => typeof(IReadOnlyList<int>);
+        public object UntypedValue => Value;
+        public long Revision { get; private set; }
+        public bool HasSupportingText => true;
+        public event Action? Changed;
+        public void ChangeSupportingText(int index, string text)
+        {
+            _supporting[index] = text;
+            Revision++;
+            Changed?.Invoke();
+        }
+        public UiSemanticCollectionItem GetItem(int index)
+            => new(_owner.Child($"item/{index}"), $"Item {index}", index, _supporting[index]);
+        public bool TryGetIndex(UiSymbolId item, out int index)
+        {
+            string prefix = _owner.LocalId + "/item/";
+            if (item.Scope == _owner.Scope && item.LocalId.StartsWith(prefix, StringComparison.Ordinal) &&
+                int.TryParse(item.LocalId[prefix.Length..], out index) && (uint)index < (uint)Count)
+                return true;
+            index = -1;
+            return false;
+        }
+    }
+
     [Fact]
     public void AdaptiveSteadyStateReusesExactRowsWithinTheBoundedHeightScope()
     {

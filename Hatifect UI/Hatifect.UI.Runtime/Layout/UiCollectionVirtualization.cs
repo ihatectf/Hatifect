@@ -419,6 +419,8 @@ internal sealed class UiCollectionVirtualizer
         var key = new MeasurementKey(
             item.Id,
             item.ContentVersion,
+            item.Label,
+            item.SupportingText,
             item.Icon != null,
             itemWidth,
             context.Profile,
@@ -667,6 +669,8 @@ internal sealed class UiCollectionVirtualizer
     private readonly record struct MeasurementKey(
         UiSymbolId Item,
         long ContentVersion,
+        string Label,
+        string? SupportingText,
         bool HasIcon,
         float Width,
         UiSymbolId Profile,
@@ -782,14 +786,13 @@ internal sealed class UiCollectionVirtualizer
 
         public bool PrepareSource(UiCollectionSceneNode collection)
         {
-            bool sourceChanged = !ReferenceEquals(_source, collection.SourceIdentity) ||
-                                 _sourceRevision != collection.SourceRevision;
-            if (sourceChanged)
-            {
-                Measurements.Clear();
-                _source = collection.SourceIdentity;
-                _sourceRevision = collection.SourceRevision;
-            }
+            bool ownerChanged = !ReferenceEquals(_source, collection.SourceIdentity);
+            bool sourceChanged = ownerChanged || _sourceRevision != collection.SourceRevision;
+            // Item keys include exact text for external sources without content versions.
+            // A revision still resets row heights, but unaffected item measurements survive.
+            if (ownerChanged) Measurements.Clear();
+            _source = collection.SourceIdentity;
+            _sourceRevision = collection.SourceRevision;
             return sourceChanged;
         }
 
