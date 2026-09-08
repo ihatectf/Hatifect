@@ -49,6 +49,44 @@ public sealed class NativeTextGlyphTests
         Assert.Equal(40, font.MeasureString(line).X);
     }
 
+    [Theory]
+    [InlineData("Clip")]
+    [InlineData("Wrap")]
+    [InlineData("Ellipsis")]
+    public void LiteralEllipsisUsesMeasuredFallbackEvenWhenTheWholeMessageFits(string overflow)
+    {
+        SpriteFont font = Font();
+        string line = Assert.Single(Lines("Running…", font, 500, overflow));
+        Assert.Equal("Running...", line);
+        Assert.Equal(80, font.MeasureString(line).X);
+        Assert.All(line, character => Assert.Contains(character, font.Characters));
+    }
+
+    [Fact]
+    public void SupportedLiteralEllipsisRemainsUnchanged()
+    {
+        SpriteFont font = Font("…", omit: '.');
+        Assert.Equal("Running…", Assert.Single(Lines("Running…", font, 500, "Clip")));
+    }
+
+    [Fact]
+    public void WrappingUsesExpandedLiteralEllipsisWidth()
+    {
+        SpriteFont font = Font();
+        var lines = Lines("A…B", font, 24, "Wrap");
+        Assert.Equal(new[] { "A..", ".B" }, lines);
+        Assert.All(lines, line => Assert.True(font.MeasureString(line).X <= 24));
+    }
+
+    [Fact]
+    public void UnrepresentableLiteralEllipsisFailsEvenWithoutTruncation()
+    {
+        SpriteFont font = Font(omit: '.');
+        var failure = Assert.Throws<UiSemanticStardewCapabilityException>(() =>
+            Lines("Running…", font, 500, "Clip"));
+        Assert.Contains("ellipsis", failure.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void UnrepresentableDirectionFailsExplicitlyInsteadOfDrawingUnrelatedGlyph()
     {

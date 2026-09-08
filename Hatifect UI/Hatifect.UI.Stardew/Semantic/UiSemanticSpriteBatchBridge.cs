@@ -438,6 +438,15 @@ internal sealed class UiSemanticSpriteBatchBridge : IUiPlatformBridge, IDisposab
                     "The selected font cannot represent rightward direction or its ASCII fallback.");
             normalized = normalized.Replace("→", "->", StringComparison.Ordinal);
         }
+        // Literal punctuation needs the same glyph policy as a generated truncation
+        // suffix, even when the entire message fits. Expand before measuring/wrapping.
+        if (normalized.Contains('…') && !font.Characters.Contains('…'))
+        {
+            if (!font.Characters.Contains('.'))
+                throw new UiSemanticStardewCapabilityException(
+                    "The selected font cannot represent an ellipsis or its ASCII fallback.");
+            normalized = normalized.Replace("…", "...", StringComparison.Ordinal);
+        }
         if (overflow != RuntimeTextOverflow.Wrap)
         {
             string single = normalized.Replace('\n', ' ');
