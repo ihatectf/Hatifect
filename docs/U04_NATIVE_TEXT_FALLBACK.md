@@ -1,5 +1,7 @@
 # U04/F12: отсутствующие глифы направления и многоточия
 
+Актуальный статус на 2026-09-08: **U04 owner DONE** на source `04def9e`; [итоговая приёмка](U04_ACCEPTANCE.md) подтверждена независимым GQ review восстановленных raw evidence. Общая alpha47 acceptance и полный F12 учитываются отдельно. Ниже сохранены исторические результаты GQ и владельца, включая прежние FAIL и утраченные временные артефакты; их IN_PROGRESS/PENDING не задают текущий статус U04.
+
 Ограниченное исправление прошло owner source/static/native acceptance; общая интеграция alpha.47 и полные U04/F12 — **IN_PROGRESS**. Actual Flow native ce8c996, request70bef1d0-6323-4ed1-811a-f00ecd42bcca выполнил15 automatic checks и19 observations; pixel review обнаружил route U+2192 как crossed/default glyph. Logical submitted Texts сохраняли стрелку и потому сами не доказывали правильную отрисовку. Заголовки/подписи из b8b97eb видимы, этот новый дефект находится в native text adapter.
 
 `UiSemanticSpriteBatchBridge.BuildLines` теперь проверяет наличие правой стрелки в выбранном SpriteFont. Если её нет, текст для drawing заменяет U+2192 на `->` до width measurement, wrapping и clipping. Если нет и ASCII-представления, adapter выдаёт capability error вместо несвязанного glyph. Если стрелка поддерживается, исходный glyph сохраняется. Ellipsis использует `…`, либо `...` при отсутствии glyph; отсутствие обоих вариантов становится ошибкой только когда truncation действительно нужна.

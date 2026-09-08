@@ -10,7 +10,7 @@
 |---|---|---|
 | C: `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-check` | `run-gi9nzm7d`, 7 TRX | PASS: 1 604 .NET + 381 Python |
 | G: та же команда с `--platform` | `run-qdvu9v4z`, 10 TRX | PASS: 1 913 .NET + 381 Python |
-| P: `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-isolated-ui-ca --keep` | `hatifect-ui-ca-isolated.xxpaygyu`, постоянная копия `isolated-p` | PASS: 90 CA tests, 44 projection files, 8 exact alpha.47 packages, 3 resolved caches, 2 CA deployment DLL |
+| P: `rtk proxy env DOTNET_gcConcurrent=0 ./tools/hatifect-isolated-ui-ca --keep` | `hatifect-ui-ca-isolated.xxpaygyu`, постоянная копия `isolated-p` | PASS: 90 CA tests, 44 projection files, 8 exact alpha.47 packages, 3 project.assets.json, 2 CA deployment DLL |
 | Изолированная подготовка каноническим harness | `run-0szbratu`, `prepare-audit.json` | PASS: 14 producer/deployed DLL; все 8 UI package DLL совпадают с producer и игровой поставкой |
 | `rtk proxy ./tools/hatifect-smoke flow.ui.isolation` | `1c8eadec-5693-453e-8462-4f5332165a59` | PASS: 15 checks, 19 observations, 6 surfaces, 4 application owners, 3 loads и 2 title transitions |
 | `rtk proxy ./tools/hatifect-smoke flow.ui.names` | `5c2037d8-30b9-4cc9-af0b-7fe7b35642ef` | PASS: 7 checks, actual EN/RU item-name capture и восстановление locale |
@@ -28,6 +28,8 @@ Flow UI подтверждает diagnostic fake-session lifecycle и выбра
 Следующий integration input — завершённый U03 consumer и сообщения. На owner `ab320dc` protocol PASS4 сопровождался реальным RU Running VISUAL FAIL: literal `…` отсутствовал в игровом шрифте. Исправление `68b57e4` проверено отдельным review: RED 5/65 → GREEN 65, свежий native `25cb2662-ba8c-493c-bfec-f9300e68a39e` PASS4; все восемь message PNG просмотрены независимым GQ reviewer, точки видимы. Source fix не расширяет API и исполняет fallback перед measurement/wrap на cache miss. Полные C/G/P и PERF нового owner candidate, а также native input через typed CA binding ещё обязательны; ранее выполненные gates не переименовываются в проверки нового source.
 
 После принятия законченного U03 candidate остаётся общая матрица: `semantic.actions.save-switch`, `semantic.actions.reload`, `semantic.environment`, `semantic.observation`, UI/CA `all` с просмотром 8 PNG, `flow.save.isolation`, `flow.chest.isolation`, `semantic.performance` и физический `semantic.input.native`, включая Backspace. Изменённый общий source требует соответствующей повторной приёмки, проверки packages/producer/game identity, финального source audit и exact published CI. Совокупная стадия 19 Flow + 8 UI/CA images пока не завершена. Старый executor GQ остановлен: оба recorded PID отсутствуют; новый runtime/PERF запуск координируется с владельцем UI.
+
+[U04 owner-приёмка](U04_ACCEPTANCE.md) на source `04def9e` завершена и независимо проверена по восстановленным raw C/G/P/Planning/native evidence. Это закрывает исходный U04; общая alpha47 integration acceptance, U03 и физический ввод остаются отдельными незавершёнными требованиями.
 
 Далее сохранена история предыдущих checkpoints. Их PENDING/FAIL/PASS относятся к указанным source и не заменяют текущую таблицу.
 

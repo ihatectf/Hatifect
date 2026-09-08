@@ -1,5 +1,7 @@
 # U04/F12: отрисовка заголовков и подписей
 
+Актуальный статус на 2026-09-08: **U04 owner DONE** на source `04def9e`; [итоговая приёмка](U04_ACCEPTANCE.md) подтверждена независимым GQ review восстановленных raw evidence. Общая alpha47 acceptance и полный F12 учитываются отдельно. Ниже сохранены исторические результаты GQ и владельца, включая прежние FAIL и утраченные временные артефакты; их IN_PROGRESS/PENDING не задают текущий статус U04.
+
 Статус среза — **IN_PROGRESS**, полный U04/F12 открыт. Actual Flow driver выявил, что принятые accessibility title/labels отсутствуют в render primitives. Native source06e66a, request47d5905b-8ef3-4aad-ae2a-699a8e11de6d завершился FAIL на title; accepted/rendered0/0 pass2,10 text primitives содержали только5 action captions и5 values. Исходный composed PNG просмотрен; заголовок/подписи действительно отсутствуют. Проверки Flow не менялись.
 
 ## Исправление

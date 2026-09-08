@@ -1,5 +1,7 @@
 # U04/F12: наблюдение принятой active-menu поверхности
 
+Актуальный статус на 2026-09-08: **U04 owner DONE** на source `04def9e`; [итоговая приёмка](U04_ACCEPTANCE.md) подтверждена независимым GQ review восстановленных raw evidence. Общая alpha47 acceptance и полный F12 учитываются отдельно. Ниже сохранены исторические результаты GQ и владельца, включая прежние FAIL и утраченные временные артефакты; их IN_PROGRESS/PENDING не задают текущий статус U04.
+
 Исходный owner checkpoint прошёл перечисленные ниже проверки, но последующий integration review выявил P2 стоимости portal count, исправленный в `87fe76a` (проверки ниже); source [`df09a93`](https://github.com/ihatectf/Hatifect/commit/df09a93ef4f82e389622602005c7655032bd4e85). Статус полного U04/F12 — **IN_PROGRESS**. Этот prerequisite позволяет изолированному TestHarness проверить фактически принятое и отрисованное содержимое opaque active-menu handle. Он не заменяет native Flow lifecycle acceptance.
 
 ## Контракт и владельцы
