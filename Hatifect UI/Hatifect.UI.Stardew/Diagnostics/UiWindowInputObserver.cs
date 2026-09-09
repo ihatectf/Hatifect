@@ -66,8 +66,9 @@ internal sealed class UiWindowInputObserver : IDisposable
 
     private UiSemanticStardewMenu? CurrentMenu()
     {
-        if (Game1.activeClickableMenu is not UiSemanticStardewMenu { Observation: not null } menu
-            || !IsTargetExperience(menu.CurrentSection)) return null;
+        if (Game1.activeClickableMenu is not UiSemanticStardewMenu { Observation: not null } menu) return null;
+        var runtime = menu.CaptureRuntimeContext();
+        if (!IsTargetExperience(runtime.Scene.Experience)) return null;
         // Only the exact Flow network Window belongs to this observer. Other semantic menus can
         // legitimately exist while the save loads; their ownership must not poison this probe.
         menu.RequireAutomationOwner();
@@ -127,7 +128,7 @@ internal sealed class UiWindowInputObserver : IDisposable
                 if (_frame % 60 == 0) WriteProgress();
                 return;
             }
-            var runtime = menu.CaptureInspectionContext().Runtime;
+            var runtime = menu.CaptureRuntimeContext();
             var origins = new Dictionary<UiSymbolId, UiSceneNode>();
             Visit(runtime.Scene.Root, node => origins.Add(node.Id, node));
             var elements = new List<Element>();
