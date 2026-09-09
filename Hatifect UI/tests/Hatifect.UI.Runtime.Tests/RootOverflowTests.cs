@@ -21,6 +21,115 @@ public sealed class RootOverflowTests
 {
     private static readonly UiRect Viewport = new(0, 0, 1280, 720);
 
+    [Theory]
+    [InlineData(1280, 720)]
+    [InlineData(1960, 1275)]
+    [InlineData(1024, 576)]
+    public void SemanticWindowPreservesItsPolicyAndNaturalControlsInABoundedViewport(int width, int height)
+    {
+        UiScene scene = Scene(count: 40, semanticWindow: true);
+        Assert.Equal(UiHostKind.Window, scene.Root.Policy.Kind);
+        Assert.Equal(UiWindowChrome.Standard, scene.Root.Policy.Chrome);
+        Assert.Equal(UiDismissPolicy.Escape, scene.Root.Policy.Dismiss);
+        Assert.Equal(UiModalPolicy.Modeless, scene.Root.Policy.Modal);
+        Assert.Equal(UiFocusScopePolicy.Contained, scene.Root.Policy.Focus);
+        var engine = new UiSceneLayoutEngine(new Platform());
+        UiLayoutSnapshot natural = engine.Build(scene, new UiRect(0, 0, width, 8000));
+        UiLayoutSnapshot bounded = engine.Build(scene, new UiRect(0, 0, width, height));
+        Assert.NotNull(bounded.RootScroll);
+        Assert.True(bounded.RootScroll.Viewport.Width > 0 && bounded.RootScroll.Viewport.Height > 0);
+        Assert.Equal(UiHostPlacementKind.Center, bounded.HostPlacement.Kind);
+        Assert.True(bounded.HostPlacement.WasClamped);
+        Assert.InRange(bounded.HostPlacement.Bounds.X, 12, width - 12);
+        Assert.InRange(bounded.HostPlacement.Bounds.Right, 12, width - 12);
+        Assert.InRange(bounded.HostPlacement.Bounds.Y, 12, height - 12);
+        Assert.InRange(bounded.HostPlacement.Bounds.Bottom, 12, height - 12);
+        UiSceneNode[] controls = Nodes(scene.Root)
+            .Where(node => node.Kind is UiSceneNodeKind.TextInput or UiSceneNodeKind.Button).ToArray();
+        Assert.Equal(41, controls.Length);
+        foreach (UiSceneNode control in controls)
+        {
+            UiLayoutEntry entry = Entry(bounded, control.Id);
+            Assert.True(entry.Bounds.Width > 0 && entry.Bounds.Height > 0);
+            Assert.Equal(Entry(natural, control.Id).Bounds.Height, entry.Bounds.Height, 3);
+            if (entry.Clip.Height > 0)
+            {
+                Assert.True(entry.Clip.Y >= bounded.RootScroll!.Viewport.Y);
+                Assert.True(entry.Clip.Bottom <= bounded.RootScroll.Viewport.Bottom + .01f);
+            }
+        }
+        Assert.Equal(0, Entry(bounded, controls[^1].Id).Clip.Height);
+    }
+
+    [Fact]
+    public void SemanticWindowWheelAndNavigationReachClippedControlsAndExplicitAction()
+    {
+        int calls = 0;
+        UiScene scene = Scene(execute: () => calls++, semanticWindow: true);
+        var runtime = new UiHostRuntimeSession(scene, Viewport, new Platform());
+        UiSceneNode[] controls = Nodes(scene.Root)
+            .Where(node => node.Kind is UiSceneNodeKind.TextInput or UiSceneNodeKind.Button).ToArray();
+        Assert.True(runtime.MoveFocus(UiNavigationDirection.Next).Consumed);
+        Assert.Equal(controls[0].Id, runtime.Interactions.Snapshot.Focused);
+        Assert.Equal(0, runtime.Layout.RootScroll!.Offset);
+        Assert.Equal(0, Entry(runtime.Layout, controls[^1].Id).Clip.Height);
+        UiRect content = runtime.Layout.RootScroll!.Viewport;
+        UiHostScrollUpdate scroll = runtime.ScrollAt(new UiPoint(content.X + 1, content.Y + 1), float.MaxValue);
+        Assert.True(scroll.Consumed && scroll.LayoutChanged && scroll.FrameChanged);
+        Assert.True(scroll.Offset > 0);
+        Assert.Equal(runtime.Layout.RootScroll.MaximumOffset, scroll.Offset);
+        UiLayoutEntry last = Entry(runtime.Layout, controls[^1].Id);
+        Assert.Equal(last.Bounds.Height, last.Clip.Height, 3);
+        Assert.Equal(controls[0].Id, runtime.Interactions.Snapshot.Focused);
+        Assert.Equal(0, Entry(runtime.Layout, controls[0].Id).Clip.Height);
+        Assert.Equal(0, calls);
+        for (int i = 1; i < controls.Length; i++)
+        {
+            Assert.True(runtime.MoveFocus(UiNavigationDirection.Next).Consumed);
+            Assert.Equal(controls[i].Id, runtime.Interactions.Snapshot.Focused);
+            UiLayoutEntry entry = Entry(runtime.Layout, controls[i].Id);
+            Assert.Equal(entry.Bounds.Height, entry.Clip.Height, 3);
+        }
+        Assert.Equal(0, calls);
+        Assert.False(runtime.MoveFocus(UiNavigationDirection.Next).Consumed);
+        Assert.Equal(controls[^1].Id, runtime.Interactions.Snapshot.Focused);
+        for (int i = controls.Length - 2; i >= 0; i--)
+        {
+            Assert.True(runtime.MoveFocus(UiNavigationDirection.Previous).Consumed);
+            Assert.Equal(controls[i].Id, runtime.Interactions.Snapshot.Focused);
+            UiLayoutEntry entry = Entry(runtime.Layout, controls[i].Id);
+            Assert.Equal(entry.Bounds.Height, entry.Clip.Height, 3);
+        }
+        Assert.False(runtime.MoveFocus(UiNavigationDirection.Previous).Consumed);
+        Assert.Equal(controls[0].Id, runtime.Interactions.Snapshot.Focused);
+        UiButtonSceneNode button = Assert.Single(Nodes(scene.Root).OfType<UiButtonSceneNode>());
+        for (int i = 0; i < controls.Length && runtime.Interactions.Snapshot.Focused != button.Id; i++)
+            Assert.True(runtime.MoveFocus(UiNavigationDirection.Next).Consumed);
+        Assert.Equal(button.Id, runtime.Interactions.Snapshot.Focused);
+        UiLayoutEntry action = Entry(runtime.Layout, button.Id);
+        Assert.Equal(action.Bounds.Height, action.Clip.Height, 3);
+        Assert.Equal(0, calls);
+        Assert.True(runtime.Interactions.Submit().ActionInvoked);
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void SemanticWindowThatFitsKeepsOrdinaryWindowPlacementWithoutRootScroll()
+    {
+        var engine = new UiSceneLayoutEngine(new Platform());
+        UiLayoutSnapshot semantic = engine.Build(Scene(count: 1, semanticWindow: true), Viewport);
+        UiLayoutSnapshot ordinary = engine.Build(Scene(UiHostPolicies.Window, count: 1), Viewport);
+        Assert.Null(semantic.RootScroll);
+        Assert.Equal(ordinary.HostPlacement, semantic.HostPlacement);
+    }
+
+    [Theory]
+    [InlineData(4, 720)]
+    [InlineData(1280, 4)]
+    public void SemanticWindowStillRejectsAnUnusableViewport(int width, int height)
+        => Assert.Throws<UiLayoutException>(() => new UiSceneLayoutEngine(new Platform())
+            .Build(Scene(semanticWindow: true), new UiRect(0, 0, width, height)));
+
     [Fact]
     public void OversizedCenteredOverlayPreservesControlGeometryInsideAClippedViewport()
     {
@@ -361,7 +470,7 @@ public sealed class RootOverflowTests
         Assert.Equal(interaction, runtime.Interactions.Snapshot);
     }
 
-    private static UiScene Scene(UiHostPolicy? policy = null, int count = 20, bool includeCollection = false, Action? execute = null, IUiSemanticSource<string>? lastInput = null)
+    private static UiScene Scene(UiHostPolicy? policy = null, int count = 20, bool includeCollection = false, Action? execute = null, IUiSemanticSource<string>? lastInput = null, bool semanticWindow = false)
     {
         UiSymbolId id = RegistryTests.Id("root-overflow");
         var builder = new UiExperienceBuilder(id, "Network");
@@ -371,8 +480,10 @@ public sealed class RootOverflowTests
             Enumerable.Range(0, 100).ToArray(), item => id.Child("item/" + item), item => "Item " + item));
         UiExperienceDefinition experience = builder.Actions("Actions",
             new UiActionDefinition(id.Child("return"), "Return", execute ?? (() => { }))).Build();
-        UiRegistrySnapshot registry = new UiRegistryBuilder().Window(id, "Network", () => experience,
-            policy ?? UiProvisionalHostPolicies.OverlayCentered(true)).Freeze();
+        UiRegistrySnapshot registry = semanticWindow
+            ? UiSemanticHostProjection.Register(experience, UiSemanticHostKind.Window)
+            : new UiRegistryBuilder().Window(id, "Network", () => experience,
+                policy ?? UiProvisionalHostPolicies.OverlayCentered(true)).Freeze();
         return new UiSceneComposer(UiThemePresets.Dark(), registry).Compose(
             new UiInvocationService(registry).Invoke(id, UiPresentationProfiles.Wide));
     }

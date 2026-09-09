@@ -281,6 +281,16 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
         string scenario = Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO") ?? string.Empty;
         if (string.Equals(scenario, "flow.ui.actions", StringComparison.Ordinal)
             || string.Equals(scenario, "flow.ui.isolation", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.ui.player", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.ui.player.en-075", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.ui.player.en-100", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.ui.player.en-125", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.ui.player.en-150", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.ui.player.ru-075", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.ui.player.ru-100", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.ui.player.ru-125", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.ui.player.ru-150", StringComparison.Ordinal)
+            || string.Equals(scenario, "flow.ui.player.input", StringComparison.Ordinal)
             || string.Equals(scenario, "flow.ui.names", StringComparison.Ordinal)
             || string.Equals(scenario, "flow.route.basic", StringComparison.Ordinal)
             || string.Equals(scenario, "flow.save.isolation", StringComparison.Ordinal)
@@ -567,6 +577,11 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
 
     private void CaptureCompletedFrame()
     {
+        if (!_disposed && _observationActive && _observationCallbackError is null)
+        {
+            try { ObserveObservationNativeFrame(); }
+            catch (Exception error) { _observationCallbackError = error; }
+        }
         if (!_disposed && _actionPhase < 0)
         {
             if (_actionMessageCaptureError is null)
@@ -1375,7 +1390,7 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
             visualMatrixRestored = _visualSettingsRestored,
             retiredOverlayInput = _retiredOverlayInput,
             environment = new { completed = _environmentCompleted, targets = _environmentObservations.ToArray(), operations = _environmentOperations.ToArray(), automatic = _environmentAutomaticObservations.ToArray() },
-            observation = new { stage = _observationStage.ToString(), closed = _observationClosed, captures = _observationCaptures.ToArray() },
+            observation = new { stage = _observationStage.ToString(), closed = _observationClosed, captures = _observationCaptures.ToArray(), nativeFrames = _observationNativeFrames.ToArray() },
             saveSwitch = new { completed = _saveSwitchCompleted, ownerThread = _saveSwitchOwnerThread, titles = _saveSwitchTitles, loads = _saveSwitchLoads, targets = _saveSwitchObservations.ToArray(), effects = _saveSwitchEffects.ToArray() },
             actionReload = new { completed = _reloadCompleted, targets = _reloadObservations.ToArray(), failedCleanup = _reloadFailedCleanup.ToArray() },
             terminalGeneration = new { completed = _terminalGenerationCompleted, ownerThread = _generationOwnerThread, transitions = _terminalGenerationTransitions.ToArray(), actions = _terminalGenerationActions.ToArray() },

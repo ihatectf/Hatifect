@@ -57,7 +57,8 @@ internal abstract class UiSceneNode
         Kind = kind;
         Role = role;
         Visual = visual ?? throw new ArgumentNullException(nameof(visual));
-        Children = Array.AsReadOnly(children ?? Array.Empty<UiSceneNode>());
+        Children = Array.AsReadOnly(children is { Length: > 0 }
+            ? (UiSceneNode[])children.Clone() : Array.Empty<UiSceneNode>());
     }
 
     public UiSymbolId Id { get; }
@@ -379,6 +380,7 @@ internal sealed class UiHostSceneNode : UiSceneNode
 
 internal sealed class UiScene
 {
+    private readonly Lazy<UiSceneStructure> _structure;
     public UiScene(
         UiSymbolId experience,
         string displayName,
@@ -393,7 +395,10 @@ internal sealed class UiScene
         Root = root ?? throw new ArgumentNullException(nameof(root));
         MeasurementContext = measurementContext ?? throw new ArgumentNullException(nameof(measurementContext));
         RecomposePublication = recomposePublication;
+        _structure = new Lazy<UiSceneStructure>(() => new UiSceneStructure(Root));
     }
+
+    internal UiSceneStructure Structure => _structure.Value;
 
     public UiSymbolId Experience { get; }
     public string DisplayName { get; }

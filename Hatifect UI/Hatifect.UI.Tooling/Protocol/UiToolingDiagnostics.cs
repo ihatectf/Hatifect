@@ -10,36 +10,6 @@ namespace Hatifect.UI.Tooling.Protocol;
 
 internal sealed partial class UiToolingProtocolSession
 {
-    private UiJsonRpcDispatchResult Compilation(UiJsonRpcRequest request)
-    {
-        RequireRequest(request, request.Method);
-        JsonElement parameters = RequiredObject(request.Parameters, "compilation params");
-        UiEditorDocumentSnapshot snapshot = CurrentCompilationSnapshot(parameters);
-        return Success(new
-        {
-            uri = snapshot.SourceName,
-            version = snapshot.Version,
-            bindingRevision = _bindingRevision,
-            resultId = snapshot.ResultId,
-            status = snapshot.IsValid ? "valid" : "invalid",
-            diagnostics = DiagnosticItems(snapshot)
-        });
-    }
-
-    private UiEditorDocumentSnapshot CurrentCompilationSnapshot(JsonElement parameters)
-    {
-        JsonElement document = TextDocument(parameters);
-        UiEditorDocumentSnapshot snapshot = OpenDocument(RequiredString(document, "uri"));
-        int version = RequiredNonNegativeInt32(document, "version");
-        int bindingRevision = RequiredNonNegativeInt32(parameters, "bindingRevision");
-        string resultId = RequiredString(parameters, "resultId");
-        if (version != snapshot.Version || bindingRevision != _bindingRevision || resultId != snapshot.ResultId)
-        {
-            throw new InvalidDataException("The requested compilation snapshot is no longer current. Pull diagnostics again.");
-        }
-        return snapshot;
-    }
-
     private UiJsonRpcDispatchResult WorkspaceDiagnostic(UiJsonRpcRequest request)
     {
         RequireRequest(request, request.Method);

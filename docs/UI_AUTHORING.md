@@ -67,79 +67,9 @@ Use your configured .NET executable in place of `dotnet` if it is not on PATH. P
 
 `bindingMetadata` is the default for open documents. Optional `documentBindings` entries have `{ "uri": "file:///path/Asset.hatifect", "bindingMetadata": <exported object> }` and override that exact URI. Different Experience owners can share a server; names resolve through stable IDs in each context.
 
-### Protocol requirements
-
-The provisional tooling protocol has its own integer version, currently `0`, independent of runtime API/package versions and binding metadata schemas. `initialize` advertises `capabilities.experimental.hatifectUi.protocolVersion` and a `capabilities` array containing `bindingMetadata.v1`, `bindingMetadata.v2`, `bindingUpdates`, `diagnostics`, `definitions`, `references` and `compilation`. These names describe supported tooling operations, not semantic element capabilities. Standard LSP providers retain their separate negotiation above.
-
-A client may add `"protocolVersion": 0` and `"requiredCapabilities": ["bindingMetadata.v2", "diagnostics"]` to `initializationOptions`. Both fields are optional for existing clients. An explicitly supplied version must match; required capability names are case-sensitive, unique, non-empty strings of at most 128 UTF-16 units, with at most 32 entries. An unknown version/capability or malformed requirement returns JSON-RPC `Invalid params` before installing bindings or advancing the lifecycle. The client may correct its options and retry `initialize` on that same process.
-
-Clients must inspect the returned version and capability list before sending `initialized`, because an older server may ignore unfamiliar initialization options. Missing advertised support is unsupported, never implicit success. A successful handshake is not a compilation result. Diagnostics are still required for each synchronized document; a response-budget error has no partial result and must not be interpreted as a clean compilation. Tooling.Server also advertises `plannerTrace`; compiler-only embedded sessions without a planner provider do not.
-
 Optional `declarations` entries contain `symbolId`, an absolute `uri`, and an LSP `range` with zero-based UTF-16 `start`/`end`. The ID must identify an element or role in one of the supplied contexts, or a v2 graph node, input slot or relation. These coordinates come from the consumer's generator or editor adapter. Go to definition uses them exactly. Built-in catalog symbols and consumer symbols without provenance return an empty definition result; the server does not invent C# locations.
 
 After rebuilding consumer metadata, send `hatifect/updateBindings` with the same complete options shape and an increasing `bindingRevision`. This replaces all bindings and provenance atomically, recompiles open documents, and returns `{ "bindingRevision": n, "documentsReanalyzed": count }`. Omitted overrides/declarations are removed. Text versions stay unchanged; diagnostic result IDs change. Pull diagnostics again after a successful update.
-
-### Complete document compilation result
-
-When `compilation` is advertised, request `hatifect/compilation` after pulling diagnostics for the current document. All parameters are required:
-
-```json
-{
-  "textDocument": { "uri": "file:///path/Asset.hatifect", "version": 3 },
-  "bindingRevision": 2,
-  "resultId": "opaque ID from the diagnostic report"
-}
-```
-
-The response contains `uri`, `version`, `bindingRevision`, `resultId`, `status` (`valid` or `invalid`) and the complete `diagnostics` array in the same shape as pull diagnostics. It reads the existing immutable compiler snapshot; it does not execute a plan or activate a runtime surface. `invalid` is a complete compilation outcome with diagnostics, not a JSON-RPC transport error. `valid` confirms the single document's semantic compilation only, not a multi-asset build or planner acceptance.
-
-All three identities must match. A text edit, successful binding refresh or close/reopen invalidates the old snapshot; mismatch returns `Invalid params` without a result. Pull diagnostics again to obtain the new ID. A payload-budget error also has no result: do not treat it as empty diagnostics or truncate it into a successful compilation. The client must still compare returned identities with its current local document and bindings before displaying acceptance, since edits may occur while the response is in transit.
-
-### Actual planner trace
-
-When `plannerTrace` is advertised, `hatifect/plannerTrace` accepts the same snapshot fields as `hatifect/compilation`, plus the following explicit planning facts:
-
-```json
-{
-  "planningMetadata": {
-    "schemaVersion": 1,
-    "ownerId": "Author.Mod/storage",
-    "elements": [{ "id": "Author.Mod/storage/element/Items", "isCollection": true }]
-  },
-  "hostKind": "Window",
-  "environment": {
-    "width": 719, "height": 500, "scale": 2,
-    "inputMode": "MouseKeyboard", "locale": "ru", "theme": "Author.Mod/theme",
-    "reducedMotion": false, "highContrast": false
-  }
-}
-```
-
-Export `planningMetadata` with `Hatifect.UI.DevTools.UiPlanningMetadataJson.Export(experience)`. It preserves actual presented order and collection source-kind without reading values. Include every presented element exactly once; v2 graph order must agree. Capabilities come from snapshot bindings. The supplement is request-scoped. Width/height are already logical units, scale is finite positive, and the actual planner computes the profile. Environment origins in trace are `Tooling request`.
-
-A complete response carries snapshot identity, `diagnostics`, `decisions`, and a nullable `plan`. `status` is `planned`, `planning-rejected` or `compilation-invalid`. Only `planned` contains an ordered plan with pattern, host/profile and element regions/presentations. Decisions preserve code, element, message, candidate and nullable source provenance (`sourceName`, `start`, `length`, `line`, `column`). Rejected planning and invalid compilation return no partial plan. Stale metadata, invalid environment and response overflow return protocol errors. This operation never activates runtime surfaces. See [T01 acceptance](T01_ACCEPTANCE.md#t01-d--actual-server-planner-trace) for behavioral evidence.
-
-### .NET authoring client
-
-`Hatifect.UI.Tooling.Client.UiToolingClient` is a bounded client for the existing stdio protocol. Supply the server's output as its input and the server's input as its output; the caller owns process startup, cancellation and both streams. This is also the client boundary for embedding authoring checks in .NET tooling. Editor extension installation remains separate.
-
-```csharp
-using var client = new UiToolingClient(serverOutput, serverInput);
-await client.InitializeAsync(bindingMetadata,
-    new[] { "diagnostics", "compilation" }, cancellationToken: cancellationToken);
-await client.SynchronizeAsync(uri, version: 1, source, cancellationToken);
-UiToolingCompilation result = await client.CompileAsync(uri, cancellationToken);
-// result.IsValid distinguishes valid and invalid complete compiler outcomes.
-// Before displaying acceptance, compare result.Version with the editor's current local version.
-await client.CloseAsync(uri, cancellationToken);
-await client.ShutdownAsync(cancellationToken);
-```
-
-Initialization verifies the returned protocol and required capabilities before sending `initialized`, including servers that ignore the request's requirements. `Supports` reports only advertised support for an active usable session. A successful initialization response that omits required support or advertises an unsupported protocol version raises `NotSupportedException`. If the server rejects the initialization request, the client preserves the JSON-RPC error as `UiToolingRequestException`; for example, the Hatifect server rejects an unknown required capability with code `-32602` (`Invalid params`). That code can also describe malformed binding metadata or other invalid initialization options, so it does not by itself identify an incompatible server. Both failures leave this client unusable; callers handling initialization failure must account for both exception types.
-
-Compilation requires both `diagnostics` and `compilation`; it obtains a full diagnostic identity and checks every returned snapshot field, status and diagnostic shape. Invalid compilation returns `IsValid=false`; malformed, missing, contradictory or mismatched responses never create a successful result. A server error raises `UiToolingRequestException` with its JSON-RPC code.
-
-Operations are serialized, open documents are bounded to 64, source is bounded to 1 MiB and frames to 4 MiB. Synchronization requires increasing versions; closing permits reopening. Binding metadata/revision are fixed for one client session. Use a new client/session when refreshing bindings. Transport failure, cancellation during exchange, malformed response or rejected exchange makes the client unusable, so an unread response cannot be mistaken for the next request. Cancellation before acquiring the operation gate sends nothing. Dispose marks the wrapper disposed but does not close borrowed streams or send shutdown; finish or cancel outstanding operations before disposing them. The caller owns any UI-state changes that occur outside this serialized client and must reject results older than its local editor state.
 
 ## Supported editor operations
 

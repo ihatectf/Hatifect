@@ -8,7 +8,7 @@ internal static class UiSemanticHostProjection
 {
     internal static UiHostPolicy Policy(UiSemanticHostKind kind) => kind switch
     {
-        UiSemanticHostKind.Window => UiHostPolicies.Window,
+        UiSemanticHostKind.Window => UiProvisionalHostPolicies.SemanticWindow,
         UiSemanticHostKind.Modal => UiHostPolicies.Modal,
         UiSemanticHostKind.Fullscreen => UiHostPolicies.Fullscreen,
         UiSemanticHostKind.Hud => UiProvisionalHostPolicies.OverlayTopRight,

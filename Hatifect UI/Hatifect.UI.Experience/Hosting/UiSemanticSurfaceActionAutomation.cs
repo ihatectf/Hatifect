@@ -15,7 +15,8 @@ public interface IUiSemanticSurfaceActionAutomation
     bool IsEnabled { get; }
 
     /// <summary>
-    /// Navigate with at most 256 Tab inputs to an accepted root action and submit Enter once.
+    /// Navigate with at most 256 Tab/Shift+Tab inputs to an accepted root action and submit Enter once.
+    /// Standalone Windows search backward after reaching their contained forward focus boundary.
     /// Rejects disabled automation, foreign handles, wrong thread/screen, retired menu owners,
     /// portals and changed action identity. Does not invoke delegates directly or synthesize OS
     /// events. A true result reports input admission, not asynchronous completion or rendering.

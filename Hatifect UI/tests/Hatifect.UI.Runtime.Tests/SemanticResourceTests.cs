@@ -15,6 +15,55 @@ namespace Hatifect.UI.Runtime.Tests;
 
 public sealed class SemanticResourceTests
 {
+    [Theory]
+    [InlineData("register")]
+    [InlineData("resolve")]
+    [InlineData("dispose")]
+    public void ForeignThreadIsRejectedBeforeDecodingFallbackOrCleanup(string operation)
+    {
+        int decodes = 0, fallbacks = 0;
+        using var catalog = new UiSemanticTextureCatalog<Resource>(
+            _ => { decodes++; return new Resource(); },
+            () => { fallbacks++; return new Resource(); });
+        using var lease = catalog.Register(Id("owned"), Png());
+        Resource resource = catalog.Resolve(Id("owned"));
+
+        Exception? error = OnForeignThread(() =>
+        {
+            switch (operation)
+            {
+                case "register": catalog.Register(Id("foreign"), Png()); break;
+                case "resolve": catalog.Resolve(Id("missing")); break;
+                case "dispose": catalog.Dispose(); break;
+            }
+        });
+
+        Assert.IsType<InvalidOperationException>(error);
+        Assert.Equal(1, decodes);
+        Assert.Equal(0, fallbacks);
+        Assert.Equal(0, resource.Disposals);
+        Assert.Same(resource, catalog.Resolve(Id("owned")));
+        catalog.Dispose();
+        catalog.Dispose();
+        Assert.Equal(1, resource.Disposals);
+    }
+
+    [Fact]
+    public void ForeignThreadLeaseDisposalPreservesRegistrationForOwnerRetry()
+    {
+        using var catalog = new UiSemanticTextureCatalog<Resource>(_ => new Resource(), () => new Resource());
+        using var lease = catalog.Register(Id("owned"), Png());
+        Resource resource = catalog.Resolve(Id("owned"));
+
+        Assert.IsType<InvalidOperationException>(OnForeignThread(lease.Dispose));
+
+        Assert.Equal(0, resource.Disposals);
+        Assert.Same(resource, catalog.Resolve(Id("owned")));
+        lease.Dispose();
+        lease.Dispose();
+        Assert.Equal(1, resource.Disposals);
+    }
+
     [Fact]
     public void DecodedPixelsPreserveCoverageAndUsePremultipliedColorChannels()
     {
@@ -115,6 +164,18 @@ public sealed class SemanticResourceTests
         return png;
     }
     private static UiSymbolId Id(string name) => new("Resource.Tests", name);
+    private static Exception? OnForeignThread(Action action)
+    {
+        Exception? failure = null;
+        var worker = new System.Threading.Thread(() =>
+        {
+            try { action(); }
+            catch (Exception error) { failure = error; }
+        });
+        worker.Start();
+        worker.Join();
+        return failure;
+    }
     private sealed class Resource : IDisposable
     { public int Disposals { get; private set; } public void Dispose() => Disposals++; }
     private sealed class TestPlatform : IUiPlatformBridge

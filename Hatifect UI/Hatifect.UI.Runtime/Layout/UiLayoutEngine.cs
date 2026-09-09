@@ -36,7 +36,23 @@ internal sealed record UiLayoutEntry(
 // Root content remains in logical coordinates; only its viewport is visible/hit-testable.
 internal sealed record UiRootScrollLayout(UiRect Viewport, float Extent, float Offset)
 {
-    public float MaximumOffset => Math.Max(0, Extent - Viewport.Height);
+    public float MaximumOffset => MaximumFor(Viewport, Extent);
+
+    internal static float MaximumFor(UiRect viewport, float extent)
+    {
+        // The maximum must reach the represented viewport edge; rounding a positive
+        // extent deficit down can strand the final line below it by one float step.
+        double required = Math.Max(0, (double)viewport.Y + extent - viewport.Bottom);
+        float maximum = (float)required;
+        if (maximum < required) maximum = MathF.BitIncrement(maximum);
+        // Check the operations actually used during arrangement as well: the rounded
+        // subtraction/addition can still lie above the edge after an outward cast.
+        for (int correction = 0; correction < 4 && (viewport.Y - maximum) + extent > viewport.Bottom; correction++)
+            maximum = MathF.BitIncrement(maximum);
+        if ((viewport.Y - maximum) + extent > viewport.Bottom)
+            throw new UiLayoutException("Root scroll geometry cannot represent a reachable final edge.");
+        return maximum;
+    }
 }
 
 internal sealed class UiLayoutSnapshot
@@ -135,7 +151,8 @@ internal sealed class UiSceneLayoutEngine
             scene.Root.Policy, context, root.Desired, root.Minimum);
 
         UiRootScrollLayout? rootScroll = null;
-        if (scene.Root.Policy.CustomPolicy == UiProvisionalHostPolicies.OverlayCenteredId &&
+        if ((scene.Root.Policy.CustomPolicy == UiProvisionalHostPolicies.OverlayCenteredId ||
+             scene.Root.Policy.CustomPolicy == UiProvisionalHostPolicies.SemanticWindowId) &&
             placement.WasClamped && root.Minimum.Height > placement.Bounds.Height + .01f)
         {
             UiRect content = placement.Bounds.Inset(root.Inset);
@@ -145,7 +162,7 @@ internal sealed class UiSceneLayoutEngine
                 throw new UiLayoutException($"Node '{scene.Root.Id}' has space smaller than required minimum viewport.");
             var viewport = new UiRect(content.X, content.Y + root.HeadingHeight, content.Width, height);
             float extent = root.Desired.Height - root.Inset.Top - root.Inset.Bottom - root.HeadingHeight;
-            rootScroll = new(viewport, extent, Math.Clamp(rootOffset, 0, Math.Max(0, extent - height)));
+            rootScroll = new(viewport, extent, Math.Clamp(rootOffset, 0, UiRootScrollLayout.MaximumFor(viewport, extent)));
         }
         var entries = new Dictionary<UiSymbolId, UiLayoutEntry>();
         var collectionWindows = new Dictionary<UiSymbolId, UiCollectionLayoutWindow>();
@@ -406,18 +423,22 @@ internal sealed class UiSceneLayoutEngine
             childMeasurements[index] = measured[node.Children[index].Id];
         float available = horizontal ? content.Width : content.Height;
         float[] allocations = Allocate(childMeasurements, available, horizontal);
-        float cursor = horizontal ? content.X : content.Y;
+        float origin = horizontal ? content.X : content.Y;
+        float localOffset = 0;
 
         for (int index = 0; index < node.Children.Count; index++)
         {
             UiSceneNode child = node.Children[index];
+            // Match the local accumulation used by measurement. Adding the translated
+            // origin on every step compounds rounding and can overrun the parent clip.
+            float cursor = origin + localOffset;
             UiRect childBounds = horizontal
                 ? new UiRect(cursor, content.Y, allocations[index], content.Height)
                 : new UiRect(content.X, cursor, content.Width, allocations[index]);
             Arrange(
                 child, childBounds, clip, measured, entries,
                 collectionViewport, collectionWindows, measurementContext);
-            cursor += allocations[index];
+            localOffset += allocations[index];
         }
     }
 

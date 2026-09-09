@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Hatifect.UI.Runtime.Identity;
 using Hatifect.UI.Runtime.Layout;
 using Hatifect.UI.Runtime.Visual.Resolution;
 using Hatifect.UI.Semantics;
@@ -35,14 +34,16 @@ internal sealed class UiSceneReconciler
 
         bool measurementContextChanged = previous.MeasurementContext != next.MeasurementContext;
 
-        Dictionary<UiSymbolId, StructuralNode> oldNodes = Flatten(previous);
-        Dictionary<UiSymbolId, StructuralNode> newNodes = Flatten(next);
+        UiSceneStructure oldStructure = previous.Structure;
+        UiSceneStructure newStructure = next.Structure;
+        IReadOnlyDictionary<UiSymbolId, UiSceneStructuralNode> oldNodes = oldStructure.Nodes;
+        IReadOnlyDictionary<UiSymbolId, UiSceneStructuralNode> newNodes = newStructure.Nodes;
         if (oldNodes.Count != newNodes.Count || oldNodes.Keys.Any(id => !newNodes.ContainsKey(id)))
             return Structural(next);
 
-        foreach ((UiSymbolId id, StructuralNode oldNode) in oldNodes)
+        foreach ((UiSymbolId id, UiSceneStructuralNode oldNode) in oldNodes)
         {
-            StructuralNode newNode = newNodes[id];
+            UiSceneStructuralNode newNode = newNodes[id];
             if (oldNode.Node.Kind != newNode.Node.Kind ||
                 oldNode.Parent != newNode.Parent ||
                 oldNode.Index != newNode.Index)
@@ -51,10 +52,9 @@ internal sealed class UiSceneReconciler
 
         UiPropertyEffects effects = UiPropertyEffects.None;
         var changed = new List<UiSymbolId>();
-        foreach ((UiSymbolId id, StructuralNode oldNode) in oldNodes.OrderBy(
-                     item => item.Key,
-                     UiSymbolIdOrdinalComparer.Instance))
+        foreach (UiSymbolId id in oldStructure.OrderedIds)
         {
+            UiSceneStructuralNode oldNode = oldNodes[id];
             UiSceneNode newNode = newNodes[id].Node;
             UiPropertyEffects nodeEffects = newNode.Visual.InvalidationFrom(oldNode.Node.Visual);
             if (oldNode.Node is UiButtonSceneNode oldButton && newNode is UiButtonSceneNode newButton &&
@@ -95,14 +95,7 @@ internal sealed class UiSceneReconciler
         => new(
             UiPropertyEffects.Recompose | UiPropertyEffects.Measure |
             UiPropertyEffects.Arrange | UiPropertyEffects.Render,
-            Flatten(scene).Keys.OrderBy(id => id, UiSymbolIdOrdinalComparer.Instance).ToArray());
-
-    private static Dictionary<UiSymbolId, StructuralNode> Flatten(UiScene scene)
-    {
-        var result = new Dictionary<UiSymbolId, StructuralNode>();
-        Visit(scene.Root, parent: null, index: 0, result);
-        return result;
-    }
+            scene.Structure.OrderedIds);
 
     private static bool CollectionLayoutEquals(UiCollectionSceneNode previous, UiCollectionSceneNode next)
     {
@@ -124,17 +117,4 @@ internal sealed class UiSceneReconciler
         return true;
     }
 
-    private static void Visit(
-        UiSceneNode node,
-        UiSymbolId? parent,
-        int index,
-        IDictionary<UiSymbolId, StructuralNode> result)
-    {
-        if (!result.TryAdd(node.Id, new StructuralNode(node, parent, index)))
-            throw new InvalidOperationException($"Scene contains duplicate node ID '{node.Id}'.");
-        for (int childIndex = 0; childIndex < node.Children.Count; childIndex++)
-            Visit(node.Children[childIndex], node.Id, childIndex, result);
-    }
-
-    private sealed record StructuralNode(UiSceneNode Node, UiSymbolId? Parent, int Index);
 }

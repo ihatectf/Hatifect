@@ -4,15 +4,17 @@ namespace Hatifect.UI.Experience;
 
 /// <summary>
 /// Optional additive API for exact TestHarness observation. Request this interface from the UI
-/// mod and create observed active-menu overlays through that same API instance. Existing surface
-/// and automation interfaces remain unchanged; production observation is disabled.
+/// mod and create observed active-menu overlays through that same API instance. For standalone
+/// Window surfaces request one consumer composite with IUiSemanticHostApi and the required optional
+/// facets, then create and observe through that one proxy. Other hosted kinds are unsupported.
+/// Existing surface and automation interfaces remain unchanged; production observation is disabled.
 /// </summary>
 public interface IUiSemanticSurfaceObservationApi : IUiSemanticSurfaceApi
 {
     IUiSemanticSurfaceObservation Observation { get; }
 }
 
-/// <summary>Read-only, owning-UI-thread observation of active-menu overlays in the exact harness.</summary>
+/// <summary>Read-only, owning-UI-thread observation of active-menu overlays and standalone Windows in the exact harness.</summary>
 public interface IUiSemanticSurfaceObservation
 {
     bool IsEnabled { get; }
@@ -20,7 +22,8 @@ public interface IUiSemanticSurfaceObservation
     /// <summary>
     /// Copy already accepted root content without reading sources, composing, laying out, pumping or
     /// dispatching input. Rejects disabled automation, foreign handles, foreign threads/screens and
-    /// visible overlays that have lost their native menu owner, without synchronizing their lifecycle.
+    /// visible surfaces that have lost their native menu owner, without synchronizing their lifecycle.
+    /// A standalone Window must have been shown before capture.
     /// Retired owned handles return only immutable identity/lifecycle information.
     /// </summary>
     UiSemanticSurfaceSnapshot Capture(IUiSemanticSurfaceSession session);

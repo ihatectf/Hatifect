@@ -55,7 +55,7 @@ internal sealed partial class NetworkExperience
                 .Set(_ticksError, Number(ticks, 36000) ? null : Text("Enter 1–36000", "Введите 1–36000"));
             ValidateQuantity(batch);
             batch.Set(_target, snapshot.TargetDescription.Length > 0 ? snapshot.TargetDescription
-                    : Text("Use hatifect_flow target while pointing at a chest", "Укажите на сундук и выполните hatifect_flow target"))
+                    : Text("Close this window, point at a chest, then open Flowline again", "Закройте окно, укажите на сундук и снова откройте Flowline"))
                 .Set(_status, snapshot.Transport.State switch
                 {
                     FlowApplicationState.Active => Text("Ready", "Готово"),

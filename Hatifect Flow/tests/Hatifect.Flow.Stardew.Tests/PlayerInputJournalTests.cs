@@ -85,6 +85,7 @@ public sealed class PlayerInputJournalTests
             () => new("undeclared", 0, 0, 0, 0, 0),
             () => ++captures == 2 ? throw failure : Capture(session, world));
         Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => journal.Execute(Send(session))));
+        Assert.Same(failure, journal.Failure);
         FlowPlayerCommandTrace entry = Assert.Single(journal.Entries);
         Assert.Equal(FlowCommandStatus.Applied, entry.Result!.Status);
         Assert.Null(entry.After);
@@ -118,6 +119,36 @@ public sealed class PlayerInputJournalTests
     }
 
     [Fact]
+    public void PreCommandCaptureExceptionRemainsAFailureAfterALaterSuccessfulCommand()
+    {
+        var world = new GameSessionWorld();
+        using FlowGameSession session = world.Open();
+        world.Configure(session);
+        FlowSendCommand command = Send(session);
+        var failure = new InvalidOperationException("One-shot native evidence failure.");
+        bool first = true;
+        var journal = new FlowPlayerInputJournal(session,
+            () => new("os-injected", 1, 0, 0, 0, 0), () =>
+            {
+                if (first) { first = false; throw failure; }
+                return Capture(session, world);
+            });
+
+        Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => journal.Execute(command)));
+        Assert.Same(failure, journal.Failure);
+        Assert.Empty(journal.Entries);
+        Assert.Empty(session.ReadSnapshot().Parcels);
+        Assert.Equal(0, session.ReadResources().Payloads.Used);
+
+        Assert.Equal(FlowCommandStatus.Applied, journal.Execute(command).Status);
+        Assert.Same(failure, journal.Failure);
+        Assert.Single(journal.Entries);
+        Assert.Single(session.ReadSnapshot().Parcels);
+        Assert.Equal(8, Assert.Single(world.Source.Items).Stack);
+        Assert.Empty(world.Destination.Items);
+    }
+
+    [Fact]
     public void OwnerThreadFailureIsRecordedAndPropagatedWithoutAnAppliedResult()
     {
         var world = new GameSessionWorld();
@@ -131,6 +162,7 @@ public sealed class PlayerInputJournalTests
         thread.Start();
         thread.Join();
         Assert.IsType<InvalidOperationException>(observed);
+        Assert.Same(observed, journal.Failure);
         FlowPlayerCommandTrace entry = Assert.Single(journal.Entries);
         Assert.Null(entry.Result);
         Assert.Null(entry.After);

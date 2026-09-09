@@ -44,7 +44,7 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
 
     public IUiSemanticSurfaceSession CreateSurface(
         UiExperienceDefinition experience, UiSemanticHostKind kind, UiSemanticSurfaceOptions options)
-        => new UiStandaloneSemanticSurfaceSession(_helper, experience, kind, options);
+        => new UiStandaloneSemanticSurfaceSession(this, _helper, experience, kind, options);
 
     public IUiSemanticTerminalSession CreateTerminal(
         UiSemanticTerminalDefinition terminal, UiSemanticSurfaceOptions options)
@@ -93,6 +93,11 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
             throw new InvalidOperationException(
                 "Semantic surface automation is available only in the exact automated TestHarness environment.");
         }
+        if (session is UiStandaloneSemanticSurfaceSession window && window.IsOwnedBy(this))
+        {
+            window.CancelForAutomatedAcceptance(input);
+            return;
+        }
         if (session is not UiActiveMenuSemanticSurfaceSession owned || !owned.IsOwnedBy(this))
             throw new ArgumentException("The semantic surface session belongs to another UI API instance.", nameof(session));
         owned.CancelForAutomatedAcceptance(input);
@@ -104,6 +109,8 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
         if (!action.IsValid) throw new ArgumentException("A valid action ID is required.", nameof(action));
         if (!IsEnabled)
             throw new InvalidOperationException("Surface action input is available only in the exact automated TestHarness environment.");
+        if (session is UiStandaloneSemanticSurfaceSession window && window.IsOwnedBy(this))
+            return window.ActivateForAutomatedAcceptance(action);
         if (session is not UiActiveMenuSemanticSurfaceSession owned || !owned.IsOwnedBy(this))
             throw new ArgumentException("The active-menu surface session belongs to another UI API instance.", nameof(session));
         return owned.ActivateForAutomatedAcceptance(action);
@@ -115,6 +122,8 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
         if (!semantic.IsValid) throw new ArgumentException("A valid semantic ID is required.", nameof(semantic));
         if (!IsEnabled)
             throw new InvalidOperationException("Surface reveal input is available only in the exact automated TestHarness environment.");
+        if (session is UiStandaloneSemanticSurfaceSession window && window.IsOwnedBy(this))
+            return window.RevealForAutomatedAcceptance(semantic);
         if (session is not UiActiveMenuSemanticSurfaceSession owned || !owned.IsOwnedBy(this))
             throw new ArgumentException("The active-menu surface session belongs to another UI API instance.", nameof(session));
         return owned.RevealForAutomatedAcceptance(semantic);
@@ -125,6 +134,8 @@ internal sealed class UiSemanticSurfaceService : IUiSemanticHostApi, IUiSemantic
         ArgumentNullException.ThrowIfNull(session);
         if (!IsEnabled)
             throw new InvalidOperationException("Surface observation is available only in the exact automated TestHarness environment.");
+        if (session is UiStandaloneSemanticSurfaceSession window && window.IsOwnedBy(this))
+            return window.CaptureForAutomatedAcceptance();
         if (session is not UiActiveMenuSemanticSurfaceSession owned || !owned.IsOwnedBy(this))
             throw new ArgumentException("The active-menu surface session belongs to another UI API instance.", nameof(session));
         return owned.CaptureForAutomatedAcceptance();

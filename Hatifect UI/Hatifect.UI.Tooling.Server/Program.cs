@@ -89,7 +89,7 @@ internal static class UiToolingServer
             _ = await UiToolingProtocolTransportLoop.RunAsync(
                 input,
                 output,
-                new UiToolingProtocolSession(planner: new UiToolingPlanner()),
+                new UiToolingProtocolSession(),
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             return SuccessExitCode;
         }

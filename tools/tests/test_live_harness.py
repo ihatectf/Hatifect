@@ -693,6 +693,36 @@ class LiveHarnessTests(unittest.TestCase):
                          for suffix in ("window-actions", "visible-results", "window-reopen")])
         self._verify_each_flow_check_is_required(resolved)
 
+    def test_full_player_profiles_keep_all_original_checks_and_require_restoration(self) -> None:
+        for scenario in ('flow.ui.player.en-075', 'flow.ui.player.ru-075', 'flow.ui.player.en-100', 'flow.ui.player.ru-100', 'flow.ui.player.en-125', 'flow.ui.player.ru-125', 'flow.ui.player.en-150', 'flow.ui.player.ru-150'):
+            with self.subTest(scenario=scenario):
+                resolved = HARNESS.resolve_scenario(self.scenarios, scenario, "smoke")
+                self.assertTrue(resolved["requiresSave"])
+                self.assertEqual(["Hatifect.UI", "Hatifect.Flow"], resolved["requiredMods"])
+                self.assertEqual(600, resolved["timeoutSeconds"])
+                self.assertFalse(self.scenarios[scenario]["includeInAll"])
+                self.assertNotIn(scenario, self.scenarios["all"]["includes"])
+                original = [check.replace("flow.ui.player.", scenario + ".", 1)
+                            for check in self.scenarios["flow.ui.player"]["checks"]]
+                self.assertEqual(original + [scenario + ".profile-applied", scenario + ".profile-restored"],
+                                 resolved["checks"])
+                self._verify_each_flow_check_is_required(resolved)
+        for unknown in ("flow.ui.player.en-075.extra", "flow.ui.player.EN-075", "flow.ui.player.en-200"):
+            self.assertNotIn(unknown, self.scenarios)
+
+    def test_flow_ui_player_input_preserves_chest_lifecycle_and_requires_exact_input_checks(self) -> None:
+        resolved = HARNESS.resolve_scenario(self.scenarios, "flow.ui.player.input", "smoke")
+        self.assertTrue(resolved["requiresSave"])
+        self.assertEqual(resolved["requiredMods"], ["Hatifect.UI", "Hatifect.Flow"])
+        self.assertEqual(resolved["timeoutSeconds"], 1200)
+        self.assertFalse(self.scenarios["flow.ui.player.input"]["includeInAll"])
+        self.assertNotIn("flow.ui.player.input", self.scenarios["all"]["includes"])
+        original = [check.replace("flow.chest.roundtrip.", "flow.ui.player.input.")
+                    for check in self.scenarios["flow.chest.roundtrip"]["checks"]]
+        self.assertEqual(resolved["checks"], original + ["flow.ui.player.input." + suffix
+                         for suffix in ("ordinary-entry", "native-input", "window-actions", "visible-results", "window-reopen")])
+        self._verify_each_flow_check_is_required(resolved)
+
     def test_save_isolation_preserves_lifecycle_checks_and_requires_separate_save_check(self) -> None:
         resolved = HARNESS.resolve_scenario(self.scenarios, "flow.save.isolation", "smoke")
         self.assertTrue(resolved["requiresSave"])

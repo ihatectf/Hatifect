@@ -31,6 +31,7 @@ internal sealed class FlowPlayerInputJournal : IFlowNetworkApplication
     }
 
     internal IReadOnlyList<FlowPlayerCommandTrace> Entries { get; }
+    internal Exception? Failure { get; private set; }
     public event Action<long>? RevisionChanged
     { add => _owner.RevisionChanged += value; remove => _owner.RevisionChanged -= value; }
     public FlowSnapshot ReadSnapshot() => _owner.ReadSnapshot();
@@ -44,6 +45,18 @@ internal sealed class FlowPlayerInputJournal : IFlowNetworkApplication
     public FlowCommandResult Execute(FlowRecoveryCommand command) => Dispatch("recovery", command, () => _owner.Execute(command));
 
     private FlowCommandResult Dispatch(string kind, object command, Func<FlowCommandResult> execute)
+    {
+        try { return DispatchCore(kind, command, execute); }
+        catch (Exception error)
+        {
+            // The UI action boundary may translate a thrown command into a displayed failure.
+            // Keep the first error even when that boundary prevents it reaching the host loop.
+            Failure ??= error;
+            throw;
+        }
+    }
+
+    private FlowCommandResult DispatchCore(string kind, object command, Func<FlowCommandResult> execute)
     {
         ArgumentNullException.ThrowIfNull(command);
         if (_dispatching) throw new InvalidOperationException("Input evidence cannot reenter command dispatch.");

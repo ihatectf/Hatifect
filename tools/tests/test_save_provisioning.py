@@ -24,7 +24,7 @@ class SaveProvisioningTests(unittest.TestCase):
         self._bootstrap(save_xml=original)
         manifest, golden = SAVE.validate_fixture(self.isolated, self.smapi)
         before = SAVE._inventory(golden)
-        for owning_scenario in ('flow.ui.player', 'flow.chest.roundtrip', 'flow.chest.cancellation', 'flow.chest.return', 'flow.chest.crash-after-return', 'flow.chest.performance', 'flow.chest.resources'):
+        for owning_scenario in ('flow.ui.player.en-075', 'flow.ui.player.ru-075', 'flow.ui.player.en-100', 'flow.ui.player.ru-100', 'flow.ui.player.en-125', 'flow.ui.player.ru-125', 'flow.ui.player.en-150', 'flow.ui.player.ru-150', 'flow.ui.player', 'flow.ui.player.input', 'flow.chest.roundtrip', 'flow.chest.cancellation', 'flow.chest.return', 'flow.chest.crash-after-return', 'flow.chest.performance', 'flow.chest.resources'):
             with self.subTest(owning_scenario=owning_scenario):
                 run_id = str(uuid.uuid4())
                 path = SAVE.prepare_working_copy(self.isolated, self.smapi, run_id, owning_scenario)
@@ -32,7 +32,7 @@ class SaveProvisioningTests(unittest.TestCase):
                 self.assertEqual(original, (path / path.name).read_bytes())
                 self.assertEqual(before, SAVE._inventory(golden))
                 self.assertEqual(path, SAVE.validate_working_copy(self.isolated, path, manifest['runtimeId'], run_id, owning_scenario))
-                for scenario in ('', 'flow.route.basic', 'flow.save.isolation', 'flow.chest.unknown'):
+                for scenario in ('flow.ui.player.en-075.extra', 'flow.ui.player.EN-075', 'flow.ui.player.en-200', '', 'flow.route.basic', 'flow.save.isolation', 'flow.chest.unknown'):
                     with self.subTest(scenario=scenario), self.assertRaises(SAVE.SaveProvisioningError):
                         SAVE.cleanup_working_copy(self.isolated, path, manifest['runtimeId'], run_id, scenario)
                 self.assertTrue(path.exists())

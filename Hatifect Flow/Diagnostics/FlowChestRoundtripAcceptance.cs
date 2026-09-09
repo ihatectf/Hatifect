@@ -23,11 +23,18 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
 {
     internal const string Scenario = "flow.chest.roundtrip";
     internal const string PlayerScenario = "flow.ui.player";
+    internal const string InputScenario = FlowPlayerNativeInputCapture.Scenario;
     private FlowPlayerWindowSequence? _playerSequence;
+    private FlowPlayerNativeSequence? _nativeSequence;
     private Func<FlowGameSession, IUiSemanticHostApi, NetworkExperience>? _openPlayer;
     private Action? _closePlayer;
     private bool _playerReopened;
     private static readonly string[] Checks = { "loaded", "custody", "saving", "saved", "delivery", "lifecycle", "reload", "no-duplication" };
+    private bool IsPreparedPlayer => _scenario == PlayerScenario || FlowPlayerVisualProfile.IsScenario(_scenario);
+    private IEnumerable<string> WindowChecks => _scenario == InputScenario
+        ? Checks.Concat(new[] { "ordinary-entry", "native-input", "window-actions", "visible-results", "window-reopen" })
+        : IsPreparedPlayer ? Checks.Concat(new[] { "window-actions", "visible-results", "window-reopen" })
+            .Concat(FlowPlayerVisualProfile.IsScenario(_scenario) ? new[] { "profile-applied", "profile-restored" } : Array.Empty<string>()) : Checks;
     private readonly IModHelper _helper;
     private readonly string _scenario;
     private readonly IMonitor _monitor;
@@ -52,7 +59,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
     private int _verificationFrames;
     private bool _disposed;
     private bool _returning;
-    private enum Stage { Startup, Loading, PlayerAdmission, Transit, SavingTransit, ReturnTransit, ReloadTransit, Delivery, SavingDelivered, ReturnDelivered, ReloadDelivered, Verify, AwaitUnsavedExtraction, AwaitUnsavedDelivery, AwaitCrash, Exit }
+    private enum Stage { Startup, Loading, PlayerAdmission, NativeAdmission, Transit, SavingTransit, ReturnTransit, ReloadTransit, Delivery, SavingDelivered, ReturnDelivered, ReloadDelivered, Verify, AwaitUnsavedExtraction, AwaitUnsavedDelivery, AwaitCrash, Exit }
 
     private FlowChestRoundtripAcceptance(IModHelper helper, IMonitor monitor, Func<FlowGameSession?> current, string scenario)
     {
@@ -72,8 +79,9 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
     {
         string? scenario = Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO");
         return Environment.GetEnvironmentVariable("HATIFECT_TEST_MODE") == "1" && Environment.GetEnvironmentVariable("HATIFECT_TEST_AUTOMATED") == "1"
-            && scenario is Scenario or PlayerScenario or CrashScenario or DeliveryCrashScenario or ExtractionCrashScenario or UnsavedDeliveryCrashScenario
-            ? new(helper, monitor, current, scenario) { _openPlayer = openPlayer, _closePlayer = closePlayer } : null;
+            && (scenario is Scenario or PlayerScenario or InputScenario or CrashScenario or DeliveryCrashScenario or ExtractionCrashScenario or UnsavedDeliveryCrashScenario
+                || FlowPlayerVisualProfile.IsScenario(scenario))
+            ? new(helper, monitor, current, scenario!) { _openPlayer = openPlayer, _closePlayer = closePlayer } : null;
     }
 
     internal void OnSaveLoaded()
@@ -90,8 +98,15 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             if (_loads == 1)
             {
                 Require(session.ReadSnapshot().Stations.Count == 0, "Acceptance copy already contains Flow stations.");
-                Chest source = CreateChest(out _sourceTile);
-                Chest destination = CreateChest(out _destinationTile);
+                Chest source, destination;
+                Vector2 standing = default;
+                if (_scenario == InputScenario)
+                    (source, destination, _sourceTile, _destinationTile, standing) = FlowPlayerNativeSequence.CreateFixture();
+                else
+                {
+                    source = CreateChest(out _sourceTile);
+                    destination = CreateChest(out _destinationTile);
+                }
                 var wine = (StardewValley.Object)ItemRegistry.Create("(O)348", 8, 4);
                 wine.preserve.Value = StardewValley.Object.PreserveType.Wine;
                 wine.preservedParentSheetIndex.Value = "613";
@@ -104,7 +119,13 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                 Item expectedRemainder = FlowItemCodec.Decode(FlowItemCodec.Encode(partial));
                 expectedRemainder.Stack = 8;
                 _remainderXml = FlowItemCodec.Encode(expectedRemainder);
-                if (_scenario == PlayerScenario)
+                if (_scenario == InputScenario)
+                {
+                    _nativeSequence = new(_helper, _request, session, _sourceTile, _destinationTile, standing);
+                    _stage = Stage.NativeAdmission;
+                    return;
+                }
+                if (IsPreparedPlayer)
                 {
                     Require(_openPlayer is not null && _closePlayer is not null, "Player acceptance requires the production Window factory.");
                     _stage = Stage.PlayerAdmission;
@@ -134,6 +155,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             }
             else if (_loads == 2)
             {
+                _nativeSequence?.OnSaveLoaded(session);
                 if (CrashAfterUnsavedExtraction)
                 {
                     VerifyReservedSource();
@@ -150,6 +172,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             }
             else
             {
+                _nativeSequence?.OnSaveLoaded(session);
                 Require(_loads == 3 && BothAt(ParcelState.Delivered), "Delivered states did not survive the second actual save.");
                 VerifyDelivery();
                 _stage = Stage.Verify;
@@ -164,7 +187,8 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
         try
         {
             if (_stage == Stage.Exit) { Game1.game1.Exit(); return; }
-            Require(++_frames <= 36000, "Production chest roundtrip exceeded its frame bound.");
+            Require(++_frames <= (_scenario == InputScenario ? 72000 : 36000), "Production chest roundtrip exceeded its frame bound.");
+            _nativeSequence?.RequireHealthy();
             switch (_stage)
             {
                 case Stage.Startup when _frames >= 30:
@@ -175,8 +199,15 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                     SaveGame.Load(Path.GetFileName(_request.SavePath));
                     Game1.exitActiveMenu();
                     break;
+                case Stage.NativeAdmission:
+                    if (!_nativeSequence!.Admit()) break;
+                    _parcel = _nativeSequence.WholeParcel; _partialParcel = _nativeSequence.PartialParcel;
+                    _passed.Add("loaded"); _passed.Add("ordinary-entry"); _passed.Add("native-input");
+                    _passed.Add("window-actions"); _passed.Add("visible-results");
+                    _stage = Stage.Transit;
+                    break;
                 case Stage.PlayerAdmission:
-                    _playerSequence ??= new(_helper, _request.Artifact, _openPlayer!, _closePlayer!);
+                    _playerSequence ??= new(_helper, _request.Artifact, _openPlayer!, _closePlayer!, _scenario);
                     if (!_playerSequence.Admit(Session(), (Chest)Game1.getFarm().Objects[_sourceTile],
                         (Chest)Game1.getFarm().Objects[_destinationTile], (int)_sourceTile.X, (int)_sourceTile.Y,
                         (int)_destinationTile.X, (int)_destinationTile.Y)) break;
@@ -212,10 +243,20 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                     break;
                 case Stage.Verify:
                     VerifyDelivery();
-                    if (_scenario == PlayerScenario && !_playerReopened)
+                    if (_scenario == InputScenario && !_playerReopened)
+                    {
+                        if (!_nativeSequence!.ObserveDelivered()) break;
+                        _playerReopened = true; _passed.Add("window-reopen");
+                    }
+                    if (IsPreparedPlayer && !_playerReopened)
                     {
                         if (!_playerSequence!.ObserveDelivered(Session())) break;
                         _playerReopened = true; _passed.Add("window-reopen");
+                        if (FlowPlayerVisualProfile.IsScenario(_scenario))
+                        {
+                            Require(_playerSequence.ProfilesCompleted, "Both exact player profile leases must be verified.");
+                            _passed.Add("profile-applied"); _passed.Add("profile-restored");
+                        }
                     }
                     if (++_verificationFrames < 120) break;
                     FlowSnapshot snapshot = Session().ReadSnapshot();
@@ -370,6 +411,7 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
     {
         _errors.Add(error.ToString());
         try { _playerSequence?.Dispose(); } catch (Exception cleanup) { _errors.Add(cleanup.ToString()); }
+        try { _nativeSequence?.Dispose(); } catch (Exception cleanup) { _errors.Add(cleanup.ToString()); }
         _monitor.Log("Flowline " + _scenario + " failed: " + error, LogLevel.Error);
         try { WriteReport(); }
         finally { _stage = Stage.Exit; }
@@ -377,25 +419,28 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
 
     private void WriteReport()
     {
+        if (_scenario == InputScenario && _errors.Count == 0) _nativeSequence!.RequireCompletedObserver();
         string captured = DateTimeOffset.UtcNow.ToString("O");
         AtomicJson(Path.Combine(_helper.DirectoryPath, ".acceptance", "host-acceptance-report.json"), new
         {
             FormatVersion = 3, PerformanceFormatVersion = 3, CapturedAtUtc = captured,
             RuntimeFingerprintAlgorithm = "sha256-flow-runtime-v1", RuntimeFingerprint = _fingerprint,
             GameVersion = Game1.GetVersionString(), SmapiVersion = Constants.ApiVersion.ToString(), Scenarios = Array.Empty<object>(),
-            HostChecks = (_crashPhase is null ? (_scenario == PlayerScenario ? Checks.Concat(new[] { "window-actions", "visible-results", "window-reopen" }) : Checks) : Checks.Concat(CrashAfterUnsavedEffect ? new[] { "process-restart", "unsaved-rollback" } : new[] { "process-restart" })).Select(id => new { Id = _scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
+            HostChecks = (_crashPhase is null ? WindowChecks : Checks.Concat(CrashAfterUnsavedEffect ? new[] { "process-restart", "unsaved-rollback" } : new[] { "process-restart" })).Select(id => new { Id = _scenario + "." + id, Passed = _errors.Count == 0 && _passed.Contains(id),
                 CapturedAtUtc = captured, Note = _errors.Count == 0 ? "Whole and partial stacks, real chests, two actual game saves and reloads; total quantity conserved." : string.Join("\n", _errors) }).ToArray()
         });
         AtomicJson(Path.Combine(_request.Artifact, "diagnostics", "flow-chest-roundtrip.json"), new
         { requestId = _request.RunId, scenarioId = _scenario, frames = _frames, loads = _loads, savingEvents = _savings, savedEvents = _saves,
             parcelId = _parcel, partialParcelId = _partialParcel, partialSourceQuantity = 13, partialCargoQuantity = 5, partialRemainderQuantity = 8,
-            errors = _errors.ToArray(),
-            window = _scenario == PlayerScenario ? new
+            errors = _errors.ToArray(), nativeInput = _nativeSequence?.Evidence,
+            window = IsPreparedPlayer ? new
             {
                 entry = "production Window factory after prepared chest targeting; not ordinary keybind input proof",
                 forms = "prepared semantic form values and collection selection; not native input",
                 actions = "owning normalized Tab/Enter; not OS-injected or human physical input",
-                profile = "EN/100% only; temporary ForceOff/false restored with fresh native frames before saves and final completion",
+                profile = FlowPlayerVisualProfile.IsScenario(_scenario) ? _scenario
+                    : "EN/100% only; temporary ForceOff/false restored with fresh native frames before saves and final completion",
+                profileApplications = _playerSequence?.ProfileApplications,
                 inputRestorations = _playerSequence?.InputRestorations,
                 milestones = _playerSequence?.Milestones
             } : null });
@@ -408,5 +453,14 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
         _helper.Events.GameLoop.Saving -= OnSaving;
         _helper.Events.GameLoop.Saved -= OnSaved;
         _playerSequence?.Dispose();
+        _nativeSequence?.Dispose();
     }
+
+    internal void ObserveOrdinaryEntry(bool free, bool authority, bool menu, bool session)
+        => _nativeSequence?.ObserveEntry(free, authority, menu, session);
+
+    internal IFlowNetworkApplication ForOrdinaryEntry(FlowGameSession session)
+        => _nativeSequence?.ForOrdinaryEntry(session) ?? session;
+
+    internal void ConfirmOrdinaryOpening() => _nativeSequence?.ConfirmOpened();
 }

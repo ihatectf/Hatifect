@@ -12,7 +12,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Hatifect.UI.Runtime" />
     <InternalsVisibleTo Include="Hatifect.UI.Runtime.Tests" />
-    <InternalsVisibleTo Include="Hatifect.UI.Planning.Tests" />
   </ItemGroup>
   <PropertyGroup><HatifectUiPackageProducer>true</HatifectUiPackageProducer></PropertyGroup>
   <Import Project="../../Hatifect.UI.Packages.props" />

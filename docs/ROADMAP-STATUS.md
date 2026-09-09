@@ -21,7 +21,8 @@ This report preserves separate evidence for Flow foundation `cdf9d2e`, F11 `e31c
 | U03 | IN_PROGRESS | Typed action foundation and Terminal generations; alpha.46 common reload/environment acceptance PASS on 61e8a94, published as eb193b7 with exact CI success below | Actual action save-switch, concrete typed consumer/messages and remaining full RUNTIME acceptance are required |
 | U04 | IN_PROGRESS | Published alpha.45 foundation/capture; alpha.46 common host acceptance PASS on 61e8a94 with package/native evidence below | Coherent consumer locale projection, remaining environment/planner and representative performance acceptance are required |
 | U05–U10 | PLANNED | Layout/input/virtualization and form validation already exist | Specified runtime/authoring/theme/component/extension acceptance remains required |
-| R01–R04 | PLANNED | Existing single-asset Last Known Good and retryable resource teardown | Generation ownership, bundle preparation, migration and multi-host commit/rollback |
+| R01 | IN_PROGRESS | Resource thread-affinity candidate; [targeted evidence](R01_RESOURCE_OWNERSHIP.md) | Full generation ownership manifest and remaining criteria |
+| R02–R04 | PLANNED | Existing single-asset Last Known Good and retryable resource teardown | Bundle preparation, migration and multi-host commit/rollback |
 | T01–T03 | PLANNED | Existing Tooling/Server, symbols/diagnostics and DevTools | New metadata/protocol, preview matrix, editor workflow and examples |
 | F11 | DONE | Integrated `5f2d10c`: immutable snapshots, typed commands/session/revision, observer fencing, provider capabilities and stable availability reasons; combined C/G and fresh runtime evidence below | F12 after U01/U02/U04; F16 continues independently |
 | F12–F13 | IN_PROGRESS | ParcelExperience/ParcelSurface, typed controls and localized projections; host-free behavior tests | New semantic-v2 integration; complete fake-session in-game lifecycle/input evidence |

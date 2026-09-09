@@ -234,7 +234,13 @@ class DirectRuntimeTests(unittest.TestCase):
                          isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")
         self.assertEqual(DIRECT_RUNTIME._acceptance_report_source(isolated, "flow.ui.player"),
                          isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")
-        for scenario in ("flow.ui.player.extra", "runtime.boot", "semantic.terminal", "flow.route.unknown", "flow.ui.names.extra", "flow.ui.isolation.extra", "flow.ui.actions.extra", "flow.ui.action", "../escape"):
+        self.assertEqual(DIRECT_RUNTIME._acceptance_report_source(isolated, "flow.ui.player.input"),
+                         isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")
+        for scenario in ('flow.ui.player.en-075', 'flow.ui.player.ru-075', 'flow.ui.player.en-100', 'flow.ui.player.ru-100', 'flow.ui.player.en-125', 'flow.ui.player.ru-125', 'flow.ui.player.en-150', 'flow.ui.player.ru-150'):
+            with self.subTest(profile=scenario):
+                self.assertEqual(DIRECT_RUNTIME._acceptance_report_source(isolated, scenario),
+                                 isolated / "Mods/Hatifect/Hatifect Flow/.acceptance/host-acceptance-report.json")
+        for scenario in ("flow.ui.player.en-075.extra", "flow.ui.player.EN-075", "flow.ui.player.en-200", "flow.ui.player.extra", "flow.ui.player.input.extra", "runtime.boot", "semantic.terminal", "flow.route.unknown", "flow.ui.names.extra", "flow.ui.isolation.extra", "flow.ui.actions.extra", "flow.ui.action", "../escape"):
             with self.subTest(scenario=scenario):
                 self.assertEqual(
                     DIRECT_RUNTIME._acceptance_report_source(isolated, scenario),

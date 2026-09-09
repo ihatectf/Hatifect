@@ -915,6 +915,263 @@
         "protocolVersion": 1,
         "driver": "Hatifect.TestHarness"
       }
+    },
+    {
+      "id": "flow.ui.player.input",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1200,
+      "requiredMods": ["Hatifect.UI", "Hatifect.Flow"],
+      "checks": [
+        "flow.ui.player.input.loaded", "flow.ui.player.input.custody", "flow.ui.player.input.saving",
+        "flow.ui.player.input.saved", "flow.ui.player.input.delivery", "flow.ui.player.input.lifecycle",
+        "flow.ui.player.input.reload", "flow.ui.player.input.no-duplication",
+        "flow.ui.player.input.ordinary-entry", "flow.ui.player.input.native-input",
+        "flow.ui.player.input.window-actions", "flow.ui.player.input.visible-results",
+        "flow.ui.player.input.window-reopen"
+      ],
+      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+    },
+    {
+      "id": "flow.ui.player.en-075",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.en-075.loaded",
+        "flow.ui.player.en-075.custody",
+        "flow.ui.player.en-075.saving",
+        "flow.ui.player.en-075.saved",
+        "flow.ui.player.en-075.delivery",
+        "flow.ui.player.en-075.lifecycle",
+        "flow.ui.player.en-075.reload",
+        "flow.ui.player.en-075.no-duplication",
+        "flow.ui.player.en-075.window-actions",
+        "flow.ui.player.en-075.visible-results",
+        "flow.ui.player.en-075.window-reopen",
+        "flow.ui.player.en-075.profile-applied",
+        "flow.ui.player.en-075.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.ru-075",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.ru-075.loaded",
+        "flow.ui.player.ru-075.custody",
+        "flow.ui.player.ru-075.saving",
+        "flow.ui.player.ru-075.saved",
+        "flow.ui.player.ru-075.delivery",
+        "flow.ui.player.ru-075.lifecycle",
+        "flow.ui.player.ru-075.reload",
+        "flow.ui.player.ru-075.no-duplication",
+        "flow.ui.player.ru-075.window-actions",
+        "flow.ui.player.ru-075.visible-results",
+        "flow.ui.player.ru-075.window-reopen",
+        "flow.ui.player.ru-075.profile-applied",
+        "flow.ui.player.ru-075.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.en-100",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.en-100.loaded",
+        "flow.ui.player.en-100.custody",
+        "flow.ui.player.en-100.saving",
+        "flow.ui.player.en-100.saved",
+        "flow.ui.player.en-100.delivery",
+        "flow.ui.player.en-100.lifecycle",
+        "flow.ui.player.en-100.reload",
+        "flow.ui.player.en-100.no-duplication",
+        "flow.ui.player.en-100.window-actions",
+        "flow.ui.player.en-100.visible-results",
+        "flow.ui.player.en-100.window-reopen",
+        "flow.ui.player.en-100.profile-applied",
+        "flow.ui.player.en-100.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.ru-100",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.ru-100.loaded",
+        "flow.ui.player.ru-100.custody",
+        "flow.ui.player.ru-100.saving",
+        "flow.ui.player.ru-100.saved",
+        "flow.ui.player.ru-100.delivery",
+        "flow.ui.player.ru-100.lifecycle",
+        "flow.ui.player.ru-100.reload",
+        "flow.ui.player.ru-100.no-duplication",
+        "flow.ui.player.ru-100.window-actions",
+        "flow.ui.player.ru-100.visible-results",
+        "flow.ui.player.ru-100.window-reopen",
+        "flow.ui.player.ru-100.profile-applied",
+        "flow.ui.player.ru-100.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.en-125",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.en-125.loaded",
+        "flow.ui.player.en-125.custody",
+        "flow.ui.player.en-125.saving",
+        "flow.ui.player.en-125.saved",
+        "flow.ui.player.en-125.delivery",
+        "flow.ui.player.en-125.lifecycle",
+        "flow.ui.player.en-125.reload",
+        "flow.ui.player.en-125.no-duplication",
+        "flow.ui.player.en-125.window-actions",
+        "flow.ui.player.en-125.visible-results",
+        "flow.ui.player.en-125.window-reopen",
+        "flow.ui.player.en-125.profile-applied",
+        "flow.ui.player.en-125.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.ru-125",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.ru-125.loaded",
+        "flow.ui.player.ru-125.custody",
+        "flow.ui.player.ru-125.saving",
+        "flow.ui.player.ru-125.saved",
+        "flow.ui.player.ru-125.delivery",
+        "flow.ui.player.ru-125.lifecycle",
+        "flow.ui.player.ru-125.reload",
+        "flow.ui.player.ru-125.no-duplication",
+        "flow.ui.player.ru-125.window-actions",
+        "flow.ui.player.ru-125.visible-results",
+        "flow.ui.player.ru-125.window-reopen",
+        "flow.ui.player.ru-125.profile-applied",
+        "flow.ui.player.ru-125.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.en-150",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.en-150.loaded",
+        "flow.ui.player.en-150.custody",
+        "flow.ui.player.en-150.saving",
+        "flow.ui.player.en-150.saved",
+        "flow.ui.player.en-150.delivery",
+        "flow.ui.player.en-150.lifecycle",
+        "flow.ui.player.en-150.reload",
+        "flow.ui.player.en-150.no-duplication",
+        "flow.ui.player.en-150.window-actions",
+        "flow.ui.player.en-150.visible-results",
+        "flow.ui.player.en-150.window-reopen",
+        "flow.ui.player.en-150.profile-applied",
+        "flow.ui.player.en-150.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.ru-150",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.ru-150.loaded",
+        "flow.ui.player.ru-150.custody",
+        "flow.ui.player.ru-150.saving",
+        "flow.ui.player.ru-150.saved",
+        "flow.ui.player.ru-150.delivery",
+        "flow.ui.player.ru-150.lifecycle",
+        "flow.ui.player.ru-150.reload",
+        "flow.ui.player.ru-150.no-duplication",
+        "flow.ui.player.ru-150.window-actions",
+        "flow.ui.player.ru-150.visible-results",
+        "flow.ui.player.ru-150.window-reopen",
+        "flow.ui.player.ru-150.profile-applied",
+        "flow.ui.player.ru-150.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
     }
   ]
 }

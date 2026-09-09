@@ -8,6 +8,7 @@ using StardewValley;
 using StardewValley.Menus;
 using Hatifect.UI;
 using Hatifect.UI.Runtime.Hosting;
+using Hatifect.UI.Runtime.Diagnostics;
 using Hatifect.UI.Runtime.Invocation;
 using Hatifect.UI.Runtime.Platform;
 using Hatifect.UI.Runtime.Terminal;
@@ -20,7 +21,7 @@ namespace Hatifect.UI.Stardew.Semantic;
 /// Provisional semantic IClickableMenu presenter. It owns one semantic host and normalizes Stardew
 /// lifecycle/input only; Runtime retains route, placement, layout, focus, portal, and editing policy.
 /// </summary>
-internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
+internal sealed partial class UiSemanticStardewMenu : IClickableMenu, IDisposable
 {
     private readonly UiSemanticStardewInputAdapter _input;
     private readonly UiSemanticKeyboardSubscriberLease _keyboard;
@@ -57,6 +58,7 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
     public bool CloseOnCancel { get; set; } = true;
     public Func<bool>? CloseRequestHandler { get; set; }
     internal event Action? Rendered;
+    internal UiSurfaceObservationState? Observation { get; set; }
     internal UiSymbolId CurrentSection => (_host ?? throw new ObjectDisposedException(nameof(UiSemanticStardewMenu)))
         .CurrentInvocation.Experience.Id;
 
@@ -176,6 +178,7 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
         host.Render(batch);
         drawMouse(batch);
         sample.Complete(completesFrame: true, layoutBuilds: host.Performance.LayoutBuilds);
+        Observation?.CompleteRender(host.Session.Root.LastCompletedRender);
         Rendered?.Invoke();
     }
 
@@ -339,12 +342,16 @@ internal sealed class UiSemanticStardewMenu : IClickableMenu, IDisposable
         exitThisMenu();
     }
 
+    internal event Action? NativeTextReceived;
+    internal bool HasActiveInputPortal => _host?.Session.ActivePortalCount > 0;
+
     private void ReceiveTextInput(string text)
     {
         _slot.PollRetirement();
         if (!_slot.CanDispatch) return;
         var sample = BeginAcceptanceSample();
         _input.TextInput(text);
+        NativeTextReceived?.Invoke();
         CompleteInput();
         sample.Complete();
     }

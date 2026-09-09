@@ -116,6 +116,14 @@ public static class UiHostPolicies
 /// </summary>
 internal static class UiProvisionalHostPolicies
 {
+    internal static readonly UiSymbolId SemanticWindowId =
+        new("Hatifect.UI", "host-policy/SemanticWindow");
+
+    internal static readonly UiHostPolicy SemanticWindow = new(
+        UiHostKind.Window, UiWindowChrome.Standard, UiDismissPolicy.Escape,
+        UiModalPolicy.Modeless, UiFocusScopePolicy.Contained, UiPopupPlacement.Automatic,
+        SemanticWindowId);
+
     internal static readonly UiSymbolId OverlayTopRightId =
         new("Hatifect.UI", "host-policy/OverlayTopRight");
     internal static readonly UiSymbolId OverlayCenteredId =

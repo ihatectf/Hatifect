@@ -19,18 +19,20 @@ public sealed partial class ModEntry
     private void OnFlowButtonsChanged(object? sender, ButtonsChangedEventArgs e)
     {
         // The trigger belongs to Flow; an open native menu and all in-surface input belong to UI.
-        if (!Context.IsPlayerFree || !IsGameAuthority() || Game1.activeClickableMenu is not null
-            || _gameSession is not { } session || _config.OpenNetwork?.JustPressed() != true)
-            return;
-        Helper.Input.SuppressActiveKeybinds(_config.OpenNetwork);
+        if (_config.OpenNetwork?.JustPressed() != true) return;
         try
         {
+            bool free = Context.IsPlayerFree, authority = IsGameAuthority(), menuOpen = Game1.activeClickableMenu is not null;
+            _chestAcceptance?.ObserveOrdinaryEntry(free, authority, menuOpen, _gameSession is not null);
+            if (!free || !authority || menuOpen || _gameSession is not { } session) return;
+            Helper.Input.SuppressActiveKeybinds(_config.OpenNetwork);
             IUiSemanticHostApi api = _flowHostUi
                 ?? throw new InvalidOperationException("The Hatifect UI standalone host API is unavailable.");
             Vector2 tile = Helper.Input.GetCursorPosition().GrabTile;
             Game1.currentLocation.Objects.TryGetValue(tile, out StardewValley.Object? item);
             session.PreparePlayerTarget(Game1.currentLocation.NameOrUniqueName, (int)tile.X, (int)tile.Y, item as Chest);
             OpenPlayerNetwork(session, api);
+            _chestAcceptance?.ConfirmOrdinaryOpening();
         }
         catch (Exception error)
         {
@@ -43,7 +45,8 @@ public sealed partial class ModEntry
 
     private NetworkExperience OpenPlayerNetwork(FlowGameSession session, IUiSemanticHostApi api)
     {
-        var experience = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network"), session,
+        var application = _chestAcceptance?.ForOrdinaryEntry(session) ?? session;
+        var experience = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network"), application,
             LocalizedContentManager.CurrentLanguageCode == LocalizedContentManager.LanguageCode.ru,
             key => ItemRegistry.GetDataOrErrorItem(key).DisplayName);
         try { CloseParcelSurface(); }

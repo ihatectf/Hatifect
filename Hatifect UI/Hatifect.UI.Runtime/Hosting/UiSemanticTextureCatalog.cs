@@ -7,6 +7,7 @@ internal sealed class UiSemanticTextureCatalog<T> : IDisposable where T : class,
 {
     private readonly Func<Stream, T> _decode;
     private readonly Func<T> _missing;
+    private readonly int _ownerThread = Environment.CurrentManagedThreadId;
     private readonly Dictionary<UiSymbolId, Entry> _entries = new();
     private T? _fallback;
     private long _encoded;
@@ -50,6 +51,7 @@ internal sealed class UiSemanticTextureCatalog<T> : IDisposable where T : class,
     }
     public void Dispose()
     {
+        EnsureOwnerThread();
         if (_disposed) return;
         var failures = new List<Exception>();
         foreach (var pair in _entries.ToArray())
@@ -62,6 +64,7 @@ internal sealed class UiSemanticTextureCatalog<T> : IDisposable where T : class,
     }
     private void Release(UiSymbolId id, Entry entry)
     {
+        EnsureOwnerThread();
         if (!_entries.TryGetValue(id, out Entry? current) || !ReferenceEquals(current, entry)) return;
         entry.Texture.Dispose();
         _entries.Remove(id);
@@ -69,7 +72,15 @@ internal sealed class UiSemanticTextureCatalog<T> : IDisposable where T : class,
         _decoded -= entry.Decoded;
     }
     private void EnsureActive()
-    { if (_disposed) throw new ObjectDisposedException(nameof(UiSemanticTextureCatalog<T>)); }
+    {
+        EnsureOwnerThread();
+        if (_disposed) throw new ObjectDisposedException(nameof(UiSemanticTextureCatalog<T>));
+    }
+    private void EnsureOwnerThread()
+    {
+        if (Environment.CurrentManagedThreadId != _ownerThread)
+            throw new InvalidOperationException("Texture resources belong to their creating thread.");
+    }
     private sealed record Entry(T Texture, int Encoded, long Decoded);
     private sealed class Lease : IDisposable
     {

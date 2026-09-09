@@ -8,6 +8,7 @@ using Hatifect.UI.Runtime.Hosting;
 using Hatifect.UI.Runtime.HotReload;
 using Hatifect.UI.Runtime.Terminal;
 using Hatifect.UI.Runtime.Input;
+using Hatifect.UI.Runtime.Diagnostics;
 using Hatifect.UI.Runtime.Invocation;
 using Hatifect.UI.Runtime.Registration;
 using Hatifect.UI.Runtime.Scene;
@@ -20,9 +21,9 @@ namespace Hatifect.UI.Stardew;
 
 internal sealed class UiStandaloneSemanticSurfaceSession : UiHostedSemanticSurfaceSession
 {
-    internal UiStandaloneSemanticSurfaceSession(IModHelper helper, UiExperienceDefinition experience,
+    internal UiStandaloneSemanticSurfaceSession(UiSemanticSurfaceService owner, IModHelper helper, UiExperienceDefinition experience,
         UiSemanticHostKind kind, UiSemanticSurfaceOptions options)
-        : base(helper, options, experience, kind, null) { }
+        : base(helper, options, experience, kind, null, owner) { }
 }
 
 internal sealed class UiTerminalSemanticSurfaceSession : UiHostedSemanticSurfaceSession, IUiSemanticTerminalSession
@@ -37,9 +38,11 @@ internal sealed class UiTerminalSemanticSurfaceSession : UiHostedSemanticSurface
 }
 
 /// <summary>Owns native presentation and subscriptions; Runtime owns scene and interaction policy.</summary>
-internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSession, IUiSemanticReloadSession
+internal abstract partial class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSession, IUiSemanticReloadSession
 {
     private readonly IModHelper _helper;
+    private readonly UiSemanticSurfaceService? _owner;
+    private readonly UiSurfaceObservationState? _observation;
     private readonly UiSemanticHostEventBinding _events;
     private readonly UiSemanticHostKind _kind;
     private readonly UiSemanticTerminalDefinition? _terminal;
@@ -70,12 +73,16 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
     private bool _disposed;
 
     protected UiHostedSemanticSurfaceSession(IModHelper helper, UiSemanticSurfaceOptions options,
-        UiExperienceDefinition? experience, UiSemanticHostKind kind, UiSemanticTerminalDefinition? terminal)
+        UiExperienceDefinition? experience, UiSemanticHostKind kind, UiSemanticTerminalDefinition? terminal,
+        UiSemanticSurfaceService? owner = null)
     {
         _helper = helper ?? throw new ArgumentNullException(nameof(helper));
         _events = new UiSemanticHostEventBinding(helper.Events, Context.ScreenId, static () => Context.ScreenId,
             OnUpdate, OnReturnedToTitle, OnMenuChanged);
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _owner = owner;
+        _observation = owner?.IsEnabled == true && kind == UiSemanticHostKind.Window && terminal is null
+            ? new UiSurfaceObservationState(options.Id) : null;
         if (options.DimUnderlyingMenu)
             throw new ArgumentException("Dimming a native menu is supported by active-menu overlays.", nameof(options));
         _terminal = terminal;
@@ -255,6 +262,7 @@ internal abstract class UiHostedSemanticSurfaceSession : IUiSemanticAppearanceSe
             }
             if (_menu != null)
             {
+                _menu.Observation = _observation;
                 _menu.CloseOnCancel = _kind != UiSemanticHostKind.Modal;
                 _menu.Rendered += OnRendered;
                 Game1.activeClickableMenu = _menu;

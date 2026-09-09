@@ -134,7 +134,7 @@ internal sealed class UiSurfaceObservationState
         return text[..count];
     }
 
-    private void RequireOwner()
+    internal void RequireOwner()
     {
         if (Environment.CurrentManagedThreadId != _thread)
             throw new InvalidOperationException("Surface observation belongs to its creating UI thread.");

@@ -54,11 +54,11 @@
     "Files": [
       {
         "Path": "Hosting/UiSemanticSurfaceObservation.cs",
-        "Sha256": "bb353b8c9d854358cf624eb5dbc1b18c469aa464d339666a0b759e2ed4964279"
+        "Sha256": "af1e8efeb49c74d53ee882939cf482a69ed2858c1a45b66fff57fd9344d10c6b"
       },
       {
         "Path": "Hosting/UiSemanticSurfaceActionAutomation.cs",
-        "Sha256": "b8ac309fd1a93cd801bf1e6669c6d5ada43acdbab4ed5103cec9937459e8f3f5"
+        "Sha256": "574a33a2203d3d0aba47bf9ecd67272e170f0cb9b1fd4628d37a995b0e65539e"
       }
     ]
   }

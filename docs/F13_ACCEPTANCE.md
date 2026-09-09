@@ -43,161 +43,50 @@ Synthetic golden fixture скопирована в отдельный `.smapi-te
 
 ## F13-b: подготовка fake create
 
-Implementation опубликован в [`f20ad24`](https://github.com/ihatectf/Hatifect/commit/f20ad24068a72915679b771aa9a20fdc4a6e3bb6). Независимый Sol/xhigh reviewer подтвердил финальные source/20cases и actual targeted TRX: доказанных дефектов нет; найденный inactive-owner gap закрыт. Native и production chest extraction в этот review не входили.
-
 Diagnostic `FlowUiAcceptanceWorld` предоставляет существующий `IFlowNetworkApplication` поверх того же FlowRuntime/FlowApplication. Fixture ограничена двумя станциями, одним synthetic source stack и одним lifetime create. Она проверяет session/revision, endpoints, slot, полный fingerprint, quantity, route и running-create fence до effect; создаёт реальный aggregate и вызывает TryReserve, как production shipping. Отдельные helper-ы меняют только fake destination acceptance и продвигают fake logical clock. Core/public inventory/persistence contracts не изменены. Оставшийся исходный стек не предлагается для второго create в этой ограниченной fixture; это не обещание поведения production inventory.
 
 `run-83tshysz` — **PASS174** platform Flow.Stardew tests, включая14 новых cases; actual TRX и имена — `artifacts/f13/network-scoped-audit.json`. Проверены whole/selected quantity, точная reservation capacity, восемь invalid captures без мутации, disconnected route, reentry из revision observer, delivery rejection/retry и paused/closed owner. Timeline теста исправлен по существующему контракту: departure1, arrival9, retry10; исходные два FAIL сохранены, доменный алгоритм не менялся. G `run-okzctzow` — **PASS2056 .NET +388 Python** (10 actual TRX). После него найдены и исправлены inactive-owner guards перед PrepareNetwork/AcceptNetworkDelivery; `run-y5l7rw6h` — **PASS180**, в том числе все20 новых cases (шесть дополнительных Paused/RecoveryRequired/Closed regressions), actual evidence — `artifacts/f13/network-platform-final-audit.json`. Финальный C `run-819ojiny` — **PASS1713 .NET +388 Python**; семь actual TRX проверены (`artifacts/f13/network-c-final-audit.json`). Native create ещё не запущен и F13 остаётся IN_PROGRESS.
 
 Следующая native интеграция — отдельный `flow.ui.actions`: exact manifest и Flow report routing, отдельный driver через ModEntry lifecycle, существующие NetworkExperience/ParcelSurface и ShowParcel, отдельные Network/Parcel observations. F12 fixed15 checks/19 observations сохраняются. ActionAutomation обеспечивает normalized Tab/Enter для root action buttons; сама по себе она не предоставляет selection/OS input. UI owner подтвердил отсутствие публичного normalized selection facet: source/destination/slot допустимы как явные synthetic fixture preconditions, а Send проверяется через owning Activate. Настройку synthetic selections нельзя выдавать за физический ввод. Actual create/dispatch/cancel/retry и их rendered results должны быть приняты свежим native run, а не существованием fixture или unit PASS.
 
+## Общая приёмка F13 на 4a7d710
 
-## F13-c: native action harness candidate
+Source `4a7d710128223a62642a6cea3b88a6b7bf923dc0` объединяет final Flow action driver, completed-frame/profile barrier и consumer semantic Reveal поверх общего UI. Public production API и доменная модель сохранности не менялись. **F13 IN_PROGRESS**: успешные действия не закрывают оставшуюся scale/input/lifecycle матрицу.
 
-Harness candidate published as `0b101bf` on `codex/flow-f13-actions`, after `2bf46bc`:
-`flow.ui.actions` is a separate single-copy smoke scenario with eleven required checks.
-The production `ShowNetwork` path and existing `ShowParcel` path create the opaque surfaces;
-Send, Dispatch, Cancel and Retry use the owning normalized Tab/Enter action service.
-Source/destination/slot selection is explicitly synthetic fixture setup. The shared completed-frame
-observer retains the F12 parcel field/action assertions and adds network expectations; F12's
-fifteen-check, nineteen-observation matrix is unchanged.
-
-The new matrix exercises one create followed by a repeated input, actual rejected delivery and
-retry of the same parcel, a disconnected route rejection, dispatch/cancel on a separate Created
-fixture, stale admission after pause, restored availability, retired handles and read-only save/options
-restoration. This initial matrix uses EN at scale 1; it does not replace F12 locale/scale evidence,
-claim physical OS input, or close the remaining F13 running/cross-projection acceptance by itself.
-
-- `./tools/hatifect-test tools`, `run-01dgrmi8`: **PASS389**, zero failures/skips.
-- First Flow platform run `run-_f69bfyb`: **FAIL** at compilation (missing `Hatifect.UI` namespace), corrected.
-- `./tools/hatifect-test flow --platform`, `run-ldtcbwys`: **PASS948** (Flow768, Stardew180); actual TRX
-  counters and all result outcomes audited in `artifacts/f13/native-platform-audit.json`.
-- Actual tree-sitter static pairing of tools: 16 source files and 22 test files, no unpaired source;
-  raw heuristic output `artifacts/f13/native-test-pairing.json`. This is not execution coverage.
-- Assertion and source-to-outcome review: `artifacts/f13/native-assertion-review.json`; exact manifest
-  requirements and report routing include missing/false checks and near-miss scenario IDs.
-- `./tools/hatifect-check --platform`, `run-bo4mx343`: **PASS2062 .NET +389 Python**, all ten actual TRX audited in `artifacts/f13/native-g-audit.json`.
-- Independent bounded source review (Sol/xhigh): **NO_FINDINGS** after the namespace correction; `artifacts/f13/native-independent-review.json`. Reviewer did not run the game.
-- `./tools/hatifect-check`, `run-y8qiwj1y`: **PASS1713 .NET +389 Python**, all seven actual TRX audited in `artifacts/f13/native-c-audit.json`.
-- These are source-candidate checks. The newer combined package/native results and actual failures are recorded below. Full F13 remains **IN_PROGRESS**.
-
-
-## Combined native verification: source 7dcfd4f
-
-The published combined source is [`7dcfd4f`](https://github.com/ihatectf/Hatifect/commit/7dcfd4f527925c7441ea2342b363d7a4fd921fc3): F13 harness candidate plus the UI owner’s source-notification fix `62be88a5915f747f08073d6ff6f54093c509f8d0`. Source changes now trigger synchronization even when the consumer already pumped its projection. Public API shape and Flow Core/persistence are unchanged.
-
-| Verification | Actual evidence | Result |
+| Проверка | Evidence в общей рабочей копии | Результат |
 |---|---|---|
-| `rtk proxy env ./tools/hatifect-check --platform` | `run-0h3mi9co`, `artifacts/f13/native-combined-g-audit.json`; ten actual TRX | **PASS** 2073 .NET +389 Python |
-| `rtk proxy env ./tools/hatifect-isolated-ui-ca --keep` | `artifacts/f13/native-combined-p-audit.json`; retained isolated TRX/packages | **PASS** 101 CA tests; all eight package repository commits equal `7dcfd4f`, package/producer/deployed DLL hashes match |
-| `rtk proxy env ./tools/hatifect-smoke flow.ui.actions` | request `20e15c7a-9585-4293-9e7d-4b60ad2fef3e`, `artifacts/f13/native-first-failure-audit.json` | **FAIL** opening Network, before the first action/capture |
-| Deterministic standard-host reproduction | `NetworkHostedViewportReproductionTests.NetworkExperienceOpensAtTheStandardHostedViewport`, `run-o5k9m59z`, `artifacts/f13/native-overflow-red-reproduction.json` | **FAIL** 1/769; all existing 768 Flow tests pass |
-| `rtk proxy env ./tools/hatifect-smoke flow.ui.isolation` | request `f1799025-1031-49b6-9c5b-45b0bf0c4fd1`, `artifacts/f13/native-f12-regression-audit.json` | Automated **PASS** 15/15 checks, 19 capture pairs; visual **FAIL** at scale75 |
+| Flow Stardew scoped | `run-bqhhulbs`, `f13-common-scoped-audit.json` | PASS187 |
+| C | `run-7rn7s6co`, `combined-4a7d710-run-7rn7s6co-audit.json` | PASS1678 .NET +390 Python +13 metadata;7 actual TRX |
+| G | `run-e3dyuog1`, `combined-4a7d710-run-e3dyuog1-audit.json` | PASS2048 .NET +390 Python +13 metadata;10 actual TRX |
+| P с `--keep` | `hatifect-ui-ca-isolated.d_ylfwdr`, `p-combined-4a7d710-hatifect-ui-ca-isolated.d_ylfwdr-audit.json` | PASS101;8 exact-source packages;47 projection files;2 CA DLL;1429 файлов сохранены |
+| Изолированная подготовка | `run-ej_oeck7`, `prepare-4a7d710-audit.json` | PASS14 runtime DLL;8 UI DLL совпадают с пакетами |
+| `flow.ui.actions` | request `209bd59f-341d-4a35-8241-0ea04bee6619`, `flow.ui.actions-4a7d710-audit.json` | PASS11;game exit0, cleanup и восстановление settings подтверждены |
+| Просмотр actions PNG | `flow-ui-actions-4a7d710-visual-review.json` | Все13 composed PNG просмотрены; Parcel states и оба Network Result видны |
+| `flow.ui.isolation` | request `ed43e616-7fef-4150-a6ea-b73c80791627`, `flow-ui-isolation-4a7d710-failure.json` | FAIL на Scale75: current Flow view retired prematurely; кадр75 не получен |
 
-Both native requests use fingerprint `c9002a130765da06b4a62570c6955a858cabeddb12a4ed77c735fb62748f7ebd`, Stardew Valley 1.6.15 build 24356 / SMAPI 4.5.2, and the isolated root `.smapi-test/flow-actions`. The first prepare attempt correctly rejected `.smapi-test` itself; after selecting its child root, canonical live preparation passed (`run-ch66npib`). Synthetic fixture copies and all original hashes remain unchanged. Both requests restored owned options and removed their working saves; ordinary user Mods/saves were not used.
+Audit-файлы находятся в `artifacts/f13-root-common/`, исходные runtime reports — в `artifacts/runtime/<request>/`; полные копии двух запросов сохранены в `artifacts/f13-root-common/native-4a7d710/`. C/G/P сверены с665 frozen tracked files. Flow fingerprint: `6d864b752b3b966cc2d3424c61ef6d5b375302c434f52e83ce48168241f23768`; отдельная UI identity: `f6b7c127bfa10348bc86dd14170d414e40e87b3d68ca9fa14435a170a0201a60`. Flow fingerprint самостоятельно не идентифицирует UI DLL; их соответствие проверено отдельно.
 
-The F13 native failure is `UiLayoutException` at the generic Network root `Hatifect.Flow/network/scene/host`: required minimum `144x1128.9` exceeds the available height. Standard 1280x720 hosted composition reproduces the same failure with minimum `144x1152.9`. There are zero native action captures, commands and effects; this run proves the defect, not the action matrix. The temporary reproduction fixture is retained unchanged in `artifacts/f13/NetworkHostedViewportReproductionTests.cs` with its actual failing TRX provenance. It must become a permanent regression with the owning fix; no existing tests were removed or weakened. UI owns the generic root-layout correction.
+В свежих `network-created` и `no-route-result` после Reveal полностью видны «Shipment created» и «No route connects these stations». Верхняя часть формы при этом прокручена за viewport. Это подтверждает видимость двух результатов, но не физическое управление всей формой. Девять Parcel captures показывают состояния, результаты команд и доступность действий. Driver использует synthetic selections и normalized action input; реальное перемещение предметов между сундуками, обычный игровой вход и физический ввод этим не проверены.
 
-F12 regression raw audit verifies 55 files, 38 PNG hashes, 15 host/result checks, 19 fresh rendered observations, six retired surfaces, three loads/two title transitions, zero final subscribers, two expected fixture effects, two removed working saves and restored settings. All 19 composed PNGs were inspected. At scale 0.75 the right edge of the Parcel panel and Return action is physically clipped in both composed and UI-layer images; this is distinct from intentional ellipsis seen on longer disabled labels at larger scales. The snapshot reports logical viewport 1960x1275. This visual finding was handed to the UI owner, and the automated PASS is not a visual PASS or a new unconditional F12 acceptance.
+Isolation завершился после176 кадров и пяти captures до смены масштаба: empty-en/empty-ru/missing-ru/cargo-ru/cargo-en. На Scale75 Observe обнаружил retired view (`FlowUiAcceptance.cs`, Observe/Tick). Game exit0, teardown errors отсутствуют; lifecycle сообщает settingsRestored=true, но restorationFrames пуст. Успешное восстановление файлов настроек не доказывает завершённую native restoration matrix. Причина retirement передана владельцам Flow/UI; assertion не ослабляется. Следующий шаг — owning correction и новая полная isolation matrix, затем оставшаяся F13 acceptance.
 
-Next: integrate the owning UI fixes, preserve the standard viewport and acceptance assertions, reprepare the immutable combined source, rerun both native scenarios, then complete F13 running/cross-projection evidence. The full F13 remains **IN_PROGRESS**.
+История проверок сохранена: первый G `run-2m8uuqlt` остановлен sandbox при создании VSTest TCP listener, тесты CA не исполнялись; разрешённый повтор прошёл. Первый P `m62m13f8` завершился командным PASS101, но без `--keep` временные evidence были удалены; файловая приёмка основана на повторном retained run. `live-prepare` штатно пропускает собственный повтор тестов и не создаёт eligible release candidate: его временный архив не является готовой поставкой M3/Q02. Впоследствии source опубликован в истории `9341e57`; CI run `34235070095` прошёл10/10 checks.
 
+## Общая приёмка isolation на 866b1d0
 
-## Two-host projection regression
+Source `866b1d0f482a3216f1cdd92a3ea35245f71eb3af` меняет только `FlowUiAcceptance.cs`: diagnostic cover сохраняет native owner при смене масштаба. Production retirement guards, публичные API и persistence не изменены. Исторический FAIL выше сохранён; **F13 IN_PROGRESS**.
 
-`TwoHostsRejectReentryAndRepeatedDispatchThenObserveTheSameCommittedDomainState` now recomposes both real test hosts after Dispatch and Cancel and checks each accepted scene’s State text and matching accessibility value. Retained initial and Scheduled frames remain unchanged after later publications. `rtk proxy env ./tools/hatifect-test flow --project 'Hatifect Flow/tests/Hatifect.Flow.Tests/Hatifect.Flow.Tests.csproj'`, `run-gda21f26`: **PASS 768**, exact test and actual TRX verified in `artifacts/f13/cross-projection-scoped-audit.json`. This strengthens existing cross-projection evidence without changing production behavior; it does not claim two native overlays or asynchronous-operation rendering.
-
-Final `rtk proxy env ./tools/hatifect-check`, `run-1hckz9x7`: **PASS 1713 .NET +389 Python**; all seven actual TRX are verified in `artifacts/f13/cross-projection-c-audit.json`. Independent read-only source/evidence review found no defects in the added test or recorded native outcomes (`artifacts/f13/native-checkpoint-independent-review.json`). The current test-only change requires no new game run; the explicitly failed native cases above remain unresolved.
-
-
-## Synchronous running-operation probe candidate
-
-After the published two-host checkpoint `de7ddbb`, the native driver temporarily subscribes to the diagnostic owner’s real revision publication around the first Send. While create is still executing, the callback attempts the same owning normalized Send action once; the scenario requires a clean rejection, exactly one create effect, no parcel command effect and removal of the callback in `finally`. Raw `sendReentry` records attempts, admission, before/after effect counts and any exception. This strengthens the existing `repeated` assertion without changing the eleven required checks or thirteen planned observations.
-
-Parcel domain commands return synchronously. Runtime `RejectWhileRunning` is exercised by the real hosted reentry test; the native callback proves synchronous owner reentry only, and the retry-pending frame represents an already scheduled domain delivery. None of these is a claim that a long-lived asynchronous `Running` frame was rendered. No artificial delay or production async API is introduced. This compiled native probe remains a candidate until accepted after the UI root fix.
-
-`rtk proxy env ./tools/hatifect-test flow --platform`, `run-8zx1siod`: **PASS 948** (768 Flow +180 Stardew); actual counters/outcomes and driver hash are recorded in `artifacts/f13/native-reentry-platform-audit.json`. Native execution of this new probe is still pending the owning UI fix.
-
-Independent bounded source review: **NO_FINDINGS**, `artifacts/f13/native-reentry-independent-review.json`. The nested rejection currently occurs at the owning UI dispatch fence; this probe does not independently assert a domain `OperationPending` rejection code. Missing/repeated callbacks, admitted input, exceptions, duplicate effects and retained subscriptions all fail explicitly.
-
-Full `rtk proxy env ./tools/hatifect-check --platform`, `run-za06cqmu`: **PASS 2073 .NET +389 Python**. All ten actual TRX and the driver hash are verified in `artifacts/f13/native-reentry-g-audit.json`. This passes source validation only; the native probe remains **NOT_RUN** and the preceding action scenario remains **FAIL** until the UI fix and immutable-source rerun.
-
-
-## Root overflow integration candidate
-
-UI source `4a28752efd7df46c7b415198e8781839635da3ce` is integrated as `396abe5`; all four owning postimages match exactly (`artifacts/f13/root-integration-source.json`). The fix adds bounded vertical scrolling and atomic focus reveal for exact native centered overlays. UI role-cache fixes `05aed6534250b471c6460e39deb4895aa1a3e346` / `6148b33ae0d6969bf274100d2664bfbb546a1933` are integrated as `20c5968` / `bc11296`. Combined Runtime `run-aeidhn0m` **PASS 542** before the test seam extension; actual TRX is audited in `artifacts/f13/root-runtime-audit.json`.
-
-The unchanged diagnostic fixture still failed at ordinary Window policy (`run-zqreo1my`, 768 PASS /1 FAIL). Owning path inspection established that production `ParcelSurface.Show` always calls `CreateActiveMenuOverlay`, whose policy is `UiProvisionalHostPolicies.OverlayCentered`; the old `ExperienceTextProbe` used ordinary Window. The original fixture and failures remain retained. UI authorized a test-only optional `centeredOverlay = false` constructor argument preserving the existing default. The new `NetworkNativeCenteredOverlayTests.NetworkExperienceOpensAtTheNativeCenteredOverlayViewport` uses the exact production policy at the unchanged 1280x720 viewport, requires one semantic Send with its exact scene/button ID and retains the Result-field assertion.
-
-`run-f2a82bfv` failed to compile the initial seam because the registry parameter is named `host`, not `policy`; corrected. `run-586at92o` successfully opened the root and exposed a latent assertion error: `ExperienceTextAction.Id` is a scene-node ID, while `Action.Id` is the semantic ID. The new test now checks both identities explicitly. `rtk proxy env ./tools/hatifect-test flow --project 'Hatifect Flow/tests/Hatifect.Flow.Tests/Hatifect.Flow.Tests.csproj'`, `run-eytmuw81`: **PASS 769**. Raw evidence and exact historical distinctions are in `artifacts/f13/root-native-policy-scoped-audit.json`. The full graph/package/native rerun is pending; neither this managed pass nor the policy correction clears the earlier actual native or Scale75 visual failures.
-
-Combined G attempt `run-oxqh2dlu` stalled during build (owned PID31328, no CPU/log progress or child process for more than eight minutes). A two-second native process sample retained wait stacks but did not establish the root cause. SIGTERM did not terminate it; only that verified build process was stopped with SIGKILL. The canonical run records **FAIL**, build exit -9. `artifacts/f13/stalled-build-audit.json` and `stalled-build-sample.txt` retain the diagnosis; retry `run-6og_rl4x` uses unchanged source/check settings. No test or analyzer was disabled.
-
-Retry `run-6og_rl4x` completed **PASS2088 .NET +389 Python**: ten actual TRX hashes, counters and every case outcome are verified in `artifacts/f13/root-combined-g-audit.json`. The unchanged canonical build succeeded in60.14 seconds; the stopped attempt is retained separately and is not a source regression PASS. C/P/native remain pending.
-
-
-## Fresh action checkpoint a09f237 and remaining visual evidence
-
-Source [`a09f237`](https://github.com/ihatectf/Hatifect/commit/a09f2378a180a07bcb4771e0b6a30134383e8b7e) is published. C `run-i7di4f2f` **PASS1728 .NET +389 Python**, G `run-6og_rl4x` **PASS2088 +389**, isolated P **PASS101 /46 projected files /8 packages**. All eight repository commits equal a09f237 and package/producer/prepared game DLLs match. Independent policy/source review **NO_FINDINGS**; exact production-policy regression remains managed evidence. Artifacts: `root-combined-{c,g,p}-audit.json`, `root-policy-commit-source.json`, `root-policy-independent-review.json` under `artifacts/f13/`.
-
-Canonical live prepare `run-7ez3sf2y` succeeded. Fresh `rtk proxy env ./tools/hatifect-smoke flow.ui.actions`, request `ecfab0ee-e6d9-4e2b-aaca-90f99022719c`, completed **PASS11/11**, process exit0,322 driver frames,13 capture pairs. Fingerprint `66014d27b243b400d91888eb6879d272dd6f9f194778a67ff0dc4d2fc0a0bb18`. Actual Send owner reentry: one attempt, rejected, no exception, create effects1→1; worlds end with create counts1/0/0, command/effect counts1/0/2, subscribers0, four retired surfaces. Settings restored and one request-owned save removed. `root-native-actions-audit.json` retains request/source, raw hashes and all26 PNG hashes.
-
-All13 composed frames were inspected. The nine Parcel states display their expected state/result/availability. Network opens without the prior minimum-height failure, but `network-created` and `no-route-result` feedback is below the visible viewport. Its semantic/text presence is **not visible-result acceptance**. UI owns a bounded normalized scroll/reveal seam to expose the result before a fresh capture; no consumer geometry workaround or semantic reorder is made. This run proves action effects and synchronous reentry, not physical OS input, a long-lived asynchronous Running frame, or full F13 completion. Earlier Scale75 visual FAIL remains open.
-
-## Native scale-transition correction candidate
-
-The existing F12 `SetEnvironment` and F13 `SetEnglish` assigned base and desired scales together. Installed Game1 IL shows that `_update` only queues native `refreshWindowSettings` when those values differ; assigning both bypassed UI render-target recreation. UI owner supplied exact IL and game DLL hash `8937c582cad1c1127017944778c4102467bf299aea44869491f28ab0ec84cd73`. No UI bridge/model/API changes are required.
-
-Both diagnostic drivers now request desired scale only. The shared completed-frame observer requires two consecutive consistent native frames, including actual `uiScreen` dimensions matching the logical viewport and applied scale matching the requested frame. Retained value diagnostics contain base/desired/applied scale, window/logical viewport, UI/game targets, back buffer and graphics-device dimensions. No GPU resource is retained by this probe.
-
-Restoration writes the separately captured original base/desired pair and locale/input settings, checks the exact snapshot, and calls the public native `refreshWindowSettings()`. Successful title/final transitions wait for fresh settled draws; a pre-existing pending desired scale is allowed to resume naturally and is explicitly recorded alongside the original pair. F12 retains exactly15 checks/19 scene observations; the three world-restoration frames are separate bounded diagnostics. F13 retains11 checks/13 observations. Failure cleanup restores the settings snapshot and records errors; it cannot claim successful settled restoration.
-
-Platform scoped `run-hnbfdij7` **PASS183**, including three new cases for stale physical UI target under a changed logical viewport, pending/missing targets breaking consecutive evidence, and fresh-draw requirements after restoration reset. Actual TRX is audited in `scale-native-scoped-audit.json`. Full checks and fresh native visual acceptance remain pending; historical FAIL is not cleared by these managed tests.
-
-Scale candidate G `run-9p6_dsv0` **PASS2091 .NET +389 Python**; ten actual TRX verified in `artifacts/f13/scale-native-g-audit.json`. Five source/test postimages are retained in `scale-source-candidate.json`. Native verification and visible-result reveal remain open.
-
-Final C `run-55kbqvep` **PASS1728 .NET +389 Python**, seven actual TRX audited in `artifacts/f13/scale-native-c-audit.json`. Native/PERF claims are unchanged until the fresh isolated run.
-
-
-### Native input-profile transition follow-up
-
-Source `84a2ed152b3a770eb2d4e427925a4b9412873a29` passed its C/G/scoped checks and was published. Fresh F12 request `9ab48dc9-5943-4777-99e6-b329579f4527` is **FAIL** at Scale75 before its capture: base/desired/applied are0.75, but native gamepad mode is Auto instead of requested ForceOff, with the same Options instance. Five earlier captures exist; no Scale75 or settled-restoration PASS is claimed. Exact settings snapshot and runner files were restored; process exited0, with the required-check failure preserved in `artifacts/f13/scale-first-native-failure.json`. The precise native writer of the mode is still under investigation; the observed change followed the real window transition.
-
-The diagnostic follow-up applies the owned input profile once after native target dimensions settle, then waits two fresh completed draws before accepting content. It does the same for the captured original input profile during restoration. Exact mode/controller assertions remain in place; the callback is not repeatedly applied on every frame. Four settling regressions now include a once-only post-resize profile write followed by fresh presentation. Scoped `run-x9uyldgz` **PASS184**, actual TRX in `scale-profile-scoped-audit.json`. Final combined checks and fresh native evidence remain pending for this follow-up.
-
-Canonical live prepare builds seven host-free packages plus the Stardew adapter directly. `scale-native-package-identity.json` verifies those actual seven package/producer/deployed identities and the direct adapter DLL; the initial audit expected eight packages and failed before writing. The separate isolated P101/eight-package evidence belongs to a09f237 and is not relabeled as this prepare result.
-
-### Exact action input profile review correction
-
-Independent review found that F13 could accept `gamepadMode=Auto` with `gamepadControls=false`: the UI input facet only reflects the latter. Both Network and Parcel observations now use one settling guard that requires the exact ForceOff/false pair before arming capture. The regression `ActionProfileRejectsAutoRestoredAfterItsOneTimeApplication` changes mode to Auto after the one-time callback, completes two fresh frames and requires rejection; it also rejects ForceOff/true. Reviewer confirmed resolution with no additional source findings.
-
-Scoped `run-1qdc1sdh` **PASS185**; final `rtk proxy env ./tools/hatifect-check --platform`, `run-swlyn97h`, **PASS2093 .NET +389 Python**, ten actual TRX verified. Five source/test hashes remained unchanged through this final run. Evidence: `artifacts/f13/scale-profile-exact-mode-audit.json`, `scale-profile-exact-mode-g-audit.json` and `scale-profile-review-resolution.json`. Earlier G `run-1qcodzsp` PASS2092 and C `run-g_ug9fgj` PASS1728 +389 predate this last correction and are retained separately. Initial sandbox run `run-u0m6y500` failed restoring NuGet dependencies with NU1301/GetDomainName; the authorized retry succeeded.
-
-Git operations are currently blocked by automatic review with the explicit reason that Git is wholly user managed and work must be limited to project files. No alternative Git path was attempted. The current correction has file/hash evidence only; no new commit or native result is claimed. Scale75 visual acceptance and visible Network result remain open pending fresh canonical native evidence and the owning Reveal integration. Full F13 remains **IN_PROGRESS**.
-
-The final host-free check of that exact input-profile correction, `run-823ghnnd`, subsequently passed **1728 .NET +389 Python**, with seven actual TRX verified in `scale-profile-exact-mode-c-audit.json`. This is the pre-Reveal checkpoint.
-
-### Owning Reveal integration and fresh-frame capture
-
-UI supplied seven frozen source/test files from `ba8dae47561bd1ada720391bdd8e24ffdb460b0c`; their exact SHA-256 transfer is recorded in `artifacts/f13/reveal-owner-file-integration.json`. The optional Reveal API extends the harness action API; production v1 is unchanged. UI owns bounded normalized wheel input and accepted-clip visibility. The Flow driver requests the same API instance used to create its surfaces, waits for the accepted exact committed Result, and reveals `Hatifect.Flow/network/element/result` for the two nonempty Network results. All 13 existing observations and domain action/effect transitions remain intact.
-
-Reveal runs during Update only. The observer records instance, accepted scene/frame and completed-pass count after Reveal; the later Draw callback captures only when that same frame is rendered on a strictly newer pass. Recomposition or a layout change invalidates the previous visibility proof and requires another Update reveal. No geometry or input is added to the Draw callback. Captured evidence records `RevealedSemantic`. Two `FlowUiRevealFrameTests` reject same-pass, foreign-instance, missing-render, changed-scene/layout and mismatched-render evidence. Independent source review found no issues; it is not native pixel evidence.
-
-| Combined file candidate check | Evidence | Result |
+| Проверка | Run / evidence | Результат |
 |---|---|---|
-| Scoped Flow Stardew | `run-7xnvnzrk`, `reveal-consumer-scoped-audit.json` | **PASS187**, including both new cases |
-| `rtk proxy env ./tools/hatifect-check --platform` | `run-sdbz9zr2`, `reveal-combined-g-audit.json`, ten actual TRX | **PASS2113 .NET +389 Python** |
-| `rtk proxy env ./tools/hatifect-check` | `run-okcaq0j9`, `reveal-combined-c-audit.json`, seven actual TRX | **PASS1743 .NET +389 Python** |
-| `rtk proxy env ./tools/hatifect-isolated-ui-ca --keep` | retained `hatifect-ui-ca-isolated.819shkhi`, `reveal-combined-p-audit.json` | **PASS101**, 46 projected files, eight packages, two CA DLLs, UI source absent |
+| Flow Stardew scoped | `run-t2gzt8cc`, `scoped-866b1d0-audit.json` | PASS187 |
+| G | `run-9jnck8fc`, `combined-866b1d0-run-9jnck8fc-audit.json` | PASS2048 .NET +390 Python +13 metadata;10 actual TRX,665 source files |
+| P с сохранением файлов | `hatifect-ui-ca-isolated.z2176bmw`, `p-combined-866b1d0-hatifect-ui-ca-isolated.z2176bmw-audit.json` | PASS101;8 packages,47 projection files,4 cache DLL,2 CA DLL;1318 файлов сохранены |
+| Runtime prepare | `run-sfc8qj2n`, `prepare-866b1d0-audit.json` | PASS;14 DLL сохранены отдельно |
+| `flow.ui.isolation` | `bfa4bf7f-edf3-40aa-8914-a7be24254990`, `flow.ui.isolation-866b1d0-audit.json` | PASS15;exit0, cleanup и settings restoration подтверждены |
+| Визуальная проверка | `flow-ui-isolation-866b1d0-visual-review.json` | Просмотрены все19 composed PNG; масштабы75/100/125/150, EN/RU, состояния и переходы миров |
 
-Each package DLL equals its producer output. Package repository metadata describes the existing checkout; it does not prove a new commit for the file candidate. Current source hashes, scoped/full evidence and the separate seven-file UI dependency are retained in `reveal-final-file-handoff.json`. The initial scoped launch permission review timed out before a process was created; its allowed single retry ran successfully.
+Evidence находится в `artifacts/f13-root-common/`. На75 поверхность целиком в viewport; на крупных масштабах некоторые подписи кнопок сокращены многоточием, полные причины доступности видны ниже. Controller profile не доказывает физический controller input. Actions11 на `4a7d710` не объявляются новым прогоном на866; синхронная reentry-проверка также не доказывает длительно видимое состояние Running.
 
-Fresh native acceptance is still unavailable in this task. No separate game/serve rejection occurred: the actual rejection was Git access with a files-only instruction. Canonical `direct_runtime.py` builds and validates requests using `_repository_head`, which invokes `/usr/bin/git ... rev-parse HEAD`; this dependency was inspected, not removed or invoked through a workaround. No fresh Scale75 visual PASS, visible Network Result PASS, new commit or publication is claimed. Full F13 remains **IN_PROGRESS**.
+`package-runtime-identity-866b1d0.json` подтверждает: все14 игровых DLL совпадают с сохранённой prepare-копией, все8 UI package payloads совпадают с соответствующими runtime DLL. После G текущие producer outputs шести Flow/CA DLL отличаются от runtime-копии. Команды G и prepare использовали разные пути dotnet; обе версии DLL содержат revision866. Это не доказательство эквивалентности бинарников: текущие producer DLL нельзя подменять в проверенном комплекте без новой проверки идентичности и соответствующей приёмки.
 
-## Native scale owner correction after common actions
-
-GQ reported common source4a actions209bd59f PASS11 with13 inspected composed captures and visible created/no-route Results. The independent isolation request ed43e616 failed atScale75 after5observations,176frames. Raw lifecycle/log and native DLL hashes were audited in `artifacts/f13/scale-menu-retirement-audit.json`: exact GameMenu is reconstructed by Game1.SetWindowSize, so the original overlay loses its native owner. The full native closing stack was not instrumented; code and timing support this fixture cause, with no logged UI exception.
-
-The one-file candidate `scale-stable-menu-candidate.json` adopts the existing UI environment harness pattern of a stable IClickableMenu cover. It preserves real desiredUIScale/render-target invalidation, fresh draws,15checks/19observations, retained source/action/publication and A→B→A. An additional exact native-cover identity assertion detects unintended replacement. Managed/native execution remains PENDING. This is not standalone product acceptance or a real GameMenu replacement test; production lost-owner retirement stays unchanged and replacement acceptance remains separate.
-
-F13 common stable-menu correction: GQ integrated source `866b1d0`; current diagnostic source bytes match common. Native `bfa4bf7f-edf3-40aa-8914-a7be24254990` **PASS15**, all19observations/6views,3loads/2titles,542frames,3exact settled restorations,exit0/no teardown errors. Flow independently viewed75/100/125/150 and RUcontroller composed PNG: bounded surface, no prior75right clipping; disabled action labels may ellipsize with full reason text below. Exact raw/source hashes: `artifacts/f13/common-stable-menu-native-audit.json`. Earlier native FAIL remains historical. Physical input, full action locale matrix and actual inventory UI scenario remain required; this does not mark F13/F18/F19 DONE.
+Следующий шаг — физический ввод и оставшаяся F13 матрица, затем обычный игровой путь F18/F19. Устанавливаемый архив с полной Q02 acceptance ещё не подготовлен. Source866 на момент этого отчёта локальный; публикация и CI для него пока не подтверждены.

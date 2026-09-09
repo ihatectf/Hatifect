@@ -29,15 +29,6 @@ internal enum UiToolingProtocolState
 /// </summary>
 internal sealed partial class UiToolingProtocolSession
 {
-    private const int ProtocolVersion = 0;
-    private static readonly string[] ProtocolCapabilities =
-    {
-        "bindingMetadata.v1", "bindingMetadata.v2", "bindingUpdates",
-        "diagnostics", "definitions", "references", "compilation"
-    };
-
-    private readonly IUiToolingPlanner? _planner;
-    private readonly string[] _protocolCapabilities;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly UiEditorWorkspace _workspace;
     private readonly UiCompiler _authoringCompiler;
@@ -51,11 +42,8 @@ internal sealed partial class UiToolingProtocolSession
     public UiToolingProtocolSession(
         UiSemanticCatalog? catalog = null,
         int documentCapacity = UiEditorWorkspace.DefaultCapacity,
-        int maximumSourceLength = UiEditorWorkspace.DefaultMaximumSourceLength,
-        IUiToolingPlanner? planner = null)
+        int maximumSourceLength = UiEditorWorkspace.DefaultMaximumSourceLength)
     {
-        _planner = planner;
-        _protocolCapabilities = planner is null ? ProtocolCapabilities : ProtocolCapabilities.Append("plannerTrace").ToArray();
         catalog ??= UiSemanticCatalog.CreateFoundation();
         _workspace = new UiEditorWorkspace(catalog, documentCapacity, maximumSourceLength);
         _authoringCompiler = new UiCompiler(catalog);
@@ -113,8 +101,6 @@ internal sealed partial class UiToolingProtocolSession
             "textDocument/didClose" => WithActive(request, DidClose),
             "textDocument/diagnostic" => WithActive(request, Diagnostic),
             "workspace/diagnostic" => WithActive(request, WorkspaceDiagnostic),
-            "hatifect/compilation" => WithActive(request, Compilation),
-            "hatifect/plannerTrace" => WithActive(request, PlannerTrace),
             "hatifect/updateBindings" => WithActive(request, UpdateBindings),
             "textDocument/formatting" => WithActive(request, Formatting),
             "textDocument/completion" => WithActive(request, Completion),
@@ -140,7 +126,6 @@ internal sealed partial class UiToolingProtocolSession
         {
             JsonElement parameters = RequiredObject(request.Parameters, "initialize params");
             JsonElement options = RequiredObject(Property(parameters, "initializationOptions"), "initializationOptions");
-            ValidateProtocolRequirements(options);
             BindingConfiguration configuration = ReadBindingConfiguration(options);
             int bindingRevision = OptionalProperty(options, "bindingRevision") != null
                 ? RequiredNonNegativeInt32(options, "bindingRevision") : 0;
@@ -155,15 +140,7 @@ internal sealed partial class UiToolingProtocolSession
             {
                 capabilities = new
                 {
-                    experimental = new
-                    {
-                        hatifectUi = new
-                        {
-                            protocolVersion = ProtocolVersion,
-                            capabilities = _protocolCapabilities,
-                            bindingMetadataVersions = new[] { 1, 2 }
-                        }
-                    },
+                    experimental = new { hatifectUi = new { bindingMetadataVersions = new[] { 1, 2 } } },
                     positionEncoding = "utf-16",
                     textDocumentSync = new { openClose = true, change = 2 },
                     diagnosticProvider = new
@@ -213,42 +190,6 @@ internal sealed partial class UiToolingProtocolSession
             return Error(UiJsonRpcErrorCodes.InvalidRequest, "initialized is not valid in the current lifecycle state.");
         _state = UiToolingProtocolState.Active;
         return UiJsonRpcDispatchResult.Success();
-    }
-
-    private void ValidateProtocolRequirements(JsonElement options)
-    {
-        if (OptionalProperty(options, "protocolVersion") is not null
-            && RequiredNonNegativeInt32(options, "protocolVersion") != ProtocolVersion)
-        {
-            throw new InvalidDataException($"Unsupported tooling protocol version. Supported version: {ProtocolVersion}.");
-        }
-
-        if (OptionalProperty(options, "requiredCapabilities") is not { } required)
-        {
-            return;
-        }
-        if (required.ValueKind != JsonValueKind.Array || required.GetArrayLength() > 32)
-        {
-            throw new InvalidDataException("requiredCapabilities must be an array of at most 32 capability names.");
-        }
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (JsonElement value in required.EnumerateArray())
-        {
-            if (value.ValueKind != JsonValueKind.String
-                || string.IsNullOrWhiteSpace(value.GetString()) || value.GetString()!.Length > 128)
-            {
-                throw new InvalidDataException("A required capability must be a non-empty string of at most 128 characters.");
-            }
-            string capability = value.GetString()!;
-            if (!seen.Add(capability))
-            {
-                throw new InvalidDataException($"Required capability '{capability}' is duplicated.");
-            }
-            if (!_protocolCapabilities.Contains(capability, StringComparer.Ordinal))
-            {
-                throw new InvalidDataException($"Unsupported tooling capability '{capability}'.");
-            }
-        }
     }
 
     private UiJsonRpcDispatchResult Shutdown(UiJsonRpcRequest request)

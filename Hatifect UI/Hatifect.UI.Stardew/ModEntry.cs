@@ -16,6 +16,7 @@ public sealed class ModEntry : Mod
     private UiSemanticDogfoodCompositionRoot? _semanticDogfood;
     private UiAutomatedAcceptanceController? _automatedAcceptance;
     private AutomatedBackgroundProgress? _automatedBackgroundProgress;
+    private UiWindowInputObserver? _windowInputObserver;
 
     public override void Entry(IModHelper helper)
     {
@@ -46,6 +47,7 @@ public sealed class ModEntry : Mod
         {
             if (disposing)
             {
+                _windowInputObserver?.Dispose();
                 _automatedBackgroundProgress?.Dispose();
             }
         }
@@ -62,6 +64,7 @@ public sealed class ModEntry : Mod
     {
         if (!UiAutomatedAcceptanceScenarioRegistry.IsRegistrationEnabled)
             return;
+        _windowInputObserver ??= UiWindowInputObserver.TryAttach(Helper, Monitor);
         _semanticDogfood ??= new UiSemanticDogfoodCompositionRoot(Game1.graphics.GraphicsDevice, Helper);
         _automatedAcceptance ??= UiAutomatedAcceptanceController.TryStart(
             Helper,

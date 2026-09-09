@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using StardewValley;
 using Hatifect.UI.Experience;
+using Hatifect.UI.Stardew.Semantic;
 
 namespace Hatifect.UI.Stardew;
 
 internal sealed partial class UiAutomatedAcceptanceController
 {
-    private enum ObservationStage { Initial, Updated, Reentrant, Settled, Environment, Reopened }
+    private enum ObservationStage { Initial, Updated, Reentrant, Settled, Environment, Reopened, Restoring }
     private readonly List<object> _observationCaptures = new();
     private IUiSemanticSurfaceObservationApi? _observationApi;
     private IUiSemanticSurfaceSession? _observedSurface;
@@ -38,6 +39,11 @@ internal sealed partial class UiAutomatedAcceptanceController
     private StardewValley.GameData.ModLanguage? _observationOriginalModLanguage;
     private string? _observationOriginalLocale;
     private bool _observationSettingsCaptured;
+    private Options? _observationOriginalOptions;
+    private UiNativePresentationGate? _observationNativeGate;
+    private long _observationCompletedFrames;
+    private bool _observationNativeRecorded;
+    private readonly List<object> _observationNativeFrames = new();
 
     private void BeginObservation()
     {
@@ -48,6 +54,7 @@ internal sealed partial class UiAutomatedAcceptanceController
             ?? throw new InvalidOperationException("The additive observation API is unavailable through SMAPI.");
         RequireAction(_observationApi.ApiVersion == 1 && _observationApi.Observation.IsEnabled,
             "The exact harness did not enable the optional observation facet.");
+        _observationOriginalOptions = Game1.options;
         _observationOriginalScale = Game1.options.baseUIScale;
         _observationOriginalDesiredScale = Game1.options.desiredUIScale;
         _observationOriginalGamepad = Game1.options.gamepadControls;
@@ -56,9 +63,10 @@ internal sealed partial class UiAutomatedAcceptanceController
         _observationOriginalModLanguage = LocalizedContentManager.CurrentModLanguage;
         _observationOriginalLocale = LocalizedContentManager.LanguageCodeString(_observationOriginalLanguage);
         _observationSettingsCaptured = true;
-        Game1.options.baseUIScale = Game1.options.desiredUIScale = 1;
-        Game1.options.gamepadMode = Options.GamepadModes.ForceOff;
-        Game1.options.gamepadControls = false;
+        Game1.options.desiredUIScale = 1;
+        BeginObservationNativeTransition(1,
+            UiSemanticStardewEnvironmentCapture.ResolveLocale(LocalizedContentManager.LanguageCode.en),
+            false, Options.GamepadModes.ForceOff);
         LocalizedContentManager.CurrentLanguageCode = LocalizedContentManager.LanguageCode.en;
         UiSymbolId id = ActionId("observation");
         var builder = new UiExperienceBuilder(id, "Surface observation");
@@ -122,6 +130,22 @@ internal sealed partial class UiAutomatedAcceptanceController
         if (!_observationActive) return false;
         if (_observationCallbackError is { } callbackError) throw callbackError;
         if (++_observationTicks > 3600) throw new TimeoutException("Native surface observation timed out.");
+        if (!CompleteObservationNativeTransition()) return true;
+        if (_observationStage == ObservationStage.Restoring)
+        {
+            RequireAction(LocalizedContentManager.CurrentLanguageCode == _observationOriginalLanguage
+                && ReferenceEquals(LocalizedContentManager.CurrentModLanguage, _observationOriginalModLanguage)
+                && LocalizedContentManager.LanguageCodeString(_observationOriginalLanguage) == _observationOriginalLocale,
+                "Observation restoration lost its original locale identity after the native resize.");
+            _observationActive = false;
+            _observationNativeGate = null;
+            _observationSettingsCaptured = false;
+            Record("semantic.observation.restored", _terminalFailure is null && _observationClosed == 2
+                && _observationSources.All(source => source.Subscribers == 0),
+                "Both owners retire; original options and locale are confirmed after fresh completed native draws.");
+            _capturePending = true;
+            return true;
+        }
         if (!_observationRendered) return true;
         _observationRendered = false;
         UiSemanticSurfaceSnapshot snapshot = _observationApi!.Observation.Capture(_observedSurface!);
@@ -175,9 +199,8 @@ internal sealed partial class UiAutomatedAcceptanceController
             case ObservationStage.Settled:
                 _observationRussian = true;
                 LocalizedContentManager.CurrentLanguageCode = LocalizedContentManager.LanguageCode.ru;
-                Game1.options.baseUIScale = Game1.options.desiredUIScale = 1.25f;
-                Game1.options.gamepadMode = Options.GamepadModes.ForceOn;
-                Game1.options.gamepadControls = true;
+                Game1.options.desiredUIScale = 1.25f;
+                BeginObservationNativeTransition(1.25f, "ru-RU", true, Options.GamepadModes.ForceOn);
                 _observationStage = ObservationStage.Environment;
                 break;
             case ObservationStage.Environment:
@@ -222,14 +245,70 @@ internal sealed partial class UiAutomatedAcceptanceController
                     "Capture must reject a lost native menu owner immediately without reading or retiring the surface.");
                 Record("semantic.observation.native-owner", true,
                     "Replacing the native menu rejects capture before the next Update, without callbacks or source reads.");
-                StopObservation();
-                Record("semantic.observation.restored", _terminalFailure is null && _observationClosed == 2
-                    && _observationSources.All(source => source.Subscribers == 0),
-                    "Both owners retire; native options and full original locale identity are restored.");
-                _capturePending = true;
+                StopObservation(awaitNativeRestoration: true);
+                if (_terminalFailure is not null) throw new InvalidOperationException("Observation cleanup failed before restoration acceptance.");
+                _observationStage = ObservationStage.Restoring;
+                BeginObservationNativeTransition(_observationOriginalDesiredScale,
+                    UiSemanticStardewEnvironmentCapture.ResolveLocale(_observationOriginalLanguage),
+                    _observationOriginalGamepad, _observationOriginalGamepadMode);
+                _observationActive = true;
                 break;
         }
         _observationTicks = 0;
+        return true;
+    }
+
+    private void BeginObservationNativeTransition(float scale, string locale, bool controls, Options.GamepadModes mode)
+    {
+        _observationNativeGate = new(scale, locale, controls, (int)mode);
+        _observationNativeRecorded = false;
+    }
+
+    private void ObserveObservationNativeFrame()
+    {
+        if (!_observationActive || _observationNativeGate is null) return;
+        RequireAction(ReferenceEquals(Game1.options, _observationOriginalOptions),
+            "Observation native options were replaced during a transition.");
+        var game = Game1.game1;
+        var graphics = Game1.graphics.GraphicsDevice;
+        var window = game.Window.ClientBounds;
+        var ui = game.uiScreen;
+        var screen = game.screen;
+        _observationNativeGate.ObserveCompletedDraw(++_observationCompletedFrames, new(
+            Game1.options.baseUIScale, Game1.options.desiredUIScale, Game1.options.uiScale,
+            window.Width, window.Height, Game1.uiViewport.Width, Game1.uiViewport.Height,
+            ui is { IsDisposed: false } ? ui.Width : 0, ui is { IsDisposed: false } ? ui.Height : 0,
+            screen is { IsDisposed: false } ? screen.Width : 0, screen is { IsDisposed: false } ? screen.Height : 0,
+            graphics.PresentationParameters.BackBufferWidth, graphics.PresentationParameters.BackBufferHeight,
+            graphics.Viewport.Width, graphics.Viewport.Height, graphics.RenderTargetCount,
+            UiSemanticStardewEnvironmentCapture.ResolveLocale(LocalizedContentManager.CurrentLanguageCode),
+            Game1.options.gamepadControls, (int)Game1.options.gamepadMode));
+    }
+
+    private bool CompleteObservationNativeTransition()
+    {
+        RequireAction(ReferenceEquals(Game1.options, _observationOriginalOptions),
+            "Observation native options were replaced before profile application.");
+        bool restoring = _observationStage == ObservationStage.Restoring;
+        bool controller = restoring ? _observationOriginalGamepad : _observationStage is ObservationStage.Environment or ObservationStage.Reopened;
+        var mode = restoring ? _observationOriginalGamepadMode
+            : controller ? Options.GamepadModes.ForceOn : Options.GamepadModes.ForceOff;
+        if (!_observationNativeGate!.CompleteProfile(() =>
+        {
+            Game1.options.gamepadMode = mode;
+            Game1.options.gamepadControls = controller;
+        })) return false;
+        RequireAction(Game1.options.gamepadControls == controller && Game1.options.gamepadMode == mode,
+            "Observation input profile changed after its completed native frame.");
+        if (!_observationNativeRecorded)
+        {
+            RequireAction(_observationNativeFrames.Count < 3, "Observation native transitions exceeded their bound.");
+            _observationNativeFrames.Add(new { phase = _observationStage.ToString(),
+                completedFrame = _observationCompletedFrames, frame = _observationNativeGate.Settled,
+                capturedBase = restoring ? _observationOriginalScale : (float?)null,
+                capturedDesired = restoring ? _observationOriginalDesiredScale : (float?)null });
+            _observationNativeRecorded = true;
+        }
         return true;
     }
 
@@ -252,15 +331,18 @@ internal sealed partial class UiAutomatedAcceptanceController
         }
     }
 
-    private void StopObservation()
+    private void StopObservation(bool awaitNativeRestoration = false)
     {
         _observationActive = false;
+        _observationNativeGate = null;
         List<Exception>? failures = null;
         try { _observedSurface?.Dispose(); } catch (Exception error) { (failures ??= new()).Add(error); }
         try
         {
             if (_observationSettingsCaptured)
             {
+                RequireAction(ReferenceEquals(Game1.options, _observationOriginalOptions),
+                    "Observation no longer owns the original native options.");
                 Game1.options.baseUIScale = _observationOriginalScale;
                 Game1.options.desiredUIScale = _observationOriginalDesiredScale;
                 Game1.options.gamepadMode = _observationOriginalGamepadMode;
@@ -273,7 +355,16 @@ internal sealed partial class UiAutomatedAcceptanceController
                     && ReferenceEquals(LocalizedContentManager.CurrentModLanguage, _observationOriginalModLanguage)
                     && LocalizedContentManager.LanguageCodeString(_observationOriginalLanguage) == _observationOriginalLocale,
                     "Observation did not restore the original locale identity.");
-                _observationSettingsCaptured = false;
+                RequireAction(ReferenceEquals(Game1.options, _observationOriginalOptions)
+                    && Game1.options.baseUIScale == _observationOriginalScale
+                    && Game1.options.desiredUIScale == _observationOriginalDesiredScale
+                    && Game1.options.gamepadMode == _observationOriginalGamepadMode
+                    && Game1.options.gamepadControls == _observationOriginalGamepad,
+                    "Observation locale restoration changed the captured options.");
+                Game1.game1.refreshWindowSettings();
+                // Keep the captured settings lease through successful native restoration.
+                // If that later barrier fails, the ordinary cleanup path restores them again.
+                if (!awaitNativeRestoration) _observationSettingsCaptured = false;
             }
         }
         catch (Exception error) { (failures ??= new()).Add(error); }
