@@ -24,7 +24,7 @@
     "activateAppContains": "Stardew Valley"
   },
   "steps": [
-    {"id":"game-active","op":"ensureGameActive"},
+    {"id":"game-active","op":"wait","timeout":60,"conditions":[{"source":"domain","path":"inputTelemetry.latest.gameActive","equals":true}]},
     {"id":"await-source-stage","op":"wait","timeout":90,"conditions":[{"source":"domain","path":"stage","equals":"ordinary-entry-source"}]},
     {"id":"capture-sourceName","op":"capture","source":"domain","path":"fixture.sourceName","variable":"sourceName","transform":"string"},
     {"id":"capture-destinationName","op":"capture","source":"domain","path":"fixture.destinationName","variable":"destinationName","transform":"string"},
