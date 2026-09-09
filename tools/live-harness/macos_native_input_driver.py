@@ -42,7 +42,9 @@ def _utc() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _field(value: dict[str, Any], name: str, default: Any = None) -> Any:
+def _field(value: Any, name: str, default: Any = None) -> Any:
+    if not isinstance(value, dict):
+        return default
     if name in value:
         return value[name]
     pascal = name[:1].upper() + name[1:]
@@ -242,8 +244,8 @@ class Controller:
 
     def _game_active(self) -> bool:
         try:
-            latest = _field(_field(self.flow(), "inputTelemetry", {}), "latest", {})
-            return bool(_field(latest, "gameActive", False))
+            latest = _field(_field(self.flow(), "inputTelemetry", {}), "latest")
+            return isinstance(latest, dict) and bool(_field(latest, "gameActive", False))
         except (FileNotFoundError, DriverError):
             return False
 
@@ -623,7 +625,7 @@ def main() -> int:
         controller = Controller(artifact, args.request_id, args.timeout_seconds, backend)
         controller.run()
         return 0
-    except (DriverError, OSError, ValueError, json.JSONDecodeError, subprocess.SubprocessError) as error:
+    except Exception as error:
         if controller is not None:
             controller._status("Failed", "native-player-input-failed", str(error))
         else:
