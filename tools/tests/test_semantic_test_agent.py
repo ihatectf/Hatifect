@@ -4,13 +4,14 @@ import json
 import tempfile
 import time
 import unittest
-import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
 AGENT_PATH = ROOT / "tools" / "live-harness" / "semantic-test-agent.py"
+ENGINE_PATH = ROOT / "tools" / "live-harness" / "semantic_agent_ui.py"
+INTERACTIONS_PATH = ROOT / "tools" / "live-harness" / "semantic_interactions.py"
 SPEC_PATH = ROOT / "tools" / "live-harness" / "semantic-tests" / "flow.ui.player.input.json"
 RUNNER_PATH = ROOT / "tools" / "hatifect-live-runner"
 
@@ -24,7 +25,7 @@ class SemanticTestAgentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.document = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
 
-    def test_checked_in_flow_workflow_is_valid_bounded_and_complete(self) -> None:
+    def test_checked_in_flow_workflow_is_valid_bounded_and_model_driven(self) -> None:
         validated = AGENT.validate_spec(copy.deepcopy(self.document), "flow.ui.player.input")
         self.assertEqual(validated["schemaVersion"], 1)
         self.assertEqual(validated["platform"], "macos-quartz")
@@ -36,7 +37,7 @@ class SemanticTestAgentTests(unittest.TestCase):
         actions = {
             step["selector"]["action"]
             for step in validated["steps"]
-            if step["op"] == "click" and "action" in step.get("selector", {})
+            if step["op"] == "activate" and "action" in step.get("selector", {})
         }
         self.assertEqual(actions, {
             "Hatifect.Flow/network/action/register",
@@ -44,6 +45,16 @@ class SemanticTestAgentTests(unittest.TestCase):
             "Hatifect.Flow/network/action/send",
             "Hatifect.Flow/network/action/send-quantity",
         })
+        self.assertEqual(sum(step["op"] == "fill" for step in validated["steps"]), 3)
+        self.assertEqual(sum(step["op"] == "select" for step in validated["steps"]), 5)
+        self.assertEqual(sum(step["op"] == "reveal" for step in validated["steps"]), 5)
+        self.assertEqual(sum(step["op"] == "activate" for step in validated["steps"]), 5)
+        self.assertEqual(sum(step["op"] == "focus" for step in validated["steps"]), 1)
+        self.assertTrue(all(
+            step.get("collection")
+            for step in validated["steps"]
+            if step["op"] == "select"
+        ))
         keys = [step.get("key") for step in validated["steps"] if step["op"] == "key"]
         self.assertIn("K", keys)
         self.assertIn("Tab", keys)
@@ -62,18 +73,32 @@ class SemanticTestAgentTests(unittest.TestCase):
             selector = step.get("selector")
             if not isinstance(selector, dict):
                 continue
-            self.assertTrue(set(selector).issubset({"semantic", "semanticPrefix", "action", "name", "role"}))
+            self.assertTrue(set(selector).issubset({
+                "semantic", "semanticPrefix", "action", "name", "role", "collection", "node"
+            }))
             if "name" in selector:
-                self.assertTrue(selector["name"].startswith("${"), "Visible/localized labels must not drive the workflow")
+                self.assertTrue(
+                    selector["name"].startswith("${"),
+                    "Visible/localized labels must not drive the workflow",
+                )
+        fills = [step for step in self.document["steps"] if step["op"] == "fill"]
+        self.assertTrue(fills)
+        self.assertTrue(all(set(step["selector"]) == {"semantic"} for step in fills))
 
     def test_agent_has_no_direct_hatifect_execution_backdoor(self) -> None:
-        body = AGENT_PATH.read_text(encoding="utf-8")
+        body = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (AGENT_PATH, ENGINE_PATH, INTERACTIONS_PATH)
+        )
         for forbidden in (
             "ActionAutomation", "InsertAutomationText", "FlowNetworkCommand(", "FlowSendCommand(",
             "OpenPlayerNetwork(", "eval(", "exec(", "os.system", "subprocess.Popen",
         ):
             self.assertNotIn(forbidden, body)
-        self.assertIn("CGEventPost", (ROOT / "tools/live-harness/macos_native_input_driver.py").read_text(encoding="utf-8"))
+        self.assertIn(
+            "CGEventPost",
+            (ROOT / "tools/live-harness/macos_native_input_driver.py").read_text(encoding="utf-8"),
+        )
 
     def test_spec_rejects_arbitrary_execution_unknown_ops_and_path_escape(self) -> None:
         for operation in ("shell", "python", "eval", "dispatch"):
@@ -118,11 +143,23 @@ class SemanticTestAgentTests(unittest.TestCase):
         predicate = AGENT.SemanticController._predicate
         self.assertTrue(predicate([1, 2], {"countGreaterThan": 1}))
         self.assertTrue(predicate("ready", {"startsWith": "rea"}))
-        self.assertTrue(predicate("Delivered · attempts: 1", {"containsAny": ["Delivered", "Доставлено"]}))
-        self.assertTrue(predicate("00000000-0000-0000-0000-000000000000", {"uuidZero": True}))
+        self.assertTrue(predicate(
+            "Delivered · attempts: 1",
+            {"containsAny": ["Delivered", "Доставлено"]},
+        ))
+        self.assertTrue(predicate(
+            "00000000-0000-0000-0000-000000000000",
+            {"uuidZero": True},
+        ))
         captures = [{"phase": "Ready"}, {"phase": "Pointer"}, {"phase": "Text"}]
-        self.assertTrue(predicate(captures, {"containsAll": {"path": "phase", "values": ["Ready", "Text"]}}))
-        self.assertFalse(predicate(captures, {"containsAll": {"path": "phase", "values": ["Tab"]}}))
+        self.assertTrue(predicate(
+            captures,
+            {"containsAll": {"path": "phase", "values": ["Ready", "Text"]}},
+        ))
+        self.assertFalse(predicate(
+            captures,
+            {"containsAll": {"path": "phase", "values": ["Tab"]}},
+        ))
 
     def test_pending_evidence_retries_but_contract_failures_do_not(self) -> None:
         controller = object.__new__(AGENT.SemanticController)
@@ -149,10 +186,16 @@ class SemanticTestAgentTests(unittest.TestCase):
         with self.assertRaises(AGENT.SemanticElementPending):
             controller.find_element(semantic="A/B")
         duplicate = {
+            "nodeId": "one",
             "semanticId": "A/B", "actionId": None, "name": "x", "role": "Button",
-            "enabled": True, "bounds": {}, "clip": {},
+            "enabled": True,
+            "bounds": {"x": 0, "y": 0, "width": 10, "height": 10},
+            "clip": {"x": 0, "y": 0, "width": 10, "height": 10},
         }
-        controller.latest = lambda **_kwargs: {"visible": True, "elements": [duplicate, dict(duplicate)]}
+        controller.latest = lambda **_kwargs: {
+            "visible": True,
+            "elements": [duplicate, {**duplicate, "nodeId": "two"}],
+        }
         with self.assertRaisesRegex(AGENT.SemanticAgentError, "ambiguous"):
             controller.find_element(semantic="A/B")
 
@@ -181,28 +224,54 @@ class SemanticTestAgentTests(unittest.TestCase):
                 "id": "example.semantic",
                 "platform": "macos-quartz",
                 "evidence": {
-                    "domain": {"path": "diagnostics/domain.json", "identity": {"requestId": "${requestId}", "scenarioId": "${scenarioId}"}},
-                    "ui": {"path": "diagnostics/ui.json", "identity": {"runId": "${requestId}", "scenario": "${scenarioId}"}},
+                    "domain": {
+                        "path": "diagnostics/domain.json",
+                        "identity": {"requestId": "${requestId}", "scenarioId": "${scenarioId}"},
+                    },
+                    "ui": {
+                        "path": "diagnostics/ui.json",
+                        "identity": {"runId": "${requestId}", "scenario": "${scenarioId}"},
+                    },
                 },
-                "gameActive": {"source": "domain", "path": "inputTelemetry.latest.gameActive", "activateAppContains": "Game"},
+                "gameActive": {
+                    "source": "domain",
+                    "path": "inputTelemetry.latest.gameActive",
+                    "activateAppContains": "Game",
+                },
                 "steps": [
-                    {"id": "capture-count", "op": "capture", "source": "domain", "path": "value", "variable": "observed", "transform": "count"},
-                    {"id": "assert-count", "op": "assert", "conditions": [{"source": "domain", "path": "value", "countEquals": "${observed}"}]},
+                    {
+                        "id": "capture-count", "op": "capture", "source": "domain",
+                        "path": "value", "variable": "observed", "transform": "count",
+                    },
+                    {
+                        "id": "assert-count", "op": "assert",
+                        "conditions": [{"source": "domain", "path": "value", "countEquals": "${observed}"}],
+                    },
                 ],
             }
             AGENT.validate_spec(copy.deepcopy(spec), "example.semantic")
             backend = SimpleNamespace()
-            controller = AGENT.SemanticController(artifact, request_id, "example.semantic", 5, backend, spec, "a" * 64)
+            controller = AGENT.SemanticController(
+                artifact, request_id, "example.semantic", 5, backend, spec, "a" * 64
+            )
             controller.run_spec()
-            status = json.loads((diagnostics / "semantic-test-agent.json").read_text(encoding="utf-8"))
+            status = json.loads(
+                (diagnostics / "semantic-test-agent.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(status["state"], "Completed")
             self.assertEqual(status["variables"]["observed"], 3)
             self.assertEqual(status["specSha256"], "a" * 64)
 
     def test_live_runner_discovers_checked_in_semantic_specs_instead_of_scenario_code(self) -> None:
         runner = RUNNER_PATH.read_text(encoding="utf-8")
-        self.assertIn('semantic_test_agent="$TOOLS_DIR/live-harness/semantic-test-agent.py"', runner)
-        self.assertIn('semantic_tests_root="$TOOLS_DIR/live-harness/semantic-tests"', runner)
+        self.assertIn(
+            'semantic_test_agent="$TOOLS_DIR/live-harness/semantic-test-agent.py"',
+            runner,
+        )
+        self.assertIn(
+            'semantic_tests_root="$TOOLS_DIR/live-harness/semantic-tests"',
+            runner,
+        )
         self.assertIn('semantic_spec="$semantic_tests_root/$scenario.json"', runner)
         self.assertIn('if [[ ! -f "$semantic_spec" ]]; then', runner)
         self.assertIn('exec python3 "$user_session_runtime"', runner)

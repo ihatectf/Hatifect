@@ -8,9 +8,8 @@ using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
-using Hatifect.UI.Runtime.Accessibility;
+using Hatifect.UI.Runtime.Diagnostics;
 using Hatifect.UI.Runtime.Layout;
-using Hatifect.UI.Runtime.Scene;
 using Hatifect.UI.Stardew.Semantic;
 
 namespace Hatifect.UI.Stardew;
@@ -133,19 +132,9 @@ internal sealed class UiWindowInputObserver : IDisposable
                 return;
             }
             var runtime = menu.CaptureRuntimeContext();
-            var origins = new Dictionary<UiSymbolId, UiSceneNode>();
-            Visit(runtime.Scene.Root, node => origins.Add(node.Id, node));
-            var elements = new List<Element>();
-            Visit(runtime.Accessibility.Root, node =>
-            {
-                origins.TryGetValue(node.Id, out var origin);
-                if (node.Name?.Length > 4096 || node.Value?.Length > 4096)
-                    throw new InvalidOperationException("Window input element text exceeds the observation budget.");
-                elements.Add(new(node.Id.ToString(), origin?.SemanticId?.ToString(),
-                    origin is UiButtonSceneNode button ? button.Action.Id.ToString() : null,
-                    node.Role.ToString(), node.Name, node.Value, node.Enabled, node.Focused, node.Bounds, node.Clip));
-            });
-            Element? focused = elements.SingleOrDefault(element => element.Focused);
+            var projection = UiNativeInteractionProjection.Capture(runtime.Scene, runtime.Layout, runtime.Accessibility);
+            var elements = projection.Elements;
+            UiNativeInteractionNode? focused = elements.SingleOrDefault(element => element.Focused);
             var rendered = runtime.LastCompletedRender;
             bool freshRender = rendered.Sequence > _lastRenderSequence;
             _lastRenderSequence = rendered.Sequence;
@@ -169,6 +158,7 @@ internal sealed class UiWindowInputObserver : IDisposable
                 acceptedSceneVersion = runtime.AcceptedVersion, frameVersion = runtime.FrameVersion,
                 renderedSceneVersion = rendered.SceneVersion, renderedFrameVersion = rendered.FrameVersion, renderSequence = rendered.Sequence,
                 viewport = Viewport(), window = WindowGeometry(), pointer = Pointer(),
+                interactionModelVersion = 1, rootScroll = projection.RootScroll, collections = projection.Collections,
                 focused, observation, elements
             };
             bool stable = _previousStamp == stamp;
@@ -246,37 +236,12 @@ internal sealed class UiWindowInputObserver : IDisposable
         => bounds.Width > 0 && bounds.Height > 0 && clip.X <= bounds.X && clip.Y <= bounds.Y
             && clip.Right >= bounds.Right && clip.Bottom >= bounds.Bottom;
 
-    private static void Visit(UiSceneNode root, Action<UiSceneNode> visit)
-    {
-        var pending = new Stack<UiSceneNode>(); pending.Push(root); int visited = 0;
-        while (pending.TryPop(out var node))
-        {
-            if (++visited > 1024 || node.Children.Count > 1024 - visited - pending.Count)
-                throw new InvalidOperationException("Window input scene exceeds the observation budget.");
-            visit(node); foreach (var child in node.Children) pending.Push(child);
-        }
-    }
-
-    private static void Visit(UiAccessibilityNodeSnapshot root, Action<UiAccessibilityNodeSnapshot> visit)
-    {
-        var pending = new Stack<UiAccessibilityNodeSnapshot>(); pending.Push(root); int visited = 0;
-        while (pending.TryPop(out var node))
-        {
-            if (++visited > 1024 || node.Children.Count > 1024 - visited - pending.Count)
-                throw new InvalidOperationException("Window input accessibility exceeds the observation budget.");
-            visit(node); foreach (var child in node.Children) pending.Push(child);
-        }
-    }
-
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
         _helper.Events.Input.ButtonPressed -= OnPressed; _helper.Events.Input.ButtonReleased -= OnReleased;
         GameRunner.instance.Components.Remove(_component); _component.Dispose(); DetachMenu();
     }
-
-    private sealed record Element(string NodeId, string? SemanticId, string? ActionId, string Role,
-        string? Name, string? Value, bool Enabled, bool Focused, UiRect Bounds, UiRect Clip);
 
     private sealed class CompletedFrameComponent : DrawableGameComponent
     {
