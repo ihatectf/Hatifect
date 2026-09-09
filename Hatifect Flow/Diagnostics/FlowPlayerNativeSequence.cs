@@ -157,12 +157,19 @@ internal sealed class FlowPlayerNativeSequence : IDisposable
             location = "Farm", source = new { x = _source.X, y = _source.Y },
             destination = new { x = _destination.X, y = _destination.Y },
             standing = new { x = _standing.X, y = _standing.Y },
+            sourceScreen = Screen(_source), destinationScreen = Screen(_destination), emptyScreen = Screen(_standing),
             sourceName = "src_" + _request.RunId.Replace("-", "")[..6],
             destinationName = "dst_" + _request.RunId.Replace("-", "")[..6],
             probeText = "native-" + _request.RunId.Replace("-", "")[..8],
             wholeParcelId = WholeParcel, partialParcelId = PartialParcel,
             state = JsonSerializer.Deserialize<JsonElement>(CaptureState())
         });
+    }
+
+    private static object Screen(Vector2 tile)
+    {
+        Vector2 local = Game1.GlobalToLocal(Game1.viewport, tile * 64f + new Vector2(32f, 32f));
+        return new { x = local.X, y = local.Y };
     }
 
     private string CaptureState() => JsonSerializer.Serialize(new

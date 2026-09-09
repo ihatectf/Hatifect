@@ -124,8 +124,12 @@ internal sealed class UiWindowInputObserver : IDisposable
             {
                 DetachMenu(); _previousStamp = null;
                 _gate.Observe(_frame, default);
-                _latest = new { visible = false, completedFrame = _frame, surfaceEpoch = _epoch };
-                if (_frame % 60 == 0) WriteProgress();
+                _latest = new
+                {
+                    visible = false, completedFrame = _frame, surfaceEpoch = _epoch,
+                    viewport = Viewport(), window = WindowGeometry(), pointer = Pointer()
+                };
+                if (_frame % 12 == 0) WriteProgress();
                 return;
             }
             var runtime = menu.CaptureRuntimeContext();
@@ -164,7 +168,7 @@ internal sealed class UiWindowInputObserver : IDisposable
                 visible, completedFrame = _frame, surfaceEpoch = _epoch, experience = runtime.Scene.Experience.ToString(),
                 acceptedSceneVersion = runtime.AcceptedVersion, frameVersion = runtime.FrameVersion,
                 renderedSceneVersion = rendered.SceneVersion, renderedFrameVersion = rendered.FrameVersion, renderSequence = rendered.Sequence,
-                viewport = new { width = Game1.uiViewport.Width, height = Game1.uiViewport.Height },
+                viewport = Viewport(), window = WindowGeometry(), pointer = Pointer(),
                 focused, observation, elements
             };
             bool stable = _previousStamp == stamp;
@@ -179,10 +183,25 @@ internal sealed class UiWindowInputObserver : IDisposable
                 _capturedStamp = stamp;
                 WriteProgress();
             }
-            else if (_frame % 60 == 0) WriteProgress();
+            else if (_frame % 12 == 0) WriteProgress();
         }
         catch (Exception error) { Fail(error); }
     }
+
+    private static object Viewport() => new { width = Game1.uiViewport.Width, height = Game1.uiViewport.Height };
+
+    private static object WindowGeometry()
+    {
+        Point position = Game1.game1.Window.Position;
+        Rectangle client = Game1.game1.Window.ClientBounds;
+        return new
+        {
+            position = new { x = position.X, y = position.Y },
+            clientBounds = new { x = client.X, y = client.Y, width = client.Width, height = client.Height }
+        };
+    }
+
+    private static object Pointer() => new { x = Game1.getMouseX(), y = Game1.getMouseY() };
 
     private void Fail(Exception error)
     {

@@ -18,6 +18,7 @@ deployment_identity="$TOOLS_DIR/live-harness/deployment_identity.py"
 release_contract="$REPO_ROOT/Hatifect.Release.json"
 user_session_runtime="$TOOLS_DIR/live-harness/user_session_runtime.py"
 save_provisioner="$TOOLS_DIR/live-harness/save_provisioning.py"
+native_input_driver="$TOOLS_DIR/live-harness/macos_native_input_driver.py"
 isolated_root="$(resolve_smapi_test_root)"
 deployment_marker="$isolated_root/deployment.json"
 deployment_identity_marker="$isolated_root/deployment.identity.json"
@@ -157,4 +158,72 @@ if [[ -n "$save_path" ]]; then
   arguments+=(--save-path "$save_path")
 fi
 
-exec python3 "$user_session_runtime" "${arguments[@]}"
+# Every ordinary live scenario retains the exact historical one-process client handoff.
+# flow.ui.player.input is the sole exception because it owns a request-scoped external
+# Quartz companion in this interactive GUI session while the canonical executor owns SMAPI.
+if [[ "$scenario" != "flow.ui.player.input" ]]; then
+  exec python3 "$user_session_runtime" "${arguments[@]}"
+fi
+
+if [[ "$(uname -s)" != "Darwin" || ! -f "$native_input_driver" ]]; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "The automated ordinary-input scenario requires its checked-in macOS Quartz companion." \
+    --run-id "$run_id" \
+    --assertion-id HARNESS-NATIVE-INPUT-DRIVER \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+
+native_driver_pid=""
+native_driver_exit=""
+cleanup_native_driver() {
+  if [[ -z "$native_driver_pid" ]]; then
+    return
+  fi
+  if kill -0 "$native_driver_pid" 2>/dev/null; then
+    kill "$native_driver_pid" 2>/dev/null || true
+  fi
+  set +e
+  wait "$native_driver_pid"
+  native_driver_exit=$?
+  set -e
+  native_driver_pid=""
+}
+trap cleanup_native_driver EXIT INT TERM
+
+say "Native input: state-driven macOS Quartz companion"
+(
+  set +e
+  python3 "$native_input_driver" \
+    --artifact-directory "$artifact_dir" \
+    --request-id "$run_id" \
+    --timeout-seconds "$timeout_seconds" \
+    > "$artifact_dir/native-input-driver.log" 2>&1
+  driver_exit=$?
+  if (( driver_exit != 0 )); then
+    printf '%s\n' "native-input-driver-failed" > "$artifact_dir/.cancel-requested.tmp"
+    mv -f "$artifact_dir/.cancel-requested.tmp" "$artifact_dir/.cancel-requested"
+  fi
+  exit "$driver_exit"
+) &
+native_driver_pid=$!
+
+set +e
+python3 "$user_session_runtime" "${arguments[@]}"
+runtime_exit=$?
+set -e
+
+if (( runtime_exit == 0 )); then
+  for _ in {1..200}; do
+    kill -0 "$native_driver_pid" 2>/dev/null || break
+    sleep 0.05
+  done
+fi
+cleanup_native_driver
+trap - EXIT INT TERM
+
+if (( runtime_exit == 0 )) && [[ "$native_driver_exit" != "0" ]]; then
+  printf '%s\n' "ERROR: native input companion did not complete successfully (exit ${native_driver_exit:-unknown})." >&2
+  exit 2
+fi
+exit "$runtime_exit"
