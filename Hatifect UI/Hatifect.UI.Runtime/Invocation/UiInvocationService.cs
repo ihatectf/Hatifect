@@ -22,6 +22,8 @@ public sealed class UiInvocationService
     private readonly UiPresentationPlanner _planner;
     private readonly UiSlotProjector _projector = new();
 
+    internal UiActivationOwnershipSnapshot CaptureActivationOwnership() => _activator.CaptureOwnership();
+
     public UiInvocationService(
         UiRegistrySnapshot registry,
         UiExperienceActivator? activator = null,

@@ -6,11 +6,12 @@ using Hatifect.UI.Runtime.Registration;
 
 namespace Hatifect.UI.Runtime.Activation;
 
-/// <summary>Explicit lifecycle boundary for lazy Experience creation.</summary>
+/// <summary>Explicit lifecycle boundary for lazy Experience creation, owned by its creating thread.</summary>
 public sealed class UiExperienceActivator
 {
     private readonly UiRegistrySnapshot _registry;
     private readonly Dictionary<UiSymbolId, UiExperienceInstance> _sessionCache = new();
+    private readonly int _ownerThread = Environment.CurrentManagedThreadId;
     private bool _sessionDisposed;
 
     public UiExperienceActivator(UiRegistrySnapshot registry)
@@ -36,13 +37,26 @@ public sealed class UiExperienceActivator
             throw new InvalidOperationException(
                 $"UI Experience descriptor '{descriptor.Id}' does not belong to this registry snapshot.");
 
-        return descriptor.Lifetime switch
+        UiExperienceDefinition experience = descriptor.Lifetime switch
         {
             UiExperienceLifetime.Transient => Transient(descriptor),
             UiExperienceLifetime.Cached => Session(descriptor),
             UiExperienceLifetime.Singleton => _registry.Singleton(descriptor),
             _ => throw new ArgumentOutOfRangeException(nameof(descriptor.Lifetime))
         };
+        EnsureSessionActive();
+        return experience;
+    }
+
+    // Explicit diagnostic capture only; never invoked by update/draw. No owner or source references escape.
+    internal UiActivationOwnershipSnapshot CaptureOwnership()
+    {
+        RequireOwnerThread();
+        return new(_ownerThread, _sessionDisposed, _sessionCache
+            .OrderBy(item => item.Key.ToString(), StringComparer.Ordinal)
+            .Select(item => new UiCachedExperienceOwnership(item.Key, item.Value.HasOwner
+                ? UiActivationOwnership.SessionOwnedLifecycle : UiActivationOwnership.BorrowedDefinition))
+            .ToArray());
     }
 
     public bool Evict(UiSymbolId id)
@@ -55,6 +69,7 @@ public sealed class UiExperienceActivator
 
     internal void DisposeSession()
     {
+        RequireOwnerThread();
         if (_sessionDisposed) return;
         _sessionDisposed = true;
         UiExperienceInstance[] instances = _sessionCache
@@ -79,6 +94,7 @@ public sealed class UiExperienceActivator
             instance = descriptor.CreateInstance();
             try
             {
+                EnsureSessionActive();
                 _sessionCache.Add(descriptor.Id, instance);
             }
             catch (Exception error)
@@ -104,6 +120,13 @@ public sealed class UiExperienceActivator
 
     private void EnsureSessionActive()
     {
+        RequireOwnerThread();
         if (_sessionDisposed) throw new ObjectDisposedException(nameof(UiExperienceActivator));
+    }
+
+    private void RequireOwnerThread()
+    {
+        if (Environment.CurrentManagedThreadId != _ownerThread)
+            throw new InvalidOperationException("UI activation ownership must be accessed on its creating thread.");
     }
 }
