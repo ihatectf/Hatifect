@@ -18,7 +18,10 @@ deployment_identity="$TOOLS_DIR/live-harness/deployment_identity.py"
 release_contract="$REPO_ROOT/Hatifect.Release.json"
 user_session_runtime="$TOOLS_DIR/live-harness/user_session_runtime.py"
 save_provisioner="$TOOLS_DIR/live-harness/save_provisioning.py"
-native_input_driver="$TOOLS_DIR/live-harness/macos_native_input_driver.py"
+semantic_test_agent="$TOOLS_DIR/live-harness/semantic-test-agent.py"
+semantic_tests_root="$TOOLS_DIR/live-harness/semantic-tests"
+semantic_spec="$semantic_tests_root/$scenario.json"
+native_input_backend="$TOOLS_DIR/live-harness/macos_native_input_driver.py"
 isolated_root="$(resolve_smapi_test_root)"
 deployment_marker="$isolated_root/deployment.json"
 deployment_identity_marker="$isolated_root/deployment.identity.json"
@@ -158,55 +161,56 @@ if [[ -n "$save_path" ]]; then
   arguments+=(--save-path "$save_path")
 fi
 
-# Every ordinary live scenario retains the exact historical one-process client handoff.
-# flow.ui.player.input is the sole exception because it owns a request-scoped external
-# Quartz companion in this interactive GUI session while the canonical executor owns SMAPI.
-if [[ "$scenario" != "flow.ui.player.input" ]]; then
+# A checked-in semantic spec is the only opt-in to an external GUI companion.
+# Scenarios without one retain the exact historical one-process client handoff.
+if [[ ! -f "$semantic_spec" ]]; then
   exec python3 "$user_session_runtime" "${arguments[@]}"
 fi
 
-if [[ "$(uname -s)" != "Darwin" || ! -f "$native_input_driver" ]]; then
+if [[ "$(uname -s)" != "Darwin" || ! -f "$semantic_test_agent" || ! -f "$native_input_backend" ]]; then
   python3 "$validator" write-result BLOCKED "$scenario" "$result" \
-    "The automated ordinary-input scenario requires its checked-in macOS Quartz companion." \
+    "The checked-in semantic workflow requires its macOS Quartz semantic-test agent and native input backend." \
     --run-id "$run_id" \
-    --assertion-id HARNESS-NATIVE-INPUT-DRIVER \
+    --assertion-id HARNESS-SEMANTIC-TEST-AGENT \
     --artifact-root "$artifact_dir"
   exit 2
 fi
 
-native_driver_pid=""
-native_driver_exit=""
-cleanup_native_driver() {
-  if [[ -z "$native_driver_pid" ]]; then
+semantic_agent_pid=""
+semantic_agent_exit=""
+cleanup_semantic_agent() {
+  if [[ -z "$semantic_agent_pid" ]]; then
     return
   fi
-  if kill -0 "$native_driver_pid" 2>/dev/null; then
-    kill "$native_driver_pid" 2>/dev/null || true
+  if kill -0 "$semantic_agent_pid" 2>/dev/null; then
+    kill "$semantic_agent_pid" 2>/dev/null || true
   fi
   set +e
-  wait "$native_driver_pid"
-  native_driver_exit=$?
+  wait "$semantic_agent_pid"
+  semantic_agent_exit=$?
   set -e
-  native_driver_pid=""
+  semantic_agent_pid=""
 }
-trap cleanup_native_driver EXIT INT TERM
+trap cleanup_semantic_agent EXIT INT TERM
 
-say "Native input: state-driven macOS Quartz companion"
+say "Semantic input: checked-in workflow -> state-driven macOS Quartz agent"
 (
   set +e
-  python3 "$native_input_driver" \
+  python3 "$semantic_test_agent" \
+    --spec "$semantic_spec" \
     --artifact-directory "$artifact_dir" \
     --request-id "$run_id" \
+    --scenario-id "$scenario" \
     --timeout-seconds "$timeout_seconds" \
-    > "$artifact_dir/native-input-driver.log" 2>&1
-  driver_exit=$?
-  if (( driver_exit != 0 )); then
-    printf '%s\n' "native-input-driver-failed" > "$artifact_dir/.cancel-requested.tmp"
+    > "$artifact_dir/semantic-test-agent.log" 2>&1
+  agent_exit=$?
+  if (( agent_exit != 0 )); then
+    printf '%s\n' "semantic-test-agent-failed" > "$artifact_dir/.cancel-requested.tmp"
     mv -f "$artifact_dir/.cancel-requested.tmp" "$artifact_dir/.cancel-requested"
   fi
-  exit "$driver_exit"
+  exit "$agent_exit"
 ) &
-native_driver_pid=$!
+semantic_agent_pid=$!
 
 set +e
 python3 "$user_session_runtime" "${arguments[@]}"
@@ -215,15 +219,15 @@ set -e
 
 if (( runtime_exit == 0 )); then
   for _ in {1..200}; do
-    kill -0 "$native_driver_pid" 2>/dev/null || break
+    kill -0 "$semantic_agent_pid" 2>/dev/null || break
     sleep 0.05
   done
 fi
-cleanup_native_driver
+cleanup_semantic_agent
 trap - EXIT INT TERM
 
-if (( runtime_exit == 0 )) && [[ "$native_driver_exit" != "0" ]]; then
-  printf '%s\n' "ERROR: native input companion did not complete successfully (exit ${native_driver_exit:-unknown})." >&2
+if (( runtime_exit == 0 )) && [[ "$semantic_agent_exit" != "0" ]]; then
+  printf '%s\n' "ERROR: semantic test companion did not complete successfully (exit ${semantic_agent_exit:-unknown})." >&2
   exit 2
 fi
 exit "$runtime_exit"
