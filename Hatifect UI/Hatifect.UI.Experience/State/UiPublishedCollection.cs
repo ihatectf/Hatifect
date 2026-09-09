@@ -158,7 +158,7 @@ public sealed class UiPublishedSelectableCollection<T> : UiPublishedCollection<T
     }
 }
 
-internal sealed class UiPublishedCollectionSnapshot<T> : UiCollectionReadSnapshot<T>
+internal sealed class UiPublishedCollectionSnapshot<T> : UiCollectionReadSnapshot<T>, IUiCollectionIndexChangeSnapshot
 {
     internal UiPublishedCollectionSnapshot(IReadOnlyList<T> values, IReadOnlyList<UiSemanticCollectionItem> items,
         IReadOnlyDictionary<UiSymbolId, int> indices, int supportingCount, long revision, UiSymbolId? selected,
@@ -168,4 +168,6 @@ internal sealed class UiPublishedCollectionSnapshot<T> : UiCollectionReadSnapsho
     { History = history; SupportingItemCount = supportingCount; }
     internal int SupportingItemCount { get; }
     internal IReadOnlyList<UiCollectionChange<T>> History { get; }
+    public bool TryVisitIndexChanges(long afterVersion, Action<UiCollectionIndexChange> visit)
+        => UiCollectionIndexChanges.TryVisit(Version, History, afterVersion, visit);
 }

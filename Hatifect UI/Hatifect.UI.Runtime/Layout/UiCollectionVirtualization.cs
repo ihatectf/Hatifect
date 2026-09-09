@@ -716,6 +716,7 @@ internal sealed class UiCollectionVirtualizer
         private object? _source;
         private long _sourceRevision;
         private HeightScope? _scope;
+        private long? _capturedVersion;
         private UiCollectionSceneNode? _previous;
         private UiCollectionViewportRequest? _removedAnchorRequest;
         private UiCollectionViewportRequest? _fallbackRequest;
@@ -781,25 +782,73 @@ internal sealed class UiCollectionVirtualizer
 
         public void Prepare(UiCollectionSceneNode collection, HeightScope scope)
         {
-            bool sourceChanged = PrepareSource(collection);
-            if (sourceChanged || _scope != scope)
+            bool ownerChanged = !ReferenceEquals(_source, collection.SourceIdentity);
+            long? previousVersion = _capturedVersion;
+            bool sourceChanged = UpdateSource(collection);
+            if (!sourceChanged && _scope == scope) return;
+            bool compatibleGeometry = _scope is { } previousScope
+                && (previousScope with { Rows = scope.Rows }) == scope;
+            if (sourceChanged && !ownerChanged && compatibleGeometry && previousVersion is { } version
+                && TryReuseChanges(collection, version, scope))
             {
-                Heights = new AdaptiveRowHeightIndex(scope.Rows, scope.Estimate, _exactRowCapacity);
                 _scope = scope;
+                return;
             }
+            Heights = new AdaptiveRowHeightIndex(scope.Rows, scope.Estimate, _exactRowCapacity);
+            _scope = scope;
         }
 
-        public bool PrepareSource(UiCollectionSceneNode collection)
+        public void PrepareSource(UiCollectionSceneNode collection)
+        {
+            UpdateSource(collection);
+            // Uniform materialization does not maintain an adaptive height index.
+            _scope = null;
+        }
+
+        private bool UpdateSource(UiCollectionSceneNode collection)
         {
             bool ownerChanged = !ReferenceEquals(_source, collection.SourceIdentity);
             bool sourceChanged = ownerChanged || _sourceRevision != collection.SourceRevision;
-            // Cached values validate exact text without hashing it, including external
-            // sources without content versions. Each item/geometry slot replaces old text.
-            // A revision still resets row heights, but unaffected measurements survive.
+            // Exact item/text/geometry measurement keys remain valid for unchanged items.
             if (ownerChanged) Measurements.Clear();
             _source = collection.SourceIdentity;
             _sourceRevision = collection.SourceRevision;
+            _capturedVersion = collection.CapturedSourceVersion;
             return sourceChanged;
+        }
+
+        private bool TryReuseChanges(UiCollectionSceneNode collection, long previousVersion, HeightScope scope)
+        {
+            int firstShiftedRow = int.MaxValue;
+            List<(int First, int End)>? movedRanges = null;
+            bool known = collection.TryVisitIndexChanges(previousVersion, change =>
+            {
+                int row = change.Index / scope.Columns;
+                switch (change.Kind)
+                {
+                    case UiCollectionIndexChangeKind.Update:
+                        Heights.ForgetExact(row);
+                        break;
+                    case UiCollectionIndexChangeKind.Move:
+                        int destination = change.DestinationIndex / scope.Columns;
+                        (movedRanges ??= new()).Add((Math.Min(row, destination), Math.Max(row, destination) + 1));
+                        break;
+                    default:
+                        // Insert/remove changes subsequent row grouping. Keep its unaffected prefix.
+                        firstShiftedRow = Math.Min(firstShiftedRow, row);
+                        break;
+                }
+            });
+            if (!known) return false;
+            if (movedRanges is not null) Heights.ForgetRanges(movedRanges);
+            if (scope.Rows != Heights.Count)
+            {
+                if (firstShiftedRow == int.MaxValue) return false;
+                Heights = Heights.ResizeKeepingPrefix(scope.Rows, firstShiftedRow);
+            }
+            else if (firstShiftedRow != int.MaxValue)
+                Heights.ForgetRange(firstShiftedRow, Heights.Count);
+            return true;
         }
 
         public UiSymbolId NodeFor(UiCollectionSceneNode collection, UiSymbolId item)
@@ -900,6 +949,74 @@ internal sealed class UiCollectionVirtualizer
             _recency.AddLast(node);
             _exact.Add(row, node);
             Update(row, 0, (double)height - _estimate);
+        }
+
+        public void ForgetExact(int row)
+        {
+            if (!_exact.TryGetValue(row, out LinkedListNode<RowEntry>? entry)) return;
+            _exact.Remove(row);
+            _recency.Remove(entry);
+            Update(row, (double)entry.Value.Height - _estimate, 0);
+        }
+
+        public void ForgetRange(int firstRow, int endRow)
+        {
+            // Iterate only the bounded exact cache, never every row in the source model.
+            LinkedListNode<RowEntry>? current = _recency.First;
+            while (current is not null)
+            {
+                LinkedListNode<RowEntry>? next = current.Next;
+                if (current.Value.Row >= firstRow && current.Value.Row < endRow)
+                    ForgetExact(current.Value.Row);
+                current = next;
+            }
+        }
+
+        public void ForgetRanges(List<(int First, int End)> ranges)
+        {
+            if (ranges.Count == 1)
+            {
+                ForgetRange(ranges[0].First, ranges[0].End);
+                return;
+            }
+            // History is bounded, but scanning all cached rows for every retained Move is
+            // needlessly multiplicative. Merge ranges once, then visit the exact cache once.
+            ranges.Sort(static (left, right) => left.First.CompareTo(right.First));
+            int mergedCount = 0;
+            for (int index = 0; index < ranges.Count; index++)
+            {
+                var range = ranges[index];
+                if (mergedCount > 0 && range.First <= ranges[mergedCount - 1].End)
+                {
+                    var previous = ranges[mergedCount - 1];
+                    ranges[mergedCount - 1] = (previous.First, Math.Max(previous.End, range.End));
+                }
+                else ranges[mergedCount++] = range;
+            }
+            LinkedListNode<RowEntry>? current = _recency.First;
+            while (current is not null)
+            {
+                LinkedListNode<RowEntry>? next = current.Next;
+                int row = current.Value.Row;
+                int low = 0, high = mergedCount;
+                while (low < high)
+                {
+                    int middle = low + (high - low) / 2;
+                    if (ranges[middle].First <= row) low = middle + 1;
+                    else high = middle;
+                }
+                if (low > 0 && row < ranges[low - 1].End) ForgetExact(row);
+                current = next;
+            }
+        }
+
+        public AdaptiveRowHeightIndex ResizeKeepingPrefix(int count, int endRow)
+        {
+            var resized = new AdaptiveRowHeightIndex(count, _estimate, _capacity);
+            foreach (RowEntry entry in _recency)
+                if (entry.Row < count && entry.Row < endRow)
+                    resized.SetExact(entry.Row, entry.Height);
+            return resized;
         }
 
         private void Update(int row, double previous, double next)

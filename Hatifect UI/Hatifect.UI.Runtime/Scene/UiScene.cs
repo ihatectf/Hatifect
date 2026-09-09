@@ -57,8 +57,7 @@ internal abstract class UiSceneNode
         Kind = kind;
         Role = role;
         Visual = visual ?? throw new ArgumentNullException(nameof(visual));
-        Children = Array.AsReadOnly(children is { Length: > 0 }
-            ? (UiSceneNode[])children.Clone() : Array.Empty<UiSceneNode>());
+        Children = Array.AsReadOnly(children ?? Array.Empty<UiSceneNode>());
     }
 
     public UiSymbolId Id { get; }
@@ -206,6 +205,9 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
     public int Count { get; }
     public object SourceIdentity => _sourceIdentity;
     public long SourceRevision => _sourceRevision;
+    internal long? CapturedSourceVersion => (_source as IUiSemanticCollectionSnapshot)?.Version;
+    internal bool TryVisitIndexChanges(long afterVersion, Action<UiCollectionIndexChange> visit)
+        => _source is IUiCollectionIndexChangeSnapshot changes && changes.TryVisitIndexChanges(afterVersion, visit);
     public bool MayHaveSupportingText => _mayHaveSupportingText;
     public UiCollectionPresentationRecipe Recipe { get; }
     public UiVisualResolution SelectedItemVisual { get; }
@@ -380,7 +382,6 @@ internal sealed class UiHostSceneNode : UiSceneNode
 
 internal sealed class UiScene
 {
-    private readonly Lazy<UiSceneStructure> _structure;
     public UiScene(
         UiSymbolId experience,
         string displayName,
@@ -395,10 +396,7 @@ internal sealed class UiScene
         Root = root ?? throw new ArgumentNullException(nameof(root));
         MeasurementContext = measurementContext ?? throw new ArgumentNullException(nameof(measurementContext));
         RecomposePublication = recomposePublication;
-        _structure = new Lazy<UiSceneStructure>(() => new UiSceneStructure(Root));
     }
-
-    internal UiSceneStructure Structure => _structure.Value;
 
     public UiSymbolId Experience { get; }
     public string DisplayName { get; }
