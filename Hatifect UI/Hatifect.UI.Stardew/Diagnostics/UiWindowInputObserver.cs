@@ -20,6 +20,7 @@ internal sealed class UiWindowInputObserver : IDisposable
 {
     private const string Scenario = "flow.ui.player.input";
     private const int MaximumCaptures = 128;
+    private static readonly UiSymbolId TargetExperience = new("Hatifect.Flow", "network");
     private readonly IModHelper _helper;
     private readonly IMonitor _monitor;
     private readonly string _runId;
@@ -61,9 +62,14 @@ internal sealed class UiWindowInputObserver : IDisposable
         return new(helper, monitor, run, directory);
     }
 
+    internal static bool IsTargetExperience(UiSymbolId experience) => experience == TargetExperience;
+
     private UiSemanticStardewMenu? CurrentMenu()
     {
-        if (Game1.activeClickableMenu is not UiSemanticStardewMenu { Observation: not null } menu) return null;
+        if (Game1.activeClickableMenu is not UiSemanticStardewMenu { Observation: not null } menu
+            || !IsTargetExperience(menu.CurrentSection)) return null;
+        // Only the exact Flow network Window belongs to this observer. Other semantic menus can
+        // legitimately exist while the save loads; their ownership must not poison this probe.
         menu.RequireAutomationOwner();
         if (!ReferenceEquals(_menu, menu))
         {

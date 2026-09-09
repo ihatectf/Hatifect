@@ -1,3 +1,4 @@
+using Hatifect.UI;
 using Hatifect.UI.Stardew;
 using Xunit;
 
@@ -11,6 +12,13 @@ public sealed class WindowInputGateTests
         FocusedSemantic = "owner/name", FocusedTextField = true, Text = "", PointerInsideFocusedField = true,
         PointerPressed = 1, PointerReleased = 1
     };
+
+    [Theory]
+    [InlineData("Hatifect.Flow", "network", true)]
+    [InlineData("Hatifect.Flow", "parcel", false)]
+    [InlineData("Hatifect.UI", "terminal", false)]
+    public void ObserverTargetsOnlyTheOrdinaryFlowNetworkWindow(string scope, string name, bool expected)
+        => Assert.Equal(expected, UiWindowInputObserver.IsTargetExperience(new UiSymbolId(scope, name)));
 
     [Fact]
     public void RequiresFreshStableFramesAndOrdinaryEventsForEachStage()
