@@ -79,6 +79,36 @@ class MacOsNativeInputDriverTests(unittest.TestCase):
         self.assertTrue(DRIVER.Controller._fully_visible(visible))
         self.assertFalse(DRIVER.Controller._fully_visible(clipped))
 
+    def test_physical_key_stays_down_across_multiple_input_poll_intervals(self) -> None:
+        calls: list[tuple[int, bool]] = []
+        posted: list[int] = []
+
+        class App:
+            @staticmethod
+            def CGEventCreateKeyboardEvent(_source, keycode, down):
+                calls.append((keycode, down))
+                return 11 if down else 12
+
+            @staticmethod
+            def CGEventSetFlags(_event, _flags):
+                pass
+
+        backend = object.__new__(DRIVER.QuartzInput)
+        backend._app = App()
+        backend._post = posted.append
+
+        with mock.patch.object(DRIVER.time, "sleep") as sleep:
+            backend.key(DRIVER.K_KEY)
+
+        self.assertGreaterEqual(DRIVER.KEY_HOLD_SECONDS, 0.05)
+        self.assertGreater(DRIVER.KEY_HOLD_SECONDS, DRIVER.EVENT_GAP_SECONDS)
+        self.assertEqual(calls, [(DRIVER.K_KEY, True), (DRIVER.K_KEY, False)])
+        self.assertEqual(posted, [11, 12])
+        self.assertEqual(
+            sleep.call_args_list,
+            [mock.call(DRIVER.KEY_HOLD_SECONDS), mock.call(DRIVER.EVENT_GAP_SECONDS)],
+        )
+
     def test_quartz_backend_is_never_loaded_at_module_import_on_non_macos_ci(self) -> None:
         with mock.patch.object(DRIVER.platform, "system", return_value="Linux"):
             with self.assertRaisesRegex(DRIVER.DriverError, "requires macOS"):

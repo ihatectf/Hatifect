@@ -26,6 +26,7 @@ SCENARIO = "flow.ui.player.input"
 MAX_JSON_BYTES = 32 * 1024 * 1024
 POLL_SECONDS = 0.05
 EVENT_GAP_SECONDS = 0.015
+KEY_HOLD_SECONDS = 0.100
 MAX_EVENTS = 192
 
 K_KEY = 40
@@ -132,12 +133,19 @@ class QuartzInput:
             self._cf.CFRelease(event)
 
     def key(self, keycode: int, *, flags: int = 0) -> None:
-        for down in (True, False):
-            event = self._app.CGEventCreateKeyboardEvent(None, keycode, down)
-            if flags:
-                self._app.CGEventSetFlags(event, flags)
-            self._post(event)
-            time.sleep(EVENT_GAP_SECONDS)
+        event = self._app.CGEventCreateKeyboardEvent(None, keycode, True)
+        if flags:
+            self._app.CGEventSetFlags(event, flags)
+        self._post(event)
+        # MonoGame/SDL observes keyboard state on input pumps. A very short synthetic
+        # down/up pair can disappear entirely between two pumps, so keep ordinary
+        # physical keys down for a bounded human-like tap interval.
+        time.sleep(KEY_HOLD_SECONDS)
+        event = self._app.CGEventCreateKeyboardEvent(None, keycode, False)
+        if flags:
+            self._app.CGEventSetFlags(event, flags)
+        self._post(event)
+        time.sleep(EVENT_GAP_SECONDS)
 
     def text(self, value: str) -> None:
         if not value or len(value) > 256:
