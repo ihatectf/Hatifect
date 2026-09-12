@@ -173,7 +173,8 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
         port.OnOpen = () =>
         {
             Assert.True(session.Publication.BeginUpdate()
-                .Set((UiPublishedState<string>)session.Status, "New external status").Commit().Succeeded);
+                .Set((UiPublishedState<UiStatus>)session.Status,
+                    new UiStatus(UiStatusKind.Status, "New external status")).Commit().Succeeded);
             accepted = session.Publication.Version;
         };
         var result = Invoke(Action(session, "open"));
