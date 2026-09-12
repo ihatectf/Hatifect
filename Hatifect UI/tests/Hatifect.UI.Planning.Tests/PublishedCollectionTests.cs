@@ -71,6 +71,36 @@ public sealed class PublishedCollectionTests
     }
 
     [Fact]
+    public void PublishedCollectionCarriesItemHelpThroughImmutableDeltaSnapshots()
+    {
+        using var publication = new UiPublication(Owner);
+        string help = "Initial help";
+        var rows = publication.Collection(
+            Owner.Child("rows"),
+            new[] { new Row(1, "stable") },
+            RowType,
+            row => Id(row.Id),
+            label: row => "Item " + row.Id,
+            supportingText: null,
+            icon: null,
+            tooltip: row => new UiLocalizedText(
+                help,
+                new[] { KeyValuePair.Create("ru-RU", help + " " + row.Id) }));
+        IUiSemanticCollectionSnapshot first = rows.CaptureSnapshot();
+
+        help = "Changed help";
+        var change = new UiCollectionChange<Row>(0, 1,
+            new[] { new UiCollectionUpdate<Row>(0, Id(1), new Row(1, "stable")) }, null);
+        Assert.True(publication.BeginUpdate().Apply(rows, change).Commit().Succeeded);
+        IUiSemanticCollectionSnapshot second = rows.CaptureSnapshot();
+
+        Assert.Equal("Initial help", first.GetItem(0).Tooltip?.Resolve("en"));
+        Assert.Equal("Changed help", second.GetItem(0).Tooltip?.Resolve("en"));
+        Assert.Equal(1, second.Revision);
+        Assert.Equal(1, second.GetItem(0).ItemRevision);
+    }
+
+    [Fact]
     public void FailedReplacementOrSelectionRollsBackOtherStagedSources()
     {
         using var publication = new UiPublication(Owner);

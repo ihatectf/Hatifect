@@ -124,13 +124,24 @@ public sealed class UiPublication : IDisposable
     public UiPublishedCollection<T> Collection<T>(UiSymbolId id, IReadOnlyList<T> values, UiSourceType<T> itemType,
         Func<T, UiSymbolId> identify, Func<T, string>? label = null, Func<T, string?>? supportingText = null,
         Func<T, UiSymbolId?>? icon = null, int historyCapacity = 64)
-        => new(this, id, values, itemType, identify, label, supportingText, icon, null, historyCapacity);
+        => new(this, id, values, itemType, identify, label, supportingText, icon, null, null, historyCapacity);
+
+    public UiPublishedCollection<T> Collection<T>(UiSymbolId id, IReadOnlyList<T> values, UiSourceType<T> itemType,
+        Func<T, UiSymbolId> identify, Func<T, string>? label, Func<T, string?>? supportingText,
+        Func<T, UiSymbolId?>? icon, Func<T, UiLocalizedText?>? tooltip, int historyCapacity = 64)
+        => new(this, id, values, itemType, identify, label, supportingText, icon, tooltip, null, historyCapacity);
 
     public UiPublishedSelectableCollection<T> SelectableCollection<T>(UiSymbolId id, IReadOnlyList<T> values,
         UiSourceType<T> itemType, Func<T, UiSymbolId> identify, Func<T, string>? label = null,
         UiSymbolId? selectedItemId = null, Func<T, string?>? supportingText = null,
         Func<T, UiSymbolId?>? icon = null, int historyCapacity = 64)
-        => new(this, id, values, itemType, identify, label, supportingText, icon, selectedItemId, historyCapacity);
+        => new(this, id, values, itemType, identify, label, supportingText, icon, null, selectedItemId, historyCapacity);
+
+    public UiPublishedSelectableCollection<T> SelectableCollection<T>(UiSymbolId id, IReadOnlyList<T> values,
+        UiSourceType<T> itemType, Func<T, UiSymbolId> identify, Func<T, string>? label,
+        UiSymbolId? selectedItemId, Func<T, string?>? supportingText, Func<T, UiSymbolId?>? icon,
+        Func<T, UiLocalizedText?>? tooltip, int historyCapacity = 64)
+        => new(this, id, values, itemType, identify, label, supportingText, icon, tooltip, selectedItemId, historyCapacity);
 
     public UiPublicationView Capture()
     {

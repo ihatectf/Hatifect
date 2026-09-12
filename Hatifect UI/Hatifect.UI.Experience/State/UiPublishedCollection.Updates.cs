@@ -46,7 +46,7 @@ public partial class UiPublishedCollection<T>
             {
                 var old = previous.GetItem(update.Key);
                 var item = UiSemanticCollectionSnapshot.ProjectItem(old.Id, update.Value,
-                    source._label, source._supportingText, source._icon);
+                    source._label, source._supportingText, source._icon, source._tooltip);
                 if (!UiSourceTypeValidation.IsValidCollectionItem(item.Value, source._type.Descriptor.ItemType!, typeof(T)))
                     throw new ArgumentException($"Collection item {update.Key} violates its CLR type or required nullability.");
                 if (UiSemanticCollectionSnapshot.ItemEquivalent(old, item)) continue;

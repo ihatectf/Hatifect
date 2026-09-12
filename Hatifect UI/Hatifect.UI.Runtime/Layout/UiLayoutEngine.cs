@@ -69,6 +69,7 @@ internal sealed class UiLayoutSnapshot
     private readonly IReadOnlyDictionary<UiSymbolId, UiLayoutEntry> _entries;
     private readonly IReadOnlyDictionary<UiSymbolId, UiCollectionLayoutWindow> _collections;
     private readonly IReadOnlyList<UiCollectionLayoutWindow> _collectionWindows;
+    private readonly IReadOnlyDictionary<UiSymbolId, UiVirtualizedItemLayout> _collectionItems;
 
     public UiLayoutSnapshot(
         IDictionary<UiSymbolId, UiLayoutEntry> entries,
@@ -88,6 +89,11 @@ internal sealed class UiLayoutSnapshot
         foreach (UiCollectionLayoutWindow window in _collections.Values)
             collectionWindows[index++] = window;
         _collectionWindows = Array.AsReadOnly(collectionWindows);
+        var collectionItems = new Dictionary<UiSymbolId, UiVirtualizedItemLayout>();
+        foreach (UiCollectionLayoutWindow window in collectionWindows)
+        foreach (UiVirtualizedItemLayout item in window.Items)
+            collectionItems.Add(item.Node, item);
+        _collectionItems = new ReadOnlyDictionary<UiSymbolId, UiVirtualizedItemLayout>(collectionItems);
     }
 
     public UiHostPlacementResult HostPlacement { get; }
@@ -110,6 +116,9 @@ internal sealed class UiLayoutSnapshot
 
     public bool TryGetCollection(UiSymbolId node, out UiCollectionLayoutWindow? window)
         => _collections.TryGetValue(node, out window);
+
+    public bool TryGetCollectionItem(UiSymbolId node, out UiVirtualizedItemLayout item)
+        => _collectionItems.TryGetValue(node, out item);
 }
 
 internal sealed class UiLayoutException : InvalidOperationException
@@ -479,7 +488,8 @@ internal sealed class UiSceneLayoutEngine
                     new UiCollectionPromptMetrics(
                         own.InputPromptWidth,
                         own.InputPromptHeight,
-                        own.InputPromptSpacing)));
+                        own.InputPromptSpacing),
+                    overlayClip));
             return;
         }
         if (node.Children.Count == 0) return;
@@ -789,7 +799,7 @@ internal sealed class UiSceneLayoutEngine
     private static UiSize AddInsets(UiSize size, UiThickness inset)
         => new(size.Width + inset.Left + inset.Right, size.Height + inset.Top + inset.Bottom);
 
-    private static UiThickness Insets(UiVisualResolution visual)
+    internal static UiThickness Insets(UiVisualResolution visual)
     {
         UiSpacing padding = Optional(visual, "padding", new UiSpacing(0));
         UiBorder border = Optional(visual, "border", new UiBorder(default, 0));
@@ -851,7 +861,7 @@ internal sealed class UiSceneLayoutEngine
             _ => null
         };
 
-    private static T Required<T>(UiVisualResolution visual, string property, UiSymbolId node) where T : notnull
+    internal static T Required<T>(UiVisualResolution visual, string property, UiSymbolId node) where T : notnull
         => TryValue(visual, property, out T value)
             ? value
             : throw new UiLayoutException($"Node '{node}' renders text but has no resolved '{property}' value.");

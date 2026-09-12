@@ -11,11 +11,13 @@ public partial class UiPublishedCollection<T> : IUiSemanticSource<IReadOnlyList<
     private readonly Func<T, string>? _label;
     private readonly Func<T, string?>? _supportingText;
     private readonly Func<T, UiSymbolId?>? _icon;
+    private readonly Func<T, UiLocalizedText?>? _tooltip;
     private Action? _changed;
 
     internal UiPublishedCollection(UiPublication publication, UiSymbolId id, IReadOnlyList<T> values,
         UiSourceType<T> itemType, Func<T, UiSymbolId> identify, Func<T, string>? label,
-        Func<T, string?>? supportingText, Func<T, UiSymbolId?>? icon, UiSymbolId? selected, int historyCapacity)
+        Func<T, string?>? supportingText, Func<T, UiSymbolId?>? icon, Func<T, UiLocalizedText?>? tooltip,
+        UiSymbolId? selected, int historyCapacity)
     {
         publication.EnsureCanRegister(id);
         ArgumentNullException.ThrowIfNull(itemType);
@@ -27,6 +29,7 @@ public partial class UiPublishedCollection<T> : IUiSemanticSource<IReadOnlyList<
         _label = label;
         _supportingText = supportingText;
         _icon = icon;
+        _tooltip = tooltip;
         HistoryCapacity = historyCapacity;
         Publication.Register(this, Prepare(values, selected, null, 0, null));
     }
@@ -81,7 +84,7 @@ public partial class UiPublishedCollection<T> : IUiSemanticSource<IReadOnlyList<
     internal UiPublishedCollectionSnapshot<T> Prepare(IReadOnlyList<T> values, UiSymbolId? selected,
         UiPublishedCollectionSnapshot<T>? previous, long version, UiCollectionChange<T>? change)
     {
-        var data = UiSemanticCollectionSnapshot.Create(values, Identify, _label, _supportingText, _icon);
+        var data = UiSemanticCollectionSnapshot.Create(values, Identify, _label, _supportingText, _icon, _tooltip);
         var indices = UiSemanticCollectionSnapshot.Indices(data.Items);
         if (selected is { } selection && !indices.ContainsKey(selection))
             throw new ArgumentException($"Selected collection item '{selection}' is absent from the candidate.", nameof(selected));
@@ -141,8 +144,9 @@ public sealed class UiPublishedSelectableCollection<T> : UiPublishedCollection<T
 {
     internal UiPublishedSelectableCollection(UiPublication publication, UiSymbolId id, IReadOnlyList<T> values,
         UiSourceType<T> itemType, Func<T, UiSymbolId> identify, Func<T, string>? label,
-        Func<T, string?>? supportingText, Func<T, UiSymbolId?>? icon, UiSymbolId? selected, int historyCapacity)
-        : base(publication, id, values, itemType, identify, label, supportingText, icon, selected, historyCapacity) { }
+        Func<T, string?>? supportingText, Func<T, UiSymbolId?>? icon, Func<T, UiLocalizedText?>? tooltip,
+        UiSymbolId? selected, int historyCapacity)
+        : base(publication, id, values, itemType, identify, label, supportingText, icon, tooltip, selected, historyCapacity) { }
 
     public UiSymbolId? SelectedItemId => Current.SelectedItemId;
     public bool TrySelect(UiSymbolId item)

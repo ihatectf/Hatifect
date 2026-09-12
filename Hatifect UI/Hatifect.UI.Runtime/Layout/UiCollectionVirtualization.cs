@@ -22,7 +22,8 @@ internal readonly record struct UiVirtualizedItemLayout(
     UiVisualResolution Visual,
     bool Selected,
     UiRect? IconBounds = null,
-    UiRect? InputPromptBounds = null);
+    UiRect? InputPromptBounds = null,
+    UiTooltipLayout? Tooltip = null);
 
 internal readonly record struct UiCollectionPromptMetrics(float Width, float Height, float Spacing)
 {
@@ -139,6 +140,7 @@ internal sealed class UiCollectionVirtualizer
     private const int UniformOverscanRows = 2;
     private const float AdaptiveOverscanPixels = 128;
     private const int MeasurementCacheCapacity = 1024;
+    private const int TooltipMeasurementCacheCapacity = 1024;
     private const int ExactRowCapacity = 512;
     private readonly IUiTextMetrics _textMetrics;
     private readonly Dictionary<UiSymbolId, CollectionState> _states = new();
@@ -156,7 +158,8 @@ internal sealed class UiCollectionVirtualizer
         UiTypography typography,
         UiSceneMeasurementContext measurementContext,
         UiCollectionViewportRequest request,
-        UiCollectionPromptMetrics inputPrompt = default)
+        UiCollectionPromptMetrics inputPrompt = default,
+        UiRect? tooltipClip = null)
     {
         ArgumentNullException.ThrowIfNull(collection);
         if (!float.IsFinite(itemExtent) || itemExtent <= 0)
@@ -174,6 +177,7 @@ internal sealed class UiCollectionVirtualizer
         int columns = Columns(collection.Recipe, viewport.Width, preferredItemWidth, count);
         CollectionState state = StateFor(collection);
         request = state.ResolveTransition(collection, request);
+        UiRect resolvedTooltipClip = tooltipClip ?? clip;
         UiCollectionLayoutWindow window = collection.Recipe.IsAdaptive
             ? MaterializeAdaptive(
                 collection,
@@ -185,7 +189,8 @@ internal sealed class UiCollectionVirtualizer
                 typography,
                 measurementContext,
                 request,
-                inputPrompt)
+                inputPrompt,
+                resolvedTooltipClip)
             : MaterializeUniform(
                 collection,
                 viewport,
@@ -195,7 +200,8 @@ internal sealed class UiCollectionVirtualizer
                 columns,
                 request,
                 measurementContext,
-                inputPrompt);
+                inputPrompt,
+                resolvedTooltipClip);
         state.Remember(collection);
         return window;
     }
@@ -237,7 +243,8 @@ internal sealed class UiCollectionVirtualizer
         int columns,
         UiCollectionViewportRequest request,
         UiSceneMeasurementContext measurementContext,
-        UiCollectionPromptMetrics inputPrompt)
+        UiCollectionPromptMetrics inputPrompt,
+        UiRect tooltipClip)
     {
         int count = collection.Count;
         int totalRows = Rows(count, columns);
@@ -275,7 +282,8 @@ internal sealed class UiCollectionVirtualizer
             measureExactly: false,
             measurementContext,
             typography: null,
-            inputPrompt);
+            inputPrompt,
+            tooltipClip);
         int anchorIndex = retainedIndex >= 0 ? retainedIndex : Math.Min(count - 1, firstVisibleRow * columns);
         UiSemanticCollectionItem anchorItem = collection.ItemAt(anchorIndex);
         return new UiCollectionLayoutWindow(
@@ -300,7 +308,8 @@ internal sealed class UiCollectionVirtualizer
         UiTypography typography,
         UiSceneMeasurementContext measurementContext,
         UiCollectionViewportRequest request,
-        UiCollectionPromptMetrics inputPrompt)
+        UiCollectionPromptMetrics inputPrompt,
+        UiRect tooltipClip)
     {
         int count = collection.Count;
         int totalRows = Rows(count, columns);
@@ -377,7 +386,8 @@ internal sealed class UiCollectionVirtualizer
             measureExactly: true,
             measurementContext,
             typography,
-            inputPrompt);
+            inputPrompt,
+            tooltipClip);
         return new UiCollectionLayoutWindow(
             collection.Id,
             count,
@@ -500,7 +510,8 @@ internal sealed class UiCollectionVirtualizer
         bool measureExactly,
         UiSceneMeasurementContext measurementContext,
         UiTypography? typography,
-        UiCollectionPromptMetrics inputPrompt)
+        UiCollectionPromptMetrics inputPrompt,
+        UiRect tooltipClip)
     {
         int first = firstRow * columns;
         int end = Math.Min(collection.Count, endRow * columns);
@@ -558,6 +569,13 @@ internal sealed class UiCollectionVirtualizer
                     inputPrompt.Height)
                 : null;
             UiSymbolId node = state.NodeFor(collection, item.Id);
+            UiTooltipLayout? tooltip = TooltipLayout(
+                state,
+                collection,
+                item,
+                node,
+                measurementContext,
+                tooltipClip);
             items[index - first] = new UiVirtualizedItemLayout(
                 node,
                 index,
@@ -568,9 +586,54 @@ internal sealed class UiCollectionVirtualizer
                 collection.Recipe.IsAdaptive ? UiTextOverflow.Wrap : UiTextOverflow.Ellipsis,
                 UiRect.Intersect(clip, bounds),
                 collection.VisualFor(node, item.Id),
-                collection.IsSelected(item.Id), iconBounds, inputPromptBounds);
+                collection.IsSelected(item.Id), iconBounds, inputPromptBounds, tooltip);
         }
         return items;
+    }
+
+    private UiTooltipLayout? TooltipLayout(
+        CollectionState state,
+        UiCollectionSceneNode collection,
+        UiSemanticCollectionItem item,
+        UiSymbolId node,
+        UiSceneMeasurementContext context,
+        UiRect clip)
+    {
+        UiTooltipPresentation? presentation = collection.TooltipFor(item, node);
+        if (presentation is null) return null;
+        UiThickness inset = UiSceneLayoutEngine.Insets(presentation.Visual);
+        UiTypography typography = UiSceneLayoutEngine.Required<UiTypography>(
+            presentation.Visual,
+            "typography",
+            presentation.Id);
+        float maximumWidth = Math.Min(
+            clip.Width,
+            typography.Size * UiTooltipPlacement.MaximumLineCharacters);
+        float textWidth = Math.Max(1, maximumWidth - inset.Left - inset.Right);
+        var key = new TooltipMeasurementKey(
+            item.Id,
+            item.ItemRevision,
+            context.Locale,
+            context.Theme,
+            typography,
+            inset,
+            textWidth);
+        if (!state.TooltipMeasurements.TryGetValue(key, out CachedTooltipMeasurement cached) ||
+            !string.Equals(cached.Text, presentation.Text, StringComparison.Ordinal))
+        {
+            UiSize text = _textMetrics.Measure(
+                presentation.Text,
+                typography,
+                textWidth,
+                UiTextOverflow.Wrap);
+            cached = new CachedTooltipMeasurement(
+                presentation.Text,
+                new UiSize(
+                    text.Width + inset.Left + inset.Right,
+                    text.Height + inset.Top + inset.Bottom));
+            state.TooltipMeasurements.Set(key, cached);
+        }
+        return new UiTooltipLayout(presentation, cached.DesiredSize, inset, clip);
     }
 
     private static MeasuredItem EstimateUniformItem(
@@ -730,6 +793,19 @@ internal sealed class UiCollectionVirtualizer
         string? SupportingText,
         MeasuredItem Measurement);
 
+    private readonly record struct TooltipMeasurementKey(
+        UiSymbolId Item,
+        long ItemRevision,
+        string Locale,
+        UiSymbolId Theme,
+        UiTypography Typography,
+        UiThickness Inset,
+        float TextWidth);
+
+    private readonly record struct CachedTooltipMeasurement(
+        string Text,
+        UiSize DesiredSize);
+
     private readonly record struct MeasuredItem(
         float Height,
         float LabelHeight,
@@ -757,11 +833,14 @@ internal sealed class UiCollectionVirtualizer
         public CollectionState(int measurementCapacity, int exactRowCapacity)
         {
             Measurements = new UiBoundedCache<MeasurementKey, CachedMeasurement>(measurementCapacity);
+            TooltipMeasurements = new UiBoundedCache<TooltipMeasurementKey, CachedTooltipMeasurement>(
+                TooltipMeasurementCacheCapacity);
             _exactRowCapacity = exactRowCapacity;
             Heights = new AdaptiveRowHeightIndex(0, 1, exactRowCapacity);
         }
 
         public UiBoundedCache<MeasurementKey, CachedMeasurement> Measurements { get; }
+        public UiBoundedCache<TooltipMeasurementKey, CachedTooltipMeasurement> TooltipMeasurements { get; }
         public HashSet<UiSymbolId> MaterializedIds { get; } = new();
         public AdaptiveRowHeightIndex Heights { get; private set; }
 

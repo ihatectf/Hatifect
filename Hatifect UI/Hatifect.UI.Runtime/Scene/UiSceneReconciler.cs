@@ -82,6 +82,9 @@ internal sealed class UiSceneReconciler
                 else
                 {
                     nodeEffects |= newCollection.SelectedItemVisual.InvalidationFrom(oldCollection.SelectedItemVisual);
+                    nodeEffects |= TooltipVisualInvalidation(
+                        oldCollection.ItemTooltipVisual,
+                        newCollection.ItemTooltipVisual);
                     if (oldCollection.SelectedItemId != newCollection.SelectedItemId ||
                         !ItemVisualsEqual(oldCollection, newCollection))
                         nodeEffects |= UiPropertyEffects.Render;
@@ -106,6 +109,17 @@ internal sealed class UiSceneReconciler
         if (previous.Id != next.Id || !string.Equals(previous.Text, next.Text, StringComparison.Ordinal))
             effects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
         return effects;
+    }
+
+    private static UiPropertyEffects TooltipVisualInvalidation(
+        UiVisualResolution? previous,
+        UiVisualResolution? next)
+    {
+        if (previous is null || next is null)
+            return previous == next
+                ? UiPropertyEffects.None
+                : UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
+        return next.InvalidationFrom(previous);
     }
 
     private static UiSceneDiff Structural(UiScene scene)

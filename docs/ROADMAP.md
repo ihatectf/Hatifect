@@ -436,6 +436,19 @@ activation, registration ownership, layout и renderer не меняются. UI
 и 21 semantic-contract tests — **PASS**. Collection-item help, delay policy и consumer/native
 матрица остаются открыты. [Контракт, RED→GREEN и evidence](U06_CONTRIBUTION_HELP.md).
 
+U06-i semantic collection item help — **DONE в локальной owner-ветке, ожидает локальной интеграции**,
+полный U06 — **IN_PROGRESS**. Source `35dc94660415e2f31c6d6110b0339c4b17856e78` добавляет
+immutable локализованную help в static/mutable/selectable/published collection snapshots через
+совместимые overloads. Layout разрешает и измеряет её только для materialized window, сохраняет
+измерения в bounded LRU 1,024 на active collection и публикует O(1) индекс видимых item IDs; render
+не вызывает text metrics. Selectable row использует hover/focus, read-only Browse — hover без
+activation; accessibility сохраняет label как Name и help как Description. UI `run-7344afe2` —
+**PASS 1,131/1,131**; exact C `run-xj7bplfh` — **PASS 1,934 .NET + 503 Python**; P
+`hatifect-ui-ca-isolated.dhhxog2i` — **PASS** 8 packages/47 files/102 CA tests. Public API baseline v1,
+21 semantic-contract tests и architecture — **PASS**. Display delay, validation-error help,
+consumer/native матрица и Flow/CA adoption остаются открыты.
+[Контракт, RED→GREEN и evidence](U06_COLLECTION_ITEM_HELP.md).
+
 **U07.** Построить `UiQuick` recipes для alert/confirm/select/простого form/notification и `UiView` для небольшого декларативного layout с typed bindings/actions. Синтаксис может выводить отношения только когда вывод однозначен; явное описание остаётся доступным. Оба входа компилируются в тот же IR, что полная Experience. Выход: примеры простого диалога, формы и небольшого custom screen; одно и то же действие имеет одинаковый lifecycle во всех формах авторства. Сравнить объём и понятность authoring на реальных задачах, затем закрепить API.
 
 **U08.** После D02 добавить `UiExact`: explicit geometry/layers/canvas и pixel scaling внутри framework. Определить measure/arrange, coordinate transform, clipping, render/hitbox agreement, focus order, semantic labels и fallback для compact/controller/accessibility. Выход: точное представление использует общие lifecycle/resources/input, а неподдерживаемое окружение получает явно заданное поведение. Не публиковать exact drawing как способ обходить hit testing или доступность.

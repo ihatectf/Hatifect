@@ -158,7 +158,8 @@ internal sealed class UiAccessibilitySnapshotBuilder
                     Array.Empty<UiAccessibilityNodeSnapshot>(),
                     item.Index + 1,
                     window.TotalCount,
-                    shortcut: collection.InputPrompt?.Label))
+                    shortcut: collection.InputPrompt?.Label,
+                    description: item.Tooltip?.Presentation.Text))
                 .ToArray();
         }
 
