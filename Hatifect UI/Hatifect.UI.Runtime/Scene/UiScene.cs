@@ -19,6 +19,7 @@ internal enum UiSceneNodeKind
     TextInput,
     Inspector,
     Form,
+    Status,
     ActionBar
 }
 
@@ -118,7 +119,7 @@ internal sealed class UiSourceSceneNode : UiSceneNode
             throw new ArgumentException("A semantic source name is required.", nameof(semanticName));
         Source = source ?? throw new ArgumentNullException(nameof(source));
         SemanticName = semanticName;
-        DisplayText = kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form
+        DisplayText = kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form or UiSceneNodeKind.Status
             ? displayText ?? source.UntypedValue?.ToString() ?? string.Empty
             : string.Empty;
     }

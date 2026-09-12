@@ -190,8 +190,8 @@ internal sealed class UiSceneComposer
             FoundationComponentKind.Inspector => Source(
                 invocation, element, visual, interaction, UiSceneNodeKind.Inspector, UiSceneRoles.Inspector, reads, locale),
             FoundationComponentKind.Form => Form(invocation, element, visual, interaction, reads, locale),
-            FoundationComponentKind.StatusText => Source(
-                invocation, element, visual, interaction, UiSceneNodeKind.Text, UiSceneRoles.Text, reads, locale),
+            FoundationComponentKind.StatusText => Status(
+                invocation, element, visual, interaction, reads, locale),
             FoundationComponentKind.ActionBar => ActionBar(invocation, element, visual, interaction, reads, locale),
             _ => throw new InvalidOperationException($"Unsupported foundation component '{component}'.")
         };
@@ -234,6 +234,46 @@ internal sealed class UiSceneComposer
             nodeId, kind, role,
             Resolve(role, kind, nodeId, invocation, visual, interaction),
             invocation.Experience.ElementLabelFor(element, locale), captured, displayText) { SemanticId = element.Id };
+    }
+
+    private UiSceneNode Status(
+        UiInvocationResult invocation,
+        UiSemanticElementDefinition element,
+        UiVisualDefinition? visual,
+        UiInteractionSnapshot? interaction,
+        UiPublicationReadScope reads,
+        string locale)
+    {
+        if (element.Source.ValueType != typeof(UiStatus))
+            return Source(
+                invocation, element, visual, interaction,
+                UiSceneNodeKind.Text, UiSceneRoles.Text, reads, locale);
+
+        IUiSemanticSource captured = reads.Read(element.Source);
+        if (captured.UntypedValue is not UiStatus status)
+            throw new InvalidOperationException($"Status element '{element.Id}' returned a null or incompatible value.");
+        UiSymbolId nodeId = element.Id.Child("scene/status");
+        UiSymbolId role = Role(invocation.Experience, element.Alias, UiSceneRoles.Status);
+        IReadOnlyList<UiVisualStateRef>? states = status.Kind switch
+        {
+            UiStatusKind.Empty => new[] { UiVisualStates.Empty },
+            UiStatusKind.Loading => new[] { UiVisualStates.Loading },
+            UiStatusKind.Success => new[] { UiVisualStates.Success },
+            UiStatusKind.Error => new[] { UiVisualStates.Error },
+            UiStatusKind.Status => null,
+            _ => throw new InvalidOperationException($"Status element '{element.Id}' has unsupported kind '{status.Kind}'.")
+        };
+        string? displayText = invocation.Experience.HasTextFormatter(element.Id)
+            ? invocation.Experience.FormatText(element.Id, status, locale)
+            : status.Message;
+        return new UiSourceSceneNode(
+            nodeId,
+            UiSceneNodeKind.Status,
+            role,
+            Resolve(role, UiSceneNodeKind.Status, nodeId, invocation, visual, interaction, domainStates: states),
+            invocation.Experience.ElementLabelFor(element, locale),
+            captured,
+            displayText) { SemanticId = element.Id };
     }
 
     private UiSceneNode Collection(

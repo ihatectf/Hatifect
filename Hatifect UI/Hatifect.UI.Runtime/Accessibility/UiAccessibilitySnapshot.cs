@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Hatifect.UI.Experience;
 using Hatifect.UI.Planning;
 using Hatifect.UI.Runtime.Hosting;
 using Hatifect.UI.Runtime.Input;
@@ -23,6 +24,8 @@ internal enum UiAccessibilityRole
     TextField,
     Inspector,
     Form,
+    Status,
+    Alert,
     Toolbar
 }
 
@@ -180,6 +183,10 @@ internal sealed class UiAccessibilitySnapshotBuilder
             UiTextInputSceneNode => UiAccessibilityRole.TextField,
             UiSourceSceneNode source when source.Kind == UiSceneNodeKind.Inspector => UiAccessibilityRole.Inspector,
             UiSourceSceneNode source when source.Kind == UiSceneNodeKind.Form => UiAccessibilityRole.Form,
+            UiSourceSceneNode source when source.Kind == UiSceneNodeKind.Status &&
+                                          source.Source.UntypedValue is UiStatus { Kind: UiStatusKind.Error }
+                => UiAccessibilityRole.Alert,
+            UiSourceSceneNode source when source.Kind == UiSceneNodeKind.Status => UiAccessibilityRole.Status,
             UiSourceSceneNode or UiTextSceneNode => UiAccessibilityRole.StaticText,
             UiContainerSceneNode container when container.Kind == UiSceneNodeKind.Form => UiAccessibilityRole.Form,
             UiContainerSceneNode container when container.Kind == UiSceneNodeKind.ActionBar => UiAccessibilityRole.Toolbar,

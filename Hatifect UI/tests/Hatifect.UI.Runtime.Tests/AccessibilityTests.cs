@@ -83,6 +83,45 @@ public sealed class AccessibilityTests
         }
     }
 
+    [Theory]
+    [InlineData(UiStatusKind.Status, false)]
+    [InlineData(UiStatusKind.Empty, false)]
+    [InlineData(UiStatusKind.Loading, false)]
+    [InlineData(UiStatusKind.Success, false)]
+    [InlineData(UiStatusKind.Error, true)]
+    public void TypedStatusExposesLiveRegionSemanticsWithoutEnteringControllerTraversal(
+        UiStatusKind kind,
+        bool isAlert)
+    {
+        UiSymbolId id = RegistryTests.Id($"accessibility/status/{kind}");
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Status accessibility")
+            .Status("Network", new UiConstantSource<UiStatus>(new UiStatus(kind, "Connection unavailable")))
+            .Actions("Actions", new UiActionDefinition(id.Child("retry"), "Retry", () => { }))
+            .Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .Window(id, experience.DisplayName, () => experience, UiHostPolicies.Window)
+            .Freeze();
+        UiScene scene = new UiSceneComposer(UiThemePresets.Dark(), registry).Compose(
+            new UiInvocationService(registry).Invoke(id, UiPresentationProfiles.Controller));
+        var host = new UiPortalHostSession(
+            scene,
+            new UiHostPlacementContext(Viewport),
+            new TestPlatform());
+
+        UiAccessibilityNodeSnapshot status = Assert.Single(
+            Nodes(host.Accessibility.Root.Root),
+            node => node.Role is UiAccessibilityRole.Status or UiAccessibilityRole.Alert);
+        Assert.Equal(isAlert ? UiAccessibilityRole.Alert : UiAccessibilityRole.Status, status.Role);
+        Assert.Equal("Network", status.Name);
+        Assert.Equal("Connection unavailable", status.Value);
+        Assert.False(status.Focused);
+
+        Assert.True(host.MoveFocus(UiNavigationDirection.Next).Consumed);
+        Assert.Equal(
+            "Retry",
+            Assert.Single(Nodes(host.Accessibility.Root.Root), node => node.Focused).Name);
+    }
+
     [Fact]
     public void ConfigureFormProjectsLabeledEditableFieldsThroughLayoutInputAndAccessibility()
     {

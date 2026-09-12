@@ -53,6 +53,10 @@ internal sealed class UiFoundationVisuals
                 values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
                 values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
                 break;
+            case UiSceneNodeKind.Status:
+                values.Add(Token("foreground", StatusForeground(domainStates), UiSemanticType.ColorToken));
+                values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+                break;
             case UiSceneNodeKind.TextInput:
                 values.Add(Token("surface", UiThemeTokens.SurfaceSecondary.Id, UiSemanticType.SurfaceToken));
                 values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
@@ -106,6 +110,17 @@ internal sealed class UiFoundationVisuals
             : host.Kind is UiHostKind.Popup or UiHostKind.Context
                 ? UiThemeTokens.SurfacePopup.Id
                 : UiThemeTokens.SurfaceCanvas.Id;
+
+    private static UiSymbolId StatusForeground(IReadOnlyList<UiVisualStateRef>? states)
+        => Contains(states, UiVisualStates.Error)
+            ? UiThemeTokens.TextDanger.Id
+            : Contains(states, UiVisualStates.Success)
+                ? UiThemeTokens.TextSuccess.Id
+                : Contains(states, UiVisualStates.Loading)
+                    ? UiThemeTokens.TextAccent.Id
+                    : Contains(states, UiVisualStates.Empty)
+                        ? UiThemeTokens.TextMuted.Id
+                        : UiThemeTokens.TextSecondary.Id;
 
     private static string TokenName(UiSymbolId id)
         => id.LocalId.StartsWith("token/", StringComparison.Ordinal) ? id.LocalId[6..] : id.LocalId;

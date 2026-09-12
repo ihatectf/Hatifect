@@ -6,9 +6,12 @@ using Hatifect.UI.Planning;
 using Hatifect.UI.Runtime.Hosting;
 using Hatifect.UI.Runtime.Invocation;
 using Hatifect.UI.Runtime.Layout;
+using Hatifect.UI.Runtime.Platform;
 using Hatifect.UI.Runtime.Registration;
 using Hatifect.UI.Runtime.Rendering;
 using Hatifect.UI.Runtime.Scene;
+using Hatifect.UI.Runtime.Visual;
+using Hatifect.UI.Runtime.Visual.Resolution;
 using Hatifect.UI.Runtime.Visual.Theming;
 using Hatifect.UI.Semantics;
 using Xunit;
@@ -147,6 +150,52 @@ public sealed class SceneCompositionTests
         Assert.DoesNotContain(Nodes(scene.Root).OfType<UiSourceSceneNode>(), node => ReferenceEquals(node.Source, auxiliary));
     }
 
+    [Theory]
+    [InlineData(UiStatusKind.Status)]
+    [InlineData(UiStatusKind.Empty)]
+    [InlineData(UiStatusKind.Loading)]
+    [InlineData(UiStatusKind.Success)]
+    [InlineData(UiStatusKind.Error)]
+    public void TypedStatusUsesFoundationStateColorAndRendersItsMessage(UiStatusKind kind)
+    {
+        UiSymbolId id = RegistryTests.Id($"status/{kind}");
+        var status = new UiStatus(kind, $"Message {kind}");
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Status fixture")
+            .Status("Status", new UiConstantSource<UiStatus>(status))
+            .Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .Window(id, experience.DisplayName, () => experience)
+            .Freeze();
+        UiTheme theme = UiThemePresets.Dark();
+        UiScene scene = new UiSceneComposer(theme, registry).Compose(
+            new UiInvocationService(registry).Invoke(id, UiPresentationProfiles.Wide));
+
+        UiSourceSceneNode node = Assert.Single(Nodes(scene.Root).OfType<UiSourceSceneNode>());
+        Assert.Equal(UiSceneNodeKind.Status, node.Kind);
+        Assert.Equal(UiSceneRoles.Status, node.Role);
+        Assert.Equal(status.Message, node.DisplayText);
+        UiResolvedVisualProperty foreground = Assert.Single(
+            node.Visual.Properties,
+            property => property.Property.Name == "foreground");
+        UiThemeToken<UiColor> expected = kind switch
+        {
+            UiStatusKind.Empty => UiThemeTokens.TextMuted,
+            UiStatusKind.Loading => UiThemeTokens.TextAccent,
+            UiStatusKind.Success => UiThemeTokens.TextSuccess,
+            UiStatusKind.Error => UiThemeTokens.TextDanger,
+            _ => UiThemeTokens.TextSecondary
+        };
+        Assert.Equal(theme.Resolve(expected), foreground.Value);
+
+        var host = new UiPortalHostSession(
+            scene,
+            new UiHostPlacementContext(new UiRect(0, 0, 480, 260)),
+            new NoOpPlatform());
+        Assert.Contains(
+            host.Root.Frame.Primitives.OfType<UiTextPrimitive>(),
+            primitive => primitive.Node == node.Id && primitive.Text == status.Message);
+    }
+
     private static UiExperienceDefinition Experience(
         UiSymbolId id,
         UiState<string> search,
@@ -173,5 +222,13 @@ public sealed class SceneCompositionTests
         public List<UiRenderPrimitive> Drawn { get; } = new();
         public void DrawSurface(UiSurfacePrimitive surface) => Drawn.Add(surface);
         public void DrawText(UiTextPrimitive text) => Drawn.Add(text);
+    }
+
+    private sealed class NoOpPlatform : IUiPlatformBridge
+    {
+        public UiSize Measure(string text, UiTypography typography, float availableWidth, UiTextOverflow overflow)
+            => new(Math.Min(text.Length * typography.Size * 0.6f, availableWidth), typography.Size * typography.LineHeight);
+        public void DrawSurface(UiSurfacePrimitive surface) { }
+        public void DrawText(UiTextPrimitive text) { }
     }
 }
