@@ -92,9 +92,9 @@ to Submit; the visual keyboard prompt intentionally chooses Enter as the single 
 
 ## Tooltips
 
-Attach localized semantic help to an already declared presented element or action by its stable ID.
-The consumer supplies meaning and translations; Runtime decides how to expose the help visually and
-through accessibility.
+Attach localized semantic help to an already declared presented element, form field or action by its
+stable ID. The consumer supplies meaning and translations; Runtime decides how to expose the help
+visually and through accessibility.
 
 ```csharp
 var send = new UiActionDefinition(id.Child("send"), "Send", SendSelectedCargo);
@@ -106,6 +106,10 @@ var experience = new UiExperienceBuilder(id, "Shipment")
     .Build();
 ```
 
+For forms, declare the containing `Configure` element before targeting a field. Text/number fields
+attach help to their input; toggle/choice fields attach the same help to every focusable option while
+retaining the field ID as semantic origin.
+
 Pointer hover takes precedence over keyboard/controller focus; at most one tooltip is visible. The
 overlay uses `Surface.Popup`, `Text.Primary`, `Typography.Body`, `Space.S`, `Radius.S`, and
 `Elevation.High` from the active theme. Tooltip text is measured during layout, while selecting an
@@ -114,9 +118,9 @@ falls back above it, and clamps both dimensions to the host viewport. The toolti
 main tree's desired size or focus order.
 
 The target keeps its accessible name and exposes tooltip text separately as its accessibility
-description. Unknown targets and duplicate declarations are rejected before `Build`. This slice
-supports presented element and action IDs. Per-row collection help, form-field help, contribution
-metadata, display delay, and native visual acceptance remain separate work.
+description. Unknown targets, fields whose containing form has not been declared, and duplicate
+declarations are rejected before `Build`. Per-row collection help, contribution metadata, display
+delay, and native visual acceptance remain separate work.
 
 ## Collection density
 

@@ -414,6 +414,17 @@ files/102 CA tests. Public API baseline v1 и 21 semantic-contract tests — **P
 EN/RU/scale/controller observation и form-field help остаются открыты.
 [Контракт, RED→GREEN и evidence](U06_COLLECTION_ROW_PROMPTS.md).
 
+U06-g semantic form-field help — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
+Source `f2794599df67e9786ae493e7a1450a24812a5f42` расширяет существующий `Tooltip(target, text)` на
+поля уже объявленной form. Text/number input и все focusable toggle/choice options получают
+локализованную help с сохранением field semantic ID; accessibility оставляет label в Name и
+публикует help как Description. Focus/hover использует общий U06-e overlay без нового layout.
+UI `run-ctapqcpm` — **PASS 1,125/1,125**; exact C `run-l34vwaar` — **PASS 1,928 .NET + 503
+Python**; P `hatifect-ui-ca-isolated.hzglotde` — **PASS** 8 packages/47 files/102 CA tests. Public API
+baseline v1 и 21 semantic-contract tests — **PASS**. Collection-item help, contribution metadata,
+delay policy и consumer/native матрица остаются открыты.
+[Контракт, RED→GREEN и evidence](U06_FORM_FIELD_HELP.md).
+
 **U07.** Построить `UiQuick` recipes для alert/confirm/select/простого form/notification и `UiView` для небольшого декларативного layout с typed bindings/actions. Синтаксис может выводить отношения только когда вывод однозначен; явное описание остаётся доступным. Оба входа компилируются в тот же IR, что полная Experience. Выход: примеры простого диалога, формы и небольшого custom screen; одно и то же действие имеет одинаковый lifecycle во всех формах авторства. Сравнить объём и понятность authoring на реальных задачах, затем закрепить API.
 
 **U08.** После D02 добавить `UiExact`: explicit geometry/layers/canvas и pixel scaling внутри framework. Определить measure/arrange, coordinate transform, clipping, render/hitbox agreement, focus order, semantic labels и fallback для compact/controller/accessibility. Выход: точное представление использует общие lifecycle/resources/input, а неподдерживаемое окружение получает явно заданное поведение. Не публиковать exact drawing как способ обходить hit testing или доступность.
