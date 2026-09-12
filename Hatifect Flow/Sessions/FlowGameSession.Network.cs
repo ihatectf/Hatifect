@@ -43,8 +43,12 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
                 return new FlowCommandResult(FlowCommandStatus.Conflict, ReadSnapshot().Revision);
             return new FlowCommandResult(FlowCommandStatus.Applied, ReadSnapshot().Revision);
         }
-        catch (SendAdmissionFailure error)
-        { return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, error.Code); }
+        catch (CommandAdmissionFailure error)
+        {
+            FlowCommandStatus status = error.Code == FlowRejectionCode.StateChanged
+                ? FlowCommandStatus.Conflict : FlowCommandStatus.Rejected;
+            return new FlowCommandResult(status, ReadSnapshot().Revision, error.Code);
+        }
         catch (FlowResourceLimitException error)
         { return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, ResourceLimitCode(error.Resource)); }
         catch (ArgumentOutOfRangeException)
@@ -170,12 +174,18 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
         _ => throw new ArgumentOutOfRangeException(nameof(resource))
     };
 
-    private sealed class SendAdmissionFailure : InvalidOperationException
+    private sealed class CommandAdmissionFailure : InvalidOperationException
     {
-        internal SendAdmissionFailure(FlowRejectionCode code)
-            : base(code == FlowRejectionCode.RouteSearchLimit
-                ? "The route search exceeded its supported bound."
-                : "No route connects the selected stations.") => Code = code;
+        internal CommandAdmissionFailure(FlowRejectionCode code)
+            : base(code switch
+            {
+                FlowRejectionCode.RouteSearchLimit => "The route search exceeded its supported bound.",
+                FlowRejectionCode.RouteUnavailable => "No route connects the selected stations.",
+                FlowRejectionCode.ProviderUnavailable => "The source inventory is temporarily unavailable.",
+                FlowRejectionCode.OperationPending => "The selected stack already belongs to an active shipment.",
+                FlowRejectionCode.StateChanged => "The selected source changed before admission.",
+                _ => "The command cannot be admitted."
+            }) => Code = code;
         internal FlowRejectionCode Code { get; }
     }
 }

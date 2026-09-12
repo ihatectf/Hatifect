@@ -77,7 +77,10 @@ public sealed class PartialStackTests
         FlowSendCommand command = Command(session, 3);
         Assert.Equal(FlowCommandStatus.Applied, session.Execute(command).Status);
         Assert.Equal(FlowCommandStatus.Conflict, session.Execute(command).Status);
-        Assert.Equal(FlowCommandStatus.Rejected, session.Execute(Command(session, 2)).Status);
+        FlowCommandResult pending = session.Execute(Command(session, 2));
+        Assert.Equal(FlowCommandStatus.Rejected, pending.Status);
+        Assert.Equal(FlowRejectionCode.OperationPending, pending.Code);
+        Assert.Equal("flow.reason.OperationPending", pending.ReasonKey);
         Guid parcel = Assert.Single(session.ReadSnapshot().Parcels).Id;
         Assert.Equal(FlowCommandStatus.Applied, Action(session, parcel, FlowParcelAction.Cancel).Status);
         for (int i = 0; i < 5; i++) session.Tick(true);
