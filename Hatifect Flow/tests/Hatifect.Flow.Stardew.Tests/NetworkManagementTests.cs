@@ -13,6 +13,71 @@ namespace Hatifect.Flow.Stardew.Tests;
 public sealed class NetworkManagementTests
 {
     [Fact]
+    public void NetworkAuthoringReportsProviderStateAndInvalidInputWithoutMutation()
+    {
+        var world = new GameSessionWorld();
+        using FlowGameSession session = world.Open();
+        world.Configure(session);
+        FlowSnapshot configured = session.ReadSnapshot();
+        FlowLinkSnapshot link = Assert.Single(configured.Links);
+        session.PreparePlayerTarget("Farm", 0, 0, world.Source);
+        FlowNetworkSnapshot target = session.ReadNetwork();
+        FlowCommandResult duplicate = session.Execute(new FlowNetworkCommand(target.Transport.SessionId,
+            target.Transport.Revision, FlowNetworkAction.RegisterStation, Target: target.Target, Name: "source"));
+        Assert.Equal(FlowCommandStatus.Conflict, duplicate.Status);
+        Assert.Equal(FlowRejectionCode.StateChanged, duplicate.Code);
+        Assert.Equal("flow.reason.StateChanged", duplicate.ReasonKey);
+
+        FlowSnapshot current = session.ReadSnapshot();
+        FlowCommandResult invalid = session.Execute(new FlowNetworkCommand(current.SessionId, current.Revision,
+            FlowNetworkAction.AddLink, Station: link.Origin, Destination: link.Origin));
+        Assert.Equal(FlowCommandStatus.InvalidCommand, invalid.Status);
+        Assert.Equal(FlowRejectionCode.InvalidCommand, invalid.Code);
+        FlowCommandResult missing = session.Execute(new FlowNetworkCommand(current.SessionId, current.Revision,
+            FlowNetworkAction.RemoveLink, Target: Guid.NewGuid()));
+        Assert.Equal(FlowCommandStatus.Conflict, missing.Status);
+        Assert.Equal(FlowRejectionCode.StateChanged, missing.Code);
+        Assert.Same(current, session.ReadSnapshot());
+        Assert.Equal(2, session.ReadSnapshot().Stations.Count);
+        Assert.Single(session.ReadSnapshot().Links);
+        Assert.Empty(session.ReadSnapshot().Parcels);
+        Assert.False(session.IsFaulted);
+        Assert.Empty(world.Errors);
+    }
+
+    [Fact]
+    public void BusyCapturedTargetReportsProviderUnavailableWithoutBinding()
+    {
+        var world = new GameSessionWorld();
+        var busy = new BusyMutex();
+        using FlowGameSession session = world.Open(locks: new FlowChestLocks(() => true, world.Errors.Add, _ => busy));
+        session.PreparePlayerTarget("Farm", 0, 0, world.Source);
+        FlowNetworkSnapshot target = session.ReadNetwork();
+
+        FlowCommandResult rejected = session.Execute(new FlowNetworkCommand(target.Transport.SessionId,
+            target.Transport.Revision, FlowNetworkAction.RegisterStation, Target: target.Target, Name: "source"));
+
+        Assert.Equal(FlowCommandStatus.Rejected, rejected.Status);
+        Assert.Equal(FlowRejectionCode.ProviderUnavailable, rejected.Code);
+        Assert.Equal("flow.reason.ProviderUnavailable", rejected.ReasonKey);
+        Assert.Equal(target.Transport.Revision, rejected.Revision);
+        Assert.Same(target.Transport, session.ReadSnapshot());
+        Assert.Empty(session.ReadSnapshot().Stations);
+        Assert.False(world.Source.modData.ContainsKey(FlowGameSession.StationKey));
+        Assert.Equal(8, Assert.Single(world.Source.Items).Stack);
+        Assert.False(session.IsFaulted);
+        Assert.Empty(world.Errors);
+    }
+
+    private sealed class BusyMutex : IFlowInventoryMutex
+    {
+        public bool IsLocked => true;
+        public bool IsHeld => false;
+        public void Request(Action acquired, Action failed) => throw new InvalidOperationException("A busy mutex must not be requested.");
+        public void Release() => throw new InvalidOperationException("A busy mutex must not be released.");
+    }
+
+    [Fact]
     public void CleanNetworkTypedCommandsSurviveRestartAndDeliverSelectedRealItemsExactlyOnce()
     {
         var world = new GameSessionWorld();
