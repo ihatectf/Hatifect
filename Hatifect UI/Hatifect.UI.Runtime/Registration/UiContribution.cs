@@ -39,6 +39,14 @@ public sealed class UiContributionPointDescriptor
 public abstract class UiContributionDescriptor
 {
     protected UiContributionDescriptor(UiSymbolId id, UiSymbolId target, string title, int order)
+        : this(id, target, title, order, tooltip: null) { }
+
+    protected UiContributionDescriptor(
+        UiSymbolId id,
+        UiSymbolId target,
+        string title,
+        int order,
+        UiLocalizedText? tooltip)
     {
         if (!id.IsValid) throw new ArgumentException("A stable contribution ID is required.", nameof(id));
         if (!target.IsValid) throw new ArgumentException("A stable contribution target ID is required.", nameof(target));
@@ -47,12 +55,14 @@ public abstract class UiContributionDescriptor
         Target = target;
         Title = title;
         Order = order;
+        Tooltip = tooltip;
     }
 
     public UiSymbolId Id { get; }
     public UiSymbolId Target { get; }
     public string Title { get; }
     public int Order { get; }
+    public UiLocalizedText? Tooltip { get; }
     public abstract UiContributionKind Kind { get; }
 }
 
@@ -64,6 +74,20 @@ public sealed class UiActionContributionDescriptor : UiContributionDescriptor
         UiActionDefinition action,
         int order = 0)
         : base(id, target, action?.Title ?? throw new ArgumentNullException(nameof(action)), order)
+        => Action = action;
+
+    public UiActionContributionDescriptor(
+        UiSymbolId id,
+        UiSymbolId target,
+        UiActionDefinition action,
+        UiLocalizedText tooltip,
+        int order = 0)
+        : base(
+            id,
+            target,
+            action?.Title ?? throw new ArgumentNullException(nameof(action)),
+            order,
+            tooltip ?? throw new ArgumentNullException(nameof(tooltip)))
         => Action = action;
 
     public UiActionDefinition Action { get; }
@@ -80,6 +104,23 @@ public sealed class UiRouteContributionDescriptor : UiContributionDescriptor
         UiContributionKind kind = UiContributionKind.Route,
         int order = 0)
         : base(id, target, title, order)
+    {
+        if (!route.IsValid) throw new ArgumentException("A stable route ID is required.", nameof(route));
+        if (kind is not (UiContributionKind.Route or UiContributionKind.Section))
+            throw new ArgumentException("A route contribution must be a Route or Section.", nameof(kind));
+        Route = route;
+        Kind = kind;
+    }
+
+    public UiRouteContributionDescriptor(
+        UiSymbolId id,
+        UiSymbolId target,
+        string title,
+        UiSymbolId route,
+        UiLocalizedText tooltip,
+        UiContributionKind kind = UiContributionKind.Route,
+        int order = 0)
+        : base(id, target, title, order, tooltip ?? throw new ArgumentNullException(nameof(tooltip)))
     {
         if (!route.IsValid) throw new ArgumentException("A stable route ID is required.", nameof(route));
         if (kind is not (UiContributionKind.Route or UiContributionKind.Section))

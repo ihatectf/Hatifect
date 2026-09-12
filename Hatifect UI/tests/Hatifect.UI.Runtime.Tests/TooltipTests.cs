@@ -232,6 +232,64 @@ public sealed class TooltipTests
             text => options.Any(option => option.Id != focused.Id && text.Node == option.Tooltip!.Id));
     }
 
+    [Fact]
+    public void ContributedActionAndRouteResolveLocalizedHelpIntoExistingOverlayPolicy()
+    {
+        UiSymbolId owner = new("Hatifect.Tests", "tooltip/contribution/owner");
+        UiSymbolId destination = new("Hatifect.Tests", "tooltip/contribution/destination");
+        UiSymbolId point = owner.Child("point/actions");
+        var ownerExperience = new UiExperienceBuilder(owner, "Owner")
+            .Browse("Items", new UiCollectionSource<string>(Array.Empty<string>(), value => owner.Child(value)))
+            .Build();
+        var destinationExperience = new UiExperienceBuilder(destination, "Destination")
+            .Browse("Items", new UiCollectionSource<string>(Array.Empty<string>(), value => destination.Child(value)))
+            .Build();
+        var action = new UiActionDefinition(owner.Child("action/run"), "Run", () => { });
+        var actionHelp = Localized("Run the contributed command", "Выполнить добавленную команду");
+        var routeHelp = Localized("Open the contributed route", "Открыть добавленный раздел");
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .Window(owner, ownerExperience.DisplayName, () => ownerExperience)
+            .Window(destination, destinationExperience.DisplayName, () => destinationExperience)
+            .Publish(new UiContributionPointDescriptor(
+                point,
+                owner,
+                new UiSymbolId("Hatifect.UI", "region/Actions"),
+                UiContributionKind.Action,
+                UiContributionKind.Route))
+            .Contribute(new UiActionContributionDescriptor(
+                owner.Child("contribution/run"), point, action, tooltip: actionHelp))
+            .Contribute(new UiRouteContributionDescriptor(
+                owner.Child("contribution/open"), point, "Open", destination, tooltip: routeHelp))
+            .Freeze();
+        UiTheme theme = UiThemePresets.Dark();
+        var environment = new UiEnvironment(
+            new UiEnvironmentViewport(Viewport.Width, Viewport.Height),
+            1,
+            UiInputMode.Controller,
+            "ru-RU",
+            theme.Id);
+        UiScene scene = new UiSceneComposer(theme, registry).Compose(
+            new UiInvocationService(registry).InvokeInEnvironment(owner, environment));
+        var runtime = new UiHostRuntimeSession(scene, Viewport, new Platform());
+        UiButtonSceneNode contributedAction = Assert.Single(
+            Nodes(scene.Root).OfType<UiButtonSceneNode>(), node => node.Action.Id == action.Id);
+        UiRouteButtonSceneNode contributedRoute = Assert.Single(
+            Nodes(scene.Root).OfType<UiRouteButtonSceneNode>(), node => node.Route == destination);
+
+        Assert.Equal("Выполнить добавленную команду", contributedAction.Tooltip?.Text);
+        Assert.Equal("Открыть добавленный раздел", contributedRoute.Tooltip?.Text);
+        foreach (UiSceneNode target in new UiSceneNode[] { contributedAction, contributedRoute })
+        {
+            UiRenderFrame frame = new UiSceneRenderPlanner().Build(
+                scene,
+                runtime.Layout,
+                new UiInteractionSnapshot(Focused: target.Id),
+                new Platform());
+            Assert.Single(frame.Primitives.OfType<UiTextPrimitive>(),
+                text => text.Node == target.Tooltip!.Id && text.Text == target.Tooltip.Text);
+        }
+    }
+
     private static UiExperienceDefinition Experience(UiSymbolId id, UiSymbolId actionId, string? tooltip)
     {
         var builder = new UiExperienceBuilder(id, "Shipment")

@@ -96,6 +96,30 @@ public sealed class RegistryTests
     }
 
     [Fact]
+    public void ContributionHelpIsImmutableLocalizedMetadata()
+    {
+        UiSymbolId point = Id("point/actions");
+        var tooltip = new UiLocalizedText(
+            "Run the contributed command",
+            new[] { KeyValuePair.Create("ru-RU", "Выполнить добавленную команду") });
+        var action = new UiActionContributionDescriptor(
+            Id("contribution/action"),
+            point,
+            new UiActionDefinition(Id("action/run"), "Run", () => { }),
+            tooltip: tooltip);
+        var route = new UiRouteContributionDescriptor(
+            Id("contribution/route"),
+            point,
+            "Open",
+            Id("destination"),
+            tooltip: tooltip);
+
+        Assert.Same(tooltip, action.Tooltip);
+        Assert.Same(tooltip, route.Tooltip);
+        Assert.Equal("Выполнить добавленную команду", action.Tooltip!.Resolve("ru-RU"));
+    }
+
+    [Fact]
     public void AtypicalWindowUsesExplicitHostPolicy()
     {
         var policy = new UiHostPolicy(
