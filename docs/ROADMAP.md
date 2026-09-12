@@ -414,7 +414,7 @@ files/102 CA tests. Public API baseline v1 и 21 semantic-contract tests — **P
 EN/RU/scale/controller observation и form-field help остаются открыты.
 [Контракт, RED→GREEN и evidence](U06_COLLECTION_ROW_PROMPTS.md).
 
-U06-g semantic form-field help — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
+U06-g semantic form-field help — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
 Source `f2794599df67e9786ae493e7a1450a24812a5f42` расширяет существующий `Tooltip(target, text)` на
 поля уже объявленной form. Text/number input и все focusable toggle/choice options получают
 локализованную help с сохранением field semantic ID; accessibility оставляет label в Name и
