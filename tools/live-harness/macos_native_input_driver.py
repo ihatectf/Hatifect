@@ -397,6 +397,18 @@ class Controller:
                      attempts=1, observedPointer=detail["lastPointer"],
                      completedFrame=_field(after, "completedFrame"), matchingFrames=matches)
 
+    def click_local(self, x: float, y: float) -> None:
+        # A real player has already clicked into the game window before pressing an
+        # ordinary keybind; a scenario that only moves the pointer never gives the OS a
+        # reason to hand this process's window real keyboard focus. This performs one
+        # calibrated native click at a game-local point with no semantic element yet
+        # required, so a spec can establish that focus before its first key press.
+        self.move_local(x, y)
+        latest = self.latest()
+        screen_x, screen_y, _sx, _sy = self._local_to_screen(latest, x, y)
+        self.backend.click(screen_x, screen_y)
+        self._record("click-local", localX=x, localY=y, screenX=screen_x, screenY=screen_y)
+
     @staticmethod
     def _fully_visible(element: dict[str, Any]) -> bool:
         bx, by, bw, bh = Controller._rect(_field(element, "bounds"))

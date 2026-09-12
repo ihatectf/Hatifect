@@ -28,7 +28,7 @@ MAX_STEP_SECONDS = 600.0
 MAX_VARIABLES = 128
 MAX_TEMPLATE_LENGTH = 4096
 ALLOWED_OPS = {
-    "capture", "ensureGameActive", "wait", "assert", "move", "key", "text",
+    "capture", "ensureGameActive", "wait", "assert", "move", "clickPoint", "key", "text",
     "click", "replaceText", "waitElement", "waitCapture", "waitUi",
 }
 KEYS = {
@@ -626,6 +626,12 @@ class SemanticController(NATIVE.Controller):
                 raise SemanticAgentError(f"Semantic move point is missing at step {step['id']}.")
             self.move_local(float(_field(point, "x")), float(_field(point, "y")))
             self._record("move", step=step["id"])
+        elif op == "clickPoint":
+            point = self.value(resolved["source"], resolved["path"])
+            if not isinstance(point, dict):
+                raise SemanticAgentError(f"Semantic clickPoint target is missing at step {step['id']}.")
+            self.click_local(float(_field(point, "x")), float(_field(point, "y")))
+            self._record("click-point", step=step["id"])
         elif op == "key":
             key = resolved["key"]
             if key not in KEYS:

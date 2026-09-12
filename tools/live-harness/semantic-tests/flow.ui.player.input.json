@@ -30,6 +30,7 @@
     {"id":"capture-destinationName","op":"capture","source":"domain","path":"fixture.destinationName","variable":"destinationName","transform":"string"},
     {"id":"capture-probeText","op":"capture","source":"domain","path":"fixture.probeText","variable":"probeText","transform":"string"},
     {"id":"move-source","op":"move","source":"domain","path":"fixture.sourceScreen"},
+    {"id":"click-source-window","op":"clickPoint","source":"domain","path":"fixture.sourceScreen"},
     {"id":"capture-source-entry-count","op":"capture","source":"domain","path":"entryAttempts","variable":"sourceEntryBefore","transform":"count"},
     {"id":"capture-source-opening-count","op":"capture","source":"domain","path":"openings","variable":"sourceOpenBefore","transform":"count"},
     {"id":"open-source-window","op":"key","key":"K"},
