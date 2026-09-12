@@ -197,6 +197,7 @@ internal sealed class UiAccessibilitySnapshotBuilder
                                           source.Source.UntypedValue is UiStatus { Kind: UiStatusKind.Error }
                 => UiAccessibilityRole.Alert,
             UiSourceSceneNode source when source.Kind == UiSceneNodeKind.Status => UiAccessibilityRole.Status,
+            UiTextSceneNode { IsValidationAlert: true } => UiAccessibilityRole.Alert,
             UiSourceSceneNode or UiTextSceneNode => UiAccessibilityRole.StaticText,
             UiContainerSceneNode container when container.Kind == UiSceneNodeKind.Form => UiAccessibilityRole.Form,
             UiContainerSceneNode container when container.Kind == UiSceneNodeKind.ActionBar => UiAccessibilityRole.Toolbar,

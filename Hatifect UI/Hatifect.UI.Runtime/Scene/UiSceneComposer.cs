@@ -424,6 +424,9 @@ internal sealed class UiSceneComposer
         foreach (UiSemanticFormField field in form.Fields)
         {
             IUiSemanticSource fieldValue = reads.Read(field.Value);
+            string? error = field.Error ?? (field.ValidationMessage is { } validation
+                ? (string?)reads.Read(validation).UntypedValue
+                : null);
             UiSymbolId labelId = field.Id.Child("scene/label");
             children.Add(new UiTextSceneNode(
                 labelId,
@@ -447,7 +450,7 @@ internal sealed class UiSceneComposer
                         inputPrompt: ActivationPrompt(invocation))
                     {
                         SemanticId = field.Id,
-                        Tooltip = Tooltip(invocation, field.Id, optionId, locale)
+                        Tooltip = FieldTooltip(invocation, field.Id, optionId, error, locale)
                     });
                 }
             }
@@ -457,16 +460,20 @@ internal sealed class UiSceneComposer
                     field.Label, field.Value, fieldValue)
                 {
                     SemanticId = field.Id,
-                    Tooltip = Tooltip(invocation, field.Id, inputId, locale)
+                    Tooltip = FieldTooltip(invocation, field.Id, inputId, error, locale)
                 });
-            string? error = field.Error ?? (field.ValidationMessage is { } validation ? (string?)reads.Read(validation).UntypedValue : null);
             if (!string.IsNullOrWhiteSpace(error))
             {
                 UiSymbolId errorId = field.Id.Child("scene/error");
                 UiSymbolId errorRole = Role(invocation.Experience, "Field.Error", UiSceneRoles.Text);
                 children.Add(new UiTextSceneNode(errorId, errorRole,
-                    Resolve(errorRole, UiSceneNodeKind.Text, errorId, invocation, visual, interaction),
-                    field.Error is null ? error : $"{field.Label}: {error}") { SemanticId = field.Id });
+                    Resolve(errorRole, UiSceneNodeKind.Text, errorId, invocation, visual, interaction,
+                        domainStates: new[] { UiVisualStates.Error }),
+                    field.Error is null ? error : $"{field.Label}: {error}")
+                {
+                    SemanticId = field.Id,
+                    IsValidationAlert = true
+                });
             }
         }
 
@@ -648,6 +655,16 @@ internal sealed class UiSceneComposer
         return CreateTooltip(invocation, node, text);
     }
 
+    private UiTooltipPresentation? FieldTooltip(
+        UiInvocationResult invocation,
+        UiSymbolId field,
+        UiSymbolId node,
+        string? error,
+        string locale)
+        => string.IsNullOrWhiteSpace(error)
+            ? Tooltip(invocation, field, node, locale)
+            : CreateTooltip(invocation, node, error, isError: true);
+
     private UiTooltipPresentation? Tooltip(
         UiInvocationResult invocation,
         UiLocalizedText? tooltip,
@@ -658,7 +675,8 @@ internal sealed class UiSceneComposer
     private UiTooltipPresentation? CreateTooltip(
         UiInvocationResult invocation,
         UiSymbolId node,
-        string? text)
+        string? text,
+        bool isError = false)
     {
         if (text is null) return null;
         UiSymbolId id = node.Child("tooltip");
@@ -671,7 +689,8 @@ internal sealed class UiSceneComposer
                 id,
                 invocation,
                 visual: null,
-                interaction: null));
+                interaction: null,
+                domainStates: isError ? new[] { UiVisualStates.Error } : null));
     }
 
     private static UiInputPrompt? ActivationPrompt(UiInvocationResult invocation)

@@ -302,6 +302,94 @@ public sealed class TooltipTests
     }
 
     [Fact]
+    public void ValidationErrorOverridesFieldHelpWithDangerAlertAndClearingItRestoresLocalizedHelp()
+    {
+        UiSymbolId id = new("Hatifect.Tests", "tooltip/form/validation/external");
+        UiSymbolId fieldId = id.Child("field/name");
+        var error = new UiState<string?>("Имя уже занято");
+        using var form = new UiFormState(new UiSemanticFormField(
+            fieldId,
+            "Имя",
+            new UiState<string>("Ферма"),
+            error));
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Station")
+            .Configure("Details", form)
+            .Tooltip(fieldId, Localized("Choose a unique name", "Выберите уникальное имя"))
+            .Build();
+        UiTheme theme = UiThemePresets.Dark();
+        var runtime = new UiHostRuntimeSession(
+            Scene(experience, theme, UiInputMode.Keyboard, "ru-RU"), Viewport, new Platform());
+        UiTextInputSceneNode input = Assert.Single(Nodes(runtime.Scene.Root).OfType<UiTextInputSceneNode>());
+        UiTextSceneNode alert = Assert.Single(
+            Nodes(runtime.Scene.Root).OfType<UiTextSceneNode>(), node => node.IsValidationAlert);
+
+        Assert.Equal("Имя уже занято", input.Tooltip?.Text);
+        Assert.Equal(theme.Resolve(UiThemeTokens.TextDanger),
+            UiSceneLayoutEngine.Required<UiColor>(input.Tooltip!.Visual, "foreground", input.Tooltip.Id));
+        Assert.Equal(theme.Resolve(UiThemeTokens.TextDanger),
+            UiSceneLayoutEngine.Required<UiColor>(alert.Visual, "foreground", alert.Id));
+        Assert.True(runtime.Interactions.MoveFocus(UiNavigationDirection.Next).Consumed);
+        runtime.RefreshInteractionVisuals();
+        Assert.Single(runtime.Frame.Primitives.OfType<UiTextPrimitive>(),
+            text => text.Node == input.Tooltip.Id && text.Text == "Имя уже занято");
+        UiAccessibilityNodeSnapshot accessibleInput = Assert.Single(
+            Accessibility(runtime.Accessibility.Root), node => node.Id == input.Id);
+        Assert.Equal("Имя", accessibleInput.Name);
+        Assert.Equal("Имя уже занято", accessibleInput.Description);
+        Assert.Equal(UiAccessibilityRole.Alert, Assert.Single(
+            Accessibility(runtime.Accessibility.Root), node => node.Id == alert.Id).Role);
+
+        error.Value = null;
+        runtime.Update(Scene(experience, theme, UiInputMode.Keyboard, "ru-RU"), Viewport);
+        UiTextInputSceneNode corrected = Assert.Single(Nodes(runtime.Scene.Root).OfType<UiTextInputSceneNode>());
+
+        Assert.Equal("Выберите уникальное имя", corrected.Tooltip?.Text);
+        Assert.DoesNotContain(Nodes(runtime.Scene.Root).OfType<UiTextSceneNode>(), node => node.IsValidationAlert);
+        Assert.Equal("Выберите уникальное имя", Assert.Single(
+            Accessibility(runtime.Accessibility.Root), node => node.Id == corrected.Id).Description);
+    }
+
+    [Fact]
+    public void AppliedChoiceValidationProjectsRawErrorToEveryOptionAndOneLabeledAlert()
+    {
+        UiSymbolId id = new("Hatifect.Tests", "tooltip/form/validation/choice");
+        UiSymbolId fieldId = id.Child("field/mode");
+        UiFormField<string> field = UiFormFields.Choice(
+            fieldId,
+            "Mode",
+            "one",
+            new[] { "one", "two" },
+            value => value,
+            value => value == "two" ? "Mode is unavailable" : null);
+        using var form = new UiFormState(field);
+        field.DraftValue = "two";
+        Assert.False(form.Apply());
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Station")
+            .Configure("Details", form)
+            .Tooltip(fieldId, Localized("Choose a mode", "Выберите режим"))
+            .Build();
+        UiTheme theme = UiThemePresets.Dark();
+        var runtime = new UiHostRuntimeSession(
+            Scene(experience, theme, UiInputMode.Controller, "en"), Viewport, new Platform());
+        UiButtonSceneNode[] options = Nodes(runtime.Scene.Root).OfType<UiButtonSceneNode>().ToArray();
+        UiTextSceneNode alert = Assert.Single(
+            Nodes(runtime.Scene.Root).OfType<UiTextSceneNode>(), node => node.IsValidationAlert);
+
+        Assert.Equal(2, options.Length);
+        Assert.All(options, option =>
+        {
+            Assert.Equal(fieldId, option.SemanticId);
+            Assert.Equal("Mode is unavailable", option.Tooltip?.Text);
+            UiAccessibilityNodeSnapshot accessible = Assert.Single(
+                Accessibility(runtime.Accessibility.Root), node => node.Id == option.Id);
+            Assert.Equal("Mode is unavailable", accessible.Description);
+        });
+        Assert.Equal("Mode: Mode is unavailable", alert.Text);
+        Assert.Equal(UiAccessibilityRole.Alert, Assert.Single(
+            Accessibility(runtime.Accessibility.Root), node => node.Id == alert.Id).Role);
+    }
+
+    [Fact]
     public void ContributedActionAndRouteResolveLocalizedHelpIntoExistingOverlayPolicy()
     {
         UiSymbolId owner = new("Hatifect.Tests", "tooltip/contribution/owner");
