@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -19,6 +18,7 @@ internal sealed class UiWindowInputObserver : IDisposable
 {
     private const string Scenario = "flow.ui.player.input";
     private const int MaximumCaptures = 128;
+    private const string ResultSemantic = "Hatifect.Flow/network/element/result";
     private static readonly UiSymbolId TargetExperience = new("Hatifect.Flow", "network");
     private readonly IModHelper _helper;
     private readonly IMonitor _monitor;
@@ -27,7 +27,7 @@ internal sealed class UiWindowInputObserver : IDisposable
     private readonly string _expectedText;
     private readonly CompletedFrameComponent _component;
     private readonly UiWindowInputGate _gate;
-    private readonly List<object> _captures = new();
+    private readonly UiBoundedCaptureHistory<WindowInputCapture> _captures = new(MaximumCaptures);
     private UiSemanticStardewMenu? _menu;
     private long _epoch;
     private long _frame;
@@ -35,6 +35,8 @@ internal sealed class UiWindowInputObserver : IDisposable
     private long _pressed, _released, _tab, _back, _text;
     private UiPoint? _pressPoint, _releasePoint;
     private (long Epoch, long Scene, long Frame)? _previousStamp, _capturedStamp;
+    private long _observedScene = -1;
+    private long? _pendingStableScene;
     private object? _latest;
     private string? _failure;
     private bool _disposed;
@@ -78,6 +80,8 @@ internal sealed class UiWindowInputObserver : IDisposable
             menu.NativeTextReceived += OnNativeText;
             _pressPoint = _releasePoint = null;
             _previousStamp = null;
+            _observedScene = -1;
+            _pendingStableScene = null;
         }
         return menu;
     }
@@ -132,6 +136,9 @@ internal sealed class UiWindowInputObserver : IDisposable
                 return;
             }
             var runtime = menu.CaptureRuntimeContext();
+            if (_observedScene >= 0 && _observedScene != runtime.AcceptedVersion)
+                _pendingStableScene = runtime.AcceptedVersion;
+            _observedScene = runtime.AcceptedVersion;
             var projection = UiNativeInteractionProjection.Capture(runtime.Scene, runtime.Layout, runtime.Accessibility);
             var elements = projection.Elements;
             UiNativeInteractionNode? focused = elements.SingleOrDefault(element => element.Focused);
@@ -165,13 +172,22 @@ internal sealed class UiWindowInputObserver : IDisposable
             _previousStamp = stamp;
             if (visible && (completed is not null || stable && _capturedStamp != stamp))
             {
-                if (_captures.Count == MaximumCaptures) throw new InvalidOperationException("Window input capture budget exhausted.");
-                string name = "window-input-" + _captures.Count.ToString("D3");
-                Capture(name);
-                _captures.Add(new { phase = completed?.ToString(), state = _latest,
-                    screenshot = "screenshots/" + name + ".png", uiLayerScreenshot = "screenshots/" + name + "-ui-layer.png" });
+                bool acceptedSceneChanged = _pendingStableScene == runtime.AcceptedVersion;
+                bool hasVisibleResult = elements.Any(element => element.SemanticId == ResultSemantic
+                    && FullyVisible(element.Bounds, element.Clip));
+                string? requiredKey = RequiredCaptureKey(completed, _epoch, runtime.AcceptedVersion, acceptedSceneChanged,
+                    focused?.ActionId, hasVisibleResult);
+                bool captured = _captures.TryAdd(requiredKey, sequence =>
+                {
+                    string name = "window-input-" + sequence.ToString("D3");
+                    Capture(name);
+                    return new(completed?.ToString(), _latest,
+                        "screenshots/" + name + ".png", "screenshots/" + name + "-ui-layer.png");
+                }, DeleteCapture);
                 _capturedStamp = stamp;
-                WriteProgress();
+                if (acceptedSceneChanged) _pendingStableScene = null;
+                if (captured) WriteProgress();
+                else if (_frame % 12 == 0) WriteProgress();
             }
             else if (_frame % 12 == 0) WriteProgress();
         }
@@ -210,7 +226,7 @@ internal sealed class UiWindowInputObserver : IDisposable
             protocolVersion = 1, runId = _runId, scenario = Scenario,
             declaredOrigin = "os-injected", originEvidence = "External controller declaration; SMAPI counters do not establish hardware origin.",
             expectedText = _expectedText, phase = _gate.Phase.ToString(), completedFrame = _frame,
-            failure = _failure, latest = _latest, captures = _captures
+            failure = _failure, latest = _latest, captures = _captures.Values
         };
         File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
         File.Move(path + ".tmp", path, overwrite: true);
@@ -232,9 +248,26 @@ internal sealed class UiWindowInputObserver : IDisposable
         layer.SaveAsPng(uiStream, layer.Width, layer.Height);
     }
 
+    private void DeleteCapture(WindowInputCapture capture)
+    {
+        File.Delete(Path.Combine(_directory, capture.Screenshot));
+        File.Delete(Path.Combine(_directory, capture.UiLayerScreenshot));
+    }
+
+    internal static string? RequiredCaptureKey(UiWindowInputPhase? completed, long epoch, long acceptedScene,
+        bool acceptedSceneChanged, string? focusedActionId, bool hasVisibleResult)
+    {
+        if (completed is not null) return "phase:" + completed.Value;
+        if (!acceptedSceneChanged || string.IsNullOrEmpty(focusedActionId) || !hasVisibleResult) return null;
+        return "action-result:" + epoch + ":" + acceptedScene + ":" + focusedActionId;
+    }
+
     private static bool FullyVisible(UiRect bounds, UiRect clip)
         => bounds.Width > 0 && bounds.Height > 0 && clip.X <= bounds.X && clip.Y <= bounds.Y
             && clip.Right >= bounds.Right && clip.Bottom >= bounds.Bottom;
+
+    private sealed record WindowInputCapture(
+        string? Phase, object? State, string Screenshot, string UiLayerScreenshot);
 
     public void Dispose()
     {
