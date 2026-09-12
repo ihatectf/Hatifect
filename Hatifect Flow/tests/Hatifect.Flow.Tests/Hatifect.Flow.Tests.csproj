@@ -21,4 +21,9 @@
     <ProjectReference Include="..\..\..\Hatifect UI\tests\Hatifect.UI.Runtime.Tests\Hatifect.UI.Runtime.Tests.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The exact game-independent harness budget also runs in host-free CI. -->
+    <Compile Include="../../Diagnostics/FlowPlayerEvidencePoll.cs" Link="Diagnostics/FlowPlayerEvidencePoll.cs" />
+  </ItemGroup>
+
 </Project>

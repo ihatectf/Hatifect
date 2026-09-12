@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import copy
 import importlib.util
 import unittest
@@ -26,6 +27,19 @@ class Backend:
         self.caret = 1
         self.drop_click = False
         self.drop_text = False
+
+    @contextmanager
+    def hold_left_button(self, x, y):
+        self.events.append(("mouse-down", x, y))
+        if not self.drop_click:
+            self.host.data["observation"]["pointerPressed"] += 1
+        try:
+            yield
+        finally:
+            self.events.append(("mouse-up", x, y))
+            if not self.drop_click:
+                self.host.data["observation"]["pointerReleased"] += 1
+            self.click(x, y)
 
     def click(self, x, y):
         self.events.append(("click", x, y))
@@ -70,7 +84,8 @@ class Host:
     def __init__(self, elements):
         self.data = dict(visible=True, surfaceEpoch=1, experience="Example/window", completedFrame=1,
                          acceptedSceneVersion=1, renderedSceneVersion=1, frameVersion=1,
-                         renderedFrameVersion=1, elements=elements, collections=[])
+                         renderedFrameVersion=1, elements=elements, collections=[],
+                         observation=dict(pointerPressed=0, pointerReleased=0), pointer=dict(x=0, y=0))
         self.backend = Backend(self)
         self.records = []
         self.move_hook = None
@@ -82,6 +97,7 @@ class Host:
 
     def move_local(self, x, y):
         self.backend.events.append(("move", x, y))
+        self.data["pointer"] = dict(x=x, y=y)
         if self.move_hook:
             self.move_hook()
 

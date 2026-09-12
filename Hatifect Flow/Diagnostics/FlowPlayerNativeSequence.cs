@@ -27,6 +27,8 @@ internal sealed class FlowPlayerNativeSequence : IDisposable
     private FlowGameSession _session;
     private FlowPlayerNativeInputCapture _capture;
     private readonly FlowPlayerInputUiEvidence _ui;
+    private readonly FlowPlayerEvidencePoll _evidencePoll = new();
+    private readonly FlowPlayerReopenTargetGate _reopenTarget = new();
     private FlowPlayerCommandTrace[] _admissionCommands = Array.Empty<FlowPlayerCommandTrace>();
     private int _settled, _ticks;
     private bool _admitted, _disposed;
@@ -120,13 +122,19 @@ internal sealed class FlowPlayerNativeSequence : IDisposable
             _ => snapshot.Links.Count == 0 ? "author-route" : snapshot.Parcels.Count == 0 ? "send-whole"
                 : snapshot.Parcels.Count == 1 ? "send-five" : "close-window-for-transport"
         };
-        if (_ticks % 60 == 0 || snapshot.Parcels.Count == 2) Publish(stage);
-        if (snapshot.Parcels.Count != 2) return false;
-        if (_ticks % 6 != 0) return false;
+        if (snapshot.Parcels.Count != 2)
+        {
+            if (_ticks % 60 == 0) Publish(stage);
+            return false;
+        }
+        // The retained UI journal can be several megabytes. Re-reading it while
+        // toggling close/await stages every sixth update can starve the Draw that
+        // must publish the missing result. Budget both reads and pending publication.
+        if (!_evidencePoll.TryBegin(_ticks)) return false;
         if (!_ui.HasInitialProbe() || !_ui.HasCommandResults(_capture.Commands.ToArray(),
             LocalizedContentManager.CurrentLanguageCode == LocalizedContentManager.LanguageCode.ru))
         {
-            Publish("await-native-visible-result-evidence");
+            PublishProgress("await-native-visible-result-evidence");
             return false;
         }
         FlowPlayerCommandTrace[] applied = _capture.Commands.Where(value => value.Result?.Status == FlowCommandStatus.Applied).ToArray();
@@ -151,6 +159,11 @@ internal sealed class FlowPlayerNativeSequence : IDisposable
     internal void Publish(string stage)
     {
         if (_lastStage == stage && _ticks % 60 != 0) return;
+        PublishProgress(stage);
+    }
+
+    private void PublishProgress(string stage)
+    {
         _lastStage = stage;
         _capture.Publish(stage, new
         {
@@ -166,9 +179,12 @@ internal sealed class FlowPlayerNativeSequence : IDisposable
         });
     }
 
+    private static Vector2 ScreenPoint(Vector2 tile)
+        => Game1.GlobalToLocal(Game1.viewport, tile * 64f + new Vector2(32f, 32f));
+
     private static object Screen(Vector2 tile)
     {
-        Vector2 local = Game1.GlobalToLocal(Game1.viewport, tile * 64f + new Vector2(32f, 32f));
+        Vector2 local = ScreenPoint(tile);
         return new { x = local.X, y = local.Y };
     }
 
@@ -189,8 +205,28 @@ internal sealed class FlowPlayerNativeSequence : IDisposable
     {
         RequireHealthy();
         Require(++_ticks <= 72000, "Ordinary input exceeded its final reopening period.");
-        if (_ticks % 60 == 0) Publish("ordinary-reopen-delivered-history");
-        if (_ticks % 6 != 0) return false;
+
+        bool positioned = Context.IsPlayerFree && Game1.currentLocation.NameOrUniqueName == "Farm"
+            && (int)(Game1.player.Position.X / 64) == (int)_standing.X
+            && (int)(Game1.player.Position.Y / 64) == (int)_standing.Y;
+        Vector2 reopen = ScreenPoint(_standing);
+        FlowPlayerReopenTargetState target = _reopenTarget.Observe(positioned, reopen.X, reopen.Y,
+            Game1.uiViewport.Width, Game1.uiViewport.Height);
+        if (target == FlowPlayerReopenTargetState.RequestWarp)
+        {
+            DelayedAction.warpAfterDelay("Farm", new Point((int)_standing.X, (int)_standing.Y), 10);
+            PublishProgress("await-final-fixture-position");
+            return false;
+        }
+        if (target != FlowPlayerReopenTargetState.Ready)
+        {
+            if (_ticks % FlowPlayerEvidencePoll.IntervalTicks == 0)
+                PublishProgress("await-final-fixture-position");
+            return false;
+        }
+
+        if (!_evidencePoll.TryBegin(_ticks)) return false;
+        PublishProgress("ordinary-reopen-delivered-history");
         return _capture.OpenedEntries > 0 && _ui.HasInitialProbe()
             && _ui.HasCommandResults(_admissionCommands,
                 LocalizedContentManager.CurrentLanguageCode == LocalizedContentManager.LanguageCode.ru)

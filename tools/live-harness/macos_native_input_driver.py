@@ -11,6 +11,7 @@ import argparse
 import ctypes
 import datetime as dt
 import json
+import math
 import os
 import platform
 import stat
@@ -282,50 +283,119 @@ class Controller:
             float(_field(value, "width")), float(_field(value, "height")),
         )
 
-    def _local_to_screen(self, latest: dict[str, Any], x: float, y: float) -> tuple[float, float, float, float]:
+    @staticmethod
+    def _motion_geometry(latest: dict[str, Any]) -> tuple[float, ...]:
         viewport = _field(latest, "viewport")
         window = _field(latest, "window")
-        if not isinstance(viewport, dict) or not isinstance(window, dict):
-            raise DriverError("UI observer did not publish window/viewport geometry.")
-        position = _field(window, "position")
-        client = _field(window, "clientBounds")
-        if not isinstance(position, dict):
-            raise DriverError("UI observer did not publish the global window position.")
-        cx, cy, cw, ch = self._rect(client)
-        vw, vh = float(_field(viewport, "width")), float(_field(viewport, "height"))
-        if min(cw, ch, vw, vh) <= 0:
+        position, client = _field(window, "position"), _field(window, "clientBounds")
+        values = tuple(_field(owner, key) for owner, keys in (
+            (position, ("x", "y")), (client, ("x", "y", "width", "height")),
+            (viewport, ("width", "height")),
+        ) for key in keys)
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in values):
+            raise DriverError("UI pointer geometry must contain finite numbers.")
+        if min(values[4:]) <= 0:
             raise DriverError("UI observer published non-positive window geometry.")
+        return tuple(float(v) for v in values)
+
+    def _local_to_screen(self, latest: dict[str, Any], x: float, y: float) -> tuple[float, float, float, float]:
+        px, py, cx, cy, cw, ch, vw, vh = self._motion_geometry(latest)
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (x, y)):
+            raise DriverError("Requested local pointer coordinates must be finite numbers.")
+        if not (0 <= x < vw and 0 <= y < vh):
+            raise DriverError("Requested local pointer is outside the observed viewport.")
+        # Preserve an explicitly supplied compatibility offset, but never learn
+        # or adjust it from a delayed target-minus-pointer observation.
+        offsets = self.offset_x, self.offset_y
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in offsets):
+            raise DriverError("Native pointer offsets must be finite numbers.")
         sx, sy = cw / vw, ch / vh
-        screen_x = float(_field(position, "x")) + cx + x * sx + self.offset_x
-        screen_y = float(_field(position, "y")) + cy + y * sy + self.offset_y
-        return screen_x, screen_y, sx, sy
+        result = px + cx + x * sx + offsets[0], py + cy + y * sy + offsets[1], sx, sy
+        if not all(math.isfinite(v) for v in result):
+            raise DriverError("Native screen transform produced non-finite coordinates.")
+        return result
+
+    @staticmethod
+    def _motion_rendered(latest: dict[str, Any]) -> bool:
+        if _field(latest, "visible") is not True:
+            return False
+        for accepted, rendered in (("acceptedSceneVersion", "renderedSceneVersion"),
+                                   ("frameVersion", "renderedFrameVersion")):
+            values = _field(latest, accepted), _field(latest, rendered)
+            if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in values):
+                raise DriverError("Pointer observation has invalid rendered-frame identity.")
+            if values[0] != values[1]:
+                return False
+        sequence = _field(latest, "renderSequence")
+        if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence <= 0:
+            raise DriverError("Pointer observation has no completed render sequence.")
+        return True
 
     def move_local(self, x: float, y: float) -> None:
-        for attempt in range(4):
-            before = self._wait(
-                "the UI observer to publish window and pointer geometry",
-                lambda: self.latest(),
-                seconds=15,
-            )
-            before_frame = int(_field(before, "completedFrame", -1))
-            screen_x, screen_y, sx, sy = self._local_to_screen(before, x, y)
+        def initial():
+            value = self.latest()
+            # A transiently invisible semantic surface is not a pre-window frame.
+            return value if _field(value, "experience") is None or self._motion_rendered(value) else None
+
+        before = self._wait("the UI observer to publish pointer geometry", initial, seconds=15)
+        geometry = self._motion_geometry(before)
+        projection = self._local_to_screen(before, x, y)
+        screen_x, screen_y, _, _ = projection
+        surface = _field(before, "surfaceEpoch"), _field(before, "experience")
+        last_frame = _field(before, "completedFrame")
+        if isinstance(last_frame, bool) or not isinstance(last_frame, int) or last_frame < 0:
+            raise DriverError("Pointer observation has no completed frame identity.")
+        require_render = surface[1] is not None
+        last_render = _field(before, "renderSequence", 0)
+        matches = 0
+        detail = {"phase": "prepared", "localPoint": (x, y), "screenPoint": (screen_x, screen_y),
+                  "beforeFrame": last_frame, "lastFrame": last_frame, "matchingFrames": 0}
+        self._record("move-pointer-requested", motion=detail)
+
+        def observed():
+            nonlocal last_frame, last_render, matches
+            latest = self.latest()
+            number = _field(latest, "completedFrame")
+            if isinstance(number, bool) or not isinstance(number, int) or number < last_frame:
+                raise DriverError("Pointer observation frame identity regressed or is invalid.")
+            if surface != (_field(latest, "surfaceEpoch"), _field(latest, "experience")):
+                raise DriverError("Semantic surface changed during pointer motion.")
+            if self._motion_geometry(latest) != geometry or self._local_to_screen(latest, x, y) != projection:
+                raise DriverError("Native window geometry or fixed transform changed during pointer motion.")
+            pointer = _field(latest, "pointer")
+            actual = tuple(_field(pointer, k) for k in ("x", "y"))
+            if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in actual):
+                raise DriverError("Native pointer observation is missing or non-finite.")
+            detail.update(lastFrame=number, lastPointer=actual)
+            if number == last_frame:
+                return None
+            last_frame = number
+            if require_render:
+                if not self._motion_rendered(latest):
+                    matches = 0
+                    detail["matchingFrames"] = 0
+                    return None
+                sequence = _field(latest, "renderSequence")
+                if sequence <= last_render:
+                    return None
+                last_render = sequence
+            # A newer draw may still carry the old pointer position. Wait for the
+            # requested position in two distinct snapshots; do not post corrections.
+            matches = matches + 1 if abs(x - actual[0]) <= 3 and abs(y - actual[1]) <= 3 else 0
+            detail["matchingFrames"] = matches
+            return latest if matches >= 2 else None
+
+        try:
             self.backend.move(screen_x, screen_y)
-
-            def observed() -> dict[str, Any] | None:
-                latest = self.latest()
-                pointer = _field(latest, "pointer")
-                return latest if int(_field(latest, "completedFrame", -1)) > before_frame and isinstance(pointer, dict) else None
-
-            after = self._wait("the game-local mouse position", observed, seconds=4)
-            pointer = _field(after, "pointer")
-            px, py = float(_field(pointer, "x")), float(_field(pointer, "y"))
-            dx, dy = x - px, y - py
-            if abs(dx) <= 3 and abs(dy) <= 3:
-                self._record("move-pointer", localX=x, localY=y, screenX=screen_x, screenY=screen_y, attempts=attempt + 1)
-                return
-            self.offset_x += dx * sx
-            self.offset_y += dy * sy
-        raise DriverError("Could not calibrate Quartz screen coordinates to the game-local pointer.")
+            detail["phase"] = "awaiting-position"
+            after = self._wait("two fresh observations of the requested game-local pointer", observed, seconds=4)
+        except BaseException:
+            detail["phase"] = "aborted"
+            raise
+        detail["phase"] = "position-observed"
+        self._record("move-pointer", localX=x, localY=y, screenX=screen_x, screenY=screen_y,
+                     attempts=1, observedPointer=detail["lastPointer"],
+                     completedFrame=_field(after, "completedFrame"), matchingFrames=matches)
 
     @staticmethod
     def _fully_visible(element: dict[str, Any]) -> bool:

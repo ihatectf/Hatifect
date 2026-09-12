@@ -11,6 +11,7 @@ from typing import Any, Callable
 MAX_NODES = 1024
 MAX_SCROLLS = 64
 MAX_TEXT = 128
+POINTER_ACK_SECONDS = 3.0
 INTERACTIVE = frozenset({"TextField", "Button", "ListItem"})
 SELECTOR_KEYS = frozenset({"semantic", "semanticPrefix", "action", "name", "role", "collection", "node"})
 # Carbon virtual-key code; the Stardew input adapter maps End to UiTextEditAction.End.
@@ -140,6 +141,16 @@ def fresh(a: dict, b: dict) -> bool:
     return isinstance(before, int) and isinstance(after, int) and same_surface(a, b) and after > before
 
 
+def pointer_counts(frame: dict) -> tuple[int, int]:
+    observation = field(frame, "observation")
+    counts = tuple(field(observation, key) for key in ("pointerPressed", "pointerReleased"))
+    if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in counts):
+        raise InteractionError("Native pointer acknowledgement requires nonnegative integer press/release counters.")
+    if counts[1] > counts[0] or counts[0] - counts[1] > 1:
+        raise InteractionError("Native pointer press/release counters are unbalanced.")
+    return counts
+
+
 def root_point(viewport: tuple, obstacles: list[tuple]) -> tuple[int, int]:
     """Find an actual root-wheel hit point outside collection wheel owners."""
     if len(obstacles) > 128:
@@ -203,13 +214,14 @@ class SemanticInteractions:
             return f, n
         return self.wait(f"{intent} target {selector}", get, seconds)
 
-    def after(self, before: dict, predicate: Callable = lambda _f: True) -> dict:
+    def after(self, before: dict, predicate: Callable = lambda _f: True, *,
+              description: str = "fresh rendered semantic input result") -> dict:
         def ready():
             f = self.frame()
             if not same_surface(before, f):
                 raise InteractionError("Semantic surface was replaced during an input operation.")
             return f if fresh(before, f) and predicate(f) else None
-        return self.wait("fresh rendered semantic input result", ready)
+        return self.wait(description, ready)
 
     @staticmethod
     def collections(frame: dict) -> list[dict]:
@@ -308,25 +320,108 @@ class SemanticInteractions:
         raise InteractionError("Semantic target geometry did not stabilize before native input.")
 
     def click(self, selector: dict, intent: str = "click") -> tuple[dict, dict]:
+        lease = getattr(self.driver.backend, "hold_left_button", None)
+        if not callable(lease):
+            raise InteractionError("Native backend does not support acknowledged pointer leases.")
+
+        def idle():
+            f = self._frame()
+            pressed, released = pointer_counts(f)
+            return f if pressed == released else None
+        self.wait("native mouse release before the next click", idle, POINTER_ACK_SECONDS)
         before, node, point = self._prepared(selector, intent)
+        baseline = pointer_counts(before)
+        if baseline[0] != baseline[1]:
+            raise InteractionError("Native mouse state changed during pointer preparation.")
         x, y, _, _ = self.driver._local_to_screen(before, *point)
-        self.driver.backend.click(x, y)
+        detail = {"phase": "prepared", "beforeCounts": baseline, "lastCounts": baseline,
+                  "localPoint": point, "screenPoint": (x, y), "lastStamp": stamp(before)}
+        self.last_target = {"selector": selector, "intent": intent, "node": field(node, "nodeId"),
+                            "stamp": stamp(before), "pointerDelivery": detail}
+
+        def press_seen():
+            # Do not nest frame()'s 20-second wait inside a bounded button hold.
+            f = self._frame()
+            detail["lastStamp"] = stamp(f)
+            if not same_surface(before, f):
+                raise InteractionError("Semantic surface changed while awaiting native mouse-down.")
+            counts = pointer_counts(f)
+            detail["lastCounts"] = counts
+            if not fresh(before, f):
+                return None
+            if counts not in (baseline, (baseline[0] + 1, baseline[1])):
+                raise InteractionError("Unexpected native pointer transitions during the owned press.")
+            current = resolve(f, selector, intent)
+            if field(current, "nodeId") != field(node, "nodeId"):
+                raise InteractionError("Concrete semantic target changed during the owned press.")
+            if field(current, "enabled") is not True or not visible(current):
+                raise InteractionError("Semantic target became disabled or clipped during the owned press.")
+            if rect(field(current, "bounds")) != rect(field(node, "bounds")):
+                raise InteractionError("Semantic target geometry changed during the owned press.")
+            sx, sy, _, _ = self.driver._local_to_screen(f, *point)
+            if (sx, sy) != (x, y):
+                raise InteractionError("Native window coordinates changed during the owned press.")
+            pointer = field(f, "pointer")
+            actual = tuple(field(pointer, k) for k in ("x", "y"))
+            if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in actual):
+                raise InteractionError("Native pointer observation is missing or non-finite.")
+            detail["lastPointer"] = actual
+            if not inside(rect(field(current, "bounds")), actual) or not inside(rect(field(current, "clip")), actual):
+                raise InteractionError("Native pointer left the semantic target during the owned press.")
+            return f if counts == (baseline[0] + 1, baseline[1]) else None
+
+        try:
+            with lease(x, y):
+                detail["phase"] = "awaiting-mouse-down"
+                self.driver._record("semantic-mouse-down-sent", node=field(node, "nodeId"))
+                self.wait("native mouse-down acknowledgement", press_seen, POINTER_ACK_SECONDS)
+                detail["phase"] = "mouse-down-observed"
+                self.driver._record("semantic-mouse-down-observed", counts=detail["lastCounts"])
+        except BaseException:
+            detail["phase"] = "aborted"
+            raise
+        detail["phase"] = "mouse-up-sent"
         self.driver._record("semantic-click", node=field(node, "nodeId"), semantic=semantic_identity(node), role=field(node, "role"))
-        # This is not an action-success assertion. Product command/result evidence stays authoritative.
+        # Release may legitimately close/replace a surface. It is posted by the lease,
+        # not proof that the product command completed. Focus/select and product waits
+        # remain authoritative; another click requires observed idle counters first.
         return before, node
+
+    def _pointer_released(self, before: dict) -> dict:
+        pressed, released = pointer_counts(before)
+        expected = (pressed + 1, released + 1)
+
+        def observed():
+            f = self._frame()
+            if not same_surface(before, f):
+                raise InteractionError("Semantic surface changed before native mouse-up acknowledgement.")
+            counts = pointer_counts(f)
+            if self.last_target is not None:
+                detail = self.last_target.get("pointerDelivery", {})
+                detail.update(lastCounts=counts, lastStamp=stamp(f))
+            if not fresh(before, f):
+                return None
+            if counts not in ((pressed + 1, released), expected):
+                raise InteractionError("Unexpected native pointer transitions after the owned release.")
+            return f if counts == expected else None
+        current = self.wait("native mouse-up acknowledgement", observed, POINTER_ACK_SECONDS)
+        if self.last_target is not None:
+            self.last_target.get("pointerDelivery", {})["phase"] = "mouse-up-observed"
+        return current
 
     def focus(self, selector: dict) -> tuple[dict, dict]:
         before, node = self.ready(selector, "focus")
         if visible(node) and field(node, "focused") is True and field(node, "enabled") is True:
             return before, node
         before, node = self.click(selector, "focus")
+        before = self._pointer_released(before)
         identity = field(node, "nodeId")
         def focused(f):
             n = resolve(f, selector, "focus")
             if field(n, "nodeId") != identity:
                 raise InteractionError("Text control was replaced before focus acknowledgement.")
             return field(n, "focused") is True and field(n, "enabled") is True
-        current = self.after(before, focused)
+        current = self.after(before, focused, description="TextField focus after acknowledged native mouse-down")
         return current, resolve(current, selector, "focus")
 
     def fill(self, selector: dict, value: str) -> None:
@@ -409,6 +504,7 @@ class SemanticInteractions:
         if field(n, "selected") is True:
             return
         before, n = self.click(selector, "select")
+        before = self._pointer_released(before)
         identity = field(n, "nodeId")
         def selected(f):
             candidate = resolve(f, selector, "select")

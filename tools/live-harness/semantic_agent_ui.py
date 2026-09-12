@@ -18,6 +18,7 @@ def _module(name: str, filename: str):
 
 CORE = _module("hatifect_semantic_core", "semantic_test_agent.py")
 UI = _module("hatifect_semantic_interactions", "semantic_interactions.py")
+POINTER = _module("hatifect_native_button_lease", "native_button_lease.py")
 for _name in dir(CORE):
     if not _name.startswith("__"):
         globals()[_name] = getattr(CORE, _name)
@@ -255,12 +256,11 @@ class SemanticQuartzInput(NATIVE.QuartzInput):
             self._app.CGEventSetFlags(up, flags)
         self._pulse(down, up, NATIVE.KEY_HOLD_SECONDS)
 
+    def hold_left_button(self, x, y):
+        return POINTER.hold_left_button(self, NATIVE.CGPoint, x, y)
+
     def click(self, x, y):
-        self.move(x, y)
-        time.sleep(NATIVE.EVENT_GAP_SECONDS)
-        down = self._app.CGEventCreateMouseEvent(None, 1, NATIVE.CGPoint(x, y), 0)
-        up = self._app.CGEventCreateMouseEvent(None, 2, NATIVE.CGPoint(x, y), 0)
-        self._pulse(down, up, NATIVE.KEY_HOLD_SECONDS)
+        raise NATIVE.DriverError("Semantic clicks require an observed left-button lease.")
 
 
 def main():
