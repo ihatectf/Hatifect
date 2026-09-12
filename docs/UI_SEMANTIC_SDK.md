@@ -63,7 +63,9 @@ status.Value = new UiStatus(UiStatusKind.Empty, "No routes are configured.");
 `Error` is exposed as an accessibility alert; the other kinds are status live regions. Typed Visual
 recipes may target `@Empty`, `@Loading`, `@Success`, or `@Error`. Existing `Monitor<T>` values keep
 their ordinary text behavior, while `Monitor<UiStatus>` opts into the same typed component as
-`Status`.
+`Status`. `Status` also declares the canonical `UiDataTypes.Status` graph descriptor through
+`UiSourceTypes.Status`. The overload accepting an ID, alias and label lets localized consumers keep
+stable authoring aliases independently from displayed text.
 
 ## Input prompts
 

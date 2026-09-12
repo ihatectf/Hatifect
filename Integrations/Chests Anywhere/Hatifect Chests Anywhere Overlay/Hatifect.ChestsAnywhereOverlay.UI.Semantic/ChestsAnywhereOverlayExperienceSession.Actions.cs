@@ -169,7 +169,10 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession
         }
         // Provider effect and publication share the cross-action Request guard. A retired or
         // changed owner cannot receive the result; any committed provider effect remains real.
-        ApplyProjection(next, request.Context, preserveView, handoff, replaceHandoff);
+        UiStatusKind statusKind = request.Command == NavigatorCommand.Open
+            ? opened ? UiStatusKind.Loading : UiStatusKind.Error
+            : UiStatusKind.Status;
+        ApplyProjection(next, request.Context, preserveView, handoff, replaceHandoff, statusKind);
         return opened
             ? UiActionResult<NavigatorActionReceipt>.Success(new(_publication.Id, _publication.Version,
                 next.Revision, request.Storage?.Id, request.Storage?.Key, false))

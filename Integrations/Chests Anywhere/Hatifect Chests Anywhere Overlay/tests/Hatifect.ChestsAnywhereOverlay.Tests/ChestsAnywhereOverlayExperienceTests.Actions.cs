@@ -101,7 +101,8 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
         Assert.Null(result.Error);
         Assert.Equal("CA_OPEN_REJECTED", result.Rejection!.Code);
         Assert.Equal("Не удалось открыть это хранилище.", result.Rejection.LocalizedMessage!.Text.Resolve("ru-RU"));
-        Assert.Equal("Switch failed", session.Status.Value);
+        Assert.Equal("Switch failed", session.Status.Value.Message);
+        Assert.Equal(UiStatusKind.Error, session.Status.Value.Kind);
         Assert.Null(session.Handoff.Value);
         Assert.Single(port.OpenRequests);
     }
@@ -112,7 +113,7 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
         var port = new RecordingPort(TwoCategorySnapshot()) { ThrowOnRefresh = true };
         using var session = new ChestsAnywhereNavigatorExperienceSession(Id("failure"), port);
         long version = session.Publication.Version;
-        string status = session.Status.Value;
+        UiStatus status = session.Status.Value;
         var result = Invoke(Action(session, "refresh"));
         Assert.Equal(UiActionOutcome.Failure, result.Outcome);
         Assert.Equal("refresh failed", Assert.IsType<InvalidOperationException>(result.Error).Message);
@@ -180,7 +181,7 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
         Assert.IsType<InvalidOperationException>(result.Error);
         Assert.Single(port.OpenRequests);
         Assert.Equal("Opening", port.CaptureValue.StatusText);
-        Assert.Equal("New external status", session.Status.Value);
+        Assert.Equal("New external status", session.Status.Value.Message);
         Assert.Equal(accepted, session.Publication.Version);
         Assert.Null(session.Handoff.Value);
     }

@@ -24,6 +24,9 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
         Assert.Equal(wire, UiBindingContextJson.Export(imported));
         UiSemanticGraph graph = imported.Graph!;
         Assert.Empty(UiGraphBinder.Validate(graph));
+        Assert.Equal(UiDataTypes.Status,
+            Assert.Single(graph.Nodes, node => node.Alias == "Status").DataType);
+        Assert.Equal(UiStatusKind.Status, session.Status.Value.Kind);
         var slots = graph.Nodes.Single(node => node.Alias == "Storages").Inputs;
         Assert.Equal(2, slots.Count);
         Assert.NotEqual(slots[0].AcceptedType, slots[1].AcceptedType);
@@ -150,7 +153,7 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
         Assert.Throws<InvalidOperationException>(() => session.Refresh());
         Assert.Throws<InvalidOperationException>(() => session.SelectMode(ChestsAnywhereNavigatorMode.Favorites));
         Assert.Throws<InvalidOperationException>(() => session.ToggleSelectedFavorite());
-        Assert.Equal("Ready", session.Status.Value);
+        Assert.Equal("Ready", session.Status.Value.Message);
         Assert.Equal(selected, session.Storages.SelectedItemId);
         Assert.False(Assert.Single(session.Storages.Value).IsFavorite);
 
@@ -160,7 +163,8 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
         port.RejectOpen = true;
         session.OpenSelectedStorage();
         Assert.Null(session.Handoff.Value);
-        Assert.Equal("Switch failed", session.Status.Value);
+        Assert.Equal("Switch failed", session.Status.Value.Message);
+        Assert.Equal(UiStatusKind.Error, session.Status.Value.Kind);
     }
 
     [Fact]
@@ -288,10 +292,11 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
         var port = new RecordingPort(TwoCategorySnapshot());
         using var session = new ChestsAnywhereNavigatorExperienceSession(Id("handoff-publication"), port);
         var observed = new List<(string, string?)>();
-        session.Status.Changed += () => observed.Add((session.Status.Value, session.Handoff.Value?.StorageKey));
-        session.Handoff.Changed += () => observed.Add((session.Status.Value, session.Handoff.Value?.StorageKey));
+        session.Status.Changed += () => observed.Add((session.Status.Value.Message, session.Handoff.Value?.StorageKey));
+        session.Handoff.Changed += () => observed.Add((session.Status.Value.Message, session.Handoff.Value?.StorageKey));
         session.OpenSelectedStorage();
         Assert.Equal(new[] { ("Opening", (string?)"farm-a"), ("Opening", (string?)"farm-a") }, observed);
+        Assert.Equal(UiStatusKind.Loading, session.Status.Value.Kind);
         session.Refresh();
         session.ToggleSelectedFavorite();
         Assert.Single(port.OpenRequests);
@@ -361,6 +366,7 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
     [InlineData("duplicate-category")]
     [InlineData("duplicate-storage")]
     [InlineData("unknown-category")]
+    [InlineData("blank-status")]
     public void InvalidProviderSnapshotsAreRejectedBeforePublication(string defect)
     {
         ChestsAnywhereNavigatorSnapshot snapshot = defect switch
@@ -375,7 +381,8 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
                 Storage("same", "One", "farm", 1),
                 Storage("same", "Two", "farm", 2)
             }),
-            _ => Snapshot(storages: new[] { Storage("mine", "Mine", "missing", 1) })
+            "unknown-category" => Snapshot(storages: new[] { Storage("mine", "Mine", "missing", 1) }),
+            _ => Snapshot(status: " ")
         };
 
         Assert.Throws<InvalidOperationException>(() =>
@@ -507,7 +514,7 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
         string Categories, string Storages, UiSymbolId? CategorySelection, UiSymbolId? StorageSelection, string? Handoff);
 
     private static ProjectionObservation ObserveProjection(ChestsAnywhereNavigatorExperienceSession session)
-        => new(session.Mode.Value, session.SelectedCategory.Value, session.Status.Value,
+        => new(session.Mode.Value, session.SelectedCategory.Value, session.Status.Value.Message,
             string.Join(",", session.Categories.Value.Select(category => category.Label)),
             string.Join(",", session.Storages.Value.Select(storage => storage.Key)),
             session.Categories.SelectedItemId, session.Storages.SelectedItemId, session.Handoff.Value?.StorageKey);

@@ -15,6 +15,8 @@ public static class UiSourceTypes
     public static readonly UiSourceType<bool> Boolean = new(UiDataTypes.Boolean);
     public static readonly UiSourceType<decimal> Number = new(UiDataTypes.Number);
     public static readonly UiSourceType<UiSymbolId> Symbol = new(UiDataTypes.Symbol);
+    /// <summary>Canonical typed source contract for <see cref="UiStatus"/>.</summary>
+    public static readonly UiSourceType<UiStatus> Status = new(UiDataTypes.Status);
     public static UiSourceType<T> Scalar<T>(UiSymbolId id, bool nullable) => new(UiDataTypes.Scalar(id, nullable));
     public static UiSourceType<IReadOnlyList<T>> Collection<T>(UiSourceType<T> item) => new(UiDataTypes.Collection(item.Descriptor));
     public static UiSourceType<UiSymbolId?> Selection<T>(UiSourceType<T> item) => new(UiDataTypes.Selection(item.Descriptor));
@@ -116,7 +118,8 @@ internal static class UiSourceTypeValidation
             if ((type.TypeId == UiDataTypes.StringId && value != typeof(string))
                 || (type.TypeId == UiDataTypes.BooleanId && value != typeof(bool))
                 || (type.TypeId == UiDataTypes.NumberId && value != typeof(decimal))
-                || (type.TypeId == UiDataTypes.SymbolId && value != typeof(UiSymbolId)))
+                || (type.TypeId == UiDataTypes.SymbolId && value != typeof(UiSymbolId))
+                || (type.TypeId == UiDataTypes.StatusId && value != typeof(UiStatus)))
                 Error("Foundation data type does not match the CLR payload.");
             if (nominalTypes.TryGetValue(type.TypeId, out Type? previous) && previous != value)
                 Error($"Nominal type '{type.TypeId}' was already declared for CLR type '{previous}'.");

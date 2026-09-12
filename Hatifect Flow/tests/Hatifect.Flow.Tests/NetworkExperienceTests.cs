@@ -13,6 +13,28 @@ namespace Hatifect.Flow.Tests;
 [Trait("Category", "flow")]
 public sealed class NetworkExperienceTests
 {
+    [Theory]
+    [InlineData(FlowApplicationState.Active, UiStatusKind.Success, "Ready")]
+    [InlineData(FlowApplicationState.Paused, UiStatusKind.Status, "Paused")]
+    [InlineData(FlowApplicationState.RecoveryRequired, UiStatusKind.Error,
+        "No settled transfer outcome; restore the complete game save from a known good backup")]
+    public void TransportUsesSharedSemanticStatusPolicy(
+        FlowApplicationState state,
+        UiStatusKind expectedKind,
+        string expectedMessage)
+    {
+        using var app = new NetworkTestApplication();
+        app.Application.SetAvailability(state);
+        using var view = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network/status"), app);
+
+        UiSemanticElementDefinition transport = view.Experience.Elements.Single(element => element.Alias == "Transport");
+        UiStatus status = Assert.IsAssignableFrom<IUiSemanticSource<UiStatus>>(transport.Source).Value;
+        Assert.Equal(expectedKind, status.Kind);
+        Assert.Equal(expectedMessage, status.Message);
+        Assert.Equal(UiDataTypes.Status,
+            view.Experience.Graph.Nodes.Single(node => node.Id == transport.Id).DataType);
+    }
+
     [Fact]
     public void HistoryPagesSearchAndFilterRemainBoundedAndRestoreSelectionByIdentity()
     {
@@ -61,6 +83,10 @@ public sealed class NetworkExperienceTests
         Assert.Equal(english.Experience.Elements.Select(element => element.Alias), russian.Experience.Elements.Select(element => element.Alias));
         foreach (var experience in new[] { english.Experience, russian.Experience })
         {
+            UiSemanticElementDefinition transport = experience.Elements.Single(element => element.Alias == "Transport");
+            Assert.Equal(UiDataTypes.Status, experience.Graph.Nodes.Single(node => node.Id == transport.Id).DataType);
+            Assert.Equal(UiStatusKind.Success,
+                Assert.IsAssignableFrom<IUiSemanticSource<UiStatus>>(transport.Source).Value.Kind);
             UiBindingContext context = experience.CreateBindingContext();
             UiCompilationResult result = new UiCompiler().Compile("presentation Network\nSourceStation -> Primary\nHistory -> Secondary\n", context);
             Assert.True(result.IsValid, string.Join("; ", result.Diagnostics.Select(diagnostic => diagnostic.Message)));
