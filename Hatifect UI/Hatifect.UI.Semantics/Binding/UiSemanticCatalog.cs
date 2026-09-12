@@ -39,7 +39,7 @@ public sealed class UiSemanticCatalog
             catalog._regions.Add(region, BuiltIn($"region/{region}"));
         foreach (string profile in new[] { "Wide", "Medium", "Compact", "Controller" })
             catalog._profiles.Add(profile, BuiltIn($"profile/{profile}"));
-        foreach (string state in new[] { "Hover", "Pressed", "Focused", "Selected", "Checked", "Disabled", "Enter", "Exit", "Congested", "Offline" })
+        foreach (string state in new[] { "Hover", "Pressed", "Focused", "Selected", "Checked", "Disabled", "Enter", "Exit", "Congested", "Offline", "Empty", "Loading", "Success", "Error" })
             catalog._states.Add(state, BuiltIn($"state/{state}"));
 
         catalog.AddProperty(UiDefinitionKind.Presentation, "use", UiSemanticType.PresentationPattern, UiPropertyEffects.Recompose);

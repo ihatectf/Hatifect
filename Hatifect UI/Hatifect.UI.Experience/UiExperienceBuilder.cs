@@ -56,6 +56,10 @@ public sealed class UiExperienceBuilder
     public UiExperienceBuilder Monitor<T>(string element, IUiSemanticSource<T> source)
         => Element(element, source, UiCapabilities.Monitor);
 
+    /// <summary>Authors an empty, loading, success, error, or general status region.</summary>
+    public UiExperienceBuilder Status(string element, IUiSemanticSource<UiStatus> source)
+        => Element(element, source, UiCapabilities.Monitor);
+
     public UiExperienceBuilder Navigate<T>(string element, IUiSemanticSource<T> source)
         => Element(element, source, UiCapabilities.Navigate);
 
@@ -66,6 +70,8 @@ public sealed class UiExperienceBuilder
     public UiExperienceBuilder Select<T>(UiSymbolId id, string name, IUiSemanticSource<T> source)
         => Element(id, name, source, UiCapabilities.Select);
     public UiExperienceBuilder Monitor<T>(UiSymbolId id, string name, IUiSemanticSource<T> source)
+        => Element(id, name, source, UiCapabilities.Monitor);
+    public UiExperienceBuilder Status(UiSymbolId id, string name, IUiSemanticSource<UiStatus> source)
         => Element(id, name, source, UiCapabilities.Monitor);
 
     public UiExperienceBuilder Element<T>(string element, IUiSemanticSource<T> source, params UiCapability[] capabilities)

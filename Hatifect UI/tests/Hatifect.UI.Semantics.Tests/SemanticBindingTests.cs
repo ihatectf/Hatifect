@@ -174,6 +174,26 @@ Item@Selected
         Assert.All(definition.Recipes, recipe => Assert.NotNull(recipe.Provenance.SourceName));
     }
 
+    [Theory]
+    [InlineData("Empty")]
+    [InlineData("Loading")]
+    [InlineData("Success")]
+    [InlineData("Error")]
+    public void FoundationStatusStatesCompileAsTypedDomainStates(string state)
+    {
+        UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();
+        string source = $"visual Status\n\nItem@{state}\n    foreground = Text.Primary\n";
+
+        UiCompilationResult result = new UiCompiler(catalog)
+            .Compile(source, Context(catalog), "Status#visual");
+
+        Assert.True(result.IsValid);
+        UiPropertyAssignmentIr recipe = Assert.Single(
+            Assert.IsType<UiVisualDefinition>(result.Definition).Recipes);
+        Assert.True(catalog.TryGetState(state, out UiSymbolId expected));
+        Assert.Equal(expected, recipe.State);
+    }
+
     [Fact]
     public void OpacityOutsideUnitRangeIsRejected()
     {

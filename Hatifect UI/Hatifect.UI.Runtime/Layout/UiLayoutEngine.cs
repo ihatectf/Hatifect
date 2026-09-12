@@ -712,7 +712,7 @@ internal sealed class UiSceneLayoutEngine
         {
             UiSceneNodeKind.Button or UiSceneNodeKind.RouteButton or UiSceneNodeKind.TextInput => UiTextOverflow.Ellipsis,
             UiSceneNodeKind.Collection => UiTextOverflow.Scroll,
-            UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form => UiTextOverflow.Wrap,
+            UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form or UiSceneNodeKind.Status => UiTextOverflow.Wrap,
             _ => UiTextOverflow.Clip
         };
 
@@ -752,14 +752,14 @@ internal sealed class UiSceneLayoutEngine
             UiButtonSceneNode button => button.Label,
             UiRouteButtonSceneNode route => route.Label,
             UiTextInputSceneNode input => input.Text,
-            UiSourceSceneNode source when source.Kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form
+            UiSourceSceneNode source when source.Kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form or UiSceneNodeKind.Status
                 => source.DisplayText,
             _ => null
         };
 
     internal static string? Heading(UiSceneNode node)
         => node is UiSourceSceneNode source &&
-           source.Kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form
+           source.Kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form or UiSceneNodeKind.Status
             ? source.SemanticName : null;
 
     internal static string? RuntimeText(UiSceneNode node)

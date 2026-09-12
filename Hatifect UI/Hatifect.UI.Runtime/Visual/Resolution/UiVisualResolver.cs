@@ -34,6 +34,10 @@ public static class UiVisualStates
     public static readonly UiVisualStateRef Exit = State("Exit", 200);
     public static readonly UiVisualStateRef Congested = State("Congested", 100);
     public static readonly UiVisualStateRef Offline = State("Offline", 200);
+    public static readonly UiVisualStateRef Empty = State("Empty", 100);
+    public static readonly UiVisualStateRef Loading = State("Loading", 100);
+    public static readonly UiVisualStateRef Success = State("Success", 100);
+    public static readonly UiVisualStateRef Error = State("Error", 100);
 
     private static UiVisualStateRef State(string name, int priority)
         => new(new UiSymbolId("Hatifect.UI", $"state/{name}"), priority);
