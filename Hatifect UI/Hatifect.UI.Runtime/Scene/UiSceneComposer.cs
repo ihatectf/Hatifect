@@ -113,7 +113,7 @@ internal sealed class UiSceneComposer
             Add(bySlot, projection.HostSlot, CreateElement(invocation, planned, element, visual, interaction, reads, capturedLocale));
         }
 
-        AddContributions(invocation, visual, interaction, bySlot);
+        AddContributions(invocation, visual, interaction, bySlot, capturedLocale);
         if (terminal)
             AddTerminalNavigation(
                 invocation,
@@ -509,7 +509,8 @@ internal sealed class UiSceneComposer
         UiInvocationResult invocation,
         UiVisualDefinition? visual,
         UiInteractionSnapshot? interaction,
-        IDictionary<UiSymbolId, List<UiSceneNode>> bySlot)
+        IDictionary<UiSymbolId, List<UiSceneNode>> bySlot,
+        string locale)
     {
         if (_registry == null) return;
         foreach (UiContributionPointDescriptor point in _registry.ContributionPointsFor(invocation.Descriptor.Id))
@@ -526,11 +527,16 @@ internal sealed class UiSceneComposer
                 UiSceneNode node = contribution switch
                 {
                     UiActionContributionDescriptor action => Button(
-                        nodeId, UiSceneRoles.Button, action.Action, invocation, visual, interaction),
+                        nodeId, UiSceneRoles.Button, action.Action, invocation, visual, interaction,
+                        tooltip: Tooltip(invocation, action.Tooltip, nodeId, locale)),
                     UiRouteContributionDescriptor route => new UiRouteButtonSceneNode(
                         nodeId, UiSceneRoles.Button,
                         Resolve(UiSceneRoles.Button, UiSceneNodeKind.RouteButton, nodeId, invocation, visual, interaction),
-                        route.Title, route.Route, inputPrompt: ActivationPrompt(invocation)) { SemanticId = route.Route },
+                        route.Title, route.Route, inputPrompt: ActivationPrompt(invocation))
+                    {
+                        SemanticId = route.Route,
+                        Tooltip = Tooltip(invocation, route.Tooltip, nodeId, locale)
+                    },
                     _ => throw new InvalidOperationException($"Unsupported contribution type '{contribution.GetType().Name}'.")
                 };
                 Add(bySlot, slot, node);
@@ -629,6 +635,21 @@ internal sealed class UiSceneComposer
         string locale)
     {
         string? text = invocation.Experience.TooltipFor(target, locale);
+        return CreateTooltip(invocation, node, text);
+    }
+
+    private UiTooltipPresentation? Tooltip(
+        UiInvocationResult invocation,
+        UiLocalizedText? tooltip,
+        UiSymbolId node,
+        string locale)
+        => CreateTooltip(invocation, node, tooltip?.Resolve(locale));
+
+    private UiTooltipPresentation? CreateTooltip(
+        UiInvocationResult invocation,
+        UiSymbolId node,
+        string? text)
+    {
         if (text is null) return null;
         UiSymbolId id = node.Child("tooltip");
         return new UiTooltipPresentation(

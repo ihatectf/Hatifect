@@ -110,6 +110,12 @@ For forms, declare the containing `Configure` element before targeting a field. 
 attach help to their input; toggle/choice fields attach the same help to every focusable option while
 retaining the field ID as semantic origin.
 
+Registered action, route and section contributions can carry the same immutable localized help in
+the tooltip overloads of `UiActionContributionDescriptor` and `UiRouteContributionDescriptor`.
+Runtime resolves that metadata with the locale captured for scene composition and projects it to the
+contributed button through the existing tooltip overlay. The original descriptor constructors remain
+valid and produce no tooltip.
+
 Pointer hover takes precedence over keyboard/controller focus; at most one tooltip is visible. The
 overlay uses `Surface.Popup`, `Text.Primary`, `Typography.Body`, `Space.S`, `Radius.S`, and
 `Elevation.High` from the active theme. Tooltip text is measured during layout, while selecting an
@@ -119,8 +125,8 @@ main tree's desired size or focus order.
 
 The target keeps its accessible name and exposes tooltip text separately as its accessibility
 description. Unknown targets, fields whose containing form has not been declared, and duplicate
-declarations are rejected before `Build`. Per-row collection help, contribution metadata, display
-delay, and native visual acceptance remain separate work.
+declarations are rejected before `Build`. Per-row collection help, display delay, and native visual
+acceptance remain separate work.
 
 ## Collection density
 
