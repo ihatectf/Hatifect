@@ -12,6 +12,7 @@ internal static class UiSceneRoles
     public static readonly UiSymbolId Form = Role("Form");
     public static readonly UiSymbolId Status = Role("Status");
     public static readonly UiSymbolId ActionBar = Role("ActionBar");
+    public static readonly UiSymbolId Tooltip = Role("Tooltip");
 
     private static UiSymbolId Role(string name) => new("Hatifect.UI", $"internal-role/{name}");
 }

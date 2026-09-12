@@ -104,6 +104,42 @@ public sealed class ExperienceTextTests
         Assert.Equal("Отправить", Assert.Single(experience.LocalizedActionTitles).Value.Resolve("ru-RU"));
     }
 
+    [Fact]
+    public void TooltipsRetainStableTargetsAndResolveExactLocales()
+    {
+        UiSymbolId element = Id.Child("element/cargo"), actionId = Id.Child("action/send");
+        var action = new UiActionDefinition(actionId, "Send", () => { });
+        var builder = new UiExperienceBuilder(Id, "Shipment")
+            .Element(element, "Cargo", "Cargo", new UiState<int>(12), UiCapabilities.Inspect)
+            .Actions("Actions", action)
+            .Tooltip(element, Text("Available cargo", "Доступный груз"))
+            .Tooltip(actionId, Text("Send selected cargo", "Отправить выбранный груз"));
+
+        UiExperienceDefinition experience = builder.Build();
+
+        Assert.Equal("Available cargo", experience.Tooltips[element].Fallback);
+        Assert.Equal("Доступный груз", experience.Tooltips[element].Resolve("ru-RU"));
+        Assert.Equal("Отправить выбранный груз", experience.Tooltips[actionId].Resolve("ru-RU"));
+        Assert.Throws<InvalidOperationException>(() => builder.Tooltip(element, Text("Other", "Другое")));
+    }
+
+    [Fact]
+    public void InvalidTooltipTargetsAndDuplicatesDoNotPartiallyChangeBuilder()
+    {
+        UiSymbolId element = Id.Child("element/cargo");
+        var builder = new UiExperienceBuilder(Id, "Shipment")
+            .Element(element, "Cargo", "Cargo", new UiState<int>(12), UiCapabilities.Inspect);
+        UiLocalizedText tooltip = Text("Available cargo", "Доступный груз");
+
+        Assert.Throws<ArgumentException>(() => builder.Tooltip(Id.Child("missing"), tooltip));
+        builder.Tooltip(element, tooltip);
+        Assert.Throws<InvalidOperationException>(() => builder.Tooltip(element, tooltip));
+
+        UiExperienceDefinition experience = builder.Build();
+        Assert.Single(experience.Tooltips);
+        Assert.Same(tooltip, experience.Tooltips[element]);
+    }
+
     [Theory]
     [InlineData("Search")]
     [InlineData("Filter")]

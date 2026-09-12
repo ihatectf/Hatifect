@@ -24,6 +24,12 @@ internal interface IUiTextMetrics
     UiSize Measure(string text, UiTypography typography, float availableWidth, UiTextOverflow overflow);
 }
 
+internal sealed record UiTooltipLayout(
+    UiTooltipPresentation Presentation,
+    UiSize DesiredSize,
+    UiThickness Inset,
+    UiRect Clip);
+
 internal sealed record UiLayoutEntry(
     UiRect Bounds,
     UiRect ContentBounds,
@@ -33,7 +39,8 @@ internal sealed record UiLayoutEntry(
     string? Heading = null,
     UiRect? HeadingBounds = null,
     float InputPromptWidth = 0,
-    float ActionStatusLineHeight = 0);
+    float ActionStatusLineHeight = 0,
+    UiTooltipLayout? Tooltip = null);
 
 // Root content remains in logical coordinates; only its viewport is visible/hit-testable.
 internal sealed record UiRootScrollLayout(UiRect Viewport, float Extent, float Offset)
@@ -147,7 +154,13 @@ internal sealed class UiSceneLayoutEngine
         if (!float.IsFinite(rootOffset)) throw new ArgumentOutOfRangeException(nameof(rootOffset));
 
         var measured = new Dictionary<UiSymbolId, MeasuredNode>();
-        Measure(scene.Root, context.Viewport.Width, scene.MeasurementContext, measured, scene.DisplayName);
+        Measure(
+            scene.Root,
+            context.Viewport.Width,
+            context.Viewport.Width,
+            scene.MeasurementContext,
+            measured,
+            scene.DisplayName);
         MeasuredNode root = measured[scene.Root.Id];
         UiHostPlacementResult placement = _placement.Place(
             scene.Root.Policy, context, root.Desired, root.Minimum);
@@ -170,7 +183,7 @@ internal sealed class UiSceneLayoutEngine
         var collectionWindows = new Dictionary<UiSymbolId, UiCollectionLayoutWindow>();
         Arrange(
             scene.Root, placement.Bounds, context.Viewport, measured, entries,
-            collections, collectionWindows, scene.MeasurementContext, rootScroll);
+            collections, collectionWindows, scene.MeasurementContext, context.Viewport, rootScroll);
         _collections.Synchronize(collectionWindows.Keys);
         return new UiLayoutSnapshot(entries, placement, collectionWindows, rootScroll);
     }
@@ -178,6 +191,7 @@ internal sealed class UiSceneLayoutEngine
     private MeasuredNode Measure(
         UiSceneNode node,
         float availableWidth,
+        float overlayWidth,
         UiSceneMeasurementContext measurementContext,
         IDictionary<UiSymbolId, MeasuredNode> measured,
         string? hostTitle = null)
@@ -190,6 +204,7 @@ internal sealed class UiSceneLayoutEngine
             children[index] = Measure(
                 node.Children[index],
                 contentWidth,
+                overlayWidth,
                 measurementContext,
                 measured);
         }
@@ -202,6 +217,19 @@ internal sealed class UiSceneLayoutEngine
         UiTypography? collectionTypography = null;
         float inputPromptWidth = 0;
         float actionStatusLineHeight = 0;
+        UiSize? tooltipSize = null;
+        UiThickness tooltipInset = default;
+
+        if (node.Tooltip is { } tooltip)
+        {
+            tooltipInset = Insets(tooltip.Visual);
+            UiTypography typography = Required<UiTypography>(tooltip.Visual, "typography", tooltip.Id);
+            float maximumWidth = Math.Min(overlayWidth, typography.Size * UiTooltipPlacement.MaximumLineCharacters);
+            float textWidth = Math.Max(1, maximumWidth - tooltipInset.Left - tooltipInset.Right);
+            tooltipSize = AddInsets(
+                _textMetrics.Measure(tooltip.Text, typography, textWidth, UiTextOverflow.Wrap),
+                tooltipInset);
+        }
 
         string? text = RuntimeText(node);
         if (node is UiCollectionSceneNode collection)
@@ -370,7 +398,9 @@ internal sealed class UiSceneLayoutEngine
             heading,
             headingHeight,
             inputPromptWidth,
-            actionStatusLineHeight);
+            actionStatusLineHeight,
+            tooltipSize,
+            tooltipInset);
         measured.Add(node.Id, result);
         return result;
     }
@@ -384,6 +414,7 @@ internal sealed class UiSceneLayoutEngine
         UiCollectionViewportSnapshot collectionViewport,
         IDictionary<UiSymbolId, UiCollectionLayoutWindow> collectionWindows,
         UiSceneMeasurementContext measurementContext,
+        UiRect overlayClip,
         UiRootScrollLayout? rootScroll = null)
     {
         MeasuredNode own = measured[node.Id];
@@ -404,8 +435,11 @@ internal sealed class UiSceneLayoutEngine
             content = new UiRect(content.X, content.Y + own.HeadingHeight,
                 content.Width, Math.Max(0, content.Height - own.HeadingHeight));
         }
+        UiTooltipLayout? tooltip = node.Tooltip is { } presentation && own.TooltipSize is { } tooltipSize
+            ? new UiTooltipLayout(presentation, tooltipSize, own.TooltipInset, overlayClip)
+            : null;
         entries.Add(node.Id, new UiLayoutEntry(bounds, content, clip, own.Desired, own.Overflow,
-            own.Heading, headingBounds, own.InputPromptWidth, own.ActionStatusLineHeight));
+            own.Heading, headingBounds, own.InputPromptWidth, own.ActionStatusLineHeight, tooltip));
         if (node is UiCollectionSceneNode collection)
         {
             collectionWindows.Add(
@@ -442,7 +476,8 @@ internal sealed class UiSceneLayoutEngine
                 entries,
                 collectionViewport,
                 collectionWindows,
-                measurementContext);
+                measurementContext,
+                overlayClip);
             return;
         }
 
@@ -466,7 +501,7 @@ internal sealed class UiSceneLayoutEngine
                 : new UiRect(content.X, cursor, content.Width, allocations[index]);
             Arrange(
                 child, childBounds, clip, measured, entries,
-                collectionViewport, collectionWindows, measurementContext);
+                collectionViewport, collectionWindows, measurementContext, overlayClip);
             localOffset += allocations[index];
         }
     }
@@ -537,7 +572,8 @@ internal sealed class UiSceneLayoutEngine
         IDictionary<UiSymbolId, UiLayoutEntry> entries,
         UiCollectionViewportSnapshot collectionViewport,
         IDictionary<UiSymbolId, UiCollectionLayoutWindow> collectionWindows,
-        UiSceneMeasurementContext measurementContext)
+        UiSceneMeasurementContext measurementContext,
+        UiRect overlayClip)
     {
         IReadOnlyDictionary<UiSymbolId, UiSlotSceneNode> slots = TerminalSlots(children);
         UiSlotSceneNode navigation = slots[UiHostSlots.Navigation];
@@ -591,13 +627,13 @@ internal sealed class UiSceneLayoutEngine
         var statusBounds = new UiRect(content.X, content.Y + rows[0], content.Width, rows[1]);
         Arrange(
             navigation, navigationBounds, clip, measured, entries,
-            collectionViewport, collectionWindows, measurementContext);
+            collectionViewport, collectionWindows, measurementContext, overlayClip);
         Arrange(
             context, contextBounds, clip, measured, entries,
-            collectionViewport, collectionWindows, measurementContext);
+            collectionViewport, collectionWindows, measurementContext, overlayClip);
         Arrange(
             status, statusBounds, clip, measured, entries,
-            collectionViewport, collectionWindows, measurementContext);
+            collectionViewport, collectionWindows, measurementContext, overlayClip);
 
         float[] centerRows = Allocate(
             new[]
@@ -615,13 +651,13 @@ internal sealed class UiSceneLayoutEngine
             var slotBounds = new UiRect(centerBounds.X, centerY, centerBounds.Width, centerRows[index]);
             Arrange(
                 centerSlots[index], slotBounds, clip, measured, entries,
-                collectionViewport, collectionWindows, measurementContext);
+                collectionViewport, collectionWindows, measurementContext, overlayClip);
             centerY += centerRows[index];
         }
 
         Arrange(
             overlay, content, clip, measured, entries,
-            collectionViewport, collectionWindows, measurementContext);
+            collectionViewport, collectionWindows, measurementContext, overlayClip);
     }
 
     private static (UiSize Desired, UiSize Minimum) MeasureTerminalShell(
@@ -825,5 +861,7 @@ internal sealed class UiSceneLayoutEngine
         string? Heading = null,
         float HeadingHeight = 0,
         float InputPromptWidth = 0,
-        float ActionStatusLineHeight = 0);
+        float ActionStatusLineHeight = 0,
+        UiSize? TooltipSize = null,
+        UiThickness TooltipInset = default);
 }

@@ -99,7 +99,69 @@ internal sealed class UiSceneRenderPlanner
         ArgumentNullException.ThrowIfNull(textMetrics);
         var primitives = new List<UiRenderPrimitive>();
         Visit(scene.Root, layout, interaction, textMetrics, primitives, actions);
+        AddTooltip(scene, layout, interaction, primitives);
         return new UiRenderFrame(primitives.ToArray());
+    }
+
+    private static void AddTooltip(
+        UiScene scene,
+        UiLayoutSnapshot layout,
+        UiInteractionSnapshot? interaction,
+        ICollection<UiRenderPrimitive> primitives)
+    {
+        if (interaction is null ||
+            !TryTooltipEntry(scene, layout, interaction.Hovered, out UiLayoutEntry? entry) &&
+            !TryTooltipEntry(scene, layout, interaction.Focused, out entry))
+            return;
+        UiTooltipLayout tooltip = entry!.Tooltip!;
+        UiVisualResolution visual = tooltip.Presentation.Visual;
+        if (!TrySurface(visual, out UiSurface surface) ||
+            !TryValue(visual, "foreground", out UiColor foreground) ||
+            !TryValue(visual, "typography", out UiTypography typography))
+            throw new InvalidOperationException(
+                $"Tooltip '{tooltip.Presentation.Id}' requires surface, foreground and typography values.");
+        float gap = Math.Max(1, tooltip.Inset.Top * 2);
+        UiRect bounds = UiTooltipPlacement.Place(entry.Bounds, tooltip.DesiredSize, tooltip.Clip, gap);
+        UiRect content = bounds.Inset(tooltip.Inset);
+        UiRect clip = UiRect.Intersect(tooltip.Clip, bounds);
+        UiOpacity opacity = Value(visual, "opacity", new UiOpacity(1));
+        UiTransform transform = Value(visual, "transform", new UiTransform(0, 0));
+        primitives.Add(new UiSurfacePrimitive(
+            tooltip.Presentation.Id,
+            bounds,
+            clip,
+            surface,
+            Value(visual, "radius", new UiCornerRadius(0)),
+            Optional<UiBorder>(visual, "border"),
+            OptionalReference<UiElevation>(visual, "elevation"),
+            opacity,
+            transform));
+        primitives.Add(new UiTextPrimitive(
+            tooltip.Presentation.Id,
+            content,
+            UiRect.Intersect(clip, content),
+            tooltip.Presentation.Text,
+            foreground,
+            typography,
+            UiTextOverflow.Wrap,
+            opacity,
+            transform));
+    }
+
+    private static bool TryTooltipEntry(
+        UiScene scene,
+        UiLayoutSnapshot layout,
+        UiSymbolId? target,
+        out UiLayoutEntry? entry)
+    {
+        if (target is { } id &&
+            scene.Structure.Nodes.TryGetValue(id, out UiSceneStructuralNode? node) &&
+            node.Node.Tooltip is not null &&
+            layout.TryGetEntry(id, out entry) &&
+            entry?.Tooltip is not null)
+            return true;
+        entry = null;
+        return false;
     }
 
     private static void Visit(

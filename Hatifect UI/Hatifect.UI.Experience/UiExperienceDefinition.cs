@@ -33,6 +33,7 @@ public sealed class UiExperienceDefinition
         UiLocalizedText? localizedDisplayName,
         IDictionary<UiSymbolId, UiLocalizedText> localizedElementLabels,
         IDictionary<UiSymbolId, UiLocalizedText> localizedActionTitles,
+        IDictionary<UiSymbolId, UiLocalizedText> tooltips,
         IDictionary<UiSymbolId, IUiTextFormatter> textFormatters)
     {
         Id = id;
@@ -45,6 +46,7 @@ public sealed class UiExperienceDefinition
         LocalizedDisplayName = localizedDisplayName;
         LocalizedElementLabels = new ReadOnlyDictionary<UiSymbolId, UiLocalizedText>(new Dictionary<UiSymbolId, UiLocalizedText>(localizedElementLabels));
         LocalizedActionTitles = new ReadOnlyDictionary<UiSymbolId, UiLocalizedText>(new Dictionary<UiSymbolId, UiLocalizedText>(localizedActionTitles));
+        Tooltips = new ReadOnlyDictionary<UiSymbolId, UiLocalizedText>(new Dictionary<UiSymbolId, UiLocalizedText>(tooltips));
         _textFormatters = new Dictionary<UiSymbolId, IUiTextFormatter>(textFormatters);
     }
 
@@ -58,6 +60,7 @@ public sealed class UiExperienceDefinition
     public UiLocalizedText? LocalizedDisplayName { get; }
     public IReadOnlyDictionary<UiSymbolId, UiLocalizedText> LocalizedElementLabels { get; }
     public IReadOnlyDictionary<UiSymbolId, UiLocalizedText> LocalizedActionTitles { get; }
+    public IReadOnlyDictionary<UiSymbolId, UiLocalizedText> Tooltips { get; }
     private readonly Dictionary<UiSymbolId, IUiTextFormatter> _textFormatters;
 
     internal string DisplayNameFor(string locale) => LocalizedDisplayName?.Resolve(locale) ?? DisplayName;
@@ -65,6 +68,8 @@ public sealed class UiExperienceDefinition
         => LocalizedElementLabels.TryGetValue(element.Id, out var text) ? text.Resolve(locale) : element.Label;
     internal string ActionTitleFor(UiActionDefinition action, string locale)
         => LocalizedActionTitles.TryGetValue(action.Id, out var text) ? text.Resolve(locale) : action.Title;
+    internal string? TooltipFor(UiSymbolId target, string locale)
+        => Tooltips.TryGetValue(target, out var text) ? text.Resolve(locale) : null;
     internal bool HasTextFormatter(UiSymbolId element) => _textFormatters.ContainsKey(element);
     internal string? FormatText(UiSymbolId element, object? capturedValue, string capturedLocale)
     {

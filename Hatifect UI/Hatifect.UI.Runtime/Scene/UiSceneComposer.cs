@@ -250,7 +250,11 @@ internal sealed class UiSceneComposer
         return new UiSourceSceneNode(
             nodeId, kind, role,
             Resolve(role, kind, nodeId, invocation, visual, interaction),
-            invocation.Experience.ElementLabelFor(element, locale), captured, displayText) { SemanticId = element.Id };
+            invocation.Experience.ElementLabelFor(element, locale), captured, displayText)
+        {
+            SemanticId = element.Id,
+            Tooltip = Tooltip(invocation, element.Id, nodeId, locale)
+        };
     }
 
     private UiSceneNode Status(
@@ -290,7 +294,11 @@ internal sealed class UiSceneComposer
             Resolve(role, UiSceneNodeKind.Status, nodeId, invocation, visual, interaction, domainStates: states),
             invocation.Experience.ElementLabelFor(element, locale),
             captured,
-            displayText) { SemanticId = element.Id };
+            displayText)
+        {
+            SemanticId = element.Id,
+            Tooltip = Tooltip(invocation, element.Id, nodeId, locale)
+        };
     }
 
     private UiSceneNode Collection(
@@ -360,7 +368,11 @@ internal sealed class UiSceneComposer
             recipe,
             activeVisuals,
             capturedCollection,
-            stateVisuals) { SemanticId = element.Id };
+            stateVisuals)
+        {
+            SemanticId = element.Id,
+            Tooltip = Tooltip(invocation, element.Id, nodeId, locale)
+        };
     }
 
     private UiSceneNode TextInput(
@@ -376,7 +388,11 @@ internal sealed class UiSceneComposer
         return new UiTextInputSceneNode(
             nodeId, role,
             Resolve(role, UiSceneNodeKind.TextInput, nodeId, invocation, visual, interaction),
-            invocation.Experience.ElementLabelFor(element, locale), element.Source, reads.Read(element.Source)) { SemanticId = element.Id };
+            invocation.Experience.ElementLabelFor(element, locale), element.Source, reads.Read(element.Source))
+        {
+            SemanticId = element.Id,
+            Tooltip = Tooltip(invocation, element.Id, nodeId, locale)
+        };
     }
 
     private UiSceneNode Form(
@@ -443,7 +459,11 @@ internal sealed class UiSceneComposer
             formRole,
             Resolve(formRole, UiSceneNodeKind.Form, formId, invocation, visual, interaction),
             children.ToArray(),
-            invocation.Experience.ElementLabelFor(element, locale)) { SemanticId = element.Id };
+            invocation.Experience.ElementLabelFor(element, locale))
+        {
+            SemanticId = element.Id,
+            Tooltip = Tooltip(invocation, element.Id, formId, locale)
+        };
     }
 
     private UiSceneNode ActionBar(
@@ -461,14 +481,19 @@ internal sealed class UiSceneComposer
         {
             UiSymbolId nodeId = action.Id.Child("scene/button");
             return (UiSceneNode)Button(nodeId, buttonRole, action, invocation, visual, interaction,
-                invocation.Experience.ActionTitleFor(action, locale));
+                invocation.Experience.ActionTitleFor(action, locale),
+                Tooltip(invocation, action.Id, nodeId, locale));
         }).ToArray();
         UiSymbolId barRole = Role(invocation.Experience, element.Alias, UiSceneRoles.ActionBar);
         UiSymbolId barId = element.Id.Child("scene/action-bar");
         return new UiContainerSceneNode(
             barId, UiSceneNodeKind.ActionBar, barRole,
             Resolve(barRole, UiSceneNodeKind.ActionBar, barId, invocation, visual, interaction), buttons,
-            invocation.Experience.ElementLabelFor(element, locale)) { SemanticId = element.Id };
+            invocation.Experience.ElementLabelFor(element, locale))
+        {
+            SemanticId = element.Id,
+            Tooltip = Tooltip(invocation, element.Id, barId, locale)
+        };
     }
 
     private void AddContributions(
@@ -564,7 +589,8 @@ internal sealed class UiSceneComposer
     }
 
     private UiButtonSceneNode Button(UiSymbolId node, UiSymbolId role, UiActionDefinition action,
-        UiInvocationResult invocation, UiVisualDefinition? visual, UiInteractionSnapshot? interaction, string? label = null)
+        UiInvocationResult invocation, UiVisualDefinition? visual, UiInteractionSnapshot? interaction,
+        string? label = null, UiTooltipPresentation? tooltip = null)
     {
         if (action.Binding is not null && visual is not null)
         foreach (var recipe in visual.Recipes)
@@ -584,7 +610,28 @@ internal sealed class UiSceneComposer
                 foundation.For(UiSceneNodeKind.Button, host, null, active)), renderOnly: action.Binding is not null);
         bool enabled = action.Binding is not null || action.CanExecute;
         return new(node, role, states.Resolve(enabled, interaction), action, states, label, ActivationPrompt(invocation))
-            { SemanticId = action.Id };
+            { SemanticId = action.Id, Tooltip = tooltip };
+    }
+
+    private UiTooltipPresentation? Tooltip(
+        UiInvocationResult invocation,
+        UiSymbolId target,
+        UiSymbolId node,
+        string locale)
+    {
+        string? text = invocation.Experience.TooltipFor(target, locale);
+        if (text is null) return null;
+        UiSymbolId id = node.Child("tooltip");
+        return new UiTooltipPresentation(
+            id,
+            text,
+            Resolve(
+                UiSceneRoles.Tooltip,
+                UiSceneNodeKind.Tooltip,
+                id,
+                invocation,
+                visual: null,
+                interaction: null));
     }
 
     private static UiInputPrompt? ActivationPrompt(UiInvocationResult invocation)
