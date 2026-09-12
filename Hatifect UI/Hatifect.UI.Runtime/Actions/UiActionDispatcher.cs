@@ -6,6 +6,9 @@ internal interface IUiActionExecution
 {
     UiActionDispatcher Owner { get; }
     UiSymbolId Id { get; }
+    UiActionState State { get; }
+    bool IsRetired { get; }
+    int WaitingCount { get; }
     void Register();
     bool Pump();
     void Retire();
@@ -85,6 +88,16 @@ internal sealed class UiActionDispatcher : IDisposable
 
     internal bool Contains(IUiActionExecution execution)
         => _actions.TryGetValue(execution.Id, out var current) && ReferenceEquals(current, execution);
+
+    // Explicit diagnostic capture only; never invoked by update/draw. No request or result data escapes.
+    internal UiActionDispatcherOwnershipSnapshot CaptureOwnership()
+    {
+        RequireOwner();
+        return new(SessionId, GenerationId, _thread, IsDisposed, _actions
+            .OrderBy(item => item.Key.ToString(), StringComparer.Ordinal)
+            .Select(item => new UiActionOwnershipEntry(item.Key, item.Value.State, item.Value.IsRetired, item.Value.WaitingCount))
+            .ToArray());
+    }
 
     internal void FenceRetirement()
     {

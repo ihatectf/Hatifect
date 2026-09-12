@@ -33,6 +33,9 @@ internal sealed class UiActionExecution<TRequest, TResult> : IUiActionExecution
 
     UiActionDispatcher IUiActionExecution.Owner => _owner;
     UiSymbolId IUiActionExecution.Id => _action.Id;
+    UiActionState IUiActionExecution.State => State;
+    bool IUiActionExecution.IsRetired => IsRetired;
+    int IUiActionExecution.WaitingCount => WaitingCount;
     void IUiActionExecution.Register() => _registered = true;
 
     internal UiActionState State { get; private set; } = UiActionState.Available;

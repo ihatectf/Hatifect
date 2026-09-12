@@ -123,6 +123,7 @@ internal sealed class UiHostRuntimeSession
     }
     internal int ActionCount => _actions.Count;
     internal IUiActionResolver Actions => _actions.Current;
+    internal UiActionDispatcherOwnershipSnapshot ActionOwnership => _actions.CaptureOwnership();
 
     internal bool PumpActions()
     {

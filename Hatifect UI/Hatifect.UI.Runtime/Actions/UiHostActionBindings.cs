@@ -160,6 +160,7 @@ internal sealed class UiHostActionBindings : IDisposable
     internal int Count => _current.Bindings.Count;
     internal void RequireOwner() => _dispatcher.RequireOwner();
     internal void FenceRetirement() => _dispatcher.FenceRetirement();
+    internal UiActionDispatcherOwnershipSnapshot CaptureOwnership() => _dispatcher.CaptureOwnership();
 
     internal Prepared Prepare(UiScene scene, bool renewGeneration = false)
     {

@@ -18,6 +18,30 @@ namespace Hatifect.UI.Runtime.Tests;
 public sealed partial class ActionBindingTests
 {
     [Fact]
+    public void HostSessionForwardsActionOwnershipFromItsLiveDispatcher()
+    {
+        UiActionDefinition action = Action((_, _) => new(UiActionResult<int>.Success(1))).Bind(() => 1);
+        var host = Host(Scene(action));
+        try
+        {
+            UiActionDispatcherOwnershipSnapshot before = host.ActionOwnership;
+            Assert.False(before.Terminal);
+            UiActionOwnershipEntry entry = Assert.Single(before.Actions);
+            Assert.Equal(action.Id, entry.Action);
+            Assert.Equal(UiActionState.Available, entry.State);
+            Assert.False(entry.IsRetired);
+
+            Assert.True(host.Interactions.Submit().ActionInvoked);
+            Assert.Equal(UiActionState.Completed, Assert.Single(host.ActionOwnership.Actions).State);
+
+            host.Deactivate();
+            Assert.True(host.ActionOwnership.Terminal);
+            Assert.Empty(host.ActionOwnership.Actions);
+        }
+        finally { host.Deactivate(); }
+    }
+
+    [Fact]
     public void SharedDescriptionHasIndependentHostStateAndOwningThreadCompletions()
     {
         var pending = new[] { Completion(), Completion() };
