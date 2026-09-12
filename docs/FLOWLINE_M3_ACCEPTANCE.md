@@ -7,6 +7,7 @@ Goal: ordinary single-player entry, two supported chests/stations, UI-authored r
 - Common F13 stable-menu diagnostic source reported by GQ: `866b1d0`. The actual FlowUiAcceptance.cs bytes match this worktree; no local Git command was used to assert a new HEAD. Native request `bfa4bf7f-edf3-40aa-8914-a7be24254990` belongs to that common runtime.
 - Common actions request `209bd59f-341d-4a35-8241-0ea04bee6619` belongs to preceding common actions source, reported `4a7d710`. It is not automatically evidence for any later changed production DLL. GQ retains runtime/source/package identities.
 - F18 ordinary entry was integrated by GQ as `d03b736` over Window `da0061d`; the frozen seven-file source manifest is `artifacts/f13/f18-entry-candidate.json`: seven Flow production/test files with hashes. Scoped Flow platform PASS963 (771 Flow +192 Stardew), actual eight new/strengthened cases and seven source hashes recorded in f18-entry-scoped-audit.json. Full C/G and native ordinary-entry evidence remain pending. The Window prerequisite is integrated; common validation and hosted observation are owned by GQ/UI.
+- Current local GQ checkpoint: `c5174a8c4a9bf1f3a28d7420bb11d16705a6f96d`. G PASS 2 329 .NET + 503 Python; applicable P PASS101; prepare PASS. Normalized production Window `flow.ui.player` PASS11 and the original chest matrix PASS116 plus two budget assertions. Exact physical-input request `521bde15-3a64-4deb-abfd-0040dc53fed0` stopped before its first semantic step because macOS Accessibility preflight was false. Exact IDs and evidence limits are recorded in [Q02_RUNTIME_C5174A8.md](Q02_RUNTIME_C5174A8.md).
 
 ## Requirement-to-evidence matrix
 
@@ -26,12 +27,12 @@ Goal: ordinary single-player entry, two supported chests/stations, UI-authored r
 | No loss/duplication and correct custody | Existing F14–F17/F20 base; new test checks parcel/cargo identity, source/destination,8→5+3 and repeat refusals | Keep accepted base; new UI path and final runtime DLL checks required |
 | Useful source/cargo/route/admission errors | Existing route preview and typed route reasons; local `acb1279` adds exact EN/RU `StationLimit`/`LifetimeLinkLimit`/`RetainedCargoLimit` results, saturated-budget no-mutation tests and lifetime-link preservation after reload | Managed owner-layer PASS for route and retained-resource limits; current exact native EN/RU visibility and remaining real-provider failures are still pending |
 | Permitted cancel/retry/return/reconcile | Existing parcel availability/recovery rules and prior provider failure matrix | Final UI happy/refusal/recovery scenario pending; unknown physical outcome must not replay |
-| Save/restart before and after delivery | Existing native chest crash/save matrix; new typed-command test restores Reserved and Delivered aggregates over cloned real Chest inventories | New managed test PASS; final native process/save bytes evidence required |
-| Save switching preserves separate worlds | Accepted prior real chest isolation base; current fake UI A→B→A PASS | Final ordinary scenario and exact runtime matrix still required |
-| UI framework ownership | Existing public Host API; Flow supplies semantics only; UI implements Window overflow | Source boundary respected; final combined consumer/package/runtime checks pending |
-| CA coexistence | Common package-consumer checks and earlier native baseline available to GQ | Final fixed candidate combined evidence required |
+| Save/restart before and after delivery | Exact `c5174a8` chest crash/save matrix and normalized Window path restore Reserved/Delivered aggregates over real Chest inventories | PASS on current candidate; physical-input binding to the same path remains |
+| Save switching preserves separate worlds | Exact `c5174a8` isolation PASS12; cleanup removed both request-owned working copies | PASS current original matrix; final installed-candidate regression remains |
+| UI framework ownership | Existing public Host API; Flow supplies semantics only; UI implements Window overflow | Source boundary respected; G/P/prepare and production Window PASS on `c5174a8` |
+| CA coexistence | Applicable package isolation PASS101 on unchanged UI source, eight packages and 47 projected files | Exact in-game coexistence on the final installed candidate still required |
 | Player guide and limitations | FLOWLINE_PLAYER_GUIDE.md covers opening/stations/routes/items/pause/recovery/persistent limits and is synchronized with local `acb1279` | Source guide updated; installed/runtime behavior and final GQ handoff remain pending |
-| Delivery to GQ | Exact file manifests, source reviews and raw evidence paths sent directly under user authorization | F13 and F18 integrated by GQ; common validation and final native evidence pending |
+| Delivery to GQ | Exact file manifests, source reviews and raw evidence paths sent directly under user authorization | F13/F18/F19 integrated in local `c5174a8`; common validation and runtime matrix complete, final native/release evidence pending |
 
 ## Required validation
 
@@ -41,9 +42,9 @@ Current Flow admission-feedback candidate is committed locally as `acb1279`; no 
 
 ## Next dependency-ready work
 
-1. Complete common validation of the integrated F18/Window candidate; fix failures at their owner.
-2. Add the canonical ordinary Window acceptance driver using the UI-owned hosted observation extension and prove the single composite SMAPI proxy, normal entry/selection/forms/actions.
-3. Prove the current F19 reasons in the physical-input/native inventory scenario, finish remaining real-provider feedback, then repeat the applicable original acceptance matrix and hand off final Flow assets/evidence to GQ.
+1. After macOS grants Accessibility to the Python runtime, rerun `flow.ui.player.input` on unchanged `c5174a8` and require the complete phase/action-result capture set through final `Delivered`.
+2. Complete exact-candidate EN/RU, scale, controller and remaining visible F19 refusal coverage without weakening the physical-input requirement.
+3. Run final CA coexistence and installed-archive acceptance; hand exact Flow assets, dependencies and evidence to GQ.
 
 F13/F18/F19 remain IN_PROGRESS until their original criteria are proven. Q02 overall belongs to GQ.
 
