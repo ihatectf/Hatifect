@@ -1,4 +1,4 @@
-# Flowline
+# Hatifect Flowline
 
 [Полная roadmap](../docs/ROADMAP.md) продолжает десять инкрементов работами F11–F20 и связывает их с модернизацией UI. [Статус Flow foundation](../docs/ROADMAP-STATUS.md) отделяет выполненные проверки от оставшейся acceptance.
 
@@ -8,7 +8,7 @@ Flowline — транспортная подсистема Hatifect. `Hatifect.F
 
 ## Первый игровой маршрут
 
-Нужны совместимые Hatifect Flow и Hatifect UI из одной проверенной поставки; точная минимальная версия UI указана в `manifest.json`. В одиночном загруженном сейве доступны команды консоли SMAPI:
+Нужны совместимые Hatifect Flowline и UI framework из одной проверенной поставки; точная минимальная версия UI указана в `manifest.json`. В одиночном загруженном сейве доступны команды консоли SMAPI:
 
 1. Наведи курсор на обычный сундук игрока: `hatifect_flow station source`. Так же зарегистрируй второй сундук как `destination`. Имена: до 32 букв, цифр, `_` или `-`.
 2. `hatifect_flow link source destination` создаёт направленную связь с capacity 999 и временем 180 игровых update ticks. Необязательные два последних аргумента меняют capacity (1..999) и ticks (1..36000).
@@ -31,6 +31,13 @@ Flowline — транспортная подсистема Hatifect. `Hatifect.F
 Привязка станции включает GUID в modData сундука, location и tile. Перемещённый/заменённый сундук не получает груз автоматически; вторую станцию на занятой координате зарегистрировать нельзя. Лимиты одного сейва: 32 станции, 128 связей за всю историю, 256 сохранённых грузов/отправлений, 16 попыток доставки/возврата, 64 операции за update. История пока не очищается. Multiplayer, сторонние inventory adapters, деление одной заявки на несколько посылок и различимое поведение service policies не входят в этот этап.
 
 ## Сохранение и ошибки
+
+Manifest ID изменён с `Hatifect.Flow` на `Hatifect.Flow`. При первой загрузке нового ID host ищет
+старую SMAPI-запись `smapi/mod-data/hatifect.flow/flowline-v1`, побайтно копирует её в новый scope и
+затем использует обычный typed reader. При ошибке чтения новая копия удаляется, а прежняя запись
+остаётся нетронутой. Persisted modData keys `Hatifect.Flow/Station` и `Hatifect.Flow/Cargo` намеренно
+сохранены: это wire-контракт уже записанных сундуков и груза, а не CLR namespace. Подробная карта
+переименования находится в [RENAMING.md](RENAMING.md).
 
 `hatifect_flow diagnostics` показывает текущие counts/limits/remaining: станции, активные и пожизненные связи, retained cargo/shipments/parcels, очередь, route cache, events и transfer capabilities. Отдельно приводятся сохранённые XML-символы и максимум 32 строки custody/receipts по ID станции. Чтение не создаёт checkpoint, не ищет маршрут, не захватывает inventory lease и не выполняет transfer; XML предметов и их metadata не попадают в отчёт. Счётчики отказов admission относятся только к текущей загрузке и не изменяют revision или сейв. Typed-команды Network и Send сохраняют отдельные причины `StationLimit`, `LifetimeLinkLimit` и `RetainedCargoLimit`; UI объясняет исчерпание соответствующего сохраняемого бюджета на EN/RU. Typed Send также различает временно недоступный source provider, изменившийся после выбора стек и стек, уже принадлежащий активной отправке. Typed Network различает занятую физическую цель, изменившуюся topology, некорректные параметры и rebind источника с незавершённым грузом. Diagnostics по-прежнему содержит точные counts/limits/remaining для проверки причины.
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Diagnostics;
 using System.Linq;
@@ -76,9 +77,9 @@ public sealed partial class ModEntry
             {
                 if (_resourceAcceptance is null)
                     return new FlowGameSession(Game1.uniqueIDForThisGame, Game1.player.UniqueMultiplayerID,
-                        IsGameAuthority, ResolveStationChest, ReportGameFailure, Helper.Data.ReadSaveData<FlowGameSave>(FlowGameSession.SaveKey),
+                        IsGameAuthority, ResolveStationChest, ReportGameFailure, ReadGameSaveData(),
                         new FlowChestLocks(() => Context.IsMultiplayer, ReportGameFailure));
-                saved = FlowResourceCost.Measure(() => Helper.Data.ReadSaveData<FlowGameSave>(FlowGameSession.SaveKey), out read);
+                saved = FlowResourceCost.Measure(ReadGameSaveData, out read);
                 return FlowResourceCost.Measure(() => new FlowGameSession(Game1.uniqueIDForThisGame, Game1.player.UniqueMultiplayerID,
                     IsGameAuthority, ResolveStationChest, ReportGameFailure, saved,
                     new FlowChestLocks(() => Context.IsMultiplayer, ReportGameFailure)), out restore);
@@ -88,6 +89,15 @@ public sealed partial class ModEntry
                 Monitor.Log("Flowline transport is paused: a previous inventory error requires recovery. Saved cargo is retained; automatic replay is disabled.", LogLevel.Error);
         }
         catch (Exception error) { ReportGameFailure(error); }
+    }
+
+    private FlowGameSave? ReadGameSaveData()
+    {
+        IDictionary<string, string>[] fields = SaveGame.loaded is null
+            ? new IDictionary<string, string>[] { Game1.CustomData }
+            : new IDictionary<string, string>[] { Game1.CustomData, SaveGame.loaded.CustomData };
+        return FlowSaveDataMigration.Read(
+            () => Helper.Data.ReadSaveData<FlowGameSave>(FlowGameSession.SaveKey), fields);
     }
 
     private static Chest? ResolveStationChest(StationBinding binding)

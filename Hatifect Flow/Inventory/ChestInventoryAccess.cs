@@ -12,6 +12,7 @@ namespace Hatifect.Flow.Inventory;
 
 internal sealed class ChestInventoryAccess : IDisposable
 {
+    // Persisted in item modData before the product rename; changing it would orphan admitted cargo.
     internal const string CargoKey = "Hatifect.Flow/Cargo";
     private readonly Func<Guid, Chest?> _resolve;
     private readonly Func<bool> _canMutate;

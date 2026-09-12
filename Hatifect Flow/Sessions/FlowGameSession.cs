@@ -22,6 +22,7 @@ namespace Hatifect.Flow.Sessions;
 internal sealed partial class FlowGameSession : IDisposable
 {
     internal const string SaveKey = "flowline-v1";
+    // Persisted in chest modData before the product rename; keep the wire key stable.
     internal const string StationKey = "Hatifect.Flow/Station";
     internal const int MaxStations = 32;
     internal const int MaxLinks = 128;
