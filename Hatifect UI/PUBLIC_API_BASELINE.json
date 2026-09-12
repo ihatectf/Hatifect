@@ -9,11 +9,11 @@
     "Files": [
       {
         "Path": "State/UiSemanticFormSource.cs",
-        "Sha256": "57c911c165c1e7692e76dd5e62f456a55c6b5f1dea11ebcf3933aac72acad5b3"
+        "Sha256": "c1d24638cd95c17cec49008ec922dddd6d7896b83cc1bd8c95cfb09147250fbf"
       },
       {
         "Path": "UiExperienceBuilder.cs",
-        "Sha256": "c4dc5ff6110ebc22bac205eaed9ad896978551b833f9bafa0753ce7240683ffc"
+        "Sha256": "d54db075c84bae6603977c74e7fe8aa499734d4e743766ceb626634398b7e90f"
       }
     ]
   },
@@ -34,7 +34,7 @@
     "Files": [
       {
         "Path": "Hosting/UiSemanticSurfaceContracts.cs",
-        "Sha256": "3eb4b56d0e454e62042d51962594b558f7fef183bfcdc65fca06b7dabfe8a284"
+        "Sha256": "943f221dd12aff37cb585badde178f98c82f7e0788072182d3d5ec297c5717e3"
       }
     ]
   },
@@ -54,11 +54,11 @@
     "Files": [
       {
         "Path": "Hosting/UiSemanticSurfaceObservation.cs",
-        "Sha256": "af1e8efeb49c74d53ee882939cf482a69ed2858c1a45b66fff57fd9344d10c6b"
+        "Sha256": "39c106399db08d96cb32dbe6ec4756cd938853ee3f29a03cd53a4035293bb1cc"
       },
       {
         "Path": "Hosting/UiSemanticSurfaceActionAutomation.cs",
-        "Sha256": "574a33a2203d3d0aba47bf9ecd67272e170f0cb9b1fd4628d37a995b0e65539e"
+        "Sha256": "db508259ea92f4f9076fbd4dcc318f5bca0ea44d99facee59a03a0f8515d3da4"
       }
     ]
   }

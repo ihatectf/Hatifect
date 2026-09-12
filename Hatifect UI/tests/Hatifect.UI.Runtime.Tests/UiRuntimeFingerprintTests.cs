@@ -6,7 +6,7 @@ namespace Hatifect.UI.Stardew.Tests;
 public sealed class UiRuntimeFingerprintTests
 {
     private const string SemanticRuntimeFingerprint =
-        "15e5f8b408c71045599e0131d7419f3e29f5a935d44b91d7207b038f38a7c3be";
+        "ae6d34720e43ad671cb692072bbca3d156e9ad164033a301470dab5a564665ea";
 
     [Fact]
     public void SemanticRuntimeWithoutAssetsHasStableCompatibleIdentity()

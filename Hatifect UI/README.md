@@ -2,6 +2,10 @@
 
 Семантический UI framework: Language → Semantics → Experience, затем Planning и Runtime; Stardew host связывает framework с игрой. Tooling, Tooling.Server и DevTools предоставляют диагностику и инспекцию.
 
+## Переход на Hatifect UI
+
+Рабочие project, assembly, namespace и package IDs теперь используют `Hatifect.UI.*`; SMAPI module имеет `UniqueID` `Hatifect.UI`, а tooling и acceptance identifiers используют префикс `hatifect`. Форма публичного `IUiSemanticSurfaceApi` и его версия v1 сохранены, но compiled consumers должны быть пересобраны против новых package IDs. Старый и новый UI modules не устанавливаются одновременно. Переименование runtime-файлов намеренно меняет runtime fingerprint. Flowline semantic IDs принадлежат Flowline и мигрируются вместе с его consumer integration.
+
 Consumer описывает смысл интерфейса и действия. Framework владеет layout, visual policy, вводом и rendering. Доступны standalone Window/Modal/Fullscreen/HUD, Terminal и active-menu overlay.
 
 Публичная игровая граница — `IUiSemanticSurfaceApi` v1 из `Hatifect.UI.Experience`. `PUBLIC_API_BASELINE.json` фиксирует её исходный контракт. CA Overlay использует точно версионированные NuGet packages; корневой `tools/hatifect-pack-ui` собирает feed из текущих исходников. Runtime-модуль поставляет восемь UI DLL; Tooling.Server используется как инструмент разработки.
