@@ -349,6 +349,45 @@ public sealed class CollectionVirtualizationTests
     }
 
     [Fact]
+    public void TypedDensityControlsGeometryAndComposesOnceWithHostProfile()
+    {
+        UiSymbolId id = RegistryTests.Id("typed-density");
+        var source = new UiCollectionSource<int>(
+            Enumerable.Range(0, 40).ToArray(),
+            item => id.Child($"item/{item}"),
+            item => $"Item {item}");
+        var engine = new UiSceneLayoutEngine(new CountingPlatform());
+
+        float compactWide = Extent(ListFixture(
+            source, "Uniform", id, "Compact", UiPresentationProfiles.Wide), engine);
+        float defaultWide = Extent(ListFixture(
+            source, "Uniform", id, "Default", UiPresentationProfiles.Wide), engine);
+        float comfortableWide = Extent(ListFixture(
+            source, "Uniform", id, "Comfortable", UiPresentationProfiles.Wide), engine);
+        float compactHostCompact = Extent(ListFixture(
+            source, "Uniform", id, "Compact", UiPresentationProfiles.Compact), engine);
+        float comfortableHostCompact = Extent(ListFixture(
+            source, "Uniform", id, "Comfortable", UiPresentationProfiles.Compact), engine);
+
+        Assert.True(compactWide < defaultWide);
+        Assert.True(defaultWide < comfortableWide);
+        Assert.Equal(defaultWide - compactWide, comfortableWide - defaultWide, 3);
+        Assert.Equal(
+            (comfortableWide - compactWide) * 0.9f,
+            comfortableHostCompact - compactHostCompact,
+            3);
+
+        static float Extent(CollectionFixture fixture, UiSceneLayoutEngine engine)
+        {
+            UiCollectionSceneNode collection = Assert.Single(
+                Nodes(fixture.Scene.Root).OfType<UiCollectionSceneNode>());
+            UiLayoutSnapshot layout = engine.Build(fixture.Scene, new UiRect(0, 0, 360, 240));
+            Assert.True(layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window));
+            return window!.ItemExtent;
+        }
+    }
+
+    [Fact]
     public void AdaptiveListWrapsSupportingTextAndUsesExactItemHeights()
     {
         string[] supporting =
@@ -834,7 +873,9 @@ Items@Checked
     private static CollectionFixture ListFixture(
         IUiSemanticSource<IReadOnlyList<int>> source,
         string itemSizing,
-        UiSymbolId? requestedId = null)
+        UiSymbolId? requestedId = null,
+        string? density = null,
+        UiPresentationProfile? profile = null)
     {
         UiSymbolId id = requestedId ?? RegistryTests.Id($"list-{itemSizing.ToLowerInvariant()}");
         UiExperienceDefinition experience = new UiExperienceBuilder(id, $"{itemSizing} list")
@@ -849,13 +890,14 @@ Items@Checked
 Items
     view = List
     itemSizing = {itemSizing}
+    density = {density ?? "Default"}
 ", experience.CreateBindingContext(), $"{itemSizing}List#presentation");
         Assert.True(compilation.IsValid, string.Join("\n", compilation.Diagnostics.Select(item => item.Message)));
         UiPresentationDefinition presentation = Assert.IsType<UiPresentationDefinition>(compilation.Definition);
         UiInvocationResult invocation = new UiInvocationService(
                 registry,
                 planner: new UiPresentationPlanner(catalog))
-            .Invoke(id, UiPresentationProfiles.Wide, presentation);
+            .Invoke(id, profile ?? UiPresentationProfiles.Wide, presentation);
         var composer = new UiSceneComposer(UiThemePresets.Dark(), registry, catalog);
         UiScene scene = composer.Compose(invocation, locale: "en-US");
         return new CollectionFixture(scene, invocation, composer, registry, catalog);

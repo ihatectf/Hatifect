@@ -29,13 +29,20 @@ internal enum UiCollectionLayoutKind
     AdaptiveGrid
 }
 
+internal enum UiCollectionDensity
+{
+    Default,
+    Compact,
+    Comfortable
+}
+
 internal sealed record UiCollectionPresentationRecipe(
     UiCollectionLayoutKind Layout,
     int PreviewRows,
     int PreferredColumns,
     UiSymbolId ItemSizing,
     bool IsAdaptive,
-    string Density,
+    UiCollectionDensity Density,
     bool IsNavigation);
 
 internal sealed record UiSceneMeasurementContext(

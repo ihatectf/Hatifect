@@ -76,6 +76,38 @@ Inspector
     }
 
     [Fact]
+    public void ManuallyForgedStringDensityCannotBypassTypedPlanningContract()
+    {
+        UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();
+        UiExperienceDefinition experience = ExperienceBuilderTests.CreateExperience();
+        UiPresentationDefinition compiled = Assert.IsType<UiPresentationDefinition>(
+            new UiCompiler(catalog).Compile(@"presentation Storage
+
+Items
+    density = Compact
+", experience.CreateBindingContext(), "ForgedDensity#presentation").Definition);
+        UiPropertyAssignmentIr density = Assert.Single(
+            compiled.Assignments,
+            assignment => assignment.Property.Name == "density");
+        var forged = new UiPresentationDefinition(
+            compiled.Id,
+            compiled.Placements.ToArray(),
+            compiled.Assignments
+                .Select(assignment => assignment == density
+                    ? assignment with { Value = new UiStringValue("Compact") }
+                    : assignment)
+                .ToArray());
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => new UiPresentationPlanner(catalog).Plan(
+                experience,
+                new UiHostContext(UiHostKind.Window, UiPresentationProfiles.Wide),
+                forged));
+
+        Assert.Contains("invalid typed catalog assignment", error.Message);
+    }
+
+    [Fact]
     public void IndexedLookupsPreserveFirstMatchForDuplicateIrInputs()
     {
         UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();

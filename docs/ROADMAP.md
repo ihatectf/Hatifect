@@ -367,6 +367,23 @@ Runtime677 и Semantics65 — **PASS**. C `run-ku2f7tb5` — **PASS503 Python + 
 native EN/RU/scale/controller; tooltip, density, collection-row prompts и оставшиеся theme families
 также открыты.
 
+U06-c typed consumer status policy — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
+Owner source `a0e558b5424e75e5afadfd5b6d81d569e32773bc`, CA test correction
+`ed75d218e9c0a12bcabbf372932b33a7193942d0`; общий локальный merge `6ec779c`. Flow Network и CA
+публикуют канонический `UiStatus` с сохранением semantic IDs, локализованного текста и без частной
+геометрии/цветов. Common G — **PASS 2,366 .NET + 503 Python**, Flow platform — **PASS 803+254**,
+CA platform — **PASS102**, P — **PASS** 8 packages/47 files/102 CA tests. Native
+EN/RU/scale/controller остаётся открытым. [Контракт и evidence](U06_CONSUMER_STATUS_POLICY.md).
+
+U06-d typed collection density — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
+Source `470da48` заменяет свободную строку закрытыми catalog values
+Default/Compact/Comfortable, передаёт stable identity через Planning и применяет один allocation-free
+коэффициент в layout/virtualization. UI scope
+`run-j6h6d81k` — **PASS 1,102/1,102**; exact C `run-8lewjf7s` — **PASS 1,908 .NET + 503 Python**;
+P `hatifect-ui-ca-isolated.1c3pd0fs` — **PASS** 8 packages/47 files/102 CA tests. Public API,
+21 semantic-contract tests и portable agent-check — **PASS**. Native visual не заявляется до
+consumer asset. [Результат и ограничения](U06_TYPED_DENSITY.md).
+
 **U07.** Построить `UiQuick` recipes для alert/confirm/select/простого form/notification и `UiView` для небольшого декларативного layout с typed bindings/actions. Синтаксис может выводить отношения только когда вывод однозначен; явное описание остаётся доступным. Оба входа компилируются в тот же IR, что полная Experience. Выход: примеры простого диалога, формы и небольшого custom screen; одно и то же действие имеет одинаковый lifecycle во всех формах авторства. Сравнить объём и понятность authoring на реальных задачах, затем закрепить API.
 
 **U08.** После D02 добавить `UiExact`: explicit geometry/layers/canvas и pixel scaling внутри framework. Определить measure/arrange, coordinate transform, clipping, render/hitbox agreement, focus order, semantic labels и fallback для compact/controller/accessibility. Выход: точное представление использует общие lifecycle/resources/input, а неподдерживаемое окружение получает явно заданное поведение. Не публиковать exact drawing как способ обходить hit testing или доступность.

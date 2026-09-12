@@ -610,14 +610,7 @@ internal sealed class UiCollectionVirtualizer
         UiSymbolId profile,
         string locale)
     {
-        float density = string.Equals(recipe.Density, "Compact", StringComparison.OrdinalIgnoreCase)
-            ? 0.75f
-            : string.Equals(recipe.Density, "Comfortable", StringComparison.OrdinalIgnoreCase)
-                ? 1.25f
-                : 1;
-        if (profile.LocalId.EndsWith("/Compact", StringComparison.Ordinal) ||
-            profile.LocalId.EndsWith("/Controller", StringComparison.Ordinal))
-            density *= 0.9f;
+        float density = UiDensityPolicy.Factor(recipe.Density, profile);
         float localeFactor = locale.StartsWith("ru", StringComparison.OrdinalIgnoreCase) ? 1.05f : 1;
         return new RecipeMetrics(
             lineHeight * 0.35f * density * localeFactor,
@@ -677,7 +670,7 @@ internal sealed class UiCollectionVirtualizer
         UiSymbolId Theme,
         ThemeMetricIdentity ThemeMetrics,
         UiSymbolId ItemSizing,
-        string Density);
+        UiCollectionDensity Density);
 
     private readonly record struct HeightScope(
         int Rows,
@@ -689,7 +682,7 @@ internal sealed class UiCollectionVirtualizer
         UiSymbolId Theme,
         ThemeMetricIdentity ThemeMetrics,
         UiSymbolId ItemSizing,
-        string Density);
+        UiCollectionDensity Density);
 
     private readonly record struct CachedMeasurement(
         long ContentVersion,

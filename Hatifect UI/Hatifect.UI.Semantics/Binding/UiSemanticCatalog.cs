@@ -44,7 +44,14 @@ public sealed class UiSemanticCatalog
 
         catalog.AddProperty(UiDefinitionKind.Presentation, "use", UiSemanticType.PresentationPattern, UiPropertyEffects.Recompose);
         catalog.AddProperty(UiDefinitionKind.Presentation, "view", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
-        catalog.AddProperty(UiDefinitionKind.Presentation, "density", UiSemanticType.String, UiPropertyEffects.Recompose);
+        UiPropertySymbol density = catalog.AddProperty(
+            UiDefinitionKind.Presentation,
+            "density",
+            UiSemanticType.EnumValue,
+            UiPropertyEffects.Recompose);
+        catalog.AddEnumValue(density, "Default");
+        catalog.AddEnumValue(density, "Compact");
+        catalog.AddEnumValue(density, "Comfortable");
         catalog.AddProperty(UiDefinitionKind.Presentation, "prefer", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
         catalog.AddProperty(UiDefinitionKind.Presentation, "fallback", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
         catalog.AddProperty(UiDefinitionKind.Presentation, "width", UiSemanticType.Length, UiPropertyEffects.Measure | UiPropertyEffects.Arrange);

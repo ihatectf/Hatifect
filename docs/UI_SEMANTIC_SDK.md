@@ -86,6 +86,27 @@ Accessibility keeps the action label as the accessible name and exposes the cano
 key separately as its shortcut. The Stardew adapter maps Enter or Space and controller A to Submit;
 the visual keyboard prompt intentionally chooses Enter as the single canonical label.
 
+## Collection density
+
+Presentation assets select collection density from the closed `Default`, `Compact`, or
+`Comfortable` catalog. Values are unquoted catalog identifiers; arbitrary strings and quoted
+legacy values fail compilation with `LUI2018`. Omitting the assignment is equivalent to `Default`.
+
+```text
+presentation Storage
+
+Items
+    view = List
+    itemSizing = Adaptive
+    density = Compact
+```
+
+Planning preserves density as a stable catalog identity. Runtime converts that identity to its
+internal collection policy during scene composition, then uses one factor calculation for both the
+initial item-extent estimate and exact virtualized row measurement. Compact and Controller host
+profiles apply their existing responsive factor once, after the selected density. Consumers do not
+provide numeric spacing or profile multipliers.
+
 ## Themes, textures and icons
 
 Production sessions implement `IUiSemanticAppearanceSession`. `SetTheme` selects framework `Dark`, `Light` or `HighContrast` presets without replacing semantic state or the Terminal activation cache. Register a PNG with a stable asset ID and keep its returned lease. The session owns decoded textures; lease disposal releases one registration and session disposal releases all remaining resources. Missing IDs use one reusable checkerboard placeholder per session. Duplicate IDs and invalid/over-budget PNGs are rejected before publication.
