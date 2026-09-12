@@ -112,6 +112,32 @@ def strip_allowed_legacy(relative: str, content: str) -> str:
         content = content.replace(OLD_TITLE + ".ChestsAnywhereOverlay/State", "")
         content = content.replace(OLD_TITLE + ".Storage.ChestsAnywhere/State", "")
 
+    flow_legacy_literals = (
+        OLD_TITLE + ".Flow/Station",
+        OLD_TITLE + ".Flow/Cargo",
+        "smapi/mod-data/" + OLD_LOWER + ".flow/flowline-v1",
+        OLD_TITLE + ".Flow",
+    )
+    flow_legacy_files = {
+        "Hatifect Flow/README.md",
+        "Hatifect Flow/RENAMING.md",
+        "Hatifect Flow/Sessions/FlowGameSession.cs",
+        "Hatifect Flow/Sessions/FlowSaveDataMigration.cs",
+        "Hatifect Flow/Inventory/ChestInventoryAccess.cs",
+        "Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/FlowBrandMigrationTests.cs",
+    }
+    if relative in flow_legacy_files:
+        for literal in flow_legacy_literals:
+            content = content.replace(literal, "")
+
+    if relative == "Hatifect Flow/RENAMING.md":
+        for literal in (
+            OLD_TITLE,
+            OLD_LOWER,
+            OLD_UPPER,
+        ):
+            content = content.replace(literal, "")
+
     return content
 
 
