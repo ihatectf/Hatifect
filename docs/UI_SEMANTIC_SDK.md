@@ -126,17 +126,23 @@ bounded 1,024-entry LRU measurement cache, and the layout snapshot indexes mater
 stable ID for constant-time hover, focus, accessibility and frame lookup. Selectable rows expose help
 through hover or focus. Read-only `Browse` rows support hover help without becoming actionable.
 
-Pointer hover takes precedence over keyboard/controller focus; at most one tooltip is visible. The
-overlay uses `Surface.Popup`, `Text.Primary`, `Typography.Body`, `Space.S`, `Radius.S`, and
-`Elevation.High` from the active theme. Tooltip text is measured during layout, while selecting an
-already measured tooltip rebuilds only the frame. Placement prefers the space below its target,
-falls back above it, and clamps both dimensions to the host viewport. The tooltip never changes the
-main tree's desired size or focus order.
+Keyboard/controller focus exposes help immediately. Pointer hover takes precedence only after the
+same eligible target has remained hovered for the active theme's `Motion.Normal` duration; the base
+themes use 160 ms. Moving to another target restarts the dwell, leaving it hides hover help
+immediately, and a focused tooltip remains visible while another hover is still pending. Themes can
+choose zero duration for immediate pointer help. Active host updates advance the dwell and build one
+new frame when it crosses the threshold; unchanged ticks do not rebuild layout or frames.
+
+At most one tooltip is visible. The overlay uses `Surface.Popup`, `Text.Primary`,
+`Typography.Body`, `Space.S`, `Radius.S`, and `Elevation.High` from the active theme. Tooltip text is
+measured during layout, while selecting an already measured tooltip rebuilds only the frame.
+Placement prefers the space below its target, falls back above it, and clamps both dimensions to the
+host viewport. The tooltip never changes the main tree's desired size or focus order.
 
 The target keeps its accessible name and exposes tooltip text separately as its accessibility
 description. Unknown targets, fields whose containing form has not been declared, and duplicate
 declarations are rejected before `Build`. Collection item labels likewise remain the accessible name,
-with item help in the description. Display delay and native visual acceptance remain separate work.
+with item help in the description. Native visual acceptance remains separate work.
 
 ## Collection density
 
