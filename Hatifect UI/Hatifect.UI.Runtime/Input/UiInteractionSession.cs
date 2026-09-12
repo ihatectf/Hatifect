@@ -211,7 +211,7 @@ internal sealed class UiInteractionSession
     public UiInteractionUpdate MovePointer(UiPoint point)
     {
         _beforeMutation?.Invoke();
-        UiSymbolId? hit = HitTest(point);
+        UiSymbolId? hit = HitTest(point, includeReadOnlyCollectionHelp: true);
         UiSymbolId? hovered = hit;
         if (hovered == Snapshot.Hovered) return new UiInteractionUpdate(hit != null, StateChanged: false);
         Snapshot = Snapshot with { Hovered = hovered };
@@ -417,14 +417,17 @@ internal sealed class UiInteractionSession
         return new UiInteractionUpdate(invoked, StateChanged: stateChanged, ActionInvoked: invoked);
     }
 
-    private UiSymbolId? HitTest(UiPoint point)
-        => HitTest(_scene.Root, point);
+    private UiSymbolId? HitTest(UiPoint point, bool includeReadOnlyCollectionHelp = false)
+        => HitTest(_scene.Root, point, includeReadOnlyCollectionHelp);
 
     private bool IsInsideHost(UiPoint point)
         => _layout.TryGetEntry(_scene.Root.Id, out UiLayoutEntry? entry) &&
            entry != null && entry.Bounds.Contains(point) && entry.Clip.Contains(point);
 
-    private UiSymbolId? HitTest(UiSceneNode node, UiPoint point)
+    private UiSymbolId? HitTest(
+        UiSceneNode node,
+        UiPoint point,
+        bool includeReadOnlyCollectionHelp)
     {
         if (!_layout.TryGetEntry(node.Id, out UiLayoutEntry? entry) || entry == null ||
             !entry.Bounds.Contains(point) || !entry.Clip.Contains(point))
@@ -432,17 +435,20 @@ internal sealed class UiInteractionSession
 
         for (int index = node.Children.Count - 1; index >= 0; index--)
         {
-            UiSymbolId? child = HitTest(node.Children[index], point);
+            UiSymbolId? child = HitTest(node.Children[index], point, includeReadOnlyCollectionHelp);
             if (child != null) return child;
         }
-        if (node is UiCollectionSceneNode { IsSelectable: true } collection &&
+        if (node is UiCollectionSceneNode collection &&
+            (collection.IsSelectable || includeReadOnlyCollectionHelp) &&
             _layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window) &&
             window != null)
         {
             for (int index = window.Items.Count - 1; index >= 0; index--)
             {
                 UiVirtualizedItemLayout item = window.Items[index];
-                if (item.Bounds.Contains(point) && item.Clip.Contains(point)) return item.Node;
+                if (item.Bounds.Contains(point) && item.Clip.Contains(point) &&
+                    (collection.IsSelectable || item.Tooltip is not null))
+                    return item.Node;
             }
         }
         return IsFocusable(node) ? node.Id : null;
@@ -728,7 +734,10 @@ internal sealed class UiInteractionSession
     private UiSymbolId? Retain(UiSymbolId? id, bool focusableOnly)
     {
         if (id is not { } value) return null;
-        if (!focusableOnly && (_nodes.ContainsKey(value) || _collectionItems.ContainsKey(value))) return value;
+        if (!focusableOnly && (_nodes.ContainsKey(value) || _collectionItems.ContainsKey(value) ||
+                               _layout.TryGetCollectionItem(value, out UiVirtualizedItemLayout item) &&
+                               item.Tooltip is not null))
+            return value;
         return _focusable.Contains(value) ? value : null;
     }
 

@@ -27,8 +27,9 @@ public sealed record UiSemanticCollectionItem
     public object? Value { get; }
     public string? SupportingText { get; }
     public long ContentVersion { get; }
+    public UiLocalizedText? Tooltip { get; init; }
     /// <summary>Monotonic publication content revision, independent of the label measurement hash.
-    /// Includes payload, icon and text changes. Legacy sources use zero until their first change.</summary>
+    /// Includes payload, icon, text and tooltip changes. Legacy sources use zero until their first change.</summary>
     private long _itemRevision;
     public long ItemRevision
     {
@@ -98,7 +99,7 @@ public sealed class UiCollectionSource<T> :
         Func<T, UiSymbolId> identify,
         Func<T, string>? label = null,
         Func<T, string?>? supportingText = null)
-        : this(values, identify, label, supportingText, null) { }
+        : this(values, identify, label, supportingText, null, null) { }
 
     public UiCollectionSource(
         IReadOnlyList<T> values,
@@ -106,8 +107,17 @@ public sealed class UiCollectionSource<T> :
         Func<T, string>? label,
         Func<T, string?>? supportingText,
         Func<T, UiSymbolId?>? icon)
+        : this(values, identify, label, supportingText, icon, null) { }
+
+    public UiCollectionSource(
+        IReadOnlyList<T> values,
+        Func<T, UiSymbolId> identify,
+        Func<T, string>? label,
+        Func<T, string?>? supportingText,
+        Func<T, UiSymbolId?>? icon,
+        Func<T, UiLocalizedText?>? tooltip)
     {
-        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText, icon);
+        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText, icon, tooltip);
         _values = snapshot.Values;
         _items = snapshot.Items;
         _indices = UiSemanticCollectionSnapshot.Indices(_items);
@@ -145,6 +155,7 @@ public sealed class UiCollectionState<T> :
     private readonly Func<T, string>? _label;
     private readonly Func<T, string?>? _supportingText;
     private readonly Func<T, UiSymbolId?>? _icon;
+    private readonly Func<T, UiLocalizedText?>? _tooltip;
     private ReadOnlyCollection<T> _values;
     private ReadOnlyCollection<UiSemanticCollectionItem> _items;
     private IReadOnlyDictionary<UiSymbolId, int> _indices;
@@ -157,7 +168,7 @@ public sealed class UiCollectionState<T> :
         Func<T, UiSymbolId> identify,
         Func<T, string>? label = null,
         Func<T, string?>? supportingText = null)
-        : this(values, identify, label, supportingText, null) { }
+        : this(values, identify, label, supportingText, null, null) { }
 
     public UiCollectionState(
         IReadOnlyList<T> values,
@@ -165,12 +176,22 @@ public sealed class UiCollectionState<T> :
         Func<T, string>? label,
         Func<T, string?>? supportingText,
         Func<T, UiSymbolId?>? icon)
+        : this(values, identify, label, supportingText, icon, null) { }
+
+    public UiCollectionState(
+        IReadOnlyList<T> values,
+        Func<T, UiSymbolId> identify,
+        Func<T, string>? label,
+        Func<T, string?>? supportingText,
+        Func<T, UiSymbolId?>? icon,
+        Func<T, UiLocalizedText?>? tooltip)
     {
         _identify = identify ?? throw new ArgumentNullException(nameof(identify));
         _label = label;
         _supportingText = supportingText;
         _icon = icon;
-        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText, icon);
+        _tooltip = tooltip;
+        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText, icon, tooltip);
         _values = snapshot.Values;
         _items = snapshot.Items;
         _indices = UiSemanticCollectionSnapshot.Indices(_items);
@@ -194,7 +215,7 @@ public sealed class UiCollectionState<T> :
     public void Replace(IReadOnlyList<T> values)
     {
         (ReadOnlyCollection<T> nextValues, ReadOnlyCollection<UiSemanticCollectionItem> nextItems) =
-            UiSemanticCollectionSnapshot.Create(values, _identify, _label, _supportingText, _icon);
+            UiSemanticCollectionSnapshot.Create(values, _identify, _label, _supportingText, _icon, _tooltip);
         if (UiSemanticCollectionSnapshot.Equivalent(_items, nextItems)) return;
         long revision = checked(_revision + 1);
         nextItems = UiSemanticCollectionSnapshot.Revise(_items, _indices, nextItems, revision);
@@ -223,6 +244,7 @@ public sealed class UiSelectableCollectionState<T> :
     private readonly Func<T, string>? _label;
     private readonly Func<T, string?>? _supportingText;
     private readonly Func<T, UiSymbolId?>? _icon;
+    private readonly Func<T, UiLocalizedText?>? _tooltip;
     private ReadOnlyCollection<T> _values;
     private ReadOnlyCollection<UiSemanticCollectionItem> _items;
     private HashSet<UiSymbolId> _ids;
@@ -239,7 +261,7 @@ public sealed class UiSelectableCollectionState<T> :
         Func<T, string>? label = null,
         UiSymbolId? selectedItemId = null,
         Func<T, string?>? supportingText = null)
-        : this(values, identify, label, selectedItemId, supportingText, null) { }
+        : this(values, identify, label, selectedItemId, supportingText, null, null) { }
 
     public UiSelectableCollectionState(
         IReadOnlyList<T> values,
@@ -248,12 +270,23 @@ public sealed class UiSelectableCollectionState<T> :
         UiSymbolId? selectedItemId,
         Func<T, string?>? supportingText,
         Func<T, UiSymbolId?>? icon)
+        : this(values, identify, label, selectedItemId, supportingText, icon, null) { }
+
+    public UiSelectableCollectionState(
+        IReadOnlyList<T> values,
+        Func<T, UiSymbolId> identify,
+        Func<T, string>? label,
+        UiSymbolId? selectedItemId,
+        Func<T, string?>? supportingText,
+        Func<T, UiSymbolId?>? icon,
+        Func<T, UiLocalizedText?>? tooltip)
     {
         _identify = identify ?? throw new ArgumentNullException(nameof(identify));
         _label = label;
         _supportingText = supportingText;
         _icon = icon;
-        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText, icon);
+        _tooltip = tooltip;
+        var snapshot = UiSemanticCollectionSnapshot.Create(values, identify, label, supportingText, icon, tooltip);
         _values = snapshot.Values;
         _items = snapshot.Items;
         _ids = Ids(_items);
@@ -308,7 +341,7 @@ public sealed class UiSelectableCollectionState<T> :
     public void Replace(IReadOnlyList<T> values)
     {
         (ReadOnlyCollection<T> nextValues, ReadOnlyCollection<UiSemanticCollectionItem> nextItems) =
-            UiSemanticCollectionSnapshot.Create(values, _identify, _label, _supportingText, _icon);
+            UiSemanticCollectionSnapshot.Create(values, _identify, _label, _supportingText, _icon, _tooltip);
         HashSet<UiSymbolId> nextIds = Ids(nextItems);
         UiSymbolId? nextSelection = _selectedItemId is { } selected && nextIds.Contains(selected)
             ? selected
@@ -342,7 +375,8 @@ internal static class UiSemanticCollectionSnapshot
         Func<T, UiSymbolId> identify,
         Func<T, string>? label,
         Func<T, string?>? supportingText,
-        Func<T, UiSymbolId?>? icon = null)
+        Func<T, UiSymbolId?>? icon = null,
+        Func<T, UiLocalizedText?>? tooltip = null)
     {
         ArgumentNullException.ThrowIfNull(values);
         ArgumentNullException.ThrowIfNull(identify);
@@ -358,18 +392,19 @@ internal static class UiSemanticCollectionSnapshot
             if (!ids.Add(id))
                 throw new InvalidOperationException($"Collection item ID '{id}' is duplicated.");
             valueSnapshot[index] = value;
-            itemSnapshot[index] = ProjectItem(id, value, label, supportingText, icon);
+            itemSnapshot[index] = ProjectItem(id, value, label, supportingText, icon, tooltip);
         }
         return (Array.AsReadOnly(valueSnapshot), Array.AsReadOnly(itemSnapshot));
     }
 
     internal static UiSemanticCollectionItem ProjectItem<T>(UiSymbolId id, T value, Func<T, string>? label,
-        Func<T, string?>? supportingText, Func<T, UiSymbolId?>? icon)
+        Func<T, string?>? supportingText, Func<T, UiSymbolId?>? icon,
+        Func<T, UiLocalizedText?>? tooltip = null)
     {
         string display = label?.Invoke(value) ?? (value is null ? string.Empty : value.ToString() ?? string.Empty);
         string? supporting = supportingText?.Invoke(value);
         return new UiSemanticCollectionItem(id, display, value, supporting, ContentVersion(display, supporting))
-        { Icon = icon?.Invoke(value) };
+        { Icon = icon?.Invoke(value), Tooltip = tooltip?.Invoke(value) };
     }
 
     public static bool Equivalent(
@@ -388,7 +423,11 @@ internal static class UiSemanticCollectionSnapshot
     internal static bool ItemEquivalent(UiSemanticCollectionItem left, UiSemanticCollectionItem right)
         => left.Id == right.Id && string.Equals(left.Label, right.Label, StringComparison.Ordinal)
             && string.Equals(left.SupportingText, right.SupportingText, StringComparison.Ordinal)
-            && left.ContentVersion == right.ContentVersion && left.Icon == right.Icon && Equals(left.Value, right.Value);
+            && left.ContentVersion == right.ContentVersion && left.Icon == right.Icon
+            && LocalizedTextEquivalent(left.Tooltip, right.Tooltip) && Equals(left.Value, right.Value);
+
+    private static bool LocalizedTextEquivalent(UiLocalizedText? left, UiLocalizedText? right)
+        => left is null || right is null ? left == right : left.HasSameContent(right);
 
     internal static ReadOnlyCollection<UiSemanticCollectionItem> Revise(IReadOnlyList<UiSemanticCollectionItem> previous,
         IReadOnlyDictionary<UiSymbolId, int> previousIndices, IReadOnlyList<UiSemanticCollectionItem> next, long version)

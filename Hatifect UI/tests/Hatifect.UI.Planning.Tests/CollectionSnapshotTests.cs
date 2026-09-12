@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Hatifect.UI.Experience;
 using Xunit;
@@ -123,4 +124,35 @@ public sealed class CollectionSnapshotTests
         Assert.Equal(2, source.CaptureSnapshot().Revision);
         Assert.Throws<ArgumentOutOfRangeException>(() => new UiSemanticCollectionItem(Id(1), "one", 1) { ItemRevision = -1 });
     }
+
+    [Fact]
+    public void ItemHelpIsCapturedAndAdvancesContentRevisionOnlyWhenItsTextChanges()
+    {
+        string help = "Initial help";
+        var source = new UiCollectionState<int>(
+            new[] { 1 },
+            Id,
+            value => "Item " + value,
+            supportingText: null,
+            icon: null,
+            tooltip: value => Localized(help, help + " " + value));
+        IUiSemanticCollectionSnapshot first = source.CaptureSnapshot();
+
+        source.Replace(new[] { 1 });
+
+        Assert.Same(first, source.CaptureSnapshot());
+        Assert.Equal("Initial help 1", first.GetItem(0).Tooltip?.Resolve("ru-RU"));
+
+        help = "Changed help";
+        source.Replace(new[] { 1 });
+        IUiSemanticCollectionSnapshot second = source.CaptureSnapshot();
+
+        Assert.Equal(1, second.Revision);
+        Assert.Equal(1, second.GetItem(0).ItemRevision);
+        Assert.Equal("Initial help", first.GetItem(0).Tooltip?.Resolve("en"));
+        Assert.Equal("Changed help", second.GetItem(0).Tooltip?.Resolve("en"));
+    }
+
+    private static UiLocalizedText Localized(string fallback, string russian)
+        => new(fallback, new[] { new KeyValuePair<string, string>("ru-RU", russian) });
 }

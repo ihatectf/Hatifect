@@ -290,6 +290,97 @@ public sealed class TooltipTests
         }
     }
 
+    [Fact]
+    public void MaterializedCollectionItemHelpIsLocalizedIndexedAccessibleAndPremeasured()
+    {
+        UiSymbolId id = new("Hatifect.Tests", "tooltip/collection/items");
+        var source = new UiSelectableCollectionState<int>(
+            Enumerable.Range(0, 10_000).ToArray(),
+            value => id.Child("item/" + value),
+            label: value => "Item " + value,
+            selectedItemId: null,
+            supportingText: null,
+            icon: null,
+            tooltip: value => Localized("Help " + value, "Подсказка " + value));
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Items")
+            .Select("Items", source)
+            .Build();
+        UiTheme theme = UiThemePresets.Dark();
+        UiScene scene = Scene(experience, theme, UiInputMode.Controller, "ru-RU");
+        var metrics = new Platform();
+        var engine = new UiSceneLayoutEngine(metrics);
+        UiLayoutSnapshot layout = engine.Build(scene, Viewport);
+        Assert.True(layout.TryGetCollection(
+            Assert.Single(Nodes(scene.Root).OfType<UiCollectionSceneNode>()).Id,
+            out UiCollectionLayoutWindow? window));
+        Assert.NotNull(window);
+        Assert.InRange(window!.Items.Count, 2, 100);
+        UiVirtualizedItemLayout focused = window.Items[0];
+        UiVirtualizedItemLayout hovered = window.Items[1];
+
+        Assert.True(layout.TryGetCollectionItem(focused.Node, out UiVirtualizedItemLayout indexed));
+        Assert.Equal(focused, indexed);
+        Assert.Equal("Подсказка 0", focused.Tooltip?.Presentation.Text);
+        Assert.Equal("Подсказка 1", hovered.Tooltip?.Presentation.Text);
+        Assert.InRange(metrics.HelpMeasures, 2, 100);
+        int helpMeasures = metrics.HelpMeasures;
+
+        UiLayoutSnapshot repeated = engine.Build(scene, Viewport);
+        Assert.Equal(helpMeasures, metrics.HelpMeasures);
+        Assert.True(repeated.TryGetCollectionItem(hovered.Node, out UiVirtualizedItemLayout repeatedHovered));
+        UiRenderFrame frame = new UiSceneRenderPlanner().Build(
+            scene,
+            repeated,
+            new UiInteractionSnapshot(Focused: focused.Node, Hovered: hovered.Node),
+            new RejectingTextMetrics());
+
+        Assert.Single(frame.Primitives.OfType<UiTextPrimitive>(),
+            text => text.Node == repeatedHovered.Tooltip!.Presentation.Id && text.Text == "Подсказка 1");
+        Assert.DoesNotContain(frame.Primitives.OfType<UiTextPrimitive>(),
+            text => text.Node == focused.Tooltip!.Presentation.Id);
+        UiAccessibilityNodeSnapshot accessible = Assert.Single(
+            Accessibility(new UiAccessibilitySnapshotBuilder()
+                .Build(scene, repeated, new UiInteractionSnapshot(Focused: focused.Node)).Root),
+            node => node.Id == focused.Node);
+        Assert.Equal("Item 0", accessible.Name);
+        Assert.Equal("Подсказка 0", accessible.Description);
+    }
+
+    [Fact]
+    public void ReadOnlyCollectionItemHelpCanBeHoveredWithoutBecomingActionable()
+    {
+        UiSymbolId id = new("Hatifect.Tests", "tooltip/collection/read-only");
+        var source = new UiCollectionSource<int>(
+            new[] { 1 },
+            value => id.Child("item/" + value),
+            label: value => "Item " + value,
+            supportingText: null,
+            icon: null,
+            tooltip: value => Localized("Help " + value, "Подсказка " + value));
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Items")
+            .Browse("Items", source)
+            .Build();
+        UiScene scene = Scene(experience, UiThemePresets.Dark(), UiInputMode.MouseKeyboard, "ru-RU");
+        var runtime = new UiHostRuntimeSession(scene, Viewport, new Platform());
+        UiCollectionLayoutWindow window = Assert.Single(runtime.Layout.CollectionWindows);
+        UiVirtualizedItemLayout item = Assert.Single(window.Items);
+        UiPoint point = Center(item.Bounds);
+
+        UiInteractionUpdate hover = runtime.Interactions.MovePointer(point);
+        runtime.RefreshInteractionVisuals();
+
+        Assert.True(hover.Consumed);
+        Assert.Equal(item.Node, runtime.Interactions.Snapshot.Hovered);
+        Assert.Single(runtime.Frame.Primitives.OfType<UiTextPrimitive>(),
+            text => text.Node == item.Tooltip!.Presentation.Id && text.Text == "Подсказка 1");
+
+        UiInteractionUpdate press = runtime.Interactions.PressPointer(point);
+
+        Assert.False(press.Consumed);
+        Assert.Null(runtime.Interactions.Snapshot.Focused);
+        Assert.Null(runtime.Interactions.Snapshot.Pressed);
+    }
+
     private static UiExperienceDefinition Experience(UiSymbolId id, UiSymbolId actionId, string? tooltip)
     {
         var builder = new UiExperienceBuilder(id, "Shipment")
@@ -344,8 +435,11 @@ public sealed class TooltipTests
 
     private sealed class Platform : IUiPlatformBridge
     {
+        public int HelpMeasures { get; private set; }
+
         public UiSize Measure(string text, UiTypography typography, float availableWidth, UiTextOverflow overflow)
         {
+            if (text.StartsWith("Подсказка ", StringComparison.Ordinal)) HelpMeasures++;
             float naturalWidth = text.Length * typography.Size * .6f;
             float width = Math.Min(naturalWidth, availableWidth);
             int lines = overflow == UiTextOverflow.Wrap

@@ -331,6 +331,14 @@ internal sealed class UiSceneComposer
             interaction: null,
             domainStates: selectedState);
         EnsureRenderOnlyState(nodeId, normal, selected, "Collection item states");
+        UiSymbolId itemTooltipId = nodeId.Child("scene/item-tooltip");
+        UiVisualResolution itemTooltipVisual = Resolve(
+            UiSceneRoles.Tooltip,
+            UiSceneNodeKind.Tooltip,
+            itemTooltipId,
+            invocation,
+            visual: null,
+            interaction: null);
 
         // Capture policy values, not the mutable composer or the Experience/read scope.
         // Reconciliation may move focus after Compose without recapturing the publication.
@@ -369,7 +377,9 @@ internal sealed class UiSceneComposer
             activeVisuals,
             capturedCollection,
             stateVisuals,
-            collection is IUiSelectableCollectionSource ? ActivationPrompt(invocation) : null)
+            collection is IUiSelectableCollectionSource ? ActivationPrompt(invocation) : null,
+            itemTooltipVisual,
+            locale)
         {
             SemanticId = element.Id,
             Tooltip = Tooltip(invocation, element.Id, nodeId, locale)

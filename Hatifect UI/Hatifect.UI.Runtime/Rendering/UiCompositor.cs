@@ -110,18 +110,17 @@ internal sealed class UiSceneRenderPlanner
         ICollection<UiRenderPrimitive> primitives)
     {
         if (interaction is null ||
-            !TryTooltipEntry(scene, layout, interaction.Hovered, out UiLayoutEntry? entry) &&
-            !TryTooltipEntry(scene, layout, interaction.Focused, out entry))
+            !TryTooltipTarget(scene, layout, interaction.Hovered, out UiRect anchor, out UiTooltipLayout? tooltip) &&
+            !TryTooltipTarget(scene, layout, interaction.Focused, out anchor, out tooltip))
             return;
-        UiTooltipLayout tooltip = entry!.Tooltip!;
-        UiVisualResolution visual = tooltip.Presentation.Visual;
+        UiVisualResolution visual = tooltip!.Presentation.Visual;
         if (!TrySurface(visual, out UiSurface surface) ||
             !TryValue(visual, "foreground", out UiColor foreground) ||
             !TryValue(visual, "typography", out UiTypography typography))
             throw new InvalidOperationException(
                 $"Tooltip '{tooltip.Presentation.Id}' requires surface, foreground and typography values.");
         float gap = Math.Max(1, tooltip.Inset.Top * 2);
-        UiRect bounds = UiTooltipPlacement.Place(entry.Bounds, tooltip.DesiredSize, tooltip.Clip, gap);
+        UiRect bounds = UiTooltipPlacement.Place(anchor, tooltip.DesiredSize, tooltip.Clip, gap);
         UiRect content = bounds.Inset(tooltip.Inset);
         UiRect clip = UiRect.Intersect(tooltip.Clip, bounds);
         UiOpacity opacity = Value(visual, "opacity", new UiOpacity(1));
@@ -148,19 +147,33 @@ internal sealed class UiSceneRenderPlanner
             transform));
     }
 
-    private static bool TryTooltipEntry(
+    private static bool TryTooltipTarget(
         UiScene scene,
         UiLayoutSnapshot layout,
         UiSymbolId? target,
-        out UiLayoutEntry? entry)
+        out UiRect anchor,
+        out UiTooltipLayout? tooltip)
     {
         if (target is { } id &&
             scene.Structure.Nodes.TryGetValue(id, out UiSceneStructuralNode? node) &&
             node.Node.Tooltip is not null &&
-            layout.TryGetEntry(id, out entry) &&
-            entry?.Tooltip is not null)
+            layout.TryGetEntry(id, out UiLayoutEntry? entry) &&
+            entry?.Tooltip is { } nodeTooltip)
+        {
+            anchor = entry.Bounds;
+            tooltip = nodeTooltip;
             return true;
-        entry = null;
+        }
+        if (target is { } item &&
+            layout.TryGetCollectionItem(item, out UiVirtualizedItemLayout itemLayout) &&
+            itemLayout.Tooltip is { } itemTooltip)
+        {
+            anchor = itemLayout.Bounds;
+            tooltip = itemTooltip;
+            return true;
+        }
+        anchor = default;
+        tooltip = null;
         return false;
     }
 

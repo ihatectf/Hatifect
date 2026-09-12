@@ -177,6 +177,8 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
     private readonly bool _mayHaveSupportingText;
     private readonly IReadOnlyDictionary<UiSymbolId, UiVisualResolution> _activeItemVisuals;
     private readonly UiCollectionStateVisuals? _stateVisuals;
+    private readonly UiVisualResolution? _itemTooltipVisual;
+    private readonly string _locale;
 
     public UiCollectionSceneNode(
         UiSymbolId id,
@@ -188,9 +190,12 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
         UiCollectionPresentationRecipe recipe,
         IDictionary<UiSymbolId, UiVisualResolution>? activeItemVisuals = null,
         IUiSemanticCollectionSnapshot? publicationSnapshot = null,
-        UiInputPrompt? inputPrompt = null)
+        UiInputPrompt? inputPrompt = null,
+        UiVisualResolution? itemTooltipVisual = null,
+        string? locale = null)
         : this(id, role, visual, selectedItemVisual, semanticName, source, recipe,
-            activeItemVisuals, publicationSnapshot, stateVisuals: null, inputPrompt: inputPrompt) { }
+            activeItemVisuals, publicationSnapshot, stateVisuals: null, inputPrompt: inputPrompt,
+            itemTooltipVisual: itemTooltipVisual, locale: locale) { }
 
     internal UiCollectionSceneNode(
         UiSymbolId id,
@@ -203,7 +208,9 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
         IDictionary<UiSymbolId, UiVisualResolution>? activeItemVisuals,
         IUiSemanticCollectionSnapshot? publicationSnapshot,
         UiCollectionStateVisuals? stateVisuals,
-        UiInputPrompt? inputPrompt = null)
+        UiInputPrompt? inputPrompt = null,
+        UiVisualResolution? itemTooltipVisual = null,
+        string? locale = null)
         : base(id, UiSceneNodeKind.Collection, role, visual)
     {
         if (string.IsNullOrWhiteSpace(semanticName))
@@ -241,6 +248,8 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
                 activeItemVisuals ?? new Dictionary<UiSymbolId, UiVisualResolution>()));
         _stateVisuals = stateVisuals;
         InputPrompt = inputPrompt;
+        _itemTooltipVisual = itemTooltipVisual;
+        _locale = locale ?? string.Empty;
     }
 
     public string SemanticName { get; }
@@ -258,6 +267,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
     public UiInputPrompt? InputPrompt { get; }
     internal bool HasCapturedItems => _captured;
     internal IReadOnlyDictionary<UiSymbolId, UiVisualResolution> ActiveItemVisuals => _activeItemVisuals;
+    internal UiVisualResolution? ItemTooltipVisual => _itemTooltipVisual;
 
     public UiSemanticCollectionItem ItemAt(int index)
     {
@@ -268,6 +278,11 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
     }
 
     public UiSymbolId ItemNodeId(UiSymbolId item) => item;
+
+    internal UiTooltipPresentation? TooltipFor(UiSemanticCollectionItem item, UiSymbolId node)
+        => item.Tooltip is not null && _itemTooltipVisual is not null
+            ? new UiTooltipPresentation(node.Child("tooltip"), item.Tooltip.Resolve(_locale), _itemTooltipVisual)
+            : null;
 
     public bool TryGetIndex(UiSymbolId item, int hint, out int index)
     {
