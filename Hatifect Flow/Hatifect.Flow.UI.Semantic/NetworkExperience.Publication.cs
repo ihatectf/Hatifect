@@ -28,9 +28,13 @@ internal sealed partial class NetworkExperience
             FlowStationDetails? destination = Selected(batch, _destinations);
             if (refreshInventory)
             {
+                FlowInventorySlot? selectedInventory = Selected(batch, _inventory);
                 IReadOnlyList<FlowInventorySlot> inventory = source is null ? Array.Empty<FlowInventorySlot>() : _application.ReadInventory(source.Id);
                 if (Retired) return false;
                 batch.Replace(_inventory.Source, inventory);
+                if (selectedInventory is not null && !inventory.Any(slot => slot.Index == selectedInventory.Index
+                    && string.Equals(slot.Fingerprint, selectedInventory.Fingerprint, StringComparison.Ordinal)))
+                    batch.Select(_inventory.Source, null);
                 if (Retired) return false;
                 projection = projection with { InventorySource = source?.Id };
             }
