@@ -24,6 +24,7 @@ public sealed class UiExperienceBuilder
     private UiLocalizedText? _localizedDisplayName;
     private readonly Dictionary<UiSymbolId, UiLocalizedText> _localizedElementLabels = new();
     private readonly Dictionary<UiSymbolId, UiLocalizedText> _localizedActionTitles = new();
+    private readonly Dictionary<UiSymbolId, UiLocalizedText> _tooltips = new();
     private readonly Dictionary<UiSymbolId, IUiTextFormatter> _textFormatters = new();
     private bool _built;
 
@@ -246,6 +247,21 @@ public sealed class UiExperienceBuilder
     }
 
     /// <summary>
+    /// Adds localized semantic help to an already declared presented element or action.
+    /// Runtime owns whether that help is exposed as a pointer/focus tooltip and accessibility description.
+    /// </summary>
+    public UiExperienceBuilder Tooltip(UiSymbolId target, UiLocalizedText text)
+    {
+        EnsureMutable();
+        ArgumentNullException.ThrowIfNull(text);
+        if (!_elements.Any(element => element.Id == target) && !_actions.Any(action => action.Id == target))
+            throw new ArgumentException("A presented element or action must be declared before its tooltip.", nameof(target));
+        if (!_tooltips.TryAdd(target, text))
+            throw new InvalidOperationException($"Target '{target}' already has a tooltip.");
+        return this;
+    }
+
+    /// <summary>
     /// Formats a presented read-only value using its captured payload and the scene's captured locale.
     /// The callback must not read live sources or mutate application state. It runs during composition,
     /// never during drawing. Empty results are valid; null or an exception rejects candidate preparation.
@@ -303,7 +319,7 @@ public sealed class UiExperienceBuilder
         if (errors.Count != 0) throw new UiGraphValidationException(errors);
         _built = true;
         return new UiExperienceDefinition(_id, _displayName, _elements.ToArray(), _actions.ToArray(), _roles.ToArray(), _sources.ToArray(), graph,
-            _localizedDisplayName, _localizedElementLabels, _localizedActionTitles, _textFormatters);
+            _localizedDisplayName, _localizedElementLabels, _localizedActionTitles, _tooltips, _textFormatters);
     }
 
     private static string LegacyAlias(UiSymbolId id, string label)

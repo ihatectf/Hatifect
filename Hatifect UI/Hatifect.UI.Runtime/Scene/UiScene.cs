@@ -20,7 +20,8 @@ internal enum UiSceneNodeKind
     Inspector,
     Form,
     Status,
-    ActionBar
+    ActionBar,
+    Tooltip
 }
 
 internal enum UiCollectionLayoutKind
@@ -62,6 +63,22 @@ internal sealed record UiInputPrompt
     public string Label { get; }
 }
 
+internal sealed record UiTooltipPresentation
+{
+    public UiTooltipPresentation(UiSymbolId id, string text, UiVisualResolution visual)
+    {
+        if (!id.IsValid) throw new ArgumentException("A stable tooltip ID is required.", nameof(id));
+        if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("Tooltip text is required.", nameof(text));
+        Id = id;
+        Text = text;
+        Visual = visual ?? throw new ArgumentNullException(nameof(visual));
+    }
+
+    public UiSymbolId Id { get; }
+    public string Text { get; }
+    public UiVisualResolution Visual { get; }
+}
+
 internal abstract class UiSceneNode
 {
     protected UiSceneNode(
@@ -84,6 +101,7 @@ internal abstract class UiSceneNode
     public UiSymbolId Id { get; }
     // Immutable authoring origin; consumers never infer this from renderer node suffixes.
     internal UiSymbolId? SemanticId { get; init; }
+    internal UiTooltipPresentation? Tooltip { get; init; }
     public UiSceneNodeKind Kind { get; }
     public UiSymbolId Role { get; }
     public UiVisualResolution Visual { get; }

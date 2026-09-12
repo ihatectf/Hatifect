@@ -57,6 +57,7 @@ internal sealed class UiSceneReconciler
             UiSceneStructuralNode oldNode = oldNodes[id];
             UiSceneNode newNode = newNodes[id].Node;
             UiPropertyEffects nodeEffects = newNode.Visual.InvalidationFrom(oldNode.Node.Visual);
+            nodeEffects |= TooltipInvalidation(oldNode.Node.Tooltip, newNode.Tooltip);
             if (oldNode.Node is UiButtonSceneNode oldButton && newNode is UiButtonSceneNode newButton &&
                 previousActions is not null && nextActions is not null)
                 nodeEffects |= newButton.VisualFor(nextActions.CanInvoke(newButton.Action), interaction)
@@ -91,6 +92,20 @@ internal sealed class UiSceneReconciler
             changed.Add(id);
         }
         return new UiSceneDiff(effects, changed.AsReadOnly());
+    }
+
+    private static UiPropertyEffects TooltipInvalidation(
+        UiTooltipPresentation? previous,
+        UiTooltipPresentation? next)
+    {
+        if (previous is null || next is null)
+            return previous == next
+                ? UiPropertyEffects.None
+                : UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
+        UiPropertyEffects effects = next.Visual.InvalidationFrom(previous.Visual);
+        if (previous.Id != next.Id || !string.Equals(previous.Text, next.Text, StringComparison.Ordinal))
+            effects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
+        return effects;
     }
 
     private static UiSceneDiff Structural(UiScene scene)

@@ -86,6 +86,34 @@ Accessibility keeps the action label as the accessible name and exposes the cano
 key separately as its shortcut. The Stardew adapter maps Enter or Space and controller A to Submit;
 the visual keyboard prompt intentionally chooses Enter as the single canonical label.
 
+## Tooltips
+
+Attach localized semantic help to an already declared presented element or action by its stable ID.
+The consumer supplies meaning and translations; Runtime decides how to expose the help visually and
+through accessibility.
+
+```csharp
+var send = new UiActionDefinition(id.Child("send"), "Send", SendSelectedCargo);
+var experience = new UiExperienceBuilder(id, "Shipment")
+    .Actions("Commands", send)
+    .Tooltip(send.Id, new UiLocalizedText(
+        "Send selected cargo",
+        new[] { new KeyValuePair<string, string>("ru-RU", "Отправить выбранный груз") }))
+    .Build();
+```
+
+Pointer hover takes precedence over keyboard/controller focus; at most one tooltip is visible. The
+overlay uses `Surface.Popup`, `Text.Primary`, `Typography.Body`, `Space.S`, `Radius.S`, and
+`Elevation.High` from the active theme. Tooltip text is measured during layout, while selecting an
+already measured tooltip rebuilds only the frame. Placement prefers the space below its target,
+falls back above it, and clamps both dimensions to the host viewport. The tooltip never changes the
+main tree's desired size or focus order.
+
+The target keeps its accessible name and exposes tooltip text separately as its accessibility
+description. Unknown targets and duplicate declarations are rejected before `Build`. This slice
+supports presented element and action IDs. Per-row collection help, form-field help, contribution
+metadata, display delay, and native visual acceptance remain separate work.
+
 ## Collection density
 
 Presentation assets select collection density from the closed `Default`, `Compact`, or

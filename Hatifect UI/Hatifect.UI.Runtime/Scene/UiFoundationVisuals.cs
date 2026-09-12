@@ -67,6 +67,14 @@ internal sealed class UiFoundationVisuals
                 values.Add(Token("padding", UiThemeTokens.SpaceM.Id, UiSemanticType.SpaceToken));
                 values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
                 break;
+            case UiSceneNodeKind.Tooltip:
+                values.Add(Token("surface", UiThemeTokens.SurfacePopup.Id, UiSemanticType.SurfaceToken));
+                values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
+                values.Add(Token("radius", UiThemeTokens.RadiusS.Id, UiSemanticType.RadiusToken));
+                values.Add(Token("padding", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
+                values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+                values.Add(Token("elevation", UiThemeTokens.ElevationHigh.Id, UiSemanticType.ElevationToken));
+                break;
         }
         bool supportsFocusVisual = kind is UiSceneNodeKind.Button or UiSceneNodeKind.RouteButton or
             UiSceneNodeKind.TextInput or UiSceneNodeKind.Collection;
