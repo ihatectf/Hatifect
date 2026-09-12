@@ -1,8 +1,8 @@
 # U06-c: typed consumer status policy
 
-Status: **implementation and focused UI/Flow validation complete; CA/common/package validation
-pending**. Local source commit:
-`a0e558b5424e75e5afadfd5b6d81d569e32773bc`. Full U06 remains **IN_PROGRESS**.
+Status: **implementation and common/CA/package validation complete; runtime validation pending**.
+Owner source commit: `a0e558b5424e75e5afadfd5b6d81d569e32773bc`; local integration commits:
+`102b3e2` and CA test correction `1fb9f02`. Full U06 remains **IN_PROGRESS**.
 
 ## Contract
 
@@ -53,7 +53,11 @@ geometry. Runtime continues to own those policies.
   game-linked; zero tests are not counted.
 - CA platform `run-6p6ioof0`: cancelled during UI packaging when the shared heavy slot changed
   owner; it did not reach restore or tests and is not counted.
+- Exact integration review found one remaining nested test cast to the old string status. Commit
+  `1fb9f02` changes that probe to publish `UiStatus`; CA platform `run-h8mbdhbt` then passed 102/102.
+- Exact integration common G `run-d974rh23`: PASS 2,366 .NET + 503 Python, zero failed/skipped.
+- Isolated UI→CA boundary `hatifect-ui-ca-isolated.07hb2g1r`: PASS 8 UI packages, 47 projected files,
+  102 tests and 2 CA DLL; UI source is absent from the consumer projection.
 
-Fresh CA platform, canonical common gates, isolated package/CA validation and native EN/RU/scale/
-controller observation remain pending. Tooltip, typed density, collection-row prompts and the
-remaining theme families stay outside this slice.
+Native EN/RU/scale/controller observation remains pending. Tooltip, typed density, collection-row
+prompts and the remaining theme families stay outside this slice.

@@ -45,9 +45,14 @@ Exact local runtime checkpoint [e9cfffc](Q02_RUNTIME_E9CFFFC.md) proves clean pa
 
 The code-equivalent local integration `3a34cbb` subsequently passed exact Flow platform validation `run-7pzafv_n` with 797 Core/Persistence and 254 Stardew adapter tests. Common G `run-jaeobkd2` passed 2,334 .NET and 503 Python tests with no failures or skips. Later commits through `b890832` changed documentation only; these static results apply to the unchanged code, while package/runtime evidence remains bound to its recorded exact source.
 
+Latest local checkpoint [5d017ae](Q02_INTEGRATION_5D017AE.md) includes U06 shared status/input prompts,
+typed Flow/CA status consumers and F19 cargo reselection. Exact Flow platform is PASS 803 + 254,
+common G is PASS 2,366 .NET + 503 Python, CA platform is PASS 102 and isolated UI→CA P is PASS.
+Runtime evidence still requires a fresh prepare and scenario matrix on the next frozen docs HEAD.
+
 ## Next dependency-ready work
 
-1. Run exact prepare for the final local composition through `aca70b0`; common G is complete, but do not transfer the prior `c5174a8` Flow DLL runtime evidence to it.
+1. Run exact prepare for the frozen local composition through `65c5726` plus the U06 status integration; common G/P are complete, but do not transfer the prior `c5174a8` Flow DLL runtime evidence to it.
 2. After macOS grants Accessibility to the Python runtime, run `flow.ui.player.input` on that fixed composition and require the complete phase/action-result capture set through final `Delivered`.
 3. Complete exact-candidate EN/RU, scale, controller, CA coexistence and installed-archive acceptance; hand exact Flow assets, dependencies and evidence to GQ.
 
