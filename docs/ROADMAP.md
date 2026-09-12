@@ -450,10 +450,10 @@ activation; accessibility сохраняет label как Name и help как De
 consumer/native матрица и Flow/CA adoption остаются открыты.
 [Контракт, RED→GREEN и evidence](U06_COLLECTION_ITEM_HELP.md).
 
-U06-j theme-owned tooltip display delay — **DONE в локальной owner-ветке, ожидает локальной
-интеграции**, полный U06 — **IN_PROGRESS**. Source
-`53a388e2115678f9374041812b67095f7402fdcc` сохраняет мгновенную keyboard/controller focus help и
-показывает pointer help после `Motion.Normal` активной темы (160 ms в base themes). Смена цели
+U06-j theme-owned tooltip display delay — **DONE в локальном `develop`**, полный U06 —
+**IN_PROGRESS**. Source `53a388e2115678f9374041812b67095f7402fdcc`, общий локальный merge
+`e079a2eb6458c57519e2df22e99c7611cf8be0c8` сохраняют мгновенную keyboard/controller focus help и
+показывают pointer help после `Motion.Normal` активной темы (160 ms в base themes). Смена цели
 перезапускает dwell, уход сразу возвращает focused help; zero-duration theme остаётся допустимой.
 Порог строит один frame без layout/text measurement/collection traversal, а unchanged ticks не
 строят frame. Menu использует elapsed `GameTime`, overlay — 60 Hz quantum только внутри existing
