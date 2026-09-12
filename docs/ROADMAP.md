@@ -340,6 +340,29 @@ U05-b bounded height index: source `e992b6a`, scoped536/C1631/G1960 +386 Python 
 
 **U06.** Оформить общий token/theme contract: типографика, spacing/density, цвета смысловых состояний, surface layers, icons и input prompts. Предлагаемые семейства — Vanilla, нейтральная Vanilla, dark, light и high contrast; окончательная матрица выбирается в D05. Базовый набор для M2: layout/scroll, text, button, selection/list, field/form validation, tooltip и empty/loading/error/status. Выход: Flow и CA используют общую policy; EN/RU и scale проходят проверку без частных размеров в consumer. Accessibility semantics и controller traversal входят в контракт компонента с первого применения.
 
+U06-a semantic status component — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
+Source `bd03e59b4c0fd2ddb9cd5caa7a0064b1418acbe5` добавляет публичный `UiStatus` для
+Status/Empty/Loading/Success/Error, общие domain states и theme tokens, accessibility Status/Alert и
+исключение read-only status из controller traversal. Смена только kind даёт Render invalidation без
+layout. Старый `Monitor<T>` совместим. C — **PASS**: 503 Python + 1,881 .NET; P — **PASS**:
+8 packages, 47 projected files, 101 CA tests, 2 CA DLL, UI source отсутствует. Game-linked/native,
+EN/RU/scale consumer matrix не выполнялась и не переносится с других source. [Контракт, точные run
+IDs и ограничения](U06_STATUS_COMPONENT.md). Далее — общий input-prompt contract и первый Flow/CA
+consumer срез; tooltip, density и оставшиеся theme families также открыты.
+
+U06-b framework input prompts — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
+Source `d8e6eb7f6840a99afde371db33bee6a16ed0f2a9` выводит `Enter`/`A` из принятого input mode для
+action/form/route/Terminal buttons, сохраняет consumer labels без device-текста, публикует отдельный
+accessibility shortcut и использует типизированные `Text.InputPrompt`, `Typography.InputPrompt` и
+`Space.S`. Изменение prompt даёт Measure/Arrange/Render без consumer reactivation; измеренная
+геометрия хранится в layout snapshot и не вызывает text metrics в render. Focused12+1,
+Runtime677 и Semantics65 — **PASS**. C `run-ku2f7tb5` — **PASS503 Python + 1,890 .NET**; P —
+**PASS**:8 packages,47 projected files,101 CA tests,2 CA DLL, UI source отсутствует. Первый C RED
+`run-jjaw6fa_` сохраняет четыре нарушения Measure/Render; исправление подтверждено final evidence.
+[Контракт, evidence и ограничения](U06_INPUT_PROMPTS.md). Далее — Flow/CA consumer observation и
+native EN/RU/scale/controller; tooltip, density, collection-row prompts и оставшиеся theme families
+также открыты.
+
 **U07.** Построить `UiQuick` recipes для alert/confirm/select/простого form/notification и `UiView` для небольшого декларативного layout с typed bindings/actions. Синтаксис может выводить отношения только когда вывод однозначен; явное описание остаётся доступным. Оба входа компилируются в тот же IR, что полная Experience. Выход: примеры простого диалога, формы и небольшого custom screen; одно и то же действие имеет одинаковый lifecycle во всех формах авторства. Сравнить объём и понятность authoring на реальных задачах, затем закрепить API.
 
 **U08.** После D02 добавить `UiExact`: explicit geometry/layers/canvas и pixel scaling внутри framework. Определить measure/arrange, coordinate transform, clipping, render/hitbox agreement, focus order, semantic labels и fallback для compact/controller/accessibility. Выход: точное представление использует общие lifecycle/resources/input, а неподдерживаемое окружение получает явно заданное поведение. Не публиковать exact drawing как способ обходить hit testing или доступность.

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Hatifect.UI.Experience;
 using Hatifect.UI.Planning;
 using Hatifect.UI.Runtime.Hosting;
 using Hatifect.UI.Runtime.Input;
@@ -23,6 +24,8 @@ internal enum UiAccessibilityRole
     TextField,
     Inspector,
     Form,
+    Status,
+    Alert,
     Toolbar
 }
 
@@ -40,7 +43,8 @@ internal sealed class UiAccessibilityNodeSnapshot
         UiRect clip,
         UiAccessibilityNodeSnapshot[] children,
         int? positionInSet = null,
-        int? setSize = null)
+        int? setSize = null,
+        string? shortcut = null)
     {
         Id = id;
         Role = role;
@@ -54,6 +58,7 @@ internal sealed class UiAccessibilityNodeSnapshot
         Children = Array.AsReadOnly(children ?? throw new ArgumentNullException(nameof(children)));
         PositionInSet = positionInSet;
         SetSize = setSize;
+        Shortcut = shortcut;
     }
 
     public UiSymbolId Id { get; }
@@ -68,6 +73,7 @@ internal sealed class UiAccessibilityNodeSnapshot
     public IReadOnlyList<UiAccessibilityNodeSnapshot> Children { get; }
     public int? PositionInSet { get; }
     public int? SetSize { get; }
+    public string? Shortcut { get; }
 }
 
 internal sealed record UiAccessibilitySnapshot(
@@ -162,7 +168,8 @@ internal sealed class UiAccessibilitySnapshotBuilder
             selected: node is UiRouteButtonSceneNode { IsCurrent: true },
             entry.Bounds,
             entry.Clip,
-            children);
+            children,
+            shortcut: UiSceneLayoutEngine.InputPrompt(node)?.Label);
     }
 
     private static bool IsExposed(UiSceneNode node)
@@ -180,6 +187,10 @@ internal sealed class UiAccessibilitySnapshotBuilder
             UiTextInputSceneNode => UiAccessibilityRole.TextField,
             UiSourceSceneNode source when source.Kind == UiSceneNodeKind.Inspector => UiAccessibilityRole.Inspector,
             UiSourceSceneNode source when source.Kind == UiSceneNodeKind.Form => UiAccessibilityRole.Form,
+            UiSourceSceneNode source when source.Kind == UiSceneNodeKind.Status &&
+                                          source.Source.UntypedValue is UiStatus { Kind: UiStatusKind.Error }
+                => UiAccessibilityRole.Alert,
+            UiSourceSceneNode source when source.Kind == UiSceneNodeKind.Status => UiAccessibilityRole.Status,
             UiSourceSceneNode or UiTextSceneNode => UiAccessibilityRole.StaticText,
             UiContainerSceneNode container when container.Kind == UiSceneNodeKind.Form => UiAccessibilityRole.Form,
             UiContainerSceneNode container when container.Kind == UiSceneNodeKind.ActionBar => UiAccessibilityRole.Toolbar,

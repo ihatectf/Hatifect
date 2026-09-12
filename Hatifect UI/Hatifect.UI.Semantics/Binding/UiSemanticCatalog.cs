@@ -39,7 +39,7 @@ public sealed class UiSemanticCatalog
             catalog._regions.Add(region, BuiltIn($"region/{region}"));
         foreach (string profile in new[] { "Wide", "Medium", "Compact", "Controller" })
             catalog._profiles.Add(profile, BuiltIn($"profile/{profile}"));
-        foreach (string state in new[] { "Hover", "Pressed", "Focused", "Selected", "Checked", "Disabled", "Enter", "Exit", "Congested", "Offline" })
+        foreach (string state in new[] { "Hover", "Pressed", "Focused", "Selected", "Checked", "Disabled", "Enter", "Exit", "Congested", "Offline", "Empty", "Loading", "Success", "Error" })
             catalog._states.Add(state, BuiltIn($"state/{state}"));
 
         catalog.AddProperty(UiDefinitionKind.Presentation, "use", UiSemanticType.PresentationPattern, UiPropertyEffects.Recompose);
@@ -67,10 +67,13 @@ public sealed class UiSemanticCatalog
         catalog.AddProperty(UiDefinitionKind.Visual, "elevation", UiSemanticType.ElevationToken, UiPropertyEffects.Render);
         catalog.AddProperty(UiDefinitionKind.Visual, "transform", UiSemanticType.TransformToken, UiPropertyEffects.Arrange | UiPropertyEffects.Render, animatable: true);
         catalog.AddProperty(UiDefinitionKind.Visual, "opacity", UiSemanticType.Opacity, UiPropertyEffects.Render, animatable: true);
+        catalog.AddProperty(UiDefinitionKind.Visual, "prompt.foreground", UiSemanticType.ColorToken, UiPropertyEffects.Render);
+        catalog.AddProperty(UiDefinitionKind.Visual, "prompt.typography", UiSemanticType.TypographyToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
+        catalog.AddProperty(UiDefinitionKind.Visual, "prompt.spacing", UiSemanticType.SpaceToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
 
         foreach (string name in new[] { "Canvas", "Raised", "Secondary", "Hover", "Pressed", "Disabled", "Popup", "Modal" })
             catalog.AddToken($"Surface.{name}", UiSemanticType.SurfaceToken);
-        foreach (string name in new[] { "Primary", "Secondary", "Muted", "Accent", "Danger", "Success" })
+        foreach (string name in new[] { "Primary", "Secondary", "Muted", "Accent", "Danger", "Success", "InputPrompt" })
             catalog.AddToken($"Text.{name}", UiSemanticType.ColorToken);
         catalog.AddToken("Accent", UiSemanticType.ColorToken);
         foreach (string name in new[] { "XS", "S", "M", "L", "XL" })
@@ -79,7 +82,7 @@ public sealed class UiSemanticCatalog
             catalog.AddToken($"Radius.{name}", UiSemanticType.RadiusToken);
         foreach (string name in new[] { "None", "Fast", "Normal", "Slow" })
             catalog.AddToken($"Motion.{name}", UiSemanticType.MotionToken);
-        foreach (string name in new[] { "Body", "Label", "Title" })
+        foreach (string name in new[] { "Body", "Label", "Title", "InputPrompt" })
             catalog.AddToken($"Typography.{name}", UiSemanticType.TypographyToken);
         foreach (string name in new[] { "Subtle", "Strong", "Focus" })
             catalog.AddToken($"Border.{name}", UiSemanticType.Border);

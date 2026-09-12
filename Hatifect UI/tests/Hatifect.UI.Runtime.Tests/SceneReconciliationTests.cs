@@ -180,6 +180,32 @@ public sealed class SceneReconciliationTests
     }
 
     [Fact]
+    public void StatusKindChangeWithStableMessageInvalidatesRenderingOnly()
+    {
+        UiSymbolId id = RegistryTests.Id("reconcile/status");
+        var status = new UiState<UiStatus>(new UiStatus(UiStatusKind.Loading, "Connecting"));
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Status")
+            .Status("Connection", status)
+            .Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .Window(id, experience.DisplayName, () => experience)
+            .Freeze();
+        UiInvocationResult invocation = new UiInvocationService(registry)
+            .Invoke(id, UiPresentationProfiles.Wide);
+        var composer = new UiSceneComposer(UiThemePresets.Dark(), registry);
+        UiScene before = composer.Compose(invocation);
+
+        status.Value = new UiStatus(UiStatusKind.Success, "Connecting");
+        UiScene after = composer.Compose(invocation);
+        UiSceneDiff diff = new UiSceneReconciler().Compare(before, after);
+
+        Assert.Equal(UiPropertyEffects.Render, diff.Effects);
+        Assert.False(diff.RequiresLayout);
+        Assert.True(diff.RequiresRender);
+        Assert.Single(diff.ChangedNodes);
+    }
+
+    [Fact]
     public void StructuralChangeRequestsFullRecomposition()
     {
         SceneFixture one = Fixture(new UiState<string>("ore"), actionCount: 1);

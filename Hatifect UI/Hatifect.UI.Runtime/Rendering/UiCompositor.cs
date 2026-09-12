@@ -151,14 +151,58 @@ internal sealed class UiSceneRenderPlanner
                 UiTextOverflow overflow = entry.Overflow;
                 if (node is UiButtonSceneNode { Action.Binding: not null } actionButton)
                 {
-                    float lineHeight = textBounds.Height / 2;
-                    var messageBounds = new UiRect(textBounds.X, textBounds.Y + lineHeight, textBounds.Width, lineHeight);
-                    textBounds = new UiRect(textBounds.X, textBounds.Y, textBounds.Width, lineHeight);
+                    float messageLineHeight = Math.Min(
+                        textBounds.Height,
+                        entry.ActionStatusLineHeight);
+                    float labelLineHeight = Math.Max(0, textBounds.Height - messageLineHeight);
+                    var messageBounds = new UiRect(
+                        textBounds.X,
+                        textBounds.Y + labelLineHeight,
+                        textBounds.Width,
+                        messageLineHeight);
+                    textBounds = new UiRect(textBounds.X, textBounds.Y, textBounds.Width, labelLineHeight);
                     textClip = UiRect.Intersect(entry.Clip, textBounds);
                     if (actions?.Status(actionButton.Action)?.Message is { Length: > 0 } message)
                         primitives.Add(new UiTextPrimitive(node.Id, messageBounds,
                             UiRect.Intersect(entry.Clip, messageBounds), message, foreground, typography,
                             UiTextOverflow.Ellipsis, opacity, transform));
+                }
+                if (UiSceneLayoutEngine.InputPrompt(node) is { } prompt)
+                {
+                    UiTypography promptTypography = Value(
+                        visual,
+                        "prompt.typography",
+                        typography);
+                    UiColor promptForeground = Value(
+                        visual,
+                        "prompt.foreground",
+                        foreground);
+                    float promptSpacing = Value(
+                        visual,
+                        "prompt.spacing",
+                        new UiSpacing(0)).Value;
+                    float promptWidth = Math.Min(textBounds.Width, entry.InputPromptWidth);
+                    var promptBounds = new UiRect(
+                        textBounds.X,
+                        textBounds.Y,
+                        promptWidth,
+                        textBounds.Height);
+                    primitives.Add(new UiTextPrimitive(
+                        node.Id,
+                        promptBounds,
+                        UiRect.Intersect(textClip, promptBounds),
+                        prompt.Label,
+                        promptForeground,
+                        promptTypography,
+                        UiTextOverflow.Clip,
+                        opacity,
+                        transform));
+                    float advance = Math.Min(textBounds.Width, promptWidth + promptSpacing);
+                    textBounds = new UiRect(
+                        textBounds.X + advance,
+                        textBounds.Y,
+                        Math.Max(0, textBounds.Width - advance),
+                        textBounds.Height);
                 }
                 if (node is UiRouteButtonSceneNode { Icon: { } icon } route)
                 {

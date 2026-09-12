@@ -20,6 +20,7 @@ public static class UiThemeTokens
     public static readonly UiThemeToken<UiColor> TextAccent = Token<UiColor>("Text.Accent", UiSemanticType.ColorToken);
     public static readonly UiThemeToken<UiColor> TextDanger = Token<UiColor>("Text.Danger", UiSemanticType.ColorToken);
     public static readonly UiThemeToken<UiColor> TextSuccess = Token<UiColor>("Text.Success", UiSemanticType.ColorToken);
+    public static readonly UiThemeToken<UiColor> TextInputPrompt = Token<UiColor>("Text.InputPrompt", UiSemanticType.ColorToken);
     public static readonly UiThemeToken<UiColor> Accent = Token<UiColor>("Accent", UiSemanticType.ColorToken);
 
     public static readonly UiThemeToken<UiSpacing> SpaceXS = Token<UiSpacing>("Space.XS", UiSemanticType.SpaceToken);
@@ -41,6 +42,7 @@ public static class UiThemeTokens
     public static readonly UiThemeToken<UiTypography> TypographyBody = Token<UiTypography>("Typography.Body", UiSemanticType.TypographyToken);
     public static readonly UiThemeToken<UiTypography> TypographyLabel = Token<UiTypography>("Typography.Label", UiSemanticType.TypographyToken);
     public static readonly UiThemeToken<UiTypography> TypographyTitle = Token<UiTypography>("Typography.Title", UiSemanticType.TypographyToken);
+    public static readonly UiThemeToken<UiTypography> TypographyInputPrompt = Token<UiTypography>("Typography.InputPrompt", UiSemanticType.TypographyToken);
 
     public static readonly UiThemeToken<UiBorder> BorderSubtle = Token<UiBorder>("Border.Subtle", UiSemanticType.Border);
     public static readonly UiThemeToken<UiBorder> BorderStrong = Token<UiBorder>("Border.Strong", UiSemanticType.Border);
@@ -87,6 +89,7 @@ public static class UiThemePresets
             .Set(UiThemeTokens.TextAccent, accent)
             .Set(UiThemeTokens.TextDanger, UiColor.FromRgb(0xEF6A6A))
             .Set(UiThemeTokens.TextSuccess, UiColor.FromRgb(0x75C991))
+            .Set(UiThemeTokens.TextInputPrompt, accent)
             .Set(UiThemeTokens.Accent, accent)
             .Set(UiThemeTokens.SpaceXS, new UiSpacing(2))
             .Set(UiThemeTokens.SpaceS, new UiSpacing(4))
@@ -104,6 +107,7 @@ public static class UiThemePresets
             .Set(UiThemeTokens.TypographyBody, new UiTypography("Body", 16, 1.25f))
             .Set(UiThemeTokens.TypographyLabel, new UiTypography("Body", 14, 1.2f, UiFontWeight.Medium))
             .Set(UiThemeTokens.TypographyTitle, new UiTypography("Display", 22, 1.15f, UiFontWeight.Bold))
+            .Set(UiThemeTokens.TypographyInputPrompt, new UiTypography("Body", 12, 1.2f, UiFontWeight.Bold))
             .Set(UiThemeTokens.BorderSubtle, new UiBorder(UiColor.FromRgb(0x383D47), 1))
             .Set(UiThemeTokens.BorderStrong, new UiBorder(UiColor.FromRgb(0x5A616E), 1))
             .Set(UiThemeTokens.BorderFocus, new UiBorder(accent, 2))

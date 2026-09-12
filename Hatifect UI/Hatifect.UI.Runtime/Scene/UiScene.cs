@@ -19,6 +19,7 @@ internal enum UiSceneNodeKind
     TextInput,
     Inspector,
     Form,
+    Status,
     ActionBar
 }
 
@@ -41,6 +42,18 @@ internal sealed record UiSceneMeasurementContext(
     UiSymbolId Profile,
     string Locale,
     UiSymbolId Theme);
+
+internal sealed record UiInputPrompt
+{
+    public UiInputPrompt(string label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+            throw new ArgumentException("An input prompt label is required.", nameof(label));
+        Label = label;
+    }
+
+    public string Label { get; }
+}
 
 internal abstract class UiSceneNode
 {
@@ -118,7 +131,7 @@ internal sealed class UiSourceSceneNode : UiSceneNode
             throw new ArgumentException("A semantic source name is required.", nameof(semanticName));
         Source = source ?? throw new ArgumentNullException(nameof(source));
         SemanticName = semanticName;
-        DisplayText = kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form
+        DisplayText = kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form or UiSceneNodeKind.Status
             ? displayText ?? source.UntypedValue?.ToString() ?? string.Empty
             : string.Empty;
     }
@@ -287,7 +300,7 @@ internal sealed class UiButtonSceneNode : UiSceneNode
 {
     private readonly UiButtonStateVisuals? _stateVisuals;
     public UiButtonSceneNode(UiSymbolId id, UiSymbolId role, UiVisualResolution visual, UiActionDefinition action,
-        UiButtonStateVisuals? stateVisuals = null, string? label = null)
+        UiButtonStateVisuals? stateVisuals = null, string? label = null, UiInputPrompt? inputPrompt = null)
         : base(id, UiSceneNodeKind.Button, role, visual)
     {
         Action = action ?? throw new ArgumentNullException(nameof(action));
@@ -295,10 +308,12 @@ internal sealed class UiButtonSceneNode : UiSceneNode
         if (label is not null && string.IsNullOrWhiteSpace(label))
             throw new ArgumentException("An action label must not be blank.", nameof(label));
         Label = label ?? action.Title;
+        InputPrompt = inputPrompt;
     }
 
     public UiActionDefinition Action { get; }
     public string Label { get; }
+    public UiInputPrompt? InputPrompt { get; }
     public bool Invoke() => Action.TryExecute();
     internal UiVisualResolution VisualFor(bool enabled, UiInteractionSnapshot? interaction)
         => _stateVisuals?.ForHost(enabled, interaction, Visual) ?? Visual;
@@ -313,7 +328,8 @@ internal sealed class UiRouteButtonSceneNode : UiSceneNode
         string label,
         UiSymbolId route,
         bool isCurrent = false,
-        UiSymbolId? icon = null)
+        UiSymbolId? icon = null,
+        UiInputPrompt? inputPrompt = null)
         : base(id, UiSceneNodeKind.RouteButton, role, visual)
     {
         if (string.IsNullOrWhiteSpace(label)) throw new ArgumentException("A route button label is required.", nameof(label));
@@ -322,12 +338,14 @@ internal sealed class UiRouteButtonSceneNode : UiSceneNode
         Route = route;
         IsCurrent = isCurrent;
         Icon = icon;
+        InputPrompt = inputPrompt;
     }
 
     public string Label { get; }
     public UiSymbolId Route { get; }
     public bool IsCurrent { get; }
     public UiSymbolId? Icon { get; }
+    public UiInputPrompt? InputPrompt { get; }
     internal const float IconExtent = 20;
     internal float IconSpace => Icon == null ? 0 : IconExtent + 4;
 }

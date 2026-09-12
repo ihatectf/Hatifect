@@ -42,6 +42,9 @@ internal sealed class UiFoundationVisuals
                 values.Add(Token("radius", UiThemeTokens.RadiusM.Id, UiSemanticType.RadiusToken));
                 values.Add(Token("padding", UiThemeTokens.SpaceM.Id, UiSemanticType.SpaceToken));
                 values.Add(Token("typography", UiThemeTokens.TypographyLabel.Id, UiSemanticType.TypographyToken));
+                values.Add(Token("prompt.foreground", UiThemeTokens.TextInputPrompt.Id, UiSemanticType.ColorToken));
+                values.Add(Token("prompt.typography", UiThemeTokens.TypographyInputPrompt.Id, UiSemanticType.TypographyToken));
+                values.Add(Token("prompt.spacing", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
                 values.Add(Token("motion", UiThemeTokens.MotionFast.Id, UiSemanticType.MotionToken));
                 values.Add(Token("opacity", Contains(interactionStates, UiVisualStates.Disabled)
                     ? UiThemeTokens.OpacityDisabled.Id : UiThemeTokens.OpacityVisible.Id, UiSemanticType.Opacity));
@@ -51,6 +54,10 @@ internal sealed class UiFoundationVisuals
             case UiSceneNodeKind.Inspector:
             case UiSceneNodeKind.Form:
                 values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
+                values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+                break;
+            case UiSceneNodeKind.Status:
+                values.Add(Token("foreground", StatusForeground(domainStates), UiSemanticType.ColorToken));
                 values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
                 break;
             case UiSceneNodeKind.TextInput:
@@ -106,6 +113,17 @@ internal sealed class UiFoundationVisuals
             : host.Kind is UiHostKind.Popup or UiHostKind.Context
                 ? UiThemeTokens.SurfacePopup.Id
                 : UiThemeTokens.SurfaceCanvas.Id;
+
+    private static UiSymbolId StatusForeground(IReadOnlyList<UiVisualStateRef>? states)
+        => Contains(states, UiVisualStates.Error)
+            ? UiThemeTokens.TextDanger.Id
+            : Contains(states, UiVisualStates.Success)
+                ? UiThemeTokens.TextSuccess.Id
+                : Contains(states, UiVisualStates.Loading)
+                    ? UiThemeTokens.TextAccent.Id
+                    : Contains(states, UiVisualStates.Empty)
+                        ? UiThemeTokens.TextMuted.Id
+                        : UiThemeTokens.TextSecondary.Id;
 
     private static string TokenName(UiSymbolId id)
         => id.LocalId.StartsWith("token/", StringComparison.Ordinal) ? id.LocalId[6..] : id.LocalId;

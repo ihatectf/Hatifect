@@ -19,6 +19,8 @@ namespace Hatifect.UI.Runtime.Scene;
 internal sealed class UiSceneComposer
 {
     internal static readonly UiSymbolId TerminalShellId = new("Hatifect.UI", "terminal/shell");
+    private static readonly UiInputPrompt KeyboardActivationPrompt = new("Enter");
+    private static readonly UiInputPrompt ControllerActivationPrompt = new("A");
     private static readonly IReadOnlyDictionary<UiSymbolId, FoundationComponentKind> FoundationComponents =
         CreateFoundationCatalog();
     private readonly UiRegistrySnapshot? _registry;
@@ -190,8 +192,8 @@ internal sealed class UiSceneComposer
             FoundationComponentKind.Inspector => Source(
                 invocation, element, visual, interaction, UiSceneNodeKind.Inspector, UiSceneRoles.Inspector, reads, locale),
             FoundationComponentKind.Form => Form(invocation, element, visual, interaction, reads, locale),
-            FoundationComponentKind.StatusText => Source(
-                invocation, element, visual, interaction, UiSceneNodeKind.Text, UiSceneRoles.Text, reads, locale),
+            FoundationComponentKind.StatusText => Status(
+                invocation, element, visual, interaction, reads, locale),
             FoundationComponentKind.ActionBar => ActionBar(invocation, element, visual, interaction, reads, locale),
             _ => throw new InvalidOperationException($"Unsupported foundation component '{component}'.")
         };
@@ -234,6 +236,46 @@ internal sealed class UiSceneComposer
             nodeId, kind, role,
             Resolve(role, kind, nodeId, invocation, visual, interaction),
             invocation.Experience.ElementLabelFor(element, locale), captured, displayText) { SemanticId = element.Id };
+    }
+
+    private UiSceneNode Status(
+        UiInvocationResult invocation,
+        UiSemanticElementDefinition element,
+        UiVisualDefinition? visual,
+        UiInteractionSnapshot? interaction,
+        UiPublicationReadScope reads,
+        string locale)
+    {
+        if (element.Source.ValueType != typeof(UiStatus))
+            return Source(
+                invocation, element, visual, interaction,
+                UiSceneNodeKind.Text, UiSceneRoles.Text, reads, locale);
+
+        IUiSemanticSource captured = reads.Read(element.Source);
+        if (captured.UntypedValue is not UiStatus status)
+            throw new InvalidOperationException($"Status element '{element.Id}' returned a null or incompatible value.");
+        UiSymbolId nodeId = element.Id.Child("scene/status");
+        UiSymbolId role = Role(invocation.Experience, element.Alias, UiSceneRoles.Status);
+        IReadOnlyList<UiVisualStateRef>? states = status.Kind switch
+        {
+            UiStatusKind.Empty => new[] { UiVisualStates.Empty },
+            UiStatusKind.Loading => new[] { UiVisualStates.Loading },
+            UiStatusKind.Success => new[] { UiVisualStates.Success },
+            UiStatusKind.Error => new[] { UiVisualStates.Error },
+            UiStatusKind.Status => null,
+            _ => throw new InvalidOperationException($"Status element '{element.Id}' has unsupported kind '{status.Kind}'.")
+        };
+        string? displayText = invocation.Experience.HasTextFormatter(element.Id)
+            ? invocation.Experience.FormatText(element.Id, status, locale)
+            : status.Message;
+        return new UiSourceSceneNode(
+            nodeId,
+            UiSceneNodeKind.Status,
+            role,
+            Resolve(role, UiSceneNodeKind.Status, nodeId, invocation, visual, interaction, domainStates: states),
+            invocation.Experience.ElementLabelFor(element, locale),
+            captured,
+            displayText) { SemanticId = element.Id };
     }
 
     private UiSceneNode Collection(
@@ -359,7 +401,8 @@ internal sealed class UiSceneComposer
                         () => field.Value.Value = option.Value);
                     children.Add(new UiButtonSceneNode(optionId, UiSceneRoles.Button,
                         Resolve(UiSceneRoles.Button, UiSceneNodeKind.Button, optionId, invocation, visual, interaction,
-                            domainStates: selected ? new[] { UiVisualStates.Selected } : null), action) { SemanticId = field.Id });
+                            domainStates: selected ? new[] { UiVisualStates.Selected } : null), action,
+                        inputPrompt: ActivationPrompt(invocation)) { SemanticId = field.Id });
                 }
             }
             else
@@ -438,7 +481,7 @@ internal sealed class UiSceneComposer
                     UiRouteContributionDescriptor route => new UiRouteButtonSceneNode(
                         nodeId, UiSceneRoles.Button,
                         Resolve(UiSceneRoles.Button, UiSceneNodeKind.RouteButton, nodeId, invocation, visual, interaction),
-                        route.Title, route.Route) { SemanticId = route.Route },
+                        route.Title, route.Route, inputPrompt: ActivationPrompt(invocation)) { SemanticId = route.Route },
                     _ => throw new InvalidOperationException($"Unsupported contribution type '{contribution.GetType().Name}'.")
                 };
                 Add(bySlot, slot, node);
@@ -489,7 +532,8 @@ internal sealed class UiSceneComposer
             Add(
                 bySlot,
                 UiHostSlots.Navigation,
-                new UiRouteButtonSceneNode(nodeId, UiSceneRoles.Button, resolved, descriptor.Title, descriptor.Id, current, descriptor.Terminal.Icon)
+                new UiRouteButtonSceneNode(nodeId, UiSceneRoles.Button, resolved, descriptor.Title, descriptor.Id,
+                    current, descriptor.Terminal.Icon, ActivationPrompt(invocation))
                     { SemanticId = descriptor.Id });
         }
         if (!activeFound)
@@ -524,7 +568,23 @@ internal sealed class UiSceneComposer
             resolver.Resolve(new UiVisualContext(role, profile, null, active), theme, visual,
                 foundation.For(UiSceneNodeKind.Button, host, null, active)), renderOnly: action.Binding is not null);
         bool enabled = action.Binding is not null || action.CanExecute;
-        return new(node, role, states.Resolve(enabled, interaction), action, states, label) { SemanticId = action.Id };
+        return new(node, role, states.Resolve(enabled, interaction), action, states, label, ActivationPrompt(invocation))
+            { SemanticId = action.Id };
+    }
+
+    private static UiInputPrompt? ActivationPrompt(UiInvocationResult invocation)
+    {
+        UiInputMode mode = invocation.Plan.Host.Environment?.InputMode ??
+            (invocation.Plan.Host.Profile == UiPresentationProfiles.Controller.Id
+                ? UiInputMode.Controller
+                : UiInputMode.MouseKeyboard);
+        return mode switch
+        {
+            UiInputMode.Keyboard => KeyboardActivationPrompt,
+            UiInputMode.Controller => ControllerActivationPrompt,
+            UiInputMode.MouseKeyboard => null,
+            _ => throw new InvalidOperationException($"Unsupported input mode '{mode}'.")
+        };
     }
 
     private UiVisualResolution Resolve(

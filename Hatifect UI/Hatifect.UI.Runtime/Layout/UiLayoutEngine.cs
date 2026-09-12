@@ -31,7 +31,9 @@ internal sealed record UiLayoutEntry(
     UiSize DesiredSize,
     UiTextOverflow Overflow,
     string? Heading = null,
-    UiRect? HeadingBounds = null);
+    UiRect? HeadingBounds = null,
+    float InputPromptWidth = 0,
+    float ActionStatusLineHeight = 0);
 
 // Root content remains in logical coordinates; only its viewport is visible/hit-testable.
 internal sealed record UiRootScrollLayout(UiRect Viewport, float Extent, float Offset)
@@ -198,6 +200,8 @@ internal sealed class UiSceneLayoutEngine
         float itemLineHeight = 0;
         float preferredItemWidth = 0;
         UiTypography? collectionTypography = null;
+        float inputPromptWidth = 0;
+        float actionStatusLineHeight = 0;
 
         string? text = RuntimeText(node);
         if (node is UiCollectionSceneNode collection)
@@ -274,17 +278,40 @@ internal sealed class UiSceneLayoutEngine
         {
             UiTypography typography = Required<UiTypography>(node.Visual, "typography", node.Id);
             float iconSpace = node is UiRouteButtonSceneNode route ? route.IconSpace : 0;
-            UiSize desiredText = _textMetrics.Measure(text, typography, Math.Max(1, contentWidth - iconSpace), overflow);
+            UiInputPrompt? prompt = InputPrompt(node);
+            float promptSpace = 0;
+            float promptHeight = 0;
+            if (prompt != null)
+            {
+                UiTypography promptTypography = Required<UiTypography>(node.Visual, "prompt.typography", node.Id);
+                UiSize promptSize = _textMetrics.Measure(
+                    prompt.Label,
+                    promptTypography,
+                    Math.Max(1, contentWidth - iconSpace),
+                    UiTextOverflow.Clip);
+                float promptSpacing = Required<UiSpacing>(node.Visual, "prompt.spacing", node.Id).Value;
+                inputPromptWidth = Math.Min(contentWidth, promptSize.Width);
+                promptSpace = Math.Min(contentWidth, inputPromptWidth + promptSpacing);
+                promptHeight = promptSize.Height;
+            }
+            float reservedSpace = Math.Min(contentWidth, iconSpace + promptSpace);
+            UiSize desiredText = _textMetrics.Measure(
+                text,
+                typography,
+                Math.Max(1, contentWidth - reservedSpace),
+                overflow);
             UiSize minimumLine = _textMetrics.Measure("M", typography, contentWidth, UiTextOverflow.Clip);
             desiredContent = new UiSize(
-                Math.Min(contentWidth, desiredText.Width + iconSpace),
-                Math.Max(desiredText.Height, iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 0));
+                Math.Min(contentWidth, desiredText.Width + reservedSpace),
+                Math.Max(Math.Max(desiredText.Height, promptHeight),
+                    iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 0));
             minimumContent = new UiSize(
-                IsInteractive(node) ? Math.Min(contentWidth, Math.Max(1, minimumLine.Width + iconSpace)) : 0,
-                Math.Max(iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 1, minimumLine.Height));
+                IsInteractive(node) ? Math.Min(contentWidth, Math.Max(1, minimumLine.Width + reservedSpace)) : 0,
+                Math.Max(Math.Max(iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 1, minimumLine.Height), promptHeight));
             if (node is UiButtonSceneNode { Action.Binding: not null })
             {
                 // Reserve a second line before invocation so status changes retain geometry.
+                actionStatusLineHeight = minimumLine.Height;
                 desiredContent = new UiSize(Math.Max(desiredContent.Width, Math.Min(contentWidth, minimumLine.Width * 24)),
                     desiredContent.Height + minimumLine.Height);
                 minimumContent = new UiSize(minimumContent.Width, minimumContent.Height + minimumLine.Height);
@@ -341,7 +368,9 @@ internal sealed class UiSceneLayoutEngine
             preferredItemWidth,
             collectionTypography,
             heading,
-            headingHeight);
+            headingHeight,
+            inputPromptWidth,
+            actionStatusLineHeight);
         measured.Add(node.Id, result);
         return result;
     }
@@ -376,7 +405,7 @@ internal sealed class UiSceneLayoutEngine
                 content.Width, Math.Max(0, content.Height - own.HeadingHeight));
         }
         entries.Add(node.Id, new UiLayoutEntry(bounds, content, clip, own.Desired, own.Overflow,
-            own.Heading, headingBounds));
+            own.Heading, headingBounds, own.InputPromptWidth, own.ActionStatusLineHeight));
         if (node is UiCollectionSceneNode collection)
         {
             collectionWindows.Add(
@@ -712,7 +741,7 @@ internal sealed class UiSceneLayoutEngine
         {
             UiSceneNodeKind.Button or UiSceneNodeKind.RouteButton or UiSceneNodeKind.TextInput => UiTextOverflow.Ellipsis,
             UiSceneNodeKind.Collection => UiTextOverflow.Scroll,
-            UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form => UiTextOverflow.Wrap,
+            UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form or UiSceneNodeKind.Status => UiTextOverflow.Wrap,
             _ => UiTextOverflow.Clip
         };
 
@@ -752,18 +781,26 @@ internal sealed class UiSceneLayoutEngine
             UiButtonSceneNode button => button.Label,
             UiRouteButtonSceneNode route => route.Label,
             UiTextInputSceneNode input => input.Text,
-            UiSourceSceneNode source when source.Kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form
+            UiSourceSceneNode source when source.Kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form or UiSceneNodeKind.Status
                 => source.DisplayText,
             _ => null
         };
 
     internal static string? Heading(UiSceneNode node)
         => node is UiSourceSceneNode source &&
-           source.Kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form
+           source.Kind is UiSceneNodeKind.Text or UiSceneNodeKind.Inspector or UiSceneNodeKind.Form or UiSceneNodeKind.Status
             ? source.SemanticName : null;
 
     internal static string? RuntimeText(UiSceneNode node)
         => node is UiTextInputSceneNode input ? input.CurrentText : Text(node);
+
+    internal static UiInputPrompt? InputPrompt(UiSceneNode node)
+        => node switch
+        {
+            UiButtonSceneNode button => button.InputPrompt,
+            UiRouteButtonSceneNode route => route.InputPrompt,
+            _ => null
+        };
 
     private static T Required<T>(UiVisualResolution visual, string property, UiSymbolId node) where T : notnull
         => TryValue(visual, property, out T value)
@@ -799,5 +836,7 @@ internal sealed class UiSceneLayoutEngine
         float PreferredItemWidth,
         UiTypography? CollectionTypography,
         string? Heading = null,
-        float HeadingHeight = 0);
+        float HeadingHeight = 0,
+        float InputPromptWidth = 0,
+        float ActionStatusLineHeight = 0);
 }

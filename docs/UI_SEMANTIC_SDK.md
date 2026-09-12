@@ -43,6 +43,47 @@ var experience = new UiExperienceBuilder(id, "Settings")
 
 The original `new UiSemanticFormField(id, label, mutableStringSource)` constructor remains immediate binding. It does not promise rollback of external setters. Typed factories own the draft/commit pair; the consumer applies the committed values to its domain. Dispose `UiFormState` when its owner retires to detach its source subscriptions. Runtime provides labels, text/numeric editing, selected choice buttons, and error text in the scene/accessibility tree.
 
+## Typed status
+
+Use `UiStatus` when a monitored value represents empty, loading, success, error, or general status
+rather than ordinary read-only text. The consumer owns the localized message; Runtime selects the
+shared semantic color and accessibility role. Status nodes are read-only and do not enter controller
+focus traversal.
+
+```csharp
+var status = new UiState<UiStatus>(
+    new UiStatus(UiStatusKind.Loading, "Loading routes…"));
+var experience = new UiExperienceBuilder(id, "Routes")
+    .Status("State", status)
+    .Build();
+
+status.Value = new UiStatus(UiStatusKind.Empty, "No routes are configured.");
+```
+
+`Error` is exposed as an accessibility alert; the other kinds are status live regions. Typed Visual
+recipes may target `@Empty`, `@Loading`, `@Success`, or `@Error`. Existing `Monitor<T>` values keep
+their ordinary text behavior, while `Monitor<UiStatus>` opts into the same typed component as
+`Status`.
+
+## Input prompts
+
+Runtime adds the canonical activation prompt to action buttons, toggle/choice options, contributed
+actions and routes, and Terminal navigation. Consumers keep localized action and route labels free
+of device text. The accepted environment selects `Enter` for keyboard mode and `A` for controller
+mode; mouse-and-keyboard mode omits the prompt to keep pointer-first surfaces quiet. A legacy
+environment-free Controller profile also uses `A`.
+
+The prompt is a separate text primitive and reserves width during layout. Its color, typography and
+gap use `Text.InputPrompt`, `Typography.InputPrompt` and `Space.S` through the typed
+`prompt.foreground`, `prompt.typography` and `prompt.spacing` Visual properties. Dark, Light and
+HighContrast themes resolve the same contract from their own accent color. Prompt changes within an
+otherwise unchanged presentation invalidate measure, arrange and render without reactivating the
+consumer Experience.
+
+Accessibility keeps the action label as the accessible name and exposes the canonical activation
+key separately as its shortcut. The Stardew adapter maps Enter or Space and controller A to Submit;
+the visual keyboard prompt intentionally chooses Enter as the single canonical label.
+
 ## Themes, textures and icons
 
 Production sessions implement `IUiSemanticAppearanceSession`. `SetTheme` selects framework `Dark`, `Light` or `HighContrast` presets without replacing semantic state or the Terminal activation cache. Register a PNG with a stable asset ID and keep its returned lease. The session owns decoded textures; lease disposal releases one registration and session disposal releases all remaining resources. Missing IDs use one reusable checkerboard placeholder per session. Duplicate IDs and invalid/over-budget PNGs are rejected before publication.
