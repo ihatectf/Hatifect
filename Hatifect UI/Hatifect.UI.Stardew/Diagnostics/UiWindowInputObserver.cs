@@ -173,8 +173,9 @@ internal sealed class UiWindowInputObserver : IDisposable
             if (visible && (completed is not null || stable && _capturedStamp != stamp))
             {
                 bool acceptedSceneChanged = _pendingStableScene == runtime.AcceptedVersion;
-                bool hasVisibleResult = elements.Any(element => element.SemanticId == ResultSemantic
-                    && FullyVisible(element.Bounds, element.Clip));
+                bool hasVisibleResult = acceptedSceneChanged && focused?.ActionId is not null
+                    && elements.Any(element => element.SemanticId == ResultSemantic
+                        && FullyVisible(element.Bounds, element.Clip));
                 string? requiredKey = RequiredCaptureKey(completed, _epoch, runtime.AcceptedVersion, acceptedSceneChanged,
                     focused?.ActionId, hasVisibleResult);
                 bool captured = _captures.TryAdd(requiredKey, sequence =>
