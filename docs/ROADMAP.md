@@ -425,9 +425,10 @@ baseline v1 и 21 semantic-contract tests — **PASS**. Collection-item help, co
 delay policy и consumer/native матрица остаются открыты.
 [Контракт, RED→GREEN и evidence](U06_FORM_FIELD_HELP.md).
 
-U06-h semantic contribution help — **DONE в owner-ветке, ожидает локальной интеграции**, полный U06 —
-**IN_PROGRESS**. Source `a2fe8c84c70119c3708145587e3be8ee06015aab` добавляет immutable
-`UiLocalizedText` metadata для action/route/section contributions через совместимые overloads.
+U06-h semantic contribution help — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
+Source `a2fe8c84c70119c3708145587e3be8ee06015aab`, общий локальный merge
+`7c3f001cb324dc4dfbd524efbfbcdf6e920a05cb` добавляют immutable `UiLocalizedText` metadata для
+action/route/section contributions через совместимые overloads.
 Composer разрешает help по captured locale и передаёт её contributed button в общий U06-e overlay;
 activation, registration ownership, layout и renderer не меняются. UI `run-1xt4uyt1` — **PASS
 1,127/1,127**; exact C `run-4yonlzfc` — **PASS 1,930 .NET + 503 Python**; P
