@@ -464,9 +464,9 @@ input-routing gate. Focused Runtime `run-zxgg_4x6` — **PASS 701/701**; exact C
 consumer/native matrix и Flow/CA adoption остаются открыты.
 [Контракт, RED→GREEN и evidence](U06_TOOLTIP_DELAY.md).
 
-U06-k semantic validation error help — **DONE в локальной owner-ветке; ожидает локальную
-интеграцию**, полный U06 — **IN_PROGRESS**. Source
-`338e1c0111e177148e80b23ca32b4f8e1af58e93` заменяет static field help текущей внешней или typed
+U06-k semantic validation error help — **DONE в локальном `develop`**, полный U06 —
+**IN_PROGRESS**. Source `338e1c0111e177148e80b23ca32b4f8e1af58e93`, общий локальный merge
+`f1bf63e38dbff0da91358a0a54996de89e83f98e` заменяют static field help текущей внешней или typed
 validation error на каждом focusable control, сохраняя field semantic ID. Inline error остаётся в
 форме и публикуется как accessibility `Alert`; tooltip description использует raw error, а локально
 созданный inline alert сохраняет `Label: error`. Оба presentation используют theme `Text.Danger`,
