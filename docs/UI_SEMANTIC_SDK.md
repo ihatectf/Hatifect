@@ -116,6 +116,16 @@ Runtime resolves that metadata with the locale captured for scene composition an
 contributed button through the existing tooltip overlay. The original descriptor constructors remain
 valid and produce no tooltip.
 
+Collection sources can project item help with the final tooltip selector overload of
+`UiCollectionSource<T>`, `UiCollectionState<T>`, `UiSelectableCollectionState<T>`,
+`UiPublication.Collection<T>`, or `UiPublication.SelectableCollection<T>`. Publication captures the
+localized value in the immutable item snapshot. A tooltip-only edit advances both the collection and
+item content revisions; a newly allocated `UiLocalizedText` with the same translations does not.
+Runtime resolves and measures help only for the materialized window. Each active collection keeps a
+bounded 1,024-entry LRU measurement cache, and the layout snapshot indexes materialized rows by
+stable ID for constant-time hover, focus, accessibility and frame lookup. Selectable rows expose help
+through hover or focus. Read-only `Browse` rows support hover help without becoming actionable.
+
 Pointer hover takes precedence over keyboard/controller focus; at most one tooltip is visible. The
 overlay uses `Surface.Popup`, `Text.Primary`, `Typography.Body`, `Space.S`, `Radius.S`, and
 `Elevation.High` from the active theme. Tooltip text is measured during layout, while selecting an
@@ -125,8 +135,8 @@ main tree's desired size or focus order.
 
 The target keeps its accessible name and exposes tooltip text separately as its accessibility
 description. Unknown targets, fields whose containing form has not been declared, and duplicate
-declarations are rejected before `Build`. Per-row collection help, display delay, and native visual
-acceptance remain separate work.
+declarations are rejected before `Build`. Collection item labels likewise remain the accessible name,
+with item help in the description. Display delay and native visual acceptance remain separate work.
 
 ## Collection density
 
