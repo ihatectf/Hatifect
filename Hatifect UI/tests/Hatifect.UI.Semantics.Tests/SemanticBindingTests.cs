@@ -195,6 +195,31 @@ Item@Selected
     }
 
     [Fact]
+    public void InputPromptVisualPolicyUsesTypedThemeTokens()
+    {
+        UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();
+        const string source = @"visual Prompts
+
+Item
+    prompt.foreground = Text.InputPrompt
+    prompt.typography = Typography.InputPrompt
+    prompt.spacing = Space.S
+";
+
+        UiCompilationResult result = new UiCompiler(catalog)
+            .Compile(source, Context(catalog), "Prompts#visual");
+
+        Assert.True(result.IsValid);
+        UiVisualDefinition definition = Assert.IsType<UiVisualDefinition>(result.Definition);
+        Assert.Contains(definition.Recipes, recipe =>
+            recipe.Property.Name == "prompt.foreground" && recipe.Value.Type == UiSemanticType.ColorToken);
+        Assert.Contains(definition.Recipes, recipe =>
+            recipe.Property.Name == "prompt.typography" && recipe.Value.Type == UiSemanticType.TypographyToken);
+        Assert.Contains(definition.Recipes, recipe =>
+            recipe.Property.Name == "prompt.spacing" && recipe.Value.Type == UiSemanticType.SpaceToken);
+    }
+
+    [Fact]
     public void OpacityOutsideUnitRangeIsRejected()
     {
         UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();

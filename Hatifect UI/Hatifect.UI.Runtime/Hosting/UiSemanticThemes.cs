@@ -36,6 +36,7 @@ internal static class UiSemanticThemes
             .Set(UiThemeTokens.TextSecondary, foreground)
             .Set(UiThemeTokens.TextMuted, UiColor.FromRgb(contrast ? 0xCCCCCCu : 0x59554Fu))
             .Set(UiThemeTokens.TextAccent, accent)
+            .Set(UiThemeTokens.TextInputPrompt, accent)
             .Set(UiThemeTokens.Accent, accent)
             .Set(UiThemeTokens.BorderFocus, new UiBorder(accent, 2))
             .Set(UiThemeTokens.BorderStrong, new UiBorder(foreground, 1))

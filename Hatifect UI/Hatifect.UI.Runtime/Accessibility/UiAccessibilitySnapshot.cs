@@ -43,7 +43,8 @@ internal sealed class UiAccessibilityNodeSnapshot
         UiRect clip,
         UiAccessibilityNodeSnapshot[] children,
         int? positionInSet = null,
-        int? setSize = null)
+        int? setSize = null,
+        string? shortcut = null)
     {
         Id = id;
         Role = role;
@@ -57,6 +58,7 @@ internal sealed class UiAccessibilityNodeSnapshot
         Children = Array.AsReadOnly(children ?? throw new ArgumentNullException(nameof(children)));
         PositionInSet = positionInSet;
         SetSize = setSize;
+        Shortcut = shortcut;
     }
 
     public UiSymbolId Id { get; }
@@ -71,6 +73,7 @@ internal sealed class UiAccessibilityNodeSnapshot
     public IReadOnlyList<UiAccessibilityNodeSnapshot> Children { get; }
     public int? PositionInSet { get; }
     public int? SetSize { get; }
+    public string? Shortcut { get; }
 }
 
 internal sealed record UiAccessibilitySnapshot(
@@ -165,7 +168,8 @@ internal sealed class UiAccessibilitySnapshotBuilder
             selected: node is UiRouteButtonSceneNode { IsCurrent: true },
             entry.Bounds,
             entry.Clip,
-            children);
+            children,
+            shortcut: UiSceneLayoutEngine.InputPrompt(node)?.Label);
     }
 
     private static bool IsExposed(UiSceneNode node)

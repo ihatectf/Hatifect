@@ -42,6 +42,9 @@ internal sealed class UiFoundationVisuals
                 values.Add(Token("radius", UiThemeTokens.RadiusM.Id, UiSemanticType.RadiusToken));
                 values.Add(Token("padding", UiThemeTokens.SpaceM.Id, UiSemanticType.SpaceToken));
                 values.Add(Token("typography", UiThemeTokens.TypographyLabel.Id, UiSemanticType.TypographyToken));
+                values.Add(Token("prompt.foreground", UiThemeTokens.TextInputPrompt.Id, UiSemanticType.ColorToken));
+                values.Add(Token("prompt.typography", UiThemeTokens.TypographyInputPrompt.Id, UiSemanticType.TypographyToken));
+                values.Add(Token("prompt.spacing", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
                 values.Add(Token("motion", UiThemeTokens.MotionFast.Id, UiSemanticType.MotionToken));
                 values.Add(Token("opacity", Contains(interactionStates, UiVisualStates.Disabled)
                     ? UiThemeTokens.OpacityDisabled.Id : UiThemeTokens.OpacityVisible.Id, UiSemanticType.Opacity));
