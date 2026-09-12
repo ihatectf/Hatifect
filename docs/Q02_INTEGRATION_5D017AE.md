@@ -31,6 +31,11 @@ cargo-reselection feedback, U06 shared status/input-prompt framework, typed Flow
 
 Первые два prepare до этого checkpoint (`run-2rre1_h8`, `run-h4ork_te`) относились к более раннему
 `d11e8f0` и остановились на внешнем NuGet repository-signature `NU1301`; они не являются evidence
-текущего состава. Следующий шаг — commit этого отчёта, exact prepare нового неизменного HEAD, затем
-normalized/original runtime matrix. Physical `flow.ui.player.input` требует отдельного процесса с
-`CGPreflightPostEventAccess()=true`; существующий TCC-block не заменяется автоматизированным вводом.
+текущего состава. После фиксации отчёта docs-only candidate `046267e` сохранил тот же код. Его exact
+prepare `run-r7i4ztb4` подтвердил release source contract, metadata и UI packages, но снова получил
+`NU1301` для CA на restore до build; результат **BLOCKED**, runtime deployment не принят.
+
+Следующий шаг — повторить canonical prepare на неизменном `046267e`, когда repository-signature
+endpoint доступен, затем выполнить normalized/original runtime matrix. Physical
+`flow.ui.player.input` требует отдельного процесса с `CGPreflightPostEventAccess()=true`;
+существующий TCC-block не заменяется автоматизированным вводом.

@@ -52,7 +52,7 @@ Runtime evidence still requires a fresh prepare and scenario matrix on the next 
 
 ## Next dependency-ready work
 
-1. Run exact prepare for the frozen local composition through `65c5726` plus the U06 status integration; common G/P are complete, but do not transfer the prior `c5174a8` Flow DLL runtime evidence to it.
+1. Retry canonical exact prepare on unchanged local candidate `046267e` when the NuGet repository-signature endpoint is available; `run-r7i4ztb4` is BLOCKED at restore, while common G/P are complete.
 2. After macOS grants Accessibility to the Python runtime, run `flow.ui.player.input` on that fixed composition and require the complete phase/action-result capture set through final `Delivered`.
 3. Complete exact-candidate EN/RU, scale, controller, CA coexistence and installed-archive acceptance; hand exact Flow assets, dependencies and evidence to GQ.
 
