@@ -425,6 +425,16 @@ baseline v1 и 21 semantic-contract tests — **PASS**. Collection-item help, co
 delay policy и consumer/native матрица остаются открыты.
 [Контракт, RED→GREEN и evidence](U06_FORM_FIELD_HELP.md).
 
+U06-h semantic contribution help — **DONE в owner-ветке, ожидает локальной интеграции**, полный U06 —
+**IN_PROGRESS**. Source `a2fe8c84c70119c3708145587e3be8ee06015aab` добавляет immutable
+`UiLocalizedText` metadata для action/route/section contributions через совместимые overloads.
+Composer разрешает help по captured locale и передаёт её contributed button в общий U06-e overlay;
+activation, registration ownership, layout и renderer не меняются. UI `run-1xt4uyt1` — **PASS
+1,127/1,127**; exact C `run-4yonlzfc` — **PASS 1,930 .NET + 503 Python**; P
+`hatifect-ui-ca-isolated.f79c_0ld` — **PASS** 8 packages/47 files/102 CA tests. Public API baseline v1
+и 21 semantic-contract tests — **PASS**. Collection-item help, delay policy и consumer/native
+матрица остаются открыты. [Контракт, RED→GREEN и evidence](U06_CONTRIBUTION_HELP.md).
+
 **U07.** Построить `UiQuick` recipes для alert/confirm/select/простого form/notification и `UiView` для небольшого декларативного layout с typed bindings/actions. Синтаксис может выводить отношения только когда вывод однозначен; явное описание остаётся доступным. Оба входа компилируются в тот же IR, что полная Experience. Выход: примеры простого диалога, формы и небольшого custom screen; одно и то же действие имеет одинаковый lifecycle во всех формах авторства. Сравнить объём и понятность authoring на реальных задачах, затем закрепить API.
 
 **U08.** После D02 добавить `UiExact`: explicit geometry/layers/canvas и pixel scaling внутри framework. Определить measure/arrange, coordinate transform, clipping, render/hitbox agreement, focus order, semantic labels и fallback для compact/controller/accessibility. Выход: точное представление использует общие lifecycle/resources/input, а неподдерживаемое окружение получает явно заданное поведение. Не публиковать exact drawing как способ обходить hit testing или доступность.
