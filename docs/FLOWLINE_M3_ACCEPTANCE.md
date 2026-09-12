@@ -9,6 +9,13 @@ Goal: ordinary single-player entry, two supported chests/stations, UI-authored r
 - F18 ordinary entry was integrated by GQ as `d03b736` over Window `da0061d`; the frozen seven-file source manifest is `artifacts/f13/f18-entry-candidate.json`: seven Flow production/test files with hashes. Scoped Flow platform PASS963 (771 Flow +192 Stardew), actual eight new/strengthened cases and seven source hashes recorded in f18-entry-scoped-audit.json. Full C/G and native ordinary-entry evidence remain pending. The Window prerequisite is integrated; common validation and hosted observation are owned by GQ/UI.
 - Current local GQ checkpoint: `c5174a8c4a9bf1f3a28d7420bb11d16705a6f96d`. G PASS 2 329 .NET + 503 Python; applicable P PASS101; prepare PASS. Normalized production Window `flow.ui.player` PASS11 and the original chest matrix PASS116 plus two budget assertions. Exact physical-input request `521bde15-3a64-4deb-abfd-0040dc53fed0` stopped before its first semantic step because macOS Accessibility preflight was false. Exact IDs and evidence limits are recorded in [Q02_RUNTIME_C5174A8.md](Q02_RUNTIME_C5174A8.md).
 - Post-checkpoint local composition includes typed Send owner `ff4562d` as integration `1a83a2b` and typed Network owner `ffe59ff` as integration `aca70b0`. Its exact Stardew adapter suite has 254 PASS and its architecture/public API checks pass. The `c5174a8` common/runtime evidence remains historical and is not promoted to the changed Flow DLL; new G/prepare/runtime evidence is pending.
+- Exact local candidate `57c9ef43883d84a916e50ce38e729168f397b893` passed canonical prepare and
+  23 runtime scenarios with 255/255 checks: production Window, original chest/recovery/save-switch/
+  PERF matrix, EN/RU×75/100/125/150 profiles, controller profile and real CA coexistence. Actual
+  PNGs from every profile were inspected.
+  Its 21-file/14-DLL archive and isolated installation match byte-for-byte. Physical input request
+  `76906d54-c4a3-4e22-a089-2f9d1dc25d85` is BLOCKED before its first step by missing macOS
+  Accessibility for Python. Exact evidence: [Q02_RUNTIME_57C9EF4.md](Q02_RUNTIME_57C9EF4.md).
 
 ## Requirement-to-evidence matrix
 
@@ -16,24 +23,24 @@ Goal: ordinary single-player entry, two supported chests/stations, UI-authored r
 | --- | --- | --- |
 | F13 visible create/dispatch/cancel/retry results | Common actions PASS11; all13 composed inspected by GQ; Flow independently inspected created/no-route Result PNG | PASS for the EN fake fixture layer; fresh final-candidate binding remains |
 | F13 repeat/stale/retired commands have no extra effect | Same native report: reentry1 rejected, effects1→1; stale/retired assertions PASS | PASS bounded normalized-action fixture; physical-repeat path still needed |
-| F13 localized feedback | Isolation EN/RU state/cargo/availability captures; actions Result currently EN | INCOMPLETE: action feedback EN/RU on final candidate |
-| F13 scale75/100/125/150 with retained sources/actions | Isolation PASS15/19; source/action/publication identity and stable-native-owner guard; five scale/controller frames viewed by Flow | PASS bounded fake Parcel matrix; ordinary Network matrix remains |
+| F13 localized feedback | Exact `57c9ef4` production Window profiles contain EN/RU action and Delivered Result captures | PASS normalized final-candidate path; physical input remains separate |
+| F13 scale75/100/125/150 with retained sources/actions | Exact `57c9ef4` has eight EN/RU profiles, 13 checks each; actual delivered PNG inspected for each profile and extra RU75/RU150 phase captures inspected | PASS ordinary normalized Network matrix and controller profile; physical events remain separate |
 | F13 reopen and A→B→A isolation | Isolation3loads2titles6views19observations; old subscriptions/actions retired;3exact settled restorations | PASS fake UI/lifecycle layer |
-| Physical keyboard/pointer/controller input | Existing actions use normalized Tab/Enter; controller capture selects profile | INCOMPLETE: real native events/focus/action results; normalized input is insufficient |
-| Ordinary opening without console or pre-existing menu | ModEntry.PlayerInterface uses configurable world input and existing CreateSurface(Window) | Managed compile/scoped PASS; native normal-entry proof pending |
+| Physical keyboard/pointer/controller input | Exact controller profile PASS15; existing actions use normalized Tab/Enter | INCOMPLETE: real native keyboard/pointer events, focus and action results; normalized input is insufficient |
+| Ordinary opening without console or pre-existing menu | Exact normalized `flow.ui.player` uses the production Window factory and passes 11 checks | Production Window behavior PASS; physical K event remains blocked by OS Accessibility |
 | Supported current chest selection | PreparePlayerTarget clears prior token, checks Active and supported chest; rechecks physical identity in CaptureTarget | Managed PASS: stale/unsupported/replaced/recovery tests; actual input admission still pending |
-| Two stations and directed route from clean allowed state | Existing typed RegisterStation/AddLink; new clean-network game-reference test uses these commands | Managed typed-command scenario PASS; actual UI registration/link/save reopening needed |
+| Two stations and directed route from clean allowed state | Exact `flow.ui.player` creates two stations and one directed route through production Window actions and reopens the saved result | PASS normalized current candidate; physical event binding remains |
 | Route editing policy | Rename keeps identity; rebind refuses queued/extraction-uncertain origin, moves no items; RemoveLink preserves admitted in-flight work; station deletion not exposed | Existing owner behavior; expose limitations and verify final UI actions |
-| Choose source/quantity and send real supported items | Existing fingerprint/quantity command and physical adapter; `35cbcb0` clears UI selection when refreshed slot/fingerprint changes and requires explicit selection before retry; clean-network test partitions8→5+3 with full XML | Managed PASS for the typed-command and selection/revalidation scenarios; final native UI inventories must prove actual path |
-| No loss/duplication and correct custody | Existing F14–F17/F20 base; new test checks parcel/cargo identity, source/destination,8→5+3 and repeat refusals | Keep accepted base; new UI path and final runtime DLL checks required |
+| Choose source/quantity and send real supported items | Exact normalized Window sends whole8 and partial5 from a real13 stack; cargo reselection rejects changed slot/fingerprint until explicitly selected again | PASS normalized current candidate; physical event binding remains |
+| No loss/duplication and correct custody | Exact Window and chest matrix check identities, actual source/destination inventories, save/reload and total quantity | PASS current candidate, including crash/unsaved/recovery variants |
 | Useful source/cargo/route/admission errors | Typed route reasons; `acb1279` adds exact EN/RU persistent-limit results; `1a83a2b` adds typed Send provider/state/pending results; `aca70b0` adds typed Network provider/topology/invalid/rebind-pending results, all with no rejected mutation | Managed owner-layer PASS for named route, resource, Send and Network failures; current exact native EN/RU visibility remains pending, while unexpected host callback faults stay diagnostic failures |
-| Permitted cancel/retry/return/reconcile | Existing parcel availability/recovery rules and prior provider failure matrix | Final UI happy/refusal/recovery scenario pending; unknown physical outcome must not replay |
-| Save/restart before and after delivery | Exact `c5174a8` chest crash/save matrix and normalized Window path restore Reserved/Delivered aggregates over real Chest inventories | PASS on current candidate; physical-input binding to the same path remains |
-| Save switching preserves separate worlds | Exact `c5174a8` isolation PASS12; cleanup removed both request-owned working copies | PASS current original matrix; final installed-candidate regression remains |
-| UI framework ownership | Existing public Host API; Flow supplies semantics only; UI implements Window overflow | Source boundary respected; G/P/prepare and production Window PASS on `c5174a8` |
-| CA coexistence | Applicable package isolation PASS101 on unchanged UI source, eight packages and 47 projected files | Exact in-game coexistence on the final installed candidate still required |
-| Player guide and limitations | FLOWLINE_PLAYER_GUIDE.md covers opening/stations/routes/items/pause/recovery/persistent limits and is synchronized with local `aca70b0` | Source guide updated; installed/runtime behavior and final GQ handoff remain pending |
-| Delivery to GQ | Exact file manifests, source reviews and raw evidence paths sent directly under user authorization | F13/F18/F19 integrated locally through `aca70b0`; current Flow changes need new common/runtime evidence before final native/release acceptance |
+| Permitted cancel/retry/return/reconcile | Exact cancellation/return/crash-after-return and refusal/retry scenarios preserve custody and receipts | PASS domain/game adapter matrix; physical UI invocation remains part of input acceptance |
+| Save/restart before and after delivery | Exact `57c9ef4` chest crash/save matrix and normalized Window path restore Reserved/Delivered aggregates over real Chest inventories | PASS on exact candidate; physical-input binding to the same path remains |
+| Save switching preserves separate worlds | Exact `57c9ef4` isolation request `b5c684d9…` PASS12; request-owned settings restored | PASS current candidate |
+| UI framework ownership | Existing public Host API; Flow supplies semantics only; UI implements Window overflow | Source boundary respected; G/P/prepare and production Window PASS on `57c9ef4` |
+| CA coexistence | Exact `57c9ef4` production overlay with real Chests Anywhere PASS5 plus isolated package consumer PASS102 | PASS current candidate: open/views/handoff/restoration/lifecycle |
+| Player guide and limitations | FLOWLINE_PLAYER_GUIDE.md covers operation/recovery; Q02_ALPHA_INSTALL.md records exact versions, layout, checksum, first run and limits | PASS documentation for current local candidate |
+| Delivery to GQ | Exact file manifests, source reviews, runtime IDs, archive checksum and install guide are local | Integrated through `57c9ef4`; physical input and a later single-command release retry remain before final Q02 acceptance |
 
 ## Required validation
 
@@ -45,16 +52,20 @@ Exact local runtime checkpoint [e9cfffc](Q02_RUNTIME_E9CFFFC.md) proves clean pa
 
 The code-equivalent local integration `3a34cbb` subsequently passed exact Flow platform validation `run-7pzafv_n` with 797 Core/Persistence and 254 Stardew adapter tests. Common G `run-jaeobkd2` passed 2,334 .NET and 503 Python tests with no failures or skips. Later commits through `b890832` changed documentation only; these static results apply to the unchanged code, while package/runtime evidence remains bound to its recorded exact source.
 
-Latest local checkpoint [5d017ae](Q02_INTEGRATION_5D017AE.md) includes U06 shared status/input prompts,
-typed Flow/CA status consumers and F19 cargo reselection. Exact Flow platform is PASS 803 + 254,
-common G is PASS 2,366 .NET + 503 Python, CA platform is PASS 102 and isolated UI→CA P is PASS.
-Runtime evidence still requires a fresh prepare and scenario matrix on the next frozen docs HEAD.
+Latest exact local candidate [57c9ef4](Q02_RUNTIME_57C9EF4.md) preserves the code of integration
+[5d017ae](Q02_INTEGRATION_5D017AE.md). Exact Flow platform is PASS 803 + 254, common G is
+PASS 2,366 .NET + 503 Python, CA platform is PASS 102 and isolated UI→CA P is PASS. Canonical
+prepare, 23 runtime scenarios/255 checks, eight EN/RU scale profiles, controller/CA and isolated archive
+installation now pass on that candidate.
 
 ## Next dependency-ready work
 
-1. Retry canonical exact prepare on unchanged local candidate `046267e` when the NuGet repository-signature endpoint is available; `run-r7i4ztb4` is BLOCKED at restore, while common G/P are complete.
-2. After macOS grants Accessibility to the Python runtime, run `flow.ui.player.input` on that fixed composition and require the complete phase/action-result capture set through final `Delivered`.
-3. Complete exact-candidate EN/RU, scale, controller, CA coexistence and installed-archive acceptance; hand exact Flow assets, dependencies and evidence to GQ.
+1. After macOS grants Accessibility to the Python runtime, run `flow.ui.player.input` on the
+   unchanged fixed composition and require the complete phase/action-result capture set through
+   final `Delivered`.
+2. When NuGet DNS is available, repeat the single-command `release.sh` gate. The deterministic
+   assemble/archive/deploy stages and exact install bytes already pass; failed restores
+   `run-6tt9wtlk` and `run-2vsbdv4c` must not be reported as PASS.
 
 F13/F18/F19 remain IN_PROGRESS until their original criteria are proven. Q02 overall belongs to GQ.
 

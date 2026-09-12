@@ -35,7 +35,8 @@ cargo-reselection feedback, U06 shared status/input-prompt framework, typed Flow
 prepare `run-r7i4ztb4` подтвердил release source contract, metadata и UI packages, но снова получил
 `NU1301` для CA на restore до build; результат **BLOCKED**, runtime deployment не принят.
 
-Следующий шаг — повторить canonical prepare на неизменном `046267e`, когда repository-signature
-endpoint доступен, затем выполнить normalized/original runtime matrix. Physical
-`flow.ui.player.input` требует отдельного процесса с `CGPreflightPostEventAccess()=true`;
-существующий TCC-block не заменяется автоматизированным вводом.
+Этот checkpoint продолжен docs-only source `57c9ef4`: canonical prepare, normalized/original
+runtime matrix и installable archive теперь проверены в
+[Q02_RUNTIME_57C9EF4.md](Q02_RUNTIME_57C9EF4.md). Physical `flow.ui.player.input` по-прежнему
+требует процесса с `CGPreflightPostEventAccess()=true`; существующий TCC-block не заменяется
+автоматизированным вводом.

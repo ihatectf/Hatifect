@@ -8,6 +8,15 @@ Roadmap утверждена пользователем для последов�
 
 ## Приоритет первой альфы M3/Q02 — 2026-09-08
 
+Exact локальный candidate `57c9ef4`: canonical prepare **PASS**, исходная chest/recovery/save-switch/
+PERF matrix, production Window EN/RU×75/100/125/150, controller profile и настоящая CA coexistence —
+**23 PASS scenarios, 255/255 checks**.
+Проверены actual PNG всех восьми профилей, exact 21-file/14-DLL архив, SHA-256 и побайтно равная
+изолированная установка. Physical `flow.ui.player.input` `76906d54…` — **BLOCKED** до первого шага,
+поскольку macOS не выдал post-event Accessibility Python runtime. Это оставляет Q02
+**IN_PROGRESS**. [Runtime/archive evidence и следующий шаг](Q02_RUNTIME_57C9EF4.md),
+[инструкция установки](Q02_ALPHA_INSTALL.md).
+
 F13 RU75 diagnostic fix: после PASS G2168/P101/prepare14 и EN75(13checks) на `d881782` RU75 `e5751f10` обнаружил nested-clip первого Result. Перенесены точные два source-файла `6fdb045`: local-origin layout accumulation и проверяемый bounded maximum root offset; Reveal/Intersect и критерии видимости неизменны. Final affected78PASS проверены по actualTRX/SHA; прежние1049 относятся к предыдущему варианту. Общий pre-existing float associativity gap остаётся открытым, полного reviewPASS нет. [Причина, проверки и остаточный риск](UI_FRACTIONAL_LAYOUT.md). Следующий шаг — common G/P/prepare и свежий RU75; Q02/F13 не завершены.
 
 Интеграция F13 visual profiles поверх U05 `83703ee`: восемь exact сценариев полного Network Window EN/RU×75/100/125/150, каждый сохраняет исходные11 checks и добавляет применение/восстановление профиля. Ordinary-input13 и прежние registry rows неизменны. Исправлен захват переходного original scale: обе leases ждут fresh settled native frame до записи настроек. Owner `run-ulqg9mb1` — 1020 PASS (771+249), tooling `run-jkdahian` — 393 PASS; root проверил actual outcomes,12 source SHA/preimages; UI повторный review PASS. Common G/P/prepare и восемь native rows — PENDING; normalized actions не доказывают физический ввод. Evidence: `artifacts/f13-root-common/flow-profiles-review/`. Следующий шаг: общий фиксированный кандидат, EN75 → RU75, затем остальные профили и исходная Q02.
