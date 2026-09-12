@@ -264,9 +264,22 @@ public sealed class UiPresentationPlanner
 
         UiPropertyAssignmentIr? explicitDensity = indexes.FindAssignment(element.Id, "density", host.Profile)
             ?? indexes.FindAssignment(element.Id, "density", profile: null);
-        UiSymbolId density = explicitDensity?.Value is UiSymbolValue densityValue
-            ? densityValue.Symbol
-            : defaultDensity.Id;
+        UiSymbolId density;
+        if (explicitDensity == null)
+        {
+            density = defaultDensity.Id;
+        }
+        else if (explicitDensity.Property.Id == densityProperty.Id &&
+                 explicitDensity.Value is UiSymbolValue densityValue &&
+                 densityValue.Type == UiSemanticType.EnumValue)
+        {
+            density = densityValue.Symbol;
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                $"Collection element '{element.Id}' resolved density from an invalid typed catalog assignment.");
+        }
         if (density != defaultDensity.Id && density != compactDensity.Id && density != comfortableDensity.Id)
             throw new InvalidOperationException(
                 $"Collection element '{element.Id}' resolved an unknown density catalog value '{density}'.");
