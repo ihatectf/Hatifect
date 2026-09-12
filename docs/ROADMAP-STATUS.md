@@ -1,5 +1,10 @@
 # Roadmap implementation evidence
 
+> Platform identity Hatifect: **IN_PROGRESS** на локальной integration branch от
+> `30646def`. Это отдельная migration, а не новый roadmap ID. До новой canonical/package/runtime
+> проверки прежние Q01/Q02 evidence относятся только к Hatifect binaries. Точные breaking и
+> compatibility решения перечислены в [HATIFECT_MIGRATION.md](HATIFECT_MIGRATION.md).
+
 ## U03-b active reload and U04 host environment checkpoint
 
 Implementation [`902d834`](https://github.com/ihatectf/Hatifect/commit/902d83488e501e971ddc24f0fcd852f9068899df), common merge `db09ede`, final alpha46 source [`0cd356f`](https://github.com/ihatectf/Hatifect/commit/0cd356f0fd252a0744fe6a871e46ba631193f876). Own exact-candidate C **PASS1528 .NET +366 Python**, G **PASS1801 +366**, P **PASS90**; all48 source/version hashes and actual outputs independently reviewed. Fresh native reload **PASS18** (`57ee8df6`) and environment **PASS25** (`26d7b6c8`) share fingerprint `a5eed91fe33c86c54c7cfda90d796f4aa40934c6da5edd1760ef606fae06bc06`; process0, options restored, all8 package/producer/game DLLs byte-identical. [Full commands, regressions, review and limitations](U03_U04_HOST_ACCEPTANCE.md) preserve earlier pre-version identities. Common publication is coordinated by GQ. Full U03/U04 remain **IN_PROGRESS**. Next UI slice: actual A→title→B save-switch with pending actions, then concrete typed consumer/messages and remaining environment/planner/consumer acceptance.

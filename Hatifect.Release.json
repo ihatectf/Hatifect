@@ -67,7 +67,7 @@
     },
     {
       "Key": "flowline",
-      "Name": "Hatifect Flow",
+      "Name": "Hatifect Flowline",
       "Path": "Hatifect Flow",
       "Project": "Hatifect Flow/Hatifect.Flow.csproj",
       "Manifest": "Hatifect Flow/manifest.json",
