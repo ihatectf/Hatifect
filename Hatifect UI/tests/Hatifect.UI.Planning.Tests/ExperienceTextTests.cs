@@ -140,6 +140,25 @@ public sealed class ExperienceTextTests
         Assert.Same(tooltip, experience.Tooltips[element]);
     }
 
+    [Fact]
+    public void DeclaredFormFieldsAreStableLocalizedTooltipTargets()
+    {
+        UiSymbolId fieldId = Id.Child("field/name");
+        using var form = new UiFormState(UiFormFields.Text(fieldId, "Name", string.Empty));
+        UiLocalizedText tooltip = Text("Enter a station name", "Введите название станции");
+        var builder = new UiExperienceBuilder(Id, "Station");
+
+        Assert.Throws<ArgumentException>(() => builder.Tooltip(fieldId, tooltip));
+
+        UiExperienceDefinition experience = builder
+            .Configure("Details", form)
+            .Tooltip(fieldId, tooltip)
+            .Build();
+
+        Assert.Same(tooltip, experience.Tooltips[fieldId]);
+        Assert.Equal("Введите название станции", experience.Tooltips[fieldId].Resolve("ru-RU"));
+    }
+
     [Theory]
     [InlineData("Search")]
     [InlineData("Filter")]

@@ -434,13 +434,21 @@ internal sealed class UiSceneComposer
                     children.Add(new UiButtonSceneNode(optionId, UiSceneRoles.Button,
                         Resolve(UiSceneRoles.Button, UiSceneNodeKind.Button, optionId, invocation, visual, interaction,
                             domainStates: selected ? new[] { UiVisualStates.Selected } : null), action,
-                        inputPrompt: ActivationPrompt(invocation)) { SemanticId = field.Id });
+                        inputPrompt: ActivationPrompt(invocation))
+                    {
+                        SemanticId = field.Id,
+                        Tooltip = Tooltip(invocation, field.Id, optionId, locale)
+                    });
                 }
             }
             else
                 children.Add(new UiTextInputSceneNode(inputId, inputRole,
                     Resolve(inputRole, UiSceneNodeKind.TextInput, inputId, invocation, visual, interaction),
-                    field.Label, field.Value, fieldValue) { SemanticId = field.Id });
+                    field.Label, field.Value, fieldValue)
+                {
+                    SemanticId = field.Id,
+                    Tooltip = Tooltip(invocation, field.Id, inputId, locale)
+                });
             string? error = field.Error ?? (field.ValidationMessage is { } validation ? (string?)reads.Read(validation).UntypedValue : null);
             if (!string.IsNullOrWhiteSpace(error))
             {

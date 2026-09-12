@@ -247,18 +247,35 @@ public sealed class UiExperienceBuilder
     }
 
     /// <summary>
-    /// Adds localized semantic help to an already declared presented element or action.
+    /// Adds localized semantic help to an already declared presented element, form field or action.
     /// Runtime owns whether that help is exposed as a pointer/focus tooltip and accessibility description.
     /// </summary>
     public UiExperienceBuilder Tooltip(UiSymbolId target, UiLocalizedText text)
     {
         EnsureMutable();
         ArgumentNullException.ThrowIfNull(text);
-        if (!_elements.Any(element => element.Id == target) && !_actions.Any(action => action.Id == target))
-            throw new ArgumentException("A presented element or action must be declared before its tooltip.", nameof(target));
+        if (!IsTooltipTarget(target))
+            throw new ArgumentException(
+                "A presented element, form field or action must be declared before its tooltip.",
+                nameof(target));
         if (!_tooltips.TryAdd(target, text))
             throw new InvalidOperationException($"Target '{target}' already has a tooltip.");
         return this;
+    }
+
+    private bool IsTooltipTarget(UiSymbolId target)
+    {
+        foreach (UiSemanticElementDefinition element in _elements)
+        {
+            if (element.Id == target) return true;
+            if (element.Source is not IUiSemanticFormSource form) continue;
+            IReadOnlyList<UiSemanticFormField> fields = form.Fields;
+            for (int index = 0; index < fields.Count; index++)
+                if (fields[index].Id == target) return true;
+        }
+        for (int index = 0; index < _actions.Count; index++)
+            if (_actions[index].Id == target) return true;
+        return false;
     }
 
     /// <summary>

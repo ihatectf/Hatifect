@@ -170,6 +170,68 @@ public sealed class TooltipTests
         Assert.Contains(Assert.Single(Nodes(after.Root).OfType<UiButtonSceneNode>()).Id, diff.ChangedNodes);
     }
 
+    [Fact]
+    public void FormFieldHelpUsesFocusedInputAndAccessibilityDescription()
+    {
+        UiSymbolId id = new("Hatifect.Tests", "tooltip/form/text");
+        UiSymbolId fieldId = id.Child("field/name");
+        using var form = new UiFormState(UiFormFields.Text(fieldId, "Name", string.Empty));
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Station")
+            .Configure("Details", form)
+            .Tooltip(fieldId, Localized("Enter a station name", "Введите название станции"))
+            .Build();
+        UiTheme theme = UiThemePresets.Dark();
+        UiScene scene = Scene(experience, theme, UiInputMode.Keyboard, "ru-RU");
+        var runtime = new UiHostRuntimeSession(scene, Viewport, new Platform());
+        UiTextInputSceneNode input = Assert.Single(Nodes(scene.Root).OfType<UiTextInputSceneNode>());
+        long layouts = runtime.Performance.LayoutBuilds;
+
+        Assert.True(runtime.Interactions.MoveFocus(UiNavigationDirection.Next).Consumed);
+        runtime.RefreshInteractionVisuals();
+
+        Assert.Equal(input.Id, runtime.Interactions.Snapshot.Focused);
+        Assert.Equal(fieldId, input.SemanticId);
+        Assert.NotNull(input.Tooltip);
+        Assert.Single(runtime.Frame.Primitives.OfType<UiTextPrimitive>(),
+            text => text.Node == input.Tooltip!.Id && text.Text == "Введите название станции");
+        UiAccessibilityNodeSnapshot accessible = Assert.Single(
+            Accessibility(runtime.Accessibility.Root), node => node.Id == input.Id);
+        Assert.Equal("Name", accessible.Name);
+        Assert.Equal("Введите название станции", accessible.Description);
+        Assert.Equal(layouts, runtime.Performance.LayoutBuilds);
+    }
+
+    [Fact]
+    public void ChoiceFieldHelpProjectsToEveryFocusableOptionAndShowsOnlyTheFocusedOne()
+    {
+        UiSymbolId id = new("Hatifect.Tests", "tooltip/form/choice");
+        UiSymbolId fieldId = id.Child("field/enabled");
+        using var form = new UiFormState(UiFormFields.Toggle(fieldId, "Enabled", true));
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Station")
+            .Configure("Details", form)
+            .Tooltip(fieldId, Localized("Choose whether the station is enabled", "Выберите состояние станции"))
+            .Build();
+        UiTheme theme = UiThemePresets.Dark();
+        UiScene scene = Scene(experience, theme, UiInputMode.Controller, "en");
+        var runtime = new UiHostRuntimeSession(scene, Viewport, new Platform());
+        UiButtonSceneNode[] options = Nodes(scene.Root).OfType<UiButtonSceneNode>().ToArray();
+
+        Assert.Equal(2, options.Length);
+        Assert.All(options, option =>
+        {
+            Assert.Equal(fieldId, option.SemanticId);
+            Assert.Equal("Choose whether the station is enabled", option.Tooltip?.Text);
+        });
+        Assert.True(runtime.Interactions.MoveFocus(UiNavigationDirection.Next).Consumed);
+        runtime.RefreshInteractionVisuals();
+
+        UiButtonSceneNode focused = Assert.Single(options, option => option.Id == runtime.Interactions.Snapshot.Focused);
+        Assert.Single(runtime.Frame.Primitives.OfType<UiTextPrimitive>(),
+            text => text.Node == focused.Tooltip!.Id && text.Text == "Choose whether the station is enabled");
+        Assert.DoesNotContain(runtime.Frame.Primitives.OfType<UiTextPrimitive>(),
+            text => options.Any(option => option.Id != focused.Id && text.Node == option.Tooltip!.Id));
+    }
+
     private static UiExperienceDefinition Experience(UiSymbolId id, UiSymbolId actionId, string? tooltip)
     {
         var builder = new UiExperienceBuilder(id, "Shipment")
