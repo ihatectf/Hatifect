@@ -9,15 +9,19 @@ namespace Hatifect.UI.Stardew;
 internal sealed class UiBoundedCaptureHistory<T>
 {
     private readonly int _capacity;
+    private readonly int _requiredReservation;
     private readonly List<T> _values;
     private readonly List<string?> _requiredKeys;
     private readonly HashSet<string> _retainedRequiredKeys = new(StringComparer.Ordinal);
     private int _nextSequence;
 
-    internal UiBoundedCaptureHistory(int capacity)
+    internal UiBoundedCaptureHistory(int capacity, int requiredReservation)
     {
         if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
+        if (requiredReservation < 0 || requiredReservation > capacity)
+            throw new ArgumentOutOfRangeException(nameof(requiredReservation));
         _capacity = capacity;
+        _requiredReservation = requiredReservation;
         _values = new List<T>(capacity);
         _requiredKeys = new List<string?>(capacity);
     }
@@ -30,6 +34,12 @@ internal sealed class UiBoundedCaptureHistory<T>
         ArgumentNullException.ThrowIfNull(create);
         if (requiredKey is { Length: 0 }) throw new ArgumentException("A required capture key cannot be empty.", nameof(requiredKey));
         if (requiredKey is not null && _retainedRequiredKeys.Contains(requiredKey)) return false;
+
+        if (requiredKey is null)
+        {
+            int outstandingReservation = Math.Max(0, _requiredReservation - _retainedRequiredKeys.Count);
+            if (_values.Count >= _capacity - outstandingReservation) return false;
+        }
 
         int eviction = -1;
         if (_values.Count == _capacity)

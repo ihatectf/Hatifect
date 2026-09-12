@@ -18,7 +18,12 @@ internal sealed class UiWindowInputObserver : IDisposable
 {
     private const string Scenario = "flow.ui.player.input";
     private const int MaximumCaptures = 128;
+    private const int RequiredCaptureReservation = 10;
     private const string ResultSemantic = "Hatifect.Flow/network/element/result";
+    private const string RegisterAction = "Hatifect.Flow/network/action/register";
+    private const string LinkAction = "Hatifect.Flow/network/action/link";
+    private const string SendAction = "Hatifect.Flow/network/action/send";
+    private const string SendQuantityAction = "Hatifect.Flow/network/action/send-quantity";
     private static readonly UiSymbolId TargetExperience = new("Hatifect.Flow", "network");
     private readonly IModHelper _helper;
     private readonly IMonitor _monitor;
@@ -27,7 +32,7 @@ internal sealed class UiWindowInputObserver : IDisposable
     private readonly string _expectedText;
     private readonly CompletedFrameComponent _component;
     private readonly UiWindowInputGate _gate;
-    private readonly UiBoundedCaptureHistory<WindowInputCapture> _captures = new(MaximumCaptures);
+    private readonly UiBoundedCaptureHistory<WindowInputCapture> _captures = new(MaximumCaptures, RequiredCaptureReservation);
     private UiSemanticStardewMenu? _menu;
     private long _epoch;
     private long _frame;
@@ -37,6 +42,8 @@ internal sealed class UiWindowInputObserver : IDisposable
     private (long Epoch, long Scene, long Frame)? _previousStamp, _capturedStamp;
     private long _observedScene = -1;
     private long? _pendingStableScene;
+    private string? _pendingActionId;
+    private long? _pendingActionScene;
     private object? _latest;
     private string? _failure;
     private bool _disposed;
@@ -82,6 +89,8 @@ internal sealed class UiWindowInputObserver : IDisposable
             _previousStamp = null;
             _observedScene = -1;
             _pendingStableScene = null;
+            _pendingActionId = null;
+            _pendingActionScene = null;
         }
         return menu;
     }
@@ -150,6 +159,11 @@ internal sealed class UiWindowInputObserver : IDisposable
                 && UiNativeInputGate.IsVisible(runtime.Accessibility.Root)
                 && Game1.graphics.GraphicsDevice.RenderTargetCount == 0;
             bool focusedVisible = focused is not null && focused.Enabled && FullyVisible(focused.Bounds, focused.Clip);
+            if (focusedVisible && IsObservedAction(focused!.ActionId) && focused.ActionId != _pendingActionId)
+            {
+                _pendingActionId = focused.ActionId;
+                _pendingActionScene = runtime.AcceptedVersion;
+            }
             bool pointerInside = focusedVisible && _pressPoint is { } press && _releasePoint is { } release
                 && focused!.Bounds.Contains(press) && focused.Clip.Contains(press)
                 && focused.Bounds.Contains(release) && focused.Clip.Contains(release);
@@ -173,11 +187,12 @@ internal sealed class UiWindowInputObserver : IDisposable
             if (visible && (completed is not null || stable && _capturedStamp != stamp))
             {
                 bool acceptedSceneChanged = _pendingStableScene == runtime.AcceptedVersion;
-                bool hasVisibleResult = acceptedSceneChanged && focused?.ActionId is not null
-                    && elements.Any(element => element.SemanticId == ResultSemantic
-                        && FullyVisible(element.Bounds, element.Clip));
-                string? requiredKey = RequiredCaptureKey(completed, _epoch, runtime.AcceptedVersion, acceptedSceneChanged,
-                    focused?.ActionId, hasVisibleResult);
+                bool hasVisibleResult = elements.Any(element => element.SemanticId == ResultSemantic
+                    && IsRequiredActionResult(acceptedSceneChanged, runtime.AcceptedVersion,
+                        _pendingActionScene, _pendingActionId, element.Value,
+                        FullyVisible(element.Bounds, element.Clip)));
+                string? requiredKey = RequiredCaptureKey(completed, _epoch, acceptedSceneChanged,
+                    _pendingActionId, hasVisibleResult);
                 bool captured = _captures.TryAdd(requiredKey, sequence =>
                 {
                     string name = "window-input-" + sequence.ToString("D3");
@@ -187,6 +202,11 @@ internal sealed class UiWindowInputObserver : IDisposable
                 }, DeleteCapture);
                 _capturedStamp = stamp;
                 if (acceptedSceneChanged) _pendingStableScene = null;
+                if (requiredKey?.StartsWith("action-result:", StringComparison.Ordinal) is true)
+                {
+                    _pendingActionId = null;
+                    _pendingActionScene = null;
+                }
                 if (captured) WriteProgress();
                 else if (_frame % 12 == 0) WriteProgress();
             }
@@ -255,13 +275,21 @@ internal sealed class UiWindowInputObserver : IDisposable
         File.Delete(Path.Combine(_directory, capture.UiLayerScreenshot));
     }
 
-    internal static string? RequiredCaptureKey(UiWindowInputPhase? completed, long epoch, long acceptedScene,
+    internal static string? RequiredCaptureKey(UiWindowInputPhase? completed, long epoch,
         bool acceptedSceneChanged, string? focusedActionId, bool hasVisibleResult)
     {
         if (completed is not null) return "phase:" + completed.Value;
         if (!acceptedSceneChanged || string.IsNullOrEmpty(focusedActionId) || !hasVisibleResult) return null;
-        return "action-result:" + epoch + ":" + acceptedScene + ":" + focusedActionId;
+        return "action-result:" + epoch + ":" + focusedActionId;
     }
+
+    internal static bool IsRequiredActionResult(bool acceptedSceneChanged, long acceptedScene,
+        long? focusedActionScene, string? focusedActionId, string? result, bool fullyVisible)
+        => acceptedSceneChanged && focusedActionScene != acceptedScene
+            && !string.IsNullOrEmpty(focusedActionId) && !string.IsNullOrEmpty(result) && fullyVisible;
+
+    private static bool IsObservedAction(string? actionId)
+        => actionId is RegisterAction or LinkAction or SendAction or SendQuantityAction;
 
     private static bool FullyVisible(UiRect bounds, UiRect clip)
         => bounds.Width > 0 && bounds.Height > 0 && clip.X <= bounds.X && clip.Y <= bounds.Y

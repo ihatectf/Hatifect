@@ -148,30 +148,50 @@ public sealed class WindowInputGateTests
     [Fact]
     public void BoundedHistoryRetainsProbeAndFiveActionResultsAfterOptionalFramesSaturateIt()
     {
-        var history = new UiBoundedCaptureHistory<string>(12);
+        var history = new UiBoundedCaptureHistory<string>(12, requiredReservation: 10);
         string[] required =
         {
             "phase:Ready", "phase:Pointer", "phase:Text", "phase:Backspace", "phase:Tab",
-            "action-result:1:20:register", "action-result:2:30:register", "action-result:3:40:link",
-            "action-result:3:50:send", "action-result:3:60:send-quantity"
+            "action-result:1:register", "action-result:2:register", "action-result:3:link",
+            "action-result:3:send", "action-result:3:send-quantity"
         };
         var evicted = new List<string>();
 
         foreach (string key in required.Take(5)) Assert.True(history.TryAdd(key, _ => key));
         for (int index = 0; index < 64; index++) history.TryAdd(null, _ => "optional:" + index);
-        foreach (string key in required.Skip(5)) Assert.True(history.TryAdd(key, _ => key, evicted.Add));
+        foreach (string key in required.Skip(5))
+        {
+            int before = history.Count;
+            Assert.True(history.TryAdd(key, _ => key, evicted.Add));
+            Assert.Equal(before + 1, history.Count);
+        }
         for (int index = 64; index < 256; index++) history.TryAdd(null, _ => "optional:" + index);
 
         Assert.Equal(12, history.Count);
         foreach (string key in required) Assert.Contains(key, history.Values);
-        Assert.Equal(new[] { "optional:0", "optional:1", "optional:2", "optional:3", "optional:4" }, evicted);
+        Assert.Empty(evicted);
         Assert.Equal(2, history.Values.Count(value => value.StartsWith("optional:", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void RequiredCaptureBeyondReservationEvictsOldestOptionalCapture()
+    {
+        var history = new UiBoundedCaptureHistory<string>(3, requiredReservation: 1);
+        Assert.True(history.TryAdd("phase:Ready", _ => "ready"));
+        Assert.True(history.TryAdd(null, _ => "optional:0"));
+        Assert.True(history.TryAdd(null, _ => "optional:1"));
+        string? evicted = null;
+
+        Assert.True(history.TryAdd("action-result:1:register", _ => "result", value => evicted = value));
+
+        Assert.Equal("optional:0", evicted);
+        Assert.Equal(new[] { "ready", "optional:1", "result" }, history.Values);
     }
 
     [Fact]
     public void DuplicateRequiredCaptureDoesNotConsumeCapacityOrInvokeFactory()
     {
-        var history = new UiBoundedCaptureHistory<string>(2);
+        var history = new UiBoundedCaptureHistory<string>(2, requiredReservation: 1);
         Assert.True(history.TryAdd("phase:Ready", _ => "ready"));
 
         Assert.False(history.TryAdd("phase:Ready", _ => throw new InvalidOperationException("duplicate factory invoked")));
@@ -182,7 +202,7 @@ public sealed class WindowInputGateTests
     [Fact]
     public void RequiredCaptureOverflowFailsWhenNoOptionalCaptureCanBeEvicted()
     {
-        var history = new UiBoundedCaptureHistory<string>(2);
+        var history = new UiBoundedCaptureHistory<string>(2, requiredReservation: 2);
         Assert.True(history.TryAdd("phase:Ready", _ => "ready"));
         Assert.True(history.TryAdd("phase:Pointer", _ => "pointer"));
 
@@ -197,12 +217,28 @@ public sealed class WindowInputGateTests
     public void CaptureKeyRequiresACompletedProbeOrNewVisibleActionResult()
     {
         Assert.Equal("phase:Ready", UiWindowInputObserver.RequiredCaptureKey(
-            UiWindowInputPhase.Ready, 7, 41, false, null, false));
-        Assert.Equal("action-result:7:41:Hatifect.Flow/network/action/link", UiWindowInputObserver.RequiredCaptureKey(
-            null, 7, 41, true, "Hatifect.Flow/network/action/link", true));
-        Assert.Null(UiWindowInputObserver.RequiredCaptureKey(null, 7, 41, false, "action", true));
-        Assert.Null(UiWindowInputObserver.RequiredCaptureKey(null, 7, 41, true, null, true));
-        Assert.Null(UiWindowInputObserver.RequiredCaptureKey(null, 7, 41, true, "action", false));
+            UiWindowInputPhase.Ready, 7, false, null, false));
+        Assert.Equal("action-result:7:Hatifect.Flow/network/action/register", UiWindowInputObserver.RequiredCaptureKey(
+            null, 7, true, "Hatifect.Flow/network/action/register", true));
+        Assert.Equal("action-result:8:Hatifect.Flow/network/action/register", UiWindowInputObserver.RequiredCaptureKey(
+            null, 8, true, "Hatifect.Flow/network/action/register", true));
+        Assert.Null(UiWindowInputObserver.RequiredCaptureKey(null, 7, false, "action", true));
+        Assert.Null(UiWindowInputObserver.RequiredCaptureKey(null, 7, true, null, true));
+        Assert.Null(UiWindowInputObserver.RequiredCaptureKey(null, 7, true, "action", false));
+    }
+
+    [Theory]
+    [InlineData(false, 42L, 41L, "action", "done", true, false)]
+    [InlineData(true, 42L, 42L, "action", "done", true, false)]
+    [InlineData(true, 42L, 41L, null, "done", true, false)]
+    [InlineData(true, 42L, 41L, "action", "", true, false)]
+    [InlineData(true, 42L, 41L, "action", "done", false, false)]
+    [InlineData(true, 42L, 41L, "action", "done", true, true)]
+    public void RequiredActionResultMustFollowTheFocusedActionPublication(
+        bool sceneChanged, long scene, long? actionScene, string? action, string? result, bool visible, bool expected)
+    {
+        Assert.Equal(expected, UiWindowInputObserver.IsRequiredActionResult(
+            sceneChanged, scene, actionScene, action, result, visible));
     }
 
     private static void Advance(UiWindowInputGate gate, ref long frame, UiWindowInputObservation value, UiWindowInputPhase phase)
