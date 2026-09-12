@@ -70,21 +70,25 @@ stable authoring aliases independently from displayed text.
 ## Input prompts
 
 Runtime adds the canonical activation prompt to action buttons, toggle/choice options, contributed
-actions and routes, and Terminal navigation. Consumers keep localized action and route labels free
-of device text. The accepted environment selects `Enter` for keyboard mode and `A` for controller
-mode; mouse-and-keyboard mode omits the prompt to keep pointer-first surfaces quiet. A legacy
-environment-free Controller profile also uses `A`.
+actions and routes, Terminal navigation, and every visible row of a selectable collection. Read-only
+`Browse` collections do not claim an activation prompt. Consumers keep localized action, route and
+item labels free of device text. The accepted environment selects `Enter` for keyboard mode and `A`
+for controller mode; mouse-and-keyboard mode omits the prompt to keep pointer-first surfaces quiet.
+A legacy environment-free Controller profile also uses `A`.
 
 The prompt is a separate text primitive and reserves width during layout. Its color, typography and
 gap use `Text.InputPrompt`, `Typography.InputPrompt` and `Space.S` through the typed
 `prompt.foreground`, `prompt.typography` and `prompt.spacing` Visual properties. Dark, Light and
 HighContrast themes resolve the same contract from their own accent color. Prompt changes within an
 otherwise unchanged presentation invalidate measure, arrange and render without reactivating the
-consumer Experience.
+consumer Experience. Collection virtualization measures the prompt once per accepted layout,
+reserves a right-side prompt column in each materialized row, and includes the prompt metrics in its
+bounded measurement and adaptive-height scopes. Frame construction uses the retained row bounds and
+does not call text metrics.
 
-Accessibility keeps the action label as the accessible name and exposes the canonical activation
-key separately as its shortcut. The Stardew adapter maps Enter or Space and controller A to Submit;
-the visual keyboard prompt intentionally chooses Enter as the single canonical label.
+Accessibility keeps the action or item label as the accessible name and exposes the canonical
+activation key separately as its shortcut. The Stardew adapter maps Enter or Space and controller A
+to Submit; the visual keyboard prompt intentionally chooses Enter as the single canonical label.
 
 ## Tooltips
 

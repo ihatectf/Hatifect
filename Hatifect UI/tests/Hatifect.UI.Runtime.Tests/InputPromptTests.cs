@@ -205,6 +205,124 @@ public sealed class InputPromptTests
         Assert.Equal(prompt.Bounds.Height, label.Bounds.Height, 3);
     }
 
+    [Theory]
+    [InlineData(UiInputMode.MouseKeyboard, null)]
+    [InlineData(UiInputMode.Keyboard, "Enter")]
+    [InlineData(UiInputMode.Controller, "A")]
+    public void SelectableCollectionRowsProjectMeasuredFrameworkPrompts(
+        UiInputMode mode,
+        string? expected)
+    {
+        UiSymbolId id = Id($"collection/{mode}");
+        var source = new UiSelectableCollectionState<int>(
+            new[] { 0, 1, 2 },
+            value => id.Child("item/" + value),
+            value => "Cargo " + value);
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Row prompts")
+            .Select("Cargo", source)
+            .Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .Window(id, experience.DisplayName, () => experience)
+            .Freeze();
+        UiTheme theme = UiThemePresets.Dark();
+        UiScene scene = new UiSceneComposer(theme, registry).Compose(
+            new UiInvocationService(registry).InvokeInEnvironment(id, Environment(mode, theme.Id)));
+        var host = new UiPortalHostSession(
+            scene,
+            new UiHostPlacementContext(new UiRect(0, 0, 1000, 700)),
+            new Platform());
+        UiCollectionSceneNode collection = Assert.Single(Nodes(scene.Root).OfType<UiCollectionSceneNode>());
+        UiCollectionLayoutWindow window = Assert.Single(host.Root.Layout.CollectionWindows);
+        UiTextPrimitive[] prompts = host.Root.Frame.Primitives
+            .OfType<UiTextPrimitive>()
+            .Where(text => expected != null && text.Text == expected &&
+                           window.Items.Any(item => item.Node == text.Node))
+            .ToArray();
+        UiAccessibilityNodeSnapshot[] items = Accessibility(host.Accessibility.Root.Root)
+            .Where(node => node.Role == UiAccessibilityRole.ListItem)
+            .ToArray();
+
+        Assert.Equal(expected, UiSceneLayoutEngine.InputPrompt(collection)?.Label);
+        Assert.Equal(expected is null ? 0 : window.Items.Count, prompts.Length);
+        Assert.Equal(window.Items.Count, items.Length);
+        Assert.All(items, item => Assert.Equal(expected, item.Shortcut));
+        if (expected is null) return;
+
+        foreach (UiVirtualizedItemLayout item in window.Items)
+        {
+            UiTextPrimitive prompt = Assert.Single(prompts, value => value.Node == item.Node);
+            UiTextPrimitive label = Assert.Single(
+                host.Root.Frame.Primitives.OfType<UiTextPrimitive>(),
+                value => value.Node == item.Node && value.Text == item.Item.Label);
+            Assert.True(prompt.Bounds.X >= label.Bounds.Right);
+            Assert.Equal(theme.Resolve(UiThemeTokens.TextInputPrompt), prompt.Foreground);
+            Assert.Equal(theme.Resolve(UiThemeTokens.TypographyInputPrompt), prompt.Typography);
+            Assert.True(prompt.Bounds.Width > 0 && prompt.Bounds.Height > 0);
+        }
+    }
+
+    [Fact]
+    public void ReadOnlyCollectionDoesNotClaimAnActivationPrompt()
+    {
+        UiSymbolId id = Id("collection/read-only");
+        var source = new UiCollectionSource<int>(
+            new[] { 0, 1 },
+            value => id.Child("item/" + value),
+            value => "Cargo " + value);
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Read-only rows")
+            .Browse("Cargo", source)
+            .Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .Window(id, experience.DisplayName, () => experience)
+            .Freeze();
+        UiTheme theme = UiThemePresets.Dark();
+        UiScene scene = new UiSceneComposer(theme, registry).Compose(
+            new UiInvocationService(registry).InvokeInEnvironment(
+                id, Environment(UiInputMode.Controller, theme.Id)));
+        var host = new UiPortalHostSession(
+            scene,
+            new UiHostPlacementContext(new UiRect(0, 0, 1000, 700)),
+            new Platform());
+        UiCollectionSceneNode collection = Assert.Single(Nodes(scene.Root).OfType<UiCollectionSceneNode>());
+
+        Assert.Null(UiSceneLayoutEngine.InputPrompt(collection));
+        Assert.DoesNotContain(host.Root.Frame.Primitives.OfType<UiTextPrimitive>(), text => text.Text == "A");
+    }
+
+    [Fact]
+    public void CollectionPromptChangeInvalidatesLayoutWithoutStructuralRecompose()
+    {
+        UiSymbolId id = Id("collection/reconcile");
+        var source = new UiSelectableCollectionState<int>(
+            new[] { 0, 1 },
+            value => id.Child("item/" + value),
+            value => "Cargo " + value);
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Row prompts")
+            .Select("Cargo", source)
+            .Build();
+        UiRegistrySnapshot registry = new UiRegistryBuilder()
+            .Window(id, experience.DisplayName, () => experience)
+            .Freeze();
+        UiTheme theme = UiThemePresets.Dark();
+        var invoker = new UiInvocationService(registry);
+        var composer = new UiSceneComposer(theme, registry);
+        UiScene keyboard = composer.Compose(invoker.InvokeInEnvironment(
+            id, Environment(UiInputMode.Keyboard, theme.Id)));
+        UiScene controller = composer.Compose(invoker.InvokeInEnvironment(
+            id, Environment(UiInputMode.Controller, theme.Id)));
+
+        UiSceneDiff diff = new UiSceneReconciler().Compare(keyboard, controller);
+
+        Assert.Equal("Enter", UiSceneLayoutEngine.InputPrompt(
+            Assert.Single(Nodes(keyboard.Root).OfType<UiCollectionSceneNode>()))?.Label);
+        Assert.Equal("A", UiSceneLayoutEngine.InputPrompt(
+            Assert.Single(Nodes(controller.Root).OfType<UiCollectionSceneNode>()))?.Label);
+        Assert.True(diff.Effects.HasFlag(UiPropertyEffects.Measure));
+        Assert.True(diff.Effects.HasFlag(UiPropertyEffects.Arrange));
+        Assert.True(diff.Effects.HasFlag(UiPropertyEffects.Render));
+        Assert.False(diff.RequiresRecompose);
+    }
+
     private static UiEnvironment Environment(UiInputMode mode, UiSymbolId theme)
         => new(new UiEnvironmentViewport(1200, 700), 1, mode, "en", theme);
 

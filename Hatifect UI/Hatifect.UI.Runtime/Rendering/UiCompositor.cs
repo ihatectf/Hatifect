@@ -375,6 +375,19 @@ internal sealed class UiSceneRenderPlanner
                         UiTextOverflow.Ellipsis,
                         itemOpacity,
                         itemTransform));
+                    if (collection.InputPrompt is { } prompt && item.InputPromptBounds is { } promptBounds)
+                    {
+                        primitives.Add(new UiTextPrimitive(
+                            item.Node,
+                            promptBounds,
+                            item.Clip,
+                            prompt.Label,
+                            Value(itemVisual, "prompt.foreground", itemForeground),
+                            Value(itemVisual, "prompt.typography", itemTypography),
+                            UiTextOverflow.Clip,
+                            itemOpacity,
+                            itemTransform));
+                    }
                     if (item.SupportingBounds is { } supportingBounds &&
                         !string.IsNullOrWhiteSpace(item.Item.SupportingText))
                     {

@@ -403,6 +403,17 @@ keyboard/controller focus, хранит измерение в layout, выпол
 и 21 semantic-contract tests — **PASS**. Collection-row/form-field/contribution help, display delay и
 native consumer visual matrix остаются открыты. [Контракт, evidence и ограничения](U06_TOOLTIPS.md).
 
+U06-f collection-row input prompts — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
+Source `373c854a216cb190f3f6457d32470188ad00d03a` распространяет общий `Enter`/`A` prompt на
+материализованные строки selectable collections; read-only Browse не получает ложную активацию.
+Layout один раз измеряет prompt, резервирует правую колонку и включает её метрики в bounded
+measurement/height scopes; render не вызывает text metrics, accessibility item сохраняет label и
+публикует отдельный Shortcut. UI `run-02rxmeze` — **PASS 1,122/1,122**; exact C `run-1qvq7nhn` —
+**PASS 1,925 .NET + 503 Python**; P `hatifect-ui-ca-isolated.kqcnyr0z` — **PASS** 8 packages/47
+files/102 CA tests. Public API baseline v1 и 21 semantic-contract tests — **PASS**. Consumer/native
+EN/RU/scale/controller observation и form-field help остаются открыты.
+[Контракт, RED→GREEN и evidence](U06_COLLECTION_ROW_PROMPTS.md).
+
 **U07.** Построить `UiQuick` recipes для alert/confirm/select/простого form/notification и `UiView` для небольшого декларативного layout с typed bindings/actions. Синтаксис может выводить отношения только когда вывод однозначен; явное описание остаётся доступным. Оба входа компилируются в тот же IR, что полная Experience. Выход: примеры простого диалога, формы и небольшого custom screen; одно и то же действие имеет одинаковый lifecycle во всех формах авторства. Сравнить объём и понятность authoring на реальных задачах, затем закрепить API.
 
 **U08.** После D02 добавить `UiExact`: explicit geometry/layers/canvas и pixel scaling внутри framework. Определить measure/arrange, coordinate transform, clipping, render/hitbox agreement, focus order, semantic labels и fallback для compact/controller/accessibility. Выход: точное представление использует общие lifecycle/resources/input, а неподдерживаемое окружение получает явно заданное поведение. Не публиковать exact drawing как способ обходить hit testing или доступность.
