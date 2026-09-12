@@ -43,9 +43,11 @@ Current Flow admission-feedback candidate is committed locally through `aca70b0`
 
 Exact local runtime checkpoint [e9cfffc](Q02_RUNTIME_E9CFFFC.md) proves clean packaging and bootstrap for this candidate. The physical-input request stopped before its first semantic step because macOS denied post-event access, so it provides no evidence for `clickPoint`, key K, Window captures or visible F19 results. F13/F18/F19/Q02 remain IN_PROGRESS.
 
+The code-equivalent local integration `3a34cbb` subsequently passed exact Flow platform validation `run-7pzafv_n` with 797 Core/Persistence and 254 Stardew adapter tests. Common G `run-jaeobkd2` passed 2,334 .NET and 503 Python tests with no failures or skips. Later commits through `b890832` changed documentation only; these static results apply to the unchanged code, while package/runtime evidence remains bound to its recorded exact source.
+
 ## Next dependency-ready work
 
-1. Complete common G/prepare for the local composition through `aca70b0`; do not transfer the prior `c5174a8` Flow DLL evidence to it.
+1. Run exact prepare for the final local composition through `aca70b0`; common G is complete, but do not transfer the prior `c5174a8` Flow DLL runtime evidence to it.
 2. After macOS grants Accessibility to the Python runtime, run `flow.ui.player.input` on that fixed composition and require the complete phase/action-result capture set through final `Delivered`.
 3. Complete exact-candidate EN/RU, scale, controller, CA coexistence and installed-archive acceptance; hand exact Flow assets, dependencies and evidence to GQ.
 
