@@ -37,7 +37,8 @@ public sealed class NativeInteractionProjectionTests
         var input = Assert.Single(field, n => n.Role == "TextField");
         Assert.Equal("Farm", input.Value);
         Assert.NotNull(input.ParentNodeId);
-        Assert.Equal(2, field.Count(n => n.Role == "StaticText"));
+        Assert.Single(field, n => n.Role == "StaticText");
+        Assert.Single(field, n => n.Role == "Alert");
         Assert.False(Assert.Single(snapshot.Elements, n => n.ActionId == id.Child("save").ToString()).Enabled);
         Assert.Equal("Farm", value.Value);
         Assert.Equal(field.Length, field.Select(n => n.NodeId).Distinct().Count());

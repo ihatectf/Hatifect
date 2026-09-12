@@ -50,6 +50,11 @@ internal sealed class UiFoundationVisuals
                     ? UiThemeTokens.OpacityDisabled.Id : UiThemeTokens.OpacityVisible.Id, UiSemanticType.Opacity));
                 break;
             case UiSceneNodeKind.Text:
+                values.Add(Token("foreground", Contains(domainStates, UiVisualStates.Error)
+                    ? UiThemeTokens.TextDanger.Id
+                    : UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
+                values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+                break;
             case UiSceneNodeKind.Collection:
             case UiSceneNodeKind.Inspector:
             case UiSceneNodeKind.Form:
@@ -69,7 +74,9 @@ internal sealed class UiFoundationVisuals
                 break;
             case UiSceneNodeKind.Tooltip:
                 values.Add(Token("surface", UiThemeTokens.SurfacePopup.Id, UiSemanticType.SurfaceToken));
-                values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
+                values.Add(Token("foreground", Contains(domainStates, UiVisualStates.Error)
+                    ? UiThemeTokens.TextDanger.Id
+                    : UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
                 values.Add(Token("radius", UiThemeTokens.RadiusS.Id, UiSemanticType.RadiusToken));
                 values.Add(Token("padding", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
                 values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));

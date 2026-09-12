@@ -352,6 +352,7 @@ internal sealed class UiTextSceneNode : UiSceneNode
         => Text = text ?? throw new ArgumentNullException(nameof(text));
 
     public string Text { get; }
+    internal bool IsValidationAlert { get; init; }
 }
 
 internal sealed class UiButtonSceneNode : UiSceneNode
