@@ -103,10 +103,17 @@ public sealed class TooltipTests
             text => text.Node == buttons[0].Tooltip!.Id || text.Node == buttons[1].Tooltip!.Id);
         Assert.True(runtime.Layout.TryGetEntry(buttons[1].Id, out UiLayoutEntry? second));
         Assert.NotNull(second);
+        TimeSpan delay = theme.Resolve(UiThemeTokens.MotionNormal).Duration;
+        Assert.Equal(delay, buttons[1].Tooltip!.DisplayDelay);
 
         runtime.Interactions.MoveFocus(UiNavigationDirection.Next);
         runtime.Interactions.MovePointer(Center(second.Bounds));
         runtime.RefreshInteractionVisuals();
+
+        Assert.Single(runtime.Frame.Primitives.OfType<UiTextPrimitive>(), text => text.Text == "First help");
+        Assert.DoesNotContain(runtime.Frame.Primitives.OfType<UiTextPrimitive>(), text => text.Text == "Second help");
+        Assert.False(runtime.AdvanceInteractions(delay - TimeSpan.FromTicks(1)));
+        Assert.True(runtime.AdvanceInteractions(TimeSpan.FromTicks(1)));
 
         Assert.Single(runtime.Frame.Primitives.OfType<UiTextPrimitive>(), text => text.Text == "Second help");
         Assert.DoesNotContain(runtime.Frame.Primitives.OfType<UiTextPrimitive>(), text => text.Text == "First help");
@@ -116,6 +123,68 @@ public sealed class TooltipTests
 
         Assert.Single(runtime.Frame.Primitives.OfType<UiTextPrimitive>(), text => text.Text == "First help");
         Assert.DoesNotContain(runtime.Frame.Primitives.OfType<UiTextPrimitive>(), text => text.Text == "Second help");
+    }
+
+    [Fact]
+    public void ChangingHoverTargetRestartsDelayAndCrossingThresholdBuildsOneFrameWithoutLayout()
+    {
+        UiSymbolId id = new("Hatifect.Tests", "tooltip/delay/reset");
+        UiSymbolId firstId = id.Child("first"), secondId = id.Child("second");
+        UiExperienceDefinition experience = new UiExperienceBuilder(id, "Commands")
+            .Actions("Actions",
+                new UiActionDefinition(firstId, "First", () => { }),
+                new UiActionDefinition(secondId, "Second", () => { }))
+            .Tooltip(firstId, Localized("First help", "Первая подсказка"))
+            .Tooltip(secondId, Localized("Second help", "Вторая подсказка"))
+            .Build();
+        UiTheme theme = UiThemePresets.Dark();
+        UiScene scene = Scene(experience, theme, UiInputMode.MouseKeyboard, "en");
+        var runtime = new UiHostRuntimeSession(scene, Viewport, new Platform());
+        UiButtonSceneNode[] buttons = Nodes(scene.Root).OfType<UiButtonSceneNode>().ToArray();
+        Assert.Equal(2, buttons.Length);
+        Assert.True(runtime.Layout.TryGetEntry(buttons[0].Id, out UiLayoutEntry? first));
+        Assert.True(runtime.Layout.TryGetEntry(buttons[1].Id, out UiLayoutEntry? second));
+        TimeSpan half = TimeSpan.FromTicks(theme.Resolve(UiThemeTokens.MotionNormal).Duration.Ticks / 2);
+
+        runtime.Interactions.MovePointer(Center(first!.Bounds));
+        runtime.RefreshInteractionVisuals();
+        Assert.False(runtime.AdvanceInteractions(half));
+        runtime.Interactions.MovePointer(Center(second!.Bounds));
+        runtime.RefreshInteractionVisuals();
+
+        long layouts = runtime.Performance.LayoutBuilds;
+        long frames = runtime.Performance.FrameBuilds;
+        Assert.False(runtime.AdvanceInteractions(half));
+        Assert.DoesNotContain(runtime.Frame.Primitives.OfType<UiTextPrimitive>(),
+            text => text.Text is "First help" or "Second help");
+        Assert.True(runtime.AdvanceInteractions(half));
+
+        Assert.Equal(layouts, runtime.Performance.LayoutBuilds);
+        Assert.Equal(frames + 1, runtime.Performance.FrameBuilds);
+        Assert.Single(runtime.Frame.Primitives.OfType<UiTextPrimitive>(), text => text.Text == "Second help");
+        Assert.False(runtime.AdvanceInteractions(TimeSpan.FromSeconds(1)));
+        Assert.Equal(frames + 1, runtime.Performance.FrameBuilds);
+    }
+
+    [Fact]
+    public void ThemeCanChooseImmediatePointerHelp()
+    {
+        UiSymbolId id = new("Hatifect.Tests", "tooltip/delay/immediate");
+        UiSymbolId actionId = id.Child("action");
+        UiTheme theme = new UiThemeBuilder(UiThemePresets.Dark())
+            .Set(UiThemeTokens.MotionNormal, new UiMotion(TimeSpan.Zero, UiEasing.Linear))
+            .Build(id.Child("theme"));
+        UiScene scene = Scene(Experience(id, actionId, "Immediate help"), theme, UiInputMode.MouseKeyboard, "en");
+        var runtime = new UiHostRuntimeSession(scene, Viewport, new Platform());
+        UiButtonSceneNode button = Assert.Single(Nodes(scene.Root).OfType<UiButtonSceneNode>());
+        Assert.True(runtime.Layout.TryGetEntry(button.Id, out UiLayoutEntry? entry));
+
+        runtime.Interactions.MovePointer(Center(entry!.Bounds));
+        runtime.RefreshInteractionVisuals();
+
+        Assert.Equal(button.Id, runtime.Interactions.Snapshot.TooltipHovered);
+        Assert.Single(runtime.Frame.Primitives.OfType<UiTextPrimitive>(), text => text.Text == "Immediate help");
+        Assert.False(runtime.AdvanceInteractions(TimeSpan.Zero));
     }
 
     [Fact]
@@ -331,7 +400,10 @@ public sealed class TooltipTests
         UiRenderFrame frame = new UiSceneRenderPlanner().Build(
             scene,
             repeated,
-            new UiInteractionSnapshot(Focused: focused.Node, Hovered: hovered.Node),
+            new UiInteractionSnapshot(
+                Focused: focused.Node,
+                Hovered: hovered.Node,
+                TooltipHovered: hovered.Node),
             new RejectingTextMetrics());
 
         Assert.Single(frame.Primitives.OfType<UiTextPrimitive>(),
@@ -371,6 +443,14 @@ public sealed class TooltipTests
 
         Assert.True(hover.Consumed);
         Assert.Equal(item.Node, runtime.Interactions.Snapshot.Hovered);
+        Assert.DoesNotContain(runtime.Frame.Primitives.OfType<UiTextPrimitive>(),
+            text => text.Node == item.Tooltip!.Presentation.Id);
+        TimeSpan delay = item.Tooltip!.Presentation.DisplayDelay;
+        TimeSpan firstHalf = TimeSpan.FromTicks(delay.Ticks / 2);
+        Assert.False(runtime.AdvanceInteractions(firstHalf));
+        runtime.Update(Scene(experience, UiThemePresets.Dark(), UiInputMode.MouseKeyboard, "ru-RU"), Viewport);
+        Assert.Equal(item.Node, runtime.Interactions.Snapshot.Hovered);
+        Assert.True(runtime.AdvanceInteractions(delay - firstHalf));
         Assert.Single(runtime.Frame.Primitives.OfType<UiTextPrimitive>(),
             text => text.Node == item.Tooltip!.Presentation.Id && text.Text == "Подсказка 1");
 

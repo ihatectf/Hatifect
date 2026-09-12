@@ -110,7 +110,7 @@ internal sealed class UiSceneRenderPlanner
         ICollection<UiRenderPrimitive> primitives)
     {
         if (interaction is null ||
-            !TryTooltipTarget(scene, layout, interaction.Hovered, out UiRect anchor, out UiTooltipLayout? tooltip) &&
+            !TryTooltipTarget(scene, layout, interaction.TooltipHovered, out UiRect anchor, out UiTooltipLayout? tooltip) &&
             !TryTooltipTarget(scene, layout, interaction.Focused, out anchor, out tooltip))
             return;
         UiVisualResolution visual = tooltip!.Presentation.Visual;

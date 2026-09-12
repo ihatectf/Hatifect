@@ -170,6 +170,19 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession, IUiHostScen
         }
         finally { _pumping = false; }
     }
+    internal bool AdvanceInteractions(TimeSpan elapsed)
+    {
+        Root.RequireOwner();
+        if (!_active || _pumping || _updating) return false;
+        bool changed = Root.AdvanceInteractions(elapsed);
+        PortalEntry[] portals = _portalSnapshot;
+        foreach (PortalEntry portal in portals)
+        {
+            if (!_active) break;
+            if (portal.Runtime.IsActive) changed |= portal.Runtime.AdvanceInteractions(elapsed);
+        }
+        return changed;
+    }
     internal UiHostRuntimePerformanceSnapshot Performance
     {
         get
