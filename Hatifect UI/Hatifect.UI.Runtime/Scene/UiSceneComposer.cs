@@ -19,6 +19,8 @@ namespace Hatifect.UI.Runtime.Scene;
 internal sealed class UiSceneComposer
 {
     internal static readonly UiSymbolId TerminalShellId = new("Hatifect.UI", "terminal/shell");
+    private static readonly UiInputPrompt KeyboardActivationPrompt = new("Enter");
+    private static readonly UiInputPrompt ControllerActivationPrompt = new("A");
     private static readonly IReadOnlyDictionary<UiSymbolId, FoundationComponentKind> FoundationComponents =
         CreateFoundationCatalog();
     private readonly UiRegistrySnapshot? _registry;
@@ -399,7 +401,8 @@ internal sealed class UiSceneComposer
                         () => field.Value.Value = option.Value);
                     children.Add(new UiButtonSceneNode(optionId, UiSceneRoles.Button,
                         Resolve(UiSceneRoles.Button, UiSceneNodeKind.Button, optionId, invocation, visual, interaction,
-                            domainStates: selected ? new[] { UiVisualStates.Selected } : null), action) { SemanticId = field.Id });
+                            domainStates: selected ? new[] { UiVisualStates.Selected } : null), action,
+                        inputPrompt: ActivationPrompt(invocation)) { SemanticId = field.Id });
                 }
             }
             else
@@ -478,7 +481,7 @@ internal sealed class UiSceneComposer
                     UiRouteContributionDescriptor route => new UiRouteButtonSceneNode(
                         nodeId, UiSceneRoles.Button,
                         Resolve(UiSceneRoles.Button, UiSceneNodeKind.RouteButton, nodeId, invocation, visual, interaction),
-                        route.Title, route.Route) { SemanticId = route.Route },
+                        route.Title, route.Route, inputPrompt: ActivationPrompt(invocation)) { SemanticId = route.Route },
                     _ => throw new InvalidOperationException($"Unsupported contribution type '{contribution.GetType().Name}'.")
                 };
                 Add(bySlot, slot, node);
@@ -529,7 +532,8 @@ internal sealed class UiSceneComposer
             Add(
                 bySlot,
                 UiHostSlots.Navigation,
-                new UiRouteButtonSceneNode(nodeId, UiSceneRoles.Button, resolved, descriptor.Title, descriptor.Id, current, descriptor.Terminal.Icon)
+                new UiRouteButtonSceneNode(nodeId, UiSceneRoles.Button, resolved, descriptor.Title, descriptor.Id,
+                    current, descriptor.Terminal.Icon, ActivationPrompt(invocation))
                     { SemanticId = descriptor.Id });
         }
         if (!activeFound)
@@ -564,7 +568,23 @@ internal sealed class UiSceneComposer
             resolver.Resolve(new UiVisualContext(role, profile, null, active), theme, visual,
                 foundation.For(UiSceneNodeKind.Button, host, null, active)), renderOnly: action.Binding is not null);
         bool enabled = action.Binding is not null || action.CanExecute;
-        return new(node, role, states.Resolve(enabled, interaction), action, states, label) { SemanticId = action.Id };
+        return new(node, role, states.Resolve(enabled, interaction), action, states, label, ActivationPrompt(invocation))
+            { SemanticId = action.Id };
+    }
+
+    private static UiInputPrompt? ActivationPrompt(UiInvocationResult invocation)
+    {
+        UiInputMode mode = invocation.Plan.Host.Environment?.InputMode ??
+            (invocation.Plan.Host.Profile == UiPresentationProfiles.Controller.Id
+                ? UiInputMode.Controller
+                : UiInputMode.MouseKeyboard);
+        return mode switch
+        {
+            UiInputMode.Keyboard => KeyboardActivationPrompt,
+            UiInputMode.Controller => ControllerActivationPrompt,
+            UiInputMode.MouseKeyboard => null,
+            _ => throw new InvalidOperationException($"Unsupported input mode '{mode}'.")
+        };
     }
 
     private UiVisualResolution Resolve(

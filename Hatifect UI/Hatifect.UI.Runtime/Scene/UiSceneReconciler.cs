@@ -66,6 +66,8 @@ internal sealed class UiSceneReconciler
             if (!string.Equals(UiSceneLayoutEngine.Heading(oldNode.Node), UiSceneLayoutEngine.Heading(newNode), StringComparison.Ordinal) ||
                 (id == next.Root.Id && !string.Equals(previous.DisplayName, next.DisplayName, StringComparison.Ordinal)))
                 nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
+            if (UiSceneLayoutEngine.InputPrompt(oldNode.Node) != UiSceneLayoutEngine.InputPrompt(newNode))
+                nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
             if (oldNode.Node is UiRouteButtonSceneNode oldRoute && newNode is UiRouteButtonSceneNode newRoute
                 && oldRoute.Icon != newRoute.Icon)
                 nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
