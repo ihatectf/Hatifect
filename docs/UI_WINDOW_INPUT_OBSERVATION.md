@@ -34,6 +34,10 @@ Its predecessor `756369c` completed canonical platform validation `run-vi9q00y4`
 
 Fresh exact request `a8624e82-fcdb-4fdf-9a5f-a884d231e36c` on predecessor `756369c` is **BLOCKED before the first semantic step**: `CGPreflightPostEventAccess()` was false for the Python process and the driver reported missing macOS post-event Accessibility permission. The process exited 130, created no Window captures and restored both isolated runtime options without teardown errors. No physical-input request has run on current source `b23f54c`; its native result is **NOT_PROVEN**. The next acceptance step is to run the current candidate from a process identity with confirmed Accessibility trust and verify `failure == null`, `captures.length <= 128`, all five probe phases, all five action-result publications and the final Delivered `latest` state.
 
+## Exact e9cfffc runtime checkpoint
+
+The later local candidate `e9cfffc36922791c93d26457d3be5719378ecb16` includes `b23f54c` together with the F19 admission-feedback changes. Clean exact preparation `run-58sg01xm` and `save.bootstrap` request `5a3e51fd-8107-4978-a41b-6f8ccfdacea2` passed. Exact `flow.ui.player.input` request `b0e6af20-c6c4-4bdf-bf7f-58bd2c9f0092` then stopped before its first semantic step because `CGPreflightPostEventAccess()` was false; `currentStep` is null, the event list is empty, no Flow progress file exists, and isolated options and working-copy cleanup both passed. This request does not test the new `clickPoint`, raw K delivery, capture retention or any player action. Full identities and evidence limits are recorded in [Q02_RUNTIME_E9CFFFC.md](Q02_RUNTIME_E9CFFFC.md).
+
 ## Verification
 
 `rtk proxy env DOTNET_gcConcurrent=0 HATIFECT_DOTNET=${HOME}/.dotnet/hatifect-x64-8/dotnet HATIFECT_TEST_DOTNET=${HOME}/.dotnet/hatifect-x64-8/dotnet ./tools/hatifect-test ui --platform`

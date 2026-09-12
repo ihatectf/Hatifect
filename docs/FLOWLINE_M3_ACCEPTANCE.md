@@ -41,6 +41,8 @@ F18 requires scoped `./tools/hatifect-test flow --platform`, `./tools/hatifect-c
 
 Current Flow admission-feedback candidate is committed locally through `aca70b0` (`acb1279` persistent limits, `1a83a2b` typed Send feedback and `aca70b0` typed Network authoring feedback); no remote branch, push or PR is part of this task. GQ independently owns final local integration composition and release evidence.
 
+Exact local runtime checkpoint [e9cfffc](Q02_RUNTIME_E9CFFFC.md) proves clean packaging and bootstrap for this candidate. The physical-input request stopped before its first semantic step because macOS denied post-event access, so it provides no evidence for `clickPoint`, key K, Window captures or visible F19 results. F13/F18/F19/Q02 remain IN_PROGRESS.
+
 ## Next dependency-ready work
 
 1. Complete common G/prepare for the local composition through `aca70b0`; do not transfer the prior `c5174a8` Flow DLL evidence to it.
