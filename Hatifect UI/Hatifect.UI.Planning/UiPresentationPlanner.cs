@@ -252,11 +252,24 @@ public sealed class UiPresentationPlanner
             throw new InvalidOperationException(
                 $"Collection element '{element.Id}' requests Adaptive sizing for Uniform-only NavigationList.");
 
+        if (!_catalog.TryGetPresentationProperty("density", out UiPropertySymbol? densityProperty) ||
+            densityProperty == null ||
+            !_catalog.TryGetPropertyValue(densityProperty, "Default", out UiEnumValueSymbol? defaultDensity) ||
+            defaultDensity == null ||
+            !_catalog.TryGetPropertyValue(densityProperty, "Compact", out UiEnumValueSymbol? compactDensity) ||
+            compactDensity == null ||
+            !_catalog.TryGetPropertyValue(densityProperty, "Comfortable", out UiEnumValueSymbol? comfortableDensity) ||
+            comfortableDensity == null)
+            throw new InvalidOperationException("Foundation density catalog values are not registered.");
+
         UiPropertyAssignmentIr? explicitDensity = indexes.FindAssignment(element.Id, "density", host.Profile)
             ?? indexes.FindAssignment(element.Id, "density", profile: null);
-        string density = explicitDensity?.Value is UiStringValue densityValue
-            ? densityValue.Value
-            : "Default";
+        UiSymbolId density = explicitDensity?.Value is UiSymbolValue densityValue
+            ? densityValue.Symbol
+            : defaultDensity.Id;
+        if (density != defaultDensity.Id && density != compactDensity.Id && density != comfortableDensity.Id)
+            throw new InvalidOperationException(
+                $"Collection element '{element.Id}' resolved an unknown density catalog value '{density}'.");
         return new UiPlannedCollectionRecipe(sizing, density);
     }
 

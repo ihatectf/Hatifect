@@ -228,7 +228,7 @@ internal sealed class UiSceneLayoutEngine
                     maximumSupportingLength = Math.Max(maximumSupportingLength, item.SupportingText!.Length);
                 }
             }
-            float density = DensityFactor(collection.Recipe.Density, measurementContext.Profile);
+            float density = UiDensityPolicy.Factor(collection.Recipe.Density, measurementContext.Profile);
             float localeFactor = measurementContext.Locale.StartsWith("ru", StringComparison.OrdinalIgnoreCase)
                 ? 1.05f
                 : 1;
@@ -759,19 +759,6 @@ internal sealed class UiSceneLayoutEngine
             if (IsFlexible(node.Children[index])) return true;
         }
         return false;
-    }
-
-    private static float DensityFactor(string density, UiSymbolId profile)
-    {
-        float value = string.Equals(density, "Compact", StringComparison.OrdinalIgnoreCase)
-            ? 0.75f
-            : string.Equals(density, "Comfortable", StringComparison.OrdinalIgnoreCase)
-                ? 1.25f
-                : 1;
-        if (profile.LocalId.EndsWith("/Compact", StringComparison.Ordinal) ||
-            profile.LocalId.EndsWith("/Controller", StringComparison.Ordinal))
-            value *= 0.9f;
-        return value;
     }
 
     internal static string? Text(UiSceneNode node)

@@ -62,7 +62,32 @@ Inspector.view
         UiPresentationDefinition definition = Assert.IsType<UiPresentationDefinition>(result.Definition);
         Assert.Equal(4, definition.Placements.Count);
         Assert.Contains(definition.Assignments, assignment => assignment.Property.Name == "view" && assignment.Value.Type == UiSemanticType.Presentation);
+        UiPropertyAssignmentIr density = Assert.Single(
+            definition.Assignments,
+            assignment => assignment.Property.Name == "density");
+        UiSymbolValue densityValue = Assert.IsType<UiSymbolValue>(density.Value);
+        Assert.True(catalog.TryGetEnumValue(densityValue.Symbol, out UiEnumValueSymbol? densitySymbol));
+        Assert.NotNull(densitySymbol);
+        Assert.Equal(density.Property.Id, densitySymbol.Property);
+        Assert.Equal(UiSemanticType.EnumValue, density.Value.Type);
+        Assert.Equal("Compact", densityValue.Name);
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == UiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DensityRejectsValuesOutsideItsClosedCatalog()
+    {
+        UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();
+        UiCompilationResult result = new UiCompiler(catalog).Compile(@"presentation Storage
+
+Items
+    density = Spacious
+", Context(catalog), "InvalidDensity#presentation");
+
+        Assert.False(result.IsValid);
+        UiDiagnostic diagnostic = Assert.Single(result.Diagnostics, item => item.Id == "LUI2018");
+        Assert.Contains("density", diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("Spacious", diagnostic.Message, StringComparison.Ordinal);
     }
 
     [Fact]

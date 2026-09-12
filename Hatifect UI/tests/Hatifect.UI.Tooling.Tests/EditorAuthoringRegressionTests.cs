@@ -24,28 +24,35 @@ public sealed class EditorAuthoringRegressionTests
     }
 
     [Fact]
-    public async Task UnquotedStringDoesNotAliasCatalogTokenInHoverHighlightOrReferences()
+    public async Task DensityCatalogValueHasStableHoverHighlightAndReferenceIdentity()
     {
-        const string source = "presentation Storage\nItems\n    density = Accent";
+        const string source = "presentation Storage\nItems\n    density = Compact";
         var session = await Open(source);
         Assert.True(session.TryGetDocument(DocumentUri, out var document));
         Assert.True(document!.IsValid);
-        UiEditorSymbol literal = document.Analysis.SymbolAt(source.IndexOf("Accent", StringComparison.Ordinal))!;
-        Assert.Equal(UiEditorSymbolKind.String, literal.Kind);
-        Assert.Null(literal.Id);
+        UiEditorSymbol literal = document.Analysis.SymbolAt(source.IndexOf("Compact", StringComparison.Ordinal))!;
+        Assert.Equal(UiEditorSymbolKind.EnumMember, literal.Kind);
+        Assert.NotNull(literal.Id);
         var hover = await Send(session, "textDocument/hover", At(2, 17));
-        Assert.Null(hover.Result);
-        const string visualUri = "file:///Visual.hatifect";
+        Assert.Contains(
+            "Compact: density value",
+            hover.Result!.Value.GetProperty("contents").GetProperty("value").GetString());
+        const string secondUri = "file:///Second.presentation.hatifect";
         await Send(session, "textDocument/didOpen", new
         {
-            textDocument = new { uri = visualUri, version = 1, text = "visual Colors\nItem\n    foreground = Accent" }
+            textDocument = new { uri = secondUri, version = 1, text = source }
         }, notification: true);
         var references = await Send(session, "textDocument/references", new
         {
-            textDocument = new { uri = visualUri }, position = new { line = 2, character = 19 },
+            textDocument = new { uri = secondUri }, position = new { line = 2, character = 17 },
             context = new { includeDeclaration = false }
         });
-        Assert.Equal(visualUri, Assert.Single(references.Result!.Value.EnumerateArray()).GetProperty("uri").GetString());
+        string?[] uris = references.Result!.Value.EnumerateArray()
+            .Select(item => item.GetProperty("uri").GetString())
+            .ToArray();
+        Assert.Equal(2, uris.Length);
+        Assert.Contains(DocumentUri, uris);
+        Assert.Contains(secondUri, uris);
     }
 
     [Fact]

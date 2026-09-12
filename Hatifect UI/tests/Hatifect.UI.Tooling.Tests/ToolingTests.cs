@@ -102,6 +102,15 @@ public sealed class ToolingTests
             metadata.EnumValues
                 .Where(item => item.Property == itemSizing.Id)
                 .Select(item => item.Name));
+        UiPropertyMetadata density = Assert.Single(
+            metadata.Properties,
+            item => item.Name == "density");
+        Assert.Equal(UiSemanticType.EnumValue, density.Type);
+        Assert.Equal(
+            new[] { "Comfortable", "Compact", "Default" },
+            metadata.EnumValues
+                .Where(item => item.Property == density.Id)
+                .Select(item => item.Name));
         Assert.Contains(metadata.Tokens, item =>
             item.Name == "Space.M" && item.Type == UiSemanticType.SpaceToken);
         Assert.Contains(metadata.Properties, item =>

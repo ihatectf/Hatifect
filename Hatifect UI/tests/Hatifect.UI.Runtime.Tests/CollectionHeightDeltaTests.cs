@@ -303,7 +303,8 @@ public sealed class CollectionHeightDeltaTests
         }
         internal UiCollectionSceneNode Scene(UiPublishedCollection<Row>? source = null)
             => new(Owner.Child("collection"), Owner.Child("role"), _visual, _visual, "Rows", source ?? Source,
-                new(UiCollectionLayoutKind.List, 3, 1, Owner.Child("adaptive"), true, "Normal", false));
+                new(UiCollectionLayoutKind.List, 3, 1, Owner.Child("adaptive"), true,
+                    UiCollectionDensity.Default, false));
         internal UiCollectionLayoutWindow WarmSeparatedWindows()
         {
             UiCollectionSceneNode scene = Scene();

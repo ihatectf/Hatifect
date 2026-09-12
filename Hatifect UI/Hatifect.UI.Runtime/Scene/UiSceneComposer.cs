@@ -29,6 +29,9 @@ internal sealed class UiSceneComposer
     private readonly UiFoundationVisuals _foundationVisuals;
     private readonly UiSymbolId _uniformItemSizing;
     private readonly UiSymbolId _adaptiveItemSizing;
+    private readonly UiSymbolId _defaultDensity;
+    private readonly UiSymbolId _compactDensity;
+    private readonly UiSymbolId _comfortableDensity;
 
     public UiSceneComposer(
         UiTheme theme,
@@ -50,6 +53,18 @@ internal sealed class UiSceneComposer
             throw new InvalidOperationException("Foundation item-sizing catalog values are not registered.");
         _uniformItemSizing = uniform.Id;
         _adaptiveItemSizing = adaptive.Id;
+        if (!semanticCatalog.TryGetPresentationProperty("density", out UiPropertySymbol? densityProperty) ||
+            densityProperty == null ||
+            !semanticCatalog.TryGetPropertyValue(densityProperty, "Default", out UiEnumValueSymbol? defaultDensity) ||
+            defaultDensity == null ||
+            !semanticCatalog.TryGetPropertyValue(densityProperty, "Compact", out UiEnumValueSymbol? compactDensity) ||
+            compactDensity == null ||
+            !semanticCatalog.TryGetPropertyValue(densityProperty, "Comfortable", out UiEnumValueSymbol? comfortableDensity) ||
+            comfortableDensity == null)
+            throw new InvalidOperationException("Foundation density catalog values are not registered.");
+        _defaultDensity = defaultDensity.Id;
+        _compactDensity = compactDensity.Id;
+        _comfortableDensity = comfortableDensity.Id;
     }
 
     internal void SetTheme(UiTheme theme) => _theme = theme ?? throw new ArgumentNullException(nameof(theme));
@@ -627,13 +642,21 @@ internal sealed class UiSceneComposer
         bool adaptive = planned.ItemSizing == _adaptiveItemSizing;
         if (navigation && adaptive)
             throw new InvalidOperationException("NavigationList is Uniform-only in v1.");
+        UiCollectionDensity density = planned.Density == _defaultDensity
+            ? UiCollectionDensity.Default
+            : planned.Density == _compactDensity
+                ? UiCollectionDensity.Compact
+                : planned.Density == _comfortableDensity
+                    ? UiCollectionDensity.Comfortable
+                    : throw new InvalidOperationException(
+                        $"Collection Presentation '{presentation}' resolved unknown density '{planned.Density}'.");
         return new UiCollectionPresentationRecipe(
             gallery ? UiCollectionLayoutKind.AdaptiveGrid : UiCollectionLayoutKind.List,
             gallery ? 4 : 8,
             gallery ? 3 : 1,
             planned.ItemSizing,
             adaptive,
-            planned.Density,
+            density,
             navigation);
     }
 

@@ -49,12 +49,18 @@ public sealed class DetachedPlanningTests
         Assert.Null(Assert.Single(experience.Elements).DataType);
         var input = UiPlanningInput.Capture(experience);
 
-        var plan = new UiPresentationPlanner().PlanInput(input, new UiHostContext(UiHostKind.Window, UiPresentationProfiles.Wide));
+        UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();
+        var plan = new UiPresentationPlanner(catalog)
+            .PlanInput(input, new UiHostContext(UiHostKind.Window, UiPresentationProfiles.Wide));
 
         Assert.True(Assert.Single(input.Elements).IsCollection);
         var element = Assert.Single(plan.Elements);
         Assert.Equal(new UiSymbolId("Hatifect.UI", "presentation/List"), element.Presentation);
-        Assert.Equal("Default", plan.CollectionRecipeFor(element.Element).Density);
+        Assert.True(catalog.TryGetPresentationProperty("density", out UiPropertySymbol? density));
+        Assert.NotNull(density);
+        Assert.True(catalog.TryGetPropertyValue(density, "Default", out UiEnumValueSymbol? defaultDensity));
+        Assert.NotNull(defaultDensity);
+        Assert.Equal(defaultDensity.Id, plan.CollectionRecipeFor(element.Element).Density);
     }
 
     [Fact]

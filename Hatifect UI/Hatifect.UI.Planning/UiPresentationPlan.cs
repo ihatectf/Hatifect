@@ -48,7 +48,7 @@ public sealed record UiPlannedElement(
     UiSymbolId Presentation,
     IReadOnlyList<UiPlanDecision> Decisions);
 
-internal sealed record UiPlannedCollectionRecipe(UiSymbolId ItemSizing, string Density);
+internal sealed record UiPlannedCollectionRecipe(UiSymbolId ItemSizing, UiSymbolId Density);
 
 public sealed class UiPresentationPlan
 {
