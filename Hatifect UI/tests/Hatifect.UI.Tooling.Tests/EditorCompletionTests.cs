@@ -16,6 +16,7 @@ public sealed class EditorCompletionTests
     [InlineData("visual Storage\n@Wi", 1, 3, "Wide", "Hover")]
     [InlineData("presentation Storage\nItems.itemSizing\n    Wi", 2, 6, "Wide", "surface")]
     [InlineData("presentation Storage\nItems\n    itemSizing = Ad", 2, 19, "Adaptive", "Uniform")]
+    [InlineData("presentation Storage\nItems\n    density = Com", 2, 17, "Comfortable", "Uniform")]
     public async Task RecoveredContextOffersOnlyRelevantCompletion(string source, int line, int character,
         string included, string excluded)
     {

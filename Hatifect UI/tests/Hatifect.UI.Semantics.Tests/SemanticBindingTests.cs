@@ -74,20 +74,22 @@ Inspector.view
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == UiDiagnosticSeverity.Error);
     }
 
-    [Fact]
-    public void DensityRejectsValuesOutsideItsClosedCatalog()
+    [Theory]
+    [InlineData("Spacious", "Spacious")]
+    [InlineData("\"Compact\"", "Compact")]
+    public void DensityRejectsValuesOutsideItsClosedCatalog(string value, string diagnosticValue)
     {
         UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();
-        UiCompilationResult result = new UiCompiler(catalog).Compile(@"presentation Storage
+        UiCompilationResult result = new UiCompiler(catalog).Compile($@"presentation Storage
 
 Items
-    density = Spacious
+    density = {value}
 ", Context(catalog), "InvalidDensity#presentation");
 
         Assert.False(result.IsValid);
         UiDiagnostic diagnostic = Assert.Single(result.Diagnostics, item => item.Id == "LUI2018");
         Assert.Contains("density", diagnostic.Message, StringComparison.Ordinal);
-        Assert.Contains("Spacious", diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains(diagnosticValue, diagnostic.Message, StringComparison.Ordinal);
     }
 
     [Fact]
