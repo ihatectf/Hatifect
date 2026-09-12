@@ -143,7 +143,95 @@ public sealed class ToolingProtocolSessionTests
         return session;
     }
 
-    private static JsonElement InitializeParams()
+    [Theory]
+    [InlineData("")]
+    [InlineData("\"protocolVersion\":0,\"requiredCapabilities\":[],")]
+    [InlineData("\"protocolVersion\":0,\"requiredCapabilities\":[\"bindingMetadata.v1\",\"bindingMetadata.v2\",\"bindingUpdates\",\"diagnostics\",\"definitions\",\"references\"],")]
+    public async Task CompatibleProtocolRequirementsAdvertiseIndependentVersionAndActivate(string requirements)
+    {
+        var session = new UiToolingProtocolSession();
+
+        UiJsonRpcDispatchResult result = await session.HandleAsync(Request("initialize", InitializeParams(requirements)));
+
+        Assert.False(result.IsError);
+        JsonElement protocol = result.Result!.Value.GetProperty("capabilities")
+            .GetProperty("experimental").GetProperty("hatifectUi");
+        Assert.Equal(0, protocol.GetProperty("protocolVersion").GetInt32());
+        Assert.Equal(new[] { 1, 2 }, protocol.GetProperty("bindingMetadataVersions").EnumerateArray().Select(x => x.GetInt32()));
+        Assert.Equal(new[] { "bindingMetadata.v1", "bindingMetadata.v2", "bindingUpdates", "diagnostics", "definitions", "references", "compilation" },
+            protocol.GetProperty("capabilities").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(UiToolingProtocolState.AwaitingInitialized, session.State);
+        Assert.False((await session.HandleAsync(Notification("initialized", Json("{}")))).IsError);
+        Assert.Equal(UiToolingProtocolState.Active, session.State);
+    }
+
+    [Theory]
+    [InlineData("\"protocolVersion\":1,", "Unsupported tooling protocol version")]
+    [InlineData("\"protocolVersion\":-1,", "non-negative 32-bit integer")]
+    [InlineData("\"protocolVersion\":\"0\",", "")]
+    [InlineData("\"protocolVersion\":null,", "")]
+    [InlineData("\"protocolVersion\":0,\"protocolVersion\":0,", "duplicated")]
+    [InlineData("\"requiredCapabilities\":[\"plannerTrace\"],", "Unsupported tooling capability 'plannerTrace'")]
+    [InlineData("\"requiredCapabilities\":[\"Diagnostics\"],", "Unsupported tooling capability 'Diagnostics'")]
+    [InlineData("\"requiredCapabilities\":[\"diagnostics\",\"diagnostics\"],", "duplicated")]
+    [InlineData("\"requiredCapabilities\":null,", "must be an array")]
+    [InlineData("\"requiredCapabilities\":\"diagnostics\",", "must be an array")]
+    [InlineData("\"requiredCapabilities\":[1],", "non-empty string")]
+    [InlineData("\"requiredCapabilities\":[\" \"],", "non-empty string")]
+    [InlineData("\"requiredCapabilities\":[],\"requiredCapabilities\":[],", "duplicated")]
+    public async Task IncompatibleProtocolRequirementsRejectBeforeActivationAndPermitRetry(string requirements, string reason)
+    {
+        var session = new UiToolingProtocolSession();
+
+        UiJsonRpcDispatchResult rejected = await session.HandleAsync(Request("initialize", InitializeParams(requirements)));
+
+        Assert.True(rejected.IsError);
+        Assert.Equal(UiJsonRpcErrorCodes.InvalidParams, rejected.ErrorCode);
+        Assert.Null(rejected.Result);
+        Assert.False(string.IsNullOrWhiteSpace(rejected.ErrorMessage));
+        if (reason.Length > 0) Assert.Contains(reason, rejected.ErrorMessage);
+        Assert.Equal(UiToolingProtocolState.Created, session.State);
+        Assert.Equal(0, session.DocumentCount);
+        Assert.True((await session.HandleAsync(Notification("initialized", Json("{}")))).IsError);
+        Assert.False((await session.HandleAsync(Request("initialize", InitializeParams()))).IsError);
+        Assert.False((await session.HandleAsync(Notification("initialized", Json("{}")))).IsError);
+        Assert.Equal(UiToolingProtocolState.Active, session.State);
+    }
+
+    [Fact]
+    public async Task ProtocolRequirementBudgetsRejectBeforeInspectingEntries()
+    {
+        var session = new UiToolingProtocolSession();
+        string many = "\"requiredCapabilities\":" + JsonSerializer.Serialize(Enumerable.Repeat("diagnostics", 33)) + ",";
+        string longName = "\"requiredCapabilities\":[\"" + new string('x', 129) + "\"],";
+
+        UiJsonRpcDispatchResult tooMany = await session.HandleAsync(Request("initialize", InitializeParams(many)));
+        UiJsonRpcDispatchResult tooLong = await session.HandleAsync(Request("initialize", InitializeParams(longName)));
+
+        Assert.Equal(UiJsonRpcErrorCodes.InvalidParams, tooMany.ErrorCode);
+        Assert.Contains("at most 32", tooMany.ErrorMessage);
+        Assert.Equal(UiJsonRpcErrorCodes.InvalidParams, tooLong.ErrorCode);
+        Assert.Contains("at most 128", tooLong.ErrorMessage);
+        Assert.Equal(UiToolingProtocolState.Created, session.State);
+    }
+
+    [Fact]
+    public async Task NegotiationResponseOverBudgetDoesNotActivateAndCanRetry()
+    {
+        var session = new UiToolingProtocolSession();
+        session.ConfigurePayloadLimit(256);
+
+        UiJsonRpcDispatchResult rejected = await session.HandleAsync(Request("initialize", InitializeParams()));
+
+        Assert.True(rejected.IsError);
+        Assert.Null(rejected.Result);
+        Assert.Equal(UiToolingProtocolState.Created, session.State);
+        session.ConfigurePayloadLimit(UiLspMessageStream.DefaultMaximumPayloadBytes);
+        Assert.False((await session.HandleAsync(Request("initialize", InitializeParams()))).IsError);
+        Assert.Equal(UiToolingProtocolState.AwaitingInitialized, session.State);
+    }
+
+    private static JsonElement InitializeParams(string requirements = "")
     {
         var context = new UiBindingContext(new UiSymbolId("Author.Mod", "storage"))
             .DeclareElement("Items")
@@ -151,13 +239,8 @@ public sealed class ToolingProtocolSessionTests
         byte[] metadata = UiBindingContextMetadataWire.Serialize(
             UiBindingContextMetadataExporter.Export(context));
         using JsonDocument metadataDocument = JsonDocument.Parse(metadata);
-        return JsonSerializer.SerializeToElement(new
-        {
-            initializationOptions = new
-            {
-                bindingMetadata = metadataDocument.RootElement.Clone()
-            }
-        });
+        return Json("{\"initializationOptions\":{" + requirements + "\"bindingMetadata\":"
+            + metadataDocument.RootElement.GetRawText() + "}}");
     }
 
     private static JsonElement TextDocumentParams()

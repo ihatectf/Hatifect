@@ -158,11 +158,11 @@ class AgentSetupTests(unittest.TestCase):
             with self.subTest(budget=budget):
                 self.write_config(budget=budget)
                 self.assert_rejected(lambda: agent_setup.check_repository(self.root))
-        for threads in (0, 4, True, "2"):
+        for threads in (0, 5, True, "2"):
             with self.subTest(threads=threads):
                 self.write_config(threads=threads)
                 self.assert_rejected(lambda: agent_setup.check_repository(self.root))
-        for threads in (1, 3):
+        for threads in (1, 4):
             with self.subTest(valid_threads=threads):
                 self.write_config(threads=threads)
                 self.assertEqual("PASS", agent_setup.check_repository(self.root)["status"])

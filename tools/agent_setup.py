@@ -68,8 +68,8 @@ def check_repository(root: Path = ROOT) -> dict:
     if (not isinstance(agents, dict) or set(agents) != {
             "max_concurrent_threads_per_session", "default_subagent_model", "default_subagent_reasoning_effort"}
             or type(agents["max_concurrent_threads_per_session"]) is not int
-            or not 1 <= agents["max_concurrent_threads_per_session"] <= 3):
-        raise AgentSetupError("agents must declare model/reasoning defaults and cap concurrency between 1 and 3")
+            or not 1 <= agents["max_concurrent_threads_per_session"] <= 4):
+        raise AgentSetupError("agents must declare model/reasoning defaults and cap concurrency between 1 and 4")
     if (agents["default_subagent_model"] not in SUBAGENT_MODELS
             or agents["default_subagent_reasoning_effort"] not in SUBAGENT_EFFORTS):
         raise AgentSetupError("subagent defaults must use Luna/Sol with reasoning no higher than xhigh")
