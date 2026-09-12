@@ -8,6 +8,7 @@ Goal: ordinary single-player entry, two supported chests/stations, UI-authored r
 - Common actions request `209bd59f-341d-4a35-8241-0ea04bee6619` belongs to preceding common actions source, reported `4a7d710`. It is not automatically evidence for any later changed production DLL. GQ retains runtime/source/package identities.
 - F18 ordinary entry was integrated by GQ as `d03b736` over Window `da0061d`; the frozen seven-file source manifest is `artifacts/f13/f18-entry-candidate.json`: seven Flow production/test files with hashes. Scoped Flow platform PASS963 (771 Flow +192 Stardew), actual eight new/strengthened cases and seven source hashes recorded in f18-entry-scoped-audit.json. Full C/G and native ordinary-entry evidence remain pending. The Window prerequisite is integrated; common validation and hosted observation are owned by GQ/UI.
 - Current local GQ checkpoint: `c5174a8c4a9bf1f3a28d7420bb11d16705a6f96d`. G PASS 2 329 .NET + 503 Python; applicable P PASS101; prepare PASS. Normalized production Window `flow.ui.player` PASS11 and the original chest matrix PASS116 plus two budget assertions. Exact physical-input request `521bde15-3a64-4deb-abfd-0040dc53fed0` stopped before its first semantic step because macOS Accessibility preflight was false. Exact IDs and evidence limits are recorded in [Q02_RUNTIME_C5174A8.md](Q02_RUNTIME_C5174A8.md).
+- Post-checkpoint local composition includes typed Send owner `ff4562d` as integration `1a83a2b` and typed Network owner `ffe59ff` as integration `aca70b0`. Its exact Stardew adapter suite has 254 PASS and its architecture/public API checks pass. The `c5174a8` common/runtime evidence remains historical and is not promoted to the changed Flow DLL; new G/prepare/runtime evidence is pending.
 
 ## Requirement-to-evidence matrix
 
@@ -25,26 +26,26 @@ Goal: ordinary single-player entry, two supported chests/stations, UI-authored r
 | Route editing policy | Rename keeps identity; rebind refuses queued/extraction-uncertain origin, moves no items; RemoveLink preserves admitted in-flight work; station deletion not exposed | Existing owner behavior; expose limitations and verify final UI actions |
 | Choose source/quantity and send real supported items | Existing fingerprint/quantity command and physical adapter; new clean-network test partitions8→5+3 with full XML | Managed PASS for the typed-command scenario; final native UI inventories must prove actual path |
 | No loss/duplication and correct custody | Existing F14–F17/F20 base; new test checks parcel/cargo identity, source/destination,8→5+3 and repeat refusals | Keep accepted base; new UI path and final runtime DLL checks required |
-| Useful source/cargo/route/admission errors | Existing route preview and typed route reasons; local `acb1279` adds exact EN/RU `StationLimit`/`LifetimeLinkLimit`/`RetainedCargoLimit` results, saturated-budget no-mutation tests and lifetime-link preservation after reload | Managed owner-layer PASS for route and retained-resource limits; current exact native EN/RU visibility and remaining real-provider failures are still pending |
+| Useful source/cargo/route/admission errors | Typed route reasons; `acb1279` adds exact EN/RU persistent-limit results; `1a83a2b` adds typed Send provider/state/pending results; `aca70b0` adds typed Network provider/topology/invalid/rebind-pending results, all with no rejected mutation | Managed owner-layer PASS for named route, resource, Send and Network failures; current exact native EN/RU visibility remains pending, while unexpected host callback faults stay diagnostic failures |
 | Permitted cancel/retry/return/reconcile | Existing parcel availability/recovery rules and prior provider failure matrix | Final UI happy/refusal/recovery scenario pending; unknown physical outcome must not replay |
 | Save/restart before and after delivery | Exact `c5174a8` chest crash/save matrix and normalized Window path restore Reserved/Delivered aggregates over real Chest inventories | PASS on current candidate; physical-input binding to the same path remains |
 | Save switching preserves separate worlds | Exact `c5174a8` isolation PASS12; cleanup removed both request-owned working copies | PASS current original matrix; final installed-candidate regression remains |
 | UI framework ownership | Existing public Host API; Flow supplies semantics only; UI implements Window overflow | Source boundary respected; G/P/prepare and production Window PASS on `c5174a8` |
 | CA coexistence | Applicable package isolation PASS101 on unchanged UI source, eight packages and 47 projected files | Exact in-game coexistence on the final installed candidate still required |
-| Player guide and limitations | FLOWLINE_PLAYER_GUIDE.md covers opening/stations/routes/items/pause/recovery/persistent limits and is synchronized with local `acb1279` | Source guide updated; installed/runtime behavior and final GQ handoff remain pending |
-| Delivery to GQ | Exact file manifests, source reviews and raw evidence paths sent directly under user authorization | F13/F18/F19 integrated in local `c5174a8`; common validation and runtime matrix complete, final native/release evidence pending |
+| Player guide and limitations | FLOWLINE_PLAYER_GUIDE.md covers opening/stations/routes/items/pause/recovery/persistent limits and is synchronized with local `aca70b0` | Source guide updated; installed/runtime behavior and final GQ handoff remain pending |
+| Delivery to GQ | Exact file manifests, source reviews and raw evidence paths sent directly under user authorization | F13/F18/F19 integrated locally through `aca70b0`; current Flow changes need new common/runtime evidence before final native/release acceptance |
 
 ## Required validation
 
 F18 requires scoped `./tools/hatifect-test flow --platform`, `./tools/hatifect-check`, `./tools/hatifect-check --platform`; matching UI integration also needs `./tools/hatifect-isolated-ui-ca`. Each success must have nonzero actual executed tests and current source/DLL identity. No deployment to ordinary Mods or real save writes. Heavy runs are serialized with GQ/UI. The common stable-menu source already passed scoped187 and native15 in GQ; rerunning identical owner scoped adds no new evidence.
 
-Current Flow admission-feedback candidate is committed locally as `acb1279`; no remote branch, push or PR is part of this task. GQ independently owns final local integration composition and release evidence.
+Current Flow admission-feedback candidate is committed locally through `aca70b0` (`acb1279` persistent limits, `1a83a2b` typed Send feedback and `aca70b0` typed Network authoring feedback); no remote branch, push or PR is part of this task. GQ independently owns final local integration composition and release evidence.
 
 ## Next dependency-ready work
 
-1. After macOS grants Accessibility to the Python runtime, rerun `flow.ui.player.input` on unchanged `c5174a8` and require the complete phase/action-result capture set through final `Delivered`.
-2. Complete exact-candidate EN/RU, scale, controller and remaining visible F19 refusal coverage without weakening the physical-input requirement.
-3. Run final CA coexistence and installed-archive acceptance; hand exact Flow assets, dependencies and evidence to GQ.
+1. Complete common G/prepare for the local composition through `aca70b0`; do not transfer the prior `c5174a8` Flow DLL evidence to it.
+2. After macOS grants Accessibility to the Python runtime, run `flow.ui.player.input` on that fixed composition and require the complete phase/action-result capture set through final `Delivered`.
+3. Complete exact-candidate EN/RU, scale, controller, CA coexistence and installed-archive acceptance; hand exact Flow assets, dependencies and evidence to GQ.
 
 F13/F18/F19 remain IN_PROGRESS until their original criteria are proven. Q02 overall belongs to GQ.
 
