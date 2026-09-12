@@ -130,7 +130,11 @@ internal sealed partial class FlowGameSession : IDisposable
     }
 
     internal Guid Send(string source, string destination, int slot)
-        => SendCore(source, destination, slot, null)!.Value;
+    {
+        try { return SendCore(source, destination, slot, null)!.Value; }
+        catch (CommandAdmissionFailure error)
+        { throw new InvalidOperationException(error.Message, error); }
+    }
 
     private Guid? SendCore(string source, string destination, int slot, string? expectedFingerprint, int? quantity = null)
     {
@@ -140,20 +144,20 @@ internal sealed partial class FlowGameSession : IDisposable
         RouteStatus route = from.Id == to.Id ? RouteStatus.NoRoute
             : _runtime.PlanRoute(new StationId(from.Id), new StationId(to.Id)).Status;
         if (route != RouteStatus.Found)
-            throw new SendAdmissionFailure(route == RouteStatus.SearchLimitExceeded
+            throw new CommandAdmissionFailure(route == RouteStatus.SearchLimitExceeded
                 ? FlowRejectionCode.RouteSearchLimit : FlowRejectionCode.RouteUnavailable);
-        using IDisposable access = _inventory.EnterStation(from.Id);
-        Item item = _inventory.ReadSource(from.Id, slot);
+        using IDisposable access = EnterSource(from.Id);
+        Item item = ReadSelectedSource(from.Id, slot);
         if (expectedFingerprint is not null
-            && !string.Equals(expectedFingerprint, ChestInventoryAccess.Fingerprint(item), StringComparison.Ordinal))
+            && !MatchesSelectedFingerprint(item, expectedFingerprint))
             return null;
-        if (item.Stack > 999) throw new InvalidOperationException("The first inventory adapter supports source stacks of at most 999 items.");
+        if (item.Stack > 999) throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged);
         int sourceQuantity = item.Stack, units = quantity ?? sourceQuantity;
         if (units <= 0 || units > sourceQuantity) throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be between one and the complete source stack.");
         item.modData.TryGetValue(ChestInventoryAccess.CargoKey, out string oldToken);
         if (Guid.TryParse(oldToken, out Guid previous) && Application.ReadSnapshot().Parcels.Any(parcel => parcel.CargoId == previous
             && parcel.State is not (ParcelState.Cancelled or ParcelState.Delivered or ParcelState.Returned)))
-            throw new InvalidOperationException("This stack already belongs to an active shipment.");
+            throw new CommandAdmissionFailure(FlowRejectionCode.OperationPending);
         Guid cargo = Guid.NewGuid(), shipment = Guid.NewGuid(), parcel = Guid.NewGuid();
         string sourceXml = FlowItemCodec.Encode(item);
         Item captured = FlowItemCodec.Decode(sourceXml);
@@ -193,6 +197,29 @@ internal sealed partial class FlowGameSession : IDisposable
         }
         Application.Refresh();
         return parcel;
+    }
+
+    private IDisposable EnterSource(Guid station)
+    {
+        try { return _inventory.EnterStation(station); }
+        catch (FlowInventoryUnavailableException)
+        { throw new CommandAdmissionFailure(FlowRejectionCode.ProviderUnavailable); }
+    }
+
+    private Item ReadSelectedSource(Guid station, int slot)
+    {
+        try { return _inventory.ReadSource(station, slot); }
+        catch (FlowInventoryUnavailableException)
+        { throw new CommandAdmissionFailure(FlowRejectionCode.ProviderUnavailable); }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException)
+        { throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged); }
+    }
+
+    private static bool MatchesSelectedFingerprint(Item item, string expected)
+    {
+        try { return string.Equals(expected, ChestInventoryAccess.Fingerprint(item), StringComparison.Ordinal); }
+        catch (InvalidOperationException)
+        { throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged); }
     }
 
     internal void Tick(bool timePasses)

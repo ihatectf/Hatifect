@@ -23,9 +23,9 @@ internal sealed class ChestInventoryAccess : IDisposable
     { _resolve = resolve; _canMutate = canMutate; _playerId = playerId; _locks = locks ?? new FlowChestLocks(() => false, _ => { }); }
 
     internal IDisposable EnterChest(Chest chest) => _locks.TryAcquire(chest)
-        ?? throw new InvalidOperationException("The chest is busy; retry after exclusive access becomes available.");
+        ?? throw new FlowInventoryUnavailableException("The chest is busy; retry after exclusive access becomes available.");
     internal IDisposable EnterStation(Guid station) => EnterChest(_resolve(station)
-        ?? throw new InvalidOperationException("The station chest is unavailable."));
+        ?? throw new FlowInventoryUnavailableException("The station chest is unavailable."));
 
     internal bool TryEnterPort(Guid station)
     {
@@ -48,7 +48,7 @@ internal sealed class ChestInventoryAccess : IDisposable
 
     internal Item ReadSource(Guid station, int slot)
     {
-        Chest chest = GetAvailable(station) ?? throw new InvalidOperationException("The source chest is unavailable or busy.");
+        Chest chest = GetAvailable(station) ?? throw new FlowInventoryUnavailableException("The source chest is unavailable or busy.");
         IInventory inventory = chest.GetItemsForPlayer(_playerId);
         if (slot < 0 || slot >= inventory.Count || inventory[slot] is not Item item)
             throw new ArgumentException("The selected source slot is empty or outside the inventory.", nameof(slot));
@@ -169,4 +169,9 @@ internal sealed class ChestInventoryAccess : IDisposable
     private static bool MatchesRemainder(IInventory inventory, int slot, Item? remainder, string? xml)
         => slot < inventory.Count && ReferenceEquals(inventory[slot], remainder)
             && (remainder is null || FlowItemCodec.Encode(remainder) == xml);
+}
+
+internal sealed class FlowInventoryUnavailableException : InvalidOperationException
+{
+    internal FlowInventoryUnavailableException(string message) : base(message) { }
 }

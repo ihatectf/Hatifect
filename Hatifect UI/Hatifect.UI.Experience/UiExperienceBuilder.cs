@@ -58,7 +58,8 @@ public sealed class UiExperienceBuilder
 
     /// <summary>Authors an empty, loading, success, error, or general status region.</summary>
     public UiExperienceBuilder Status(string element, IUiSemanticSource<UiStatus> source)
-        => Element(element, source, UiCapabilities.Monitor);
+        => Declare(_id.Child($"element/{element}"), element, element, source, UiSourceTypes.Status,
+            true, new[] { UiCapabilities.Monitor }, legacyAlias: true);
 
     public UiExperienceBuilder Navigate<T>(string element, IUiSemanticSource<T> source)
         => Element(element, source, UiCapabilities.Navigate);
@@ -72,7 +73,13 @@ public sealed class UiExperienceBuilder
     public UiExperienceBuilder Monitor<T>(UiSymbolId id, string name, IUiSemanticSource<T> source)
         => Element(id, name, source, UiCapabilities.Monitor);
     public UiExperienceBuilder Status(UiSymbolId id, string name, IUiSemanticSource<UiStatus> source)
-        => Element(id, name, source, UiCapabilities.Monitor);
+        => Declare(id, LegacyAlias(id, name), name, source, UiSourceTypes.Status,
+            true, new[] { UiCapabilities.Monitor }, legacyAlias: true);
+
+    /// <summary>Authors a typed status region with separate stable alias and localized label.</summary>
+    public UiExperienceBuilder Status(UiSymbolId id, string alias, string label, IUiSemanticSource<UiStatus> source)
+        => Declare(id, alias, label, source, UiSourceTypes.Status,
+            true, new[] { UiCapabilities.Monitor });
 
     public UiExperienceBuilder Element<T>(string element, IUiSemanticSource<T> source, params UiCapability[] capabilities)
         => Declare(_id.Child($"element/{element}"), element, element, source, null, true, capabilities, legacyAlias: true);

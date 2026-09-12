@@ -110,7 +110,7 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDispos
     private readonly UiPublication _publication;
     private readonly UiPublishedState<ChestsAnywhereNavigatorMode> _mode;
     private readonly UiPublishedState<string> _selectedCategory;
-    private readonly UiPublishedState<string> _status;
+    private readonly UiPublishedState<UiStatus> _status;
     private readonly UiPublishedState<ChestsAnywhereStorageHandoff?> _handoff;
     private readonly UiPublishedSelectableCollection<ChestsAnywhereNavigatorCategory> _categories;
     private readonly UiPublishedSelectableCollection<ChestsAnywhereNavigatorStorage> _storages;
@@ -139,7 +139,8 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDispos
             UiSourceTypes.Scalar<NavigatorProjection>(new("Hatifect.ChestsAnywhereOverlay", "data/projection"), false));
         _mode = _publication.State(id.Child("source/mode"), projection.Mode, modeType);
         _selectedCategory = _publication.State(id.Child("state/category-key"), projection.SelectedCategoryKey, UiSourceTypes.String);
-        _status = _publication.State(id.Child("element/Status"), projection.StatusText, UiSourceTypes.String);
+        _status = _publication.State(id.Child("element/Status"),
+            new UiStatus(UiStatusKind.Status, projection.StatusText), UiSourceTypes.Status);
         _handoff = _publication.State<ChestsAnywhereStorageHandoff?>(id.Child("element/Handoff"), null, handoffType);
         _categories = _publication.SelectableCollection(id.Child("element/Categories"),
             projection.Categories, categoryType,
@@ -169,7 +170,7 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDispos
                 UiSourceTypes.Collection(storageType), UiCapabilities.Browse, UiCapabilities.Select)
             .Source(storage, "SelectedStorage", "Selected storage", new UiSelectionSource(Storages),
                 UiSourceTypes.Selection(storageType), UiCapabilities.Select)
-            .Element(id.Child("element/Status"), "Status", "Status", _status, UiSourceTypes.String, UiCapabilities.Monitor)
+            .Status(id.Child("element/Status"), "Status", "Status", _status)
             .Element(id.Child("element/Handoff"), "Handoff", "Handoff", _handoff,
                 handoffType, UiCapabilities.Monitor)
             .Actions("Actions", actions)
@@ -198,7 +199,7 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDispos
     public UiPublication Publication => _publication;
     public IUiSemanticSource<ChestsAnywhereNavigatorMode> Mode => _mode;
     public IUiSemanticSource<string> SelectedCategory => _selectedCategory;
-    public IUiSemanticSource<string> Status => _status;
+    public IUiSemanticSource<UiStatus> Status => _status;
     public ChestsAnywhereSelectionSource<ChestsAnywhereNavigatorCategory> Categories { get; }
     public ChestsAnywhereSelectionSource<ChestsAnywhereNavigatorStorage> Storages { get; }
     public IUiSemanticSource<ChestsAnywhereStorageHandoff?> Handoff => _handoff;
@@ -274,7 +275,8 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDispos
     }
 
     private void ApplyProjection(NavigatorProjection next, NavigatorRequestContext context, bool preserveView,
-        ChestsAnywhereStorageHandoff? handoff = null, bool replaceHandoff = false)
+        ChestsAnywhereStorageHandoff? handoff = null, bool replaceHandoff = false,
+        UiStatusKind statusKind = UiStatusKind.Status)
     {
         RequireCurrent(context);
         ChestsAnywhereNavigatorMode nextMode = preserveView ? context.Mode : next.Mode;
@@ -287,7 +289,7 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDispos
             .Set(_projection, next)
             .Set(_mode, nextMode)
             .Set(_selectedCategory, nextCategory)
-            .Set(_status, next.StatusText)
+            .Set(_status, new UiStatus(statusKind, next.StatusText))
             .Set(_handoff, replaceHandoff ? handoff : context.Handoff)
             .Replace(_categories, next.Categories)
             .Select(_categories, CategoryId(nextCategory))
@@ -342,6 +344,8 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDispos
         ArgumentNullException.ThrowIfNull(snapshot.FavoriteStorageKeys);
         ArgumentNullException.ThrowIfNull(snapshot.RecentStorageKeys);
         ArgumentNullException.ThrowIfNull(snapshot.LastStorageByCategory);
+        if (string.IsNullOrWhiteSpace(snapshot.StatusText))
+            throw new InvalidOperationException("The navigator snapshot contains no status message.");
 
         ChestsAnywhereNavigatorCategory[] categories = snapshot.Categories
             .Select(category => category ?? throw new InvalidOperationException("The navigator snapshot contains a null category."))
@@ -403,7 +407,7 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDispos
             title,
             snapshot.Mode,
             selectedCategory,
-            snapshot.StatusText ?? string.Empty,
+            snapshot.StatusText,
             Array.AsReadOnly(categories),
             Array.AsReadOnly(storages),
             byKey,

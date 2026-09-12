@@ -105,8 +105,17 @@ public sealed class FlowResourceTests
         Assert.Equal(0, full.Runtime.IssuedTransfers.Used);
         Assert.Equal(0, full.Payloads.Remaining);
         FlowSnapshot snapshot = session.ReadSnapshot();
+        FlowLinkSnapshot link = Assert.Single(snapshot.Links);
+        FlowInventorySlot slot = Assert.Single(session.ReadInventory(link.Origin));
+        var typedSend = new FlowSendCommand(snapshot.SessionId, snapshot.Revision,
+            link.Origin, link.Destination, slot.Index, slot.Fingerprint);
         string sourceXml = FlowItemCodec.Encode(world.Source.Items[0]);
         int acquisitions = mutex.Requests;
+        FlowCommandResult typedRejection = session.Execute(typedSend);
+        Assert.Equal(FlowCommandStatus.Rejected, typedRejection.Status);
+        Assert.Equal(FlowRejectionCode.RetainedCargoLimit, typedRejection.Code);
+        Assert.Equal("flow.reason.RetainedCargoLimit", typedRejection.ReasonKey);
+        Assert.Equal(snapshot.Revision, typedRejection.Revision);
         for (int i = 0; i < 3; i++)
         {
             FlowResourceLimitException error = Assert.Throws<FlowResourceLimitException>(() => session.Send("source", "destination", 0));
@@ -118,7 +127,7 @@ public sealed class FlowResourceTests
         Assert.Equal(8, world.Source.Items[0].Stack);
         Assert.Same(snapshot, session.ReadSnapshot());
         Assert.Equal(full.Runtime, session.ReadResources().Runtime);
-        Assert.Equal(new FlowAdmissionRejections(0, 0, 3), session.ReadResources().AdmissionRejections);
+        Assert.Equal(new FlowAdmissionRejections(0, 0, 4), session.ReadResources().AdmissionRejections);
         Assert.False(session.IsFaulted);
         FlowGameSave saved = GameSessionWorld.Clone(session.BeginSave());
         Assert.Equal(saved.Payloads.Sum(payload => (long)payload.Xml.Length), full.PayloadCharacters.Used);
@@ -138,7 +147,15 @@ public sealed class FlowResourceTests
         var errors = new List<Exception>();
         using var session = new FlowGameSession(1, 1, () => true, binding => chests[binding.X], errors.Add);
         for (int i = 0; i < 32; i++) session.RegisterStation("station" + i, "Farm", i, 0, chests[i]);
+        session.CaptureTarget("Farm", 32, 0, chests[32]);
+        FlowNetworkSnapshot network = session.ReadNetwork();
         FlowSnapshot before = session.ReadSnapshot();
+        FlowCommandResult typedRejection = session.Execute(new FlowNetworkCommand(before.SessionId, before.Revision,
+            FlowNetworkAction.RegisterStation, Target: network.Target, Name: "overflow"));
+        Assert.Equal(FlowCommandStatus.Rejected, typedRejection.Status);
+        Assert.Equal(FlowRejectionCode.StationLimit, typedRejection.Code);
+        Assert.Equal("flow.reason.StationLimit", typedRejection.ReasonKey);
+        Assert.Equal(before.Revision, typedRejection.Revision);
         FlowResourceLimitException error = Assert.Throws<FlowResourceLimitException>(() => session.RegisterStation("overflow", "Farm", 32, 0, chests[32]));
         Assert.Equal(FlowAdmissionResource.Stations, error.Resource);
         Assert.False(chests[32].modData.ContainsKey(FlowGameSession.StationKey));
@@ -146,7 +163,7 @@ public sealed class FlowResourceTests
         FlowGameResources resources = session.ReadResources();
         Assert.Equal(0, resources.Runtime.Stations.Remaining);
         Assert.Equal(32, resources.Ports.Count);
-        Assert.Equal(new FlowAdmissionRejections(1, 0, 0), resources.AdmissionRejections);
+        Assert.Equal(new FlowAdmissionRejections(2, 0, 0), resources.AdmissionRejections);
         Assert.True(resources.Format().Length < 12000);
         Assert.False(session.IsFaulted);
         Assert.Empty(errors);

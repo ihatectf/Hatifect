@@ -13,6 +13,28 @@ namespace Hatifect.Flow.Tests;
 [Trait("Category", "flow")]
 public sealed class NetworkExperienceTests
 {
+    [Theory]
+    [InlineData(FlowApplicationState.Active, UiStatusKind.Success, "Ready")]
+    [InlineData(FlowApplicationState.Paused, UiStatusKind.Status, "Paused")]
+    [InlineData(FlowApplicationState.RecoveryRequired, UiStatusKind.Error,
+        "No settled transfer outcome; restore the complete game save from a known good backup")]
+    public void TransportUsesSharedSemanticStatusPolicy(
+        FlowApplicationState state,
+        UiStatusKind expectedKind,
+        string expectedMessage)
+    {
+        using var app = new NetworkTestApplication();
+        app.Application.SetAvailability(state);
+        using var view = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network/status"), app);
+
+        UiSemanticElementDefinition transport = view.Experience.Elements.Single(element => element.Alias == "Transport");
+        UiStatus status = Assert.IsAssignableFrom<IUiSemanticSource<UiStatus>>(transport.Source).Value;
+        Assert.Equal(expectedKind, status.Kind);
+        Assert.Equal(expectedMessage, status.Message);
+        Assert.Equal(UiDataTypes.Status,
+            view.Experience.Graph.Nodes.Single(node => node.Id == transport.Id).DataType);
+    }
+
     [Fact]
     public void HistoryPagesSearchAndFilterRemainBoundedAndRestoreSelectionByIdentity()
     {
@@ -61,6 +83,10 @@ public sealed class NetworkExperienceTests
         Assert.Equal(english.Experience.Elements.Select(element => element.Alias), russian.Experience.Elements.Select(element => element.Alias));
         foreach (var experience in new[] { english.Experience, russian.Experience })
         {
+            UiSemanticElementDefinition transport = experience.Elements.Single(element => element.Alias == "Transport");
+            Assert.Equal(UiDataTypes.Status, experience.Graph.Nodes.Single(node => node.Id == transport.Id).DataType);
+            Assert.Equal(UiStatusKind.Success,
+                Assert.IsAssignableFrom<IUiSemanticSource<UiStatus>>(transport.Source).Value.Kind);
             UiBindingContext context = experience.CreateBindingContext();
             UiCompilationResult result = new UiCompiler().Compile("presentation Network\nSourceStation -> Primary\nHistory -> Secondary\n", context);
             Assert.True(result.IsValid, string.Join("; ", result.Diagnostics.Select(diagnostic => diagnostic.Message)));
@@ -179,8 +205,68 @@ public sealed class NetworkExperienceTests
         Assert.False(send.TryExecute());
     }
 
+    [Theory]
+    [InlineData(false, "State changed; review the updated data", "Shipment created")]
+    [InlineData(true, "Состояние изменилось; проверьте обновлённые данные", "Отправление создано")]
+    public void ChangedStackRejectionClearsSelectionAndExplicitRetryUsesFreshFingerprint(
+        bool russian, string changed, string created)
+    {
+        using var app = new NetworkTestApplication();
+        using var view = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "changed-stack"), app, russian);
+        var source = Element<FlowSelectionSource<FlowStationDetails>>(view, "/source-station");
+        var destination = Element<FlowSelectionSource<FlowStationDetails>>(view, "/destination-station");
+        source.TrySelect(source.GetItem(0).Id);
+        destination.TrySelect(destination.GetItem(1).Id);
+        var inventory = Element<FlowSelectionSource<FlowInventorySlot>>(view, "/source-cargo");
+        Assert.True(inventory.TrySelect(inventory.GetItem(0).Id));
+        UiActionDefinition send = ActionById(view, "/send");
+        var result = Element<UiPublishedState<string>>(view, "/result");
+
+        app.ReplaceInventory(new FlowInventorySlot(3, "ore", 6, new string('B', 64), "1"));
+        Assert.True(send.TryExecute());
+
+        Assert.Equal(changed, result.Value);
+        Assert.Null(inventory.SelectedItemId);
+        Assert.False(send.CanExecute);
+        Assert.Equal(1, app.SendAttempts);
+        Assert.Equal(0, app.AppliedSends);
+        Assert.Equal(new string('B', 64), Assert.Single(inventory.Value).Fingerprint);
+
+        Assert.True(inventory.TrySelect(inventory.GetItem(0).Id));
+        Assert.True(send.TryExecute());
+        Assert.Equal(created, result.Value);
+        Assert.Equal(2, app.SendAttempts);
+        Assert.Equal(1, app.AppliedSends);
+        Assert.Equal(new string('B', 64), app.SendCommand!.Fingerprint);
+    }
+
+    [Fact]
+    public void CargoRefreshPreservesOnlyTheExactSelectedStack()
+    {
+        using var app = new NetworkTestApplication();
+        using var view = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "refresh-stack"), app);
+        var source = Element<FlowSelectionSource<FlowStationDetails>>(view, "/source-station");
+        source.TrySelect(source.GetItem(0).Id);
+        var inventory = Element<FlowSelectionSource<FlowInventorySlot>>(view, "/source-cargo");
+        Assert.True(inventory.TrySelect(inventory.GetItem(0).Id));
+        UiSymbolId selected = inventory.SelectedItemId!.Value;
+        UiActionDefinition refresh = ActionById(view, "/inventory");
+
+        Assert.True(refresh.TryExecute());
+        Assert.Equal(selected, inventory.SelectedItemId);
+
+        app.ReplaceInventory(new FlowInventorySlot(3, "ore", 7, new string('C', 64), "0"));
+        Assert.True(refresh.TryExecute());
+        Assert.Null(inventory.SelectedItemId);
+        Assert.Equal(new string('C', 64), Assert.Single(inventory.Value).Fingerprint);
+    }
+
     private static T Source<T>(NetworkExperience view, string name) => Assert.IsType<T>(view.Experience.Elements.Single(element => element.Name == name).Source);
     private static UiActionDefinition Action(NetworkExperience view, string title) => Assert.Single(view.Experience.Actions, action => action.Title == title);
+    private static T Element<T>(NetworkExperience view, string suffix)
+        => Assert.IsType<T>(view.Experience.Elements.Single(element => element.Id.LocalId.EndsWith(suffix, StringComparison.Ordinal)).Source);
+    private static UiActionDefinition ActionById(NetworkExperience view, string suffix)
+        => Assert.Single(view.Experience.Actions, action => action.Id.LocalId.EndsWith(suffix, StringComparison.Ordinal));
 }
 
 internal sealed class NetworkTestApplication : IFlowNetworkApplication, IDisposable
@@ -190,7 +276,10 @@ internal sealed class NetworkTestApplication : IFlowNetworkApplication, IDisposa
     internal FlowApplication Application { get; }
     internal FlowNetworkCommand? NetworkCommand { get; private set; }
     internal FlowSendCommand? SendCommand { get; private set; }
+    internal int SendAttempts { get; private set; }
+    internal int AppliedSends { get; private set; }
     internal int InventoryReads { get; private set; }
+    private FlowInventorySlot[] _inventory = { new(3, "ore", 8, new string('A', 64), "0") };
     internal NetworkTestApplication()
     {
         Application = new FlowApplication(Fixture.Runtime, action => action(Fixture.Runtime), _ => { });
@@ -206,10 +295,20 @@ internal sealed class NetworkTestApplication : IFlowNetworkApplication, IDisposa
     public IReadOnlyList<FlowInventorySlot> ReadInventory(Guid station)
     {
         InventoryReads++;
-        return new[] { new FlowInventorySlot(3, "ore", 8, new string('A', 64), "0") };
+        return Array.AsReadOnly((FlowInventorySlot[])_inventory.Clone());
     }
     public FlowCommandResult Execute(FlowNetworkCommand command) { NetworkCommand = command; return new(FlowCommandStatus.Applied, ReadSnapshot().Revision); }
-    public FlowCommandResult Execute(FlowSendCommand command) { SendCommand = command; return new(FlowCommandStatus.Applied, ReadSnapshot().Revision); }
+    public FlowCommandResult Execute(FlowSendCommand command)
+    {
+        SendAttempts++;
+        SendCommand = command;
+        FlowInventorySlot? current = _inventory.FirstOrDefault(slot => slot.Index == command.Slot);
+        if (current is null || !string.Equals(current.Fingerprint, command.Fingerprint, StringComparison.Ordinal))
+            return new(FlowCommandStatus.Conflict, ReadSnapshot().Revision, FlowRejectionCode.StateChanged);
+        AppliedSends++;
+        return new(FlowCommandStatus.Applied, ReadSnapshot().Revision);
+    }
+    internal void ReplaceInventory(params FlowInventorySlot[] inventory) => _inventory = (FlowInventorySlot[])inventory.Clone();
     public FlowCommandResult Execute(FlowParcelCommand command) => Application.Execute(command);
     public IReadOnlyList<FlowRecoveryIssue> ReadRecovery() => Array.Empty<FlowRecoveryIssue>();
     public FlowCommandResult Execute(FlowRecoveryCommand command) => new(FlowCommandStatus.Rejected, ReadSnapshot().Revision);

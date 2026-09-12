@@ -486,7 +486,13 @@ public sealed class NetworkPublicationTests
     private static T Source<T>(NetworkExperience view, string name)
         => Assert.IsType<T>(view.Experience.Elements.Single(element => element.Name == name).Source);
     private static FlowSelectionSource<T> Collection<T>(NetworkExperience view, string name) => Source<FlowSelectionSource<T>>(view, name);
-    private static string Text(NetworkExperience view, string name) => Source<UiPublishedState<string>>(view, name).Value;
+    private static string Text(NetworkExperience view, string name)
+    {
+        IUiSemanticSource source = view.Experience.Elements.Single(element => element.Name == name).Source;
+        return source is IUiSemanticSource<UiStatus> status
+            ? status.Value.Message
+            : Assert.IsType<UiPublishedState<string>>(source).Value;
+    }
     private static UiActionDefinition Action(NetworkExperience view, string title) => Assert.Single(view.Experience.Actions, action => action.Title == title);
     private static void SelectRoute(NetworkExperience view)
     {

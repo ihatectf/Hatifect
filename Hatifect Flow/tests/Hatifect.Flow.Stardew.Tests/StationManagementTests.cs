@@ -97,4 +97,33 @@ public sealed class StationManagementTests
         Assert.Equal(8, Assert.Single(world.Source.Items).Stack);
         Assert.Equal(ParcelState.Cancelled, Assert.Single(session.ReadSnapshot().Parcels).State);
     }
+
+    [Fact]
+    public void TypedRebindReportsOperationPendingWithoutMovingQueuedSource()
+    {
+        var world = new GameSessionWorld();
+        var replacement = InventoryFixture.CreateChest();
+        using var session = new FlowGameSession(1, 1, () => true,
+            binding => binding.X switch { 0 => world.Source, 1 => world.Destination, 2 => replacement, _ => null }, world.Errors.Add);
+        world.Configure(session);
+        session.Send("source", "destination", 0);
+        Guid source = Assert.Single(session.ReadSnapshot().Parcels).Origin;
+        session.PreparePlayerTarget("Farm", 2, 0, replacement);
+        FlowNetworkSnapshot network = session.ReadNetwork();
+
+        FlowCommandResult rejected = session.Execute(new FlowNetworkCommand(network.Transport.SessionId,
+            network.Transport.Revision, FlowNetworkAction.RebindStation, Station: source, Target: network.Target));
+
+        Assert.Equal(FlowCommandStatus.Rejected, rejected.Status);
+        Assert.Equal(FlowRejectionCode.OperationPending, rejected.Code);
+        Assert.Equal("flow.reason.OperationPending", rejected.ReasonKey);
+        Assert.Equal(network.Transport.Revision, rejected.Revision);
+        Assert.Same(network.Transport, session.ReadSnapshot());
+        Assert.False(replacement.modData.ContainsKey(FlowGameSession.StationKey));
+        Assert.Equal(source.ToString("D"), world.Source.modData[FlowGameSession.StationKey]);
+        Assert.Equal(8, Assert.Single(world.Source.Items).Stack);
+        Assert.Equal(ParcelState.Reserved, Assert.Single(session.ReadSnapshot().Parcels).State);
+        Assert.False(session.IsFaulted);
+        Assert.Empty(world.Errors);
+    }
 }

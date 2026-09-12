@@ -4,7 +4,9 @@ using System.IO;
 using System.Linq;
 using Hatifect.Flow.Application;
 using Hatifect.Flow.Application.Planning;
+using Hatifect.Flow.Diagnostics;
 using Hatifect.Flow.Domain.Identity;
+using Hatifect.Flow.Domain.Shipments;
 using Hatifect.Flow.Inventory;
 using StardewValley.Objects;
 
@@ -42,8 +44,14 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
                 return new FlowCommandResult(FlowCommandStatus.Conflict, ReadSnapshot().Revision);
             return new FlowCommandResult(FlowCommandStatus.Applied, ReadSnapshot().Revision);
         }
-        catch (SendAdmissionFailure error)
-        { return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, error.Code); }
+        catch (CommandAdmissionFailure error)
+        {
+            FlowCommandStatus status = error.Code == FlowRejectionCode.StateChanged
+                ? FlowCommandStatus.Conflict : FlowCommandStatus.Rejected;
+            return new FlowCommandResult(status, ReadSnapshot().Revision, error.Code);
+        }
+        catch (FlowResourceLimitException error)
+        { return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, ResourceLimitCode(error.Resource)); }
         catch (ArgumentOutOfRangeException)
         { return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision); }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException)
@@ -128,12 +136,36 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
                     if (capturedTarget is not { } target || target.Token != command.Target
                         || !ReferenceEquals(_resolve(target.Binding), target.Chest))
                         return new FlowCommandResult(FlowCommandStatus.Conflict, ReadSnapshot().Revision);
+                    if (!ChestInventoryAccess.IsSupported(target.Chest) || target.Chest.GetMutex().IsLocked())
+                        throw new CommandAdmissionFailure(FlowRejectionCode.ProviderUnavailable);
                     if (command.Action == FlowNetworkAction.RegisterStation)
+                    {
+                        if (_stations.Values.Any(station => string.Equals(station.Name, command.Name, StringComparison.OrdinalIgnoreCase)
+                                || station.Location == target.Binding.Location && station.X == target.Binding.X && station.Y == target.Binding.Y)
+                            || target.Chest.modData.TryGetValue(StationKey, out string previous)
+                                && Guid.TryParse(previous, out Guid old) && _stations.ContainsKey(old))
+                            throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged);
                         RegisterStation(command.Name, target.Binding.Location, target.Binding.X, target.Binding.Y, target.Chest);
-                    else RebindStation(RequireStation(command.Station).Name, target.Binding.Location, target.Binding.X, target.Binding.Y, target.Chest);
+                    }
+                    else
+                    {
+                        StationBinding station = RequireStation(command.Station);
+                        if (_stations.Values.Any(value => value.Id != station.Id && value.Location == target.Binding.Location
+                                && value.X == target.Binding.X && value.Y == target.Binding.Y)
+                            || target.Chest.modData.TryGetValue(StationKey, out string tag) && tag != station.Id.ToString("D"))
+                            throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged);
+                        if (ReadSnapshot().Parcels.Any(parcel => parcel.Origin == station.Id
+                            && parcel.State is ParcelState.Created or ParcelState.Reserved or ParcelState.ExtractionUncertain))
+                            throw new CommandAdmissionFailure(FlowRejectionCode.OperationPending);
+                        RebindStation(station.Name, target.Binding.Location, target.Binding.X, target.Binding.Y, target.Chest);
+                    }
                     break;
                 case FlowNetworkAction.RenameStation:
-                    RenameStation(RequireStation(command.Station).Name, command.Name);
+                    StationBinding selected = RequireStation(command.Station);
+                    if (_stations.Values.Any(value => value.Id != selected.Id
+                        && string.Equals(value.Name, command.Name, StringComparison.OrdinalIgnoreCase)))
+                        throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged);
+                    RenameStation(selected.Name, command.Name);
                     break;
                 case FlowNetworkAction.AddLink:
                     Link(RequireStation(command.Station).Name, RequireStation(command.Destination).Name, command.Capacity, command.TransitTicks);
@@ -141,13 +173,25 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
                 case FlowNetworkAction.RemoveLink:
                     if (command.Target == Guid.Empty || !ReadSnapshot().Links.Any(link => link.Id == command.Target)
                         || !_runtime.RemoveLink(new LinkId(command.Target)))
-                        return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision);
+                        throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged);
                     Application.Refresh();
                     break;
             }
             return new FlowCommandResult(FlowCommandStatus.Applied, ReadSnapshot().Revision);
         }
-        catch (Exception error) when (error is ArgumentException or InvalidOperationException or InvalidDataException)
+        catch (CommandAdmissionFailure error)
+        {
+            FlowCommandStatus status = error.Code == FlowRejectionCode.StateChanged
+                ? FlowCommandStatus.Conflict : FlowCommandStatus.Rejected;
+            return new FlowCommandResult(status, ReadSnapshot().Revision, error.Code);
+        }
+        catch (FlowResourceLimitException error)
+        { return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, ResourceLimitCode(error.Resource)); }
+        catch (FlowInventoryUnavailableException)
+        { return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, FlowRejectionCode.ProviderUnavailable); }
+        catch (Exception error) when (error is ArgumentException or InvalidDataException)
+        { return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision); }
+        catch (InvalidOperationException)
         {
             return new FlowCommandResult(_faulted ? FlowCommandStatus.Faulted : FlowCommandStatus.Rejected, ReadSnapshot().Revision);
         }
@@ -157,12 +201,26 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
     private StationBinding RequireStation(Guid id) => _stations.TryGetValue(id, out StationBinding? station)
         ? station : throw new ArgumentException("Unknown station identity.");
 
-    private sealed class SendAdmissionFailure : InvalidOperationException
+    private static FlowRejectionCode ResourceLimitCode(FlowAdmissionResource resource) => resource switch
     {
-        internal SendAdmissionFailure(FlowRejectionCode code)
-            : base(code == FlowRejectionCode.RouteSearchLimit
-                ? "The route search exceeded its supported bound."
-                : "No route connects the selected stations.") => Code = code;
+        FlowAdmissionResource.Stations => FlowRejectionCode.StationLimit,
+        FlowAdmissionResource.LifetimeLinks => FlowRejectionCode.LifetimeLinkLimit,
+        FlowAdmissionResource.RetainedCargo => FlowRejectionCode.RetainedCargoLimit,
+        _ => throw new ArgumentOutOfRangeException(nameof(resource))
+    };
+
+    private sealed class CommandAdmissionFailure : InvalidOperationException
+    {
+        internal CommandAdmissionFailure(FlowRejectionCode code)
+            : base(code switch
+            {
+                FlowRejectionCode.RouteSearchLimit => "The route search exceeded its supported bound.",
+                FlowRejectionCode.RouteUnavailable => "No route connects the selected stations.",
+                FlowRejectionCode.ProviderUnavailable => "The source inventory is temporarily unavailable.",
+                FlowRejectionCode.OperationPending => "The selected stack already belongs to an active shipment.",
+                FlowRejectionCode.StateChanged => "The selected source changed before admission.",
+                _ => "The command cannot be admitted."
+            }) => Code = code;
         internal FlowRejectionCode Code { get; }
     }
 }

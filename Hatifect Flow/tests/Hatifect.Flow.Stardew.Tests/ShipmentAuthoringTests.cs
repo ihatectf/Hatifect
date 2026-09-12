@@ -35,10 +35,77 @@ public sealed class ShipmentAuthoringTests
     private sealed class AdmissionMutex : IFlowInventoryMutex
     {
         internal Action? Acquiring;
-        public bool IsLocked => IsHeld;
+        internal bool Busy;
+        public bool IsLocked => Busy || IsHeld;
         public bool IsHeld { get; private set; }
-        public void Request(Action acquired, Action failed) { Acquiring?.Invoke(); IsHeld = true; acquired(); }
+        public void Request(Action acquired, Action failed)
+        {
+            if (Busy) { failed(); return; }
+            Acquiring?.Invoke();
+            IsHeld = true;
+            acquired();
+        }
         public void Release() => IsHeld = false;
+    }
+
+    [Fact]
+    public void BusySourceReportsProviderUnavailableBeforeCargoAdmission()
+    {
+        var world = new GameSessionWorld();
+        var mutex = new AdmissionMutex();
+        using FlowGameSession session = world.Open(locks: new FlowChestLocks(() => true, world.Errors.Add, _ => mutex));
+        world.Configure(session);
+        FlowSnapshot before = session.ReadSnapshot();
+        FlowLinkSnapshot link = Assert.Single(before.Links);
+        FlowInventorySlot selected = Assert.Single(session.ReadInventory(link.Origin));
+        string sourceXml = FlowItemCodec.Encode(Assert.Single(world.Source.Items));
+        mutex.Busy = true;
+
+        FlowCommandResult rejected = session.Execute(new FlowSendCommand(before.SessionId, before.Revision,
+            link.Origin, link.Destination, selected.Index, selected.Fingerprint));
+
+        Assert.Equal(FlowCommandStatus.Rejected, rejected.Status);
+        Assert.Equal(FlowRejectionCode.ProviderUnavailable, rejected.Code);
+        Assert.Equal("flow.reason.ProviderUnavailable", rejected.ReasonKey);
+        Assert.Equal(before.Revision, rejected.Revision);
+        Assert.Same(before, session.ReadSnapshot());
+        Assert.Empty(session.ReadSnapshot().Parcels);
+        Assert.Empty(session.BeginSave().Payloads);
+        Assert.Equal(sourceXml, FlowItemCodec.Encode(Assert.Single(world.Source.Items)));
+        Assert.Empty(world.Destination.Items);
+        Assert.False(mutex.IsHeld);
+        Assert.False(session.IsFaulted);
+        Assert.Empty(world.Errors);
+    }
+
+    [Fact]
+    public void OversizedMetadataAfterSelectionReportsStateChangedBeforeCargoAdmission()
+    {
+        var world = new GameSessionWorld();
+        using FlowGameSession session = world.Open();
+        world.Configure(session);
+        FlowSnapshot before = session.ReadSnapshot();
+        FlowLinkSnapshot link = Assert.Single(before.Links);
+        FlowInventorySlot selected = Assert.Single(session.ReadInventory(link.Origin));
+        StardewValley.Item source = Assert.Single(world.Source.Items);
+        source.modData["test/large"] = new string('x', FlowItemCodec.MaxPayloadLength);
+
+        FlowCommandResult rejected = session.Execute(new FlowSendCommand(before.SessionId, before.Revision,
+            link.Origin, link.Destination, selected.Index, selected.Fingerprint));
+
+        Assert.Equal(FlowCommandStatus.Conflict, rejected.Status);
+        Assert.Equal(FlowRejectionCode.StateChanged, rejected.Code);
+        Assert.Equal("flow.reason.StateChanged", rejected.ReasonKey);
+        Assert.Equal(before.Revision, rejected.Revision);
+        Assert.Same(before, session.ReadSnapshot());
+        Assert.Empty(session.ReadSnapshot().Parcels);
+        Assert.Empty(session.BeginSave().Payloads);
+        Assert.Same(source, Assert.Single(world.Source.Items));
+        Assert.False(source.modData.ContainsKey(ChestInventoryAccess.CargoKey));
+        Assert.Equal(8, source.Stack);
+        Assert.Empty(world.Destination.Items);
+        Assert.False(session.IsFaulted);
+        Assert.Empty(world.Errors);
     }
 
     [Fact]

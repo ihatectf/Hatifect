@@ -82,11 +82,15 @@ public static class UiDataTypes
     public static readonly UiSymbolId BooleanId = new("Hatifect.UI", "data/boolean");
     public static readonly UiSymbolId NumberId = new("Hatifect.UI", "data/number");
     public static readonly UiSymbolId SymbolId = new("Hatifect.UI", "data/symbol");
+    /// <summary>Canonical nominal identity for the shared semantic status value.</summary>
+    public static readonly UiSymbolId StatusId = new("Hatifect.UI", "data/status");
     public static readonly UiSymbolId UnitId = new("Hatifect.UI", "data/unit");
     public static readonly UiDataType String = Scalar(StringId, false);
     public static readonly UiDataType Boolean = Scalar(BooleanId, false);
     public static readonly UiDataType Number = Scalar(NumberId, false);
     public static readonly UiDataType Symbol = Scalar(SymbolId, false);
+    /// <summary>Required scalar descriptor for a shared semantic status value.</summary>
+    public static readonly UiDataType Status = Scalar(StatusId, false);
     public static readonly UiDataType Unit = Scalar(UnitId, false);
 
     public static UiDataType Scalar(UiSymbolId id, bool nullable) => new(id, UiDataShape.Scalar, nullable);

@@ -11,7 +11,10 @@ internal sealed partial class NetworkExperience : IFlowExperience
     private readonly bool _russian;
     private readonly UiPublication _publication;
     private readonly UiPublishedState<Projection> _projection;
-    private readonly UiPublishedState<string> _status, _target, _route, _result;
+    private readonly UiPublishedState<UiStatus> _status;
+    private readonly UiStatus _activeStatus, _pausedStatus, _recoveryUnknownStatus, _recoveryStatus,
+        _closedStatus, _faultedStatus;
+    private readonly UiPublishedState<string> _target, _route, _result;
     private readonly FlowTextSource _name, _capacity, _ticks;
     private readonly UiPublishedState<string?> _nameError, _capacityError, _ticksError;
     private readonly UiFormState _stationForm, _linkForm;
@@ -33,6 +36,15 @@ internal sealed partial class NetworkExperience : IFlowExperience
     {
         _application = application ?? throw new ArgumentNullException(nameof(application));
         _russian = russian;
+        _activeStatus = new(UiStatusKind.Success, Text("Ready", "Готово"));
+        _pausedStatus = new(UiStatusKind.Status, Text("Paused", "Приостановлено"));
+        _recoveryUnknownStatus = new(UiStatusKind.Error, Text(
+            "No settled transfer outcome; restore the complete game save from a known good backup",
+            "Нет подтверждённого результата передачи; восстановите целый игровой сейв из исправной резервной копии"));
+        _recoveryStatus = new(UiStatusKind.Error,
+            Text("Recovery required; cargo retained", "Требуется восстановление; груз сохранён"));
+        _closedStatus = new(UiStatusKind.Empty, Text("Session closed", "Сессия закрыта"));
+        _faultedStatus = new(UiStatusKind.Error, Text("Session closed", "Сессия закрыта"));
         _publication = new(id);
         try
         {
@@ -46,7 +58,9 @@ internal sealed partial class NetworkExperience : IFlowExperience
             UiPublishedState<string> State(string key, string value = "") => _publication.State(id.Child("source/" + key), value, UiSourceTypes.String);
             UiPublishedState<string?> Error(string key) => _publication.State<string?>(id.Child("source/" + key), null,
                 new(UiSourceTypes.String.Descriptor with { Nullable = true }));
-            _status = State("status"); _target = State("target"); _route = State("route"); _result = State("result");
+            _status = _publication.State(id.Child("source/status"),
+                TransportStatus(initial.Transport.State, recoveryCount: 1), UiSourceTypes.Status);
+            _target = State("target"); _route = State("route"); _result = State("result");
             _name = new(State("name"), RequestEdit); _capacity = new(State("capacity", "999"), RequestEdit); _ticks = new(State("ticks", "180"), RequestEdit);
             _nameError = Error("name-error"); _capacityError = Error("capacity-error"); _ticksError = Error("ticks-error");
             _quantity = new(State("quantity", "1"), RequestEdit); _quantityError = Error("quantity-error");
@@ -69,7 +83,7 @@ internal sealed partial class NetworkExperience : IFlowExperience
             _shipmentForm = new(new UiSemanticFormField(id.Child("field/quantity"), Text("Quantity", "Количество"), _quantity, _quantityError));
             var builder = new UiExperienceBuilder(id, Text("Flowline network", "Сеть Flowline")
                 + (_snapshot.Transport.ProviderMode == FlowProviderMode.DiagnosticFake ? Text(" · diagnostic", " · диагностика") : ""))
-                .Element(id.Child("element/transport"), "Transport", Text("Transport", "Перевозки"), _status, UiSourceTypes.String, UiCapabilities.Monitor)
+                .Status(id.Child("element/transport"), "Transport", Text("Transport", "Перевозки"), _status)
                 .Element(id.Child("element/captured-chest"), "CapturedChest", Text("Captured chest", "Выбранный сундук"), _target, UiSourceTypes.String, UiCapabilities.Inspect)
                 .Element(id.Child("element/station-details"), "StationDetails", Text("Station details", "Параметры станции"), _stationForm, FlowUiDataTypes.StationForm, UiCapabilities.Configure)
                 .Element(id.Child("element/source-station"), "SourceStation", Text("Source station", "Станция отправления"), _sources, UiSourceTypes.Collection(FlowUiDataTypes.Station), UiCapabilities.Select)

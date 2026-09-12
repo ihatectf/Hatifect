@@ -163,6 +163,7 @@ public sealed class SceneCompositionTests
         UiExperienceDefinition experience = new UiExperienceBuilder(id, "Status fixture")
             .Status("Status", new UiConstantSource<UiStatus>(status))
             .Build();
+        Assert.Equal(UiDataTypes.Status, Assert.Single(experience.Graph.Nodes).DataType);
         UiRegistrySnapshot registry = new UiRegistryBuilder()
             .Window(id, experience.DisplayName, () => experience)
             .Freeze();

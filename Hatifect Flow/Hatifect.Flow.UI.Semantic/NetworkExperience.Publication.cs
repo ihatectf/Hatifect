@@ -28,9 +28,13 @@ internal sealed partial class NetworkExperience
             FlowStationDetails? destination = Selected(batch, _destinations);
             if (refreshInventory)
             {
+                FlowInventorySlot? selectedInventory = Selected(batch, _inventory);
                 IReadOnlyList<FlowInventorySlot> inventory = source is null ? Array.Empty<FlowInventorySlot>() : _application.ReadInventory(source.Id);
                 if (Retired) return false;
                 batch.Replace(_inventory.Source, inventory);
+                if (selectedInventory is not null && !inventory.Any(slot => slot.Index == selectedInventory.Index
+                    && string.Equals(slot.Fingerprint, selectedInventory.Fingerprint, StringComparison.Ordinal)))
+                    batch.Select(_inventory.Source, null);
                 if (Retired) return false;
                 projection = projection with { InventorySource = source?.Id };
             }
@@ -56,16 +60,7 @@ internal sealed partial class NetworkExperience
             ValidateQuantity(batch);
             batch.Set(_target, snapshot.TargetDescription.Length > 0 ? snapshot.TargetDescription
                     : Text("Close this window, point at a chest, then open Flowline again", "Закройте окно, укажите на сундук и снова откройте Flowline"))
-                .Set(_status, snapshot.Transport.State switch
-                {
-                    FlowApplicationState.Active => Text("Ready", "Готово"),
-                    FlowApplicationState.Paused => Text("Paused", "Приостановлено"),
-                    FlowApplicationState.RecoveryRequired when recovery.Count == 0 => Text(
-                        "No settled transfer outcome; restore the complete game save from a known good backup",
-                        "Нет подтверждённого результата передачи; восстановите целый игровой сейв из исправной резервной копии"),
-                    FlowApplicationState.RecoveryRequired => Text("Recovery required; cargo retained", "Требуется восстановление; груз сохранён"),
-                    _ => Text("Session closed", "Сессия закрыта")
-                })
+                .Set(_status, TransportStatus(snapshot.Transport.State, recovery.Count))
                 .Set(_route, route.Found ? $"{route.LinkCount} " + Text("links", "связей") + $" · {route.TransitTicks} " + Text("ticks", "тиков")
                     + $" · {route.AvailableUnits} " + Text("units available", "ед. свободно") : Text("No route selected", "Маршрут не выбран или недоступен"))
                 .Set(_result, _pendingResult ?? _result.Value).Set(_projection, projection);
@@ -146,4 +141,15 @@ internal sealed partial class NetworkExperience
         _refreshInventoryPending |= refreshInventory;
         _dirty = true;
     }
+
+    private UiStatus TransportStatus(FlowApplicationState state, int recoveryCount)
+        => state switch
+        {
+            FlowApplicationState.Active => _activeStatus,
+            FlowApplicationState.Paused => _pausedStatus,
+            FlowApplicationState.RecoveryRequired when recoveryCount == 0 => _recoveryUnknownStatus,
+            FlowApplicationState.RecoveryRequired => _recoveryStatus,
+            FlowApplicationState.Faulted => _faultedStatus,
+            _ => _closedStatus
+        };
 }

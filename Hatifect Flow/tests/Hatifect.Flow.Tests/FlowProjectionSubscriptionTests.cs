@@ -113,7 +113,7 @@ public sealed class FlowProjectionSubscriptionTests
     private static IUiSemanticSource Status(IFlowExperience view, bool network)
     {
         var source = view.Experience.Elements.Single(element => element.Name == (network ? "Transport" : "State")).Source;
-        if (network) Assert.IsAssignableFrom<IUiSemanticSource<string>>(source);
+        if (network) Assert.IsAssignableFrom<IUiSemanticSource<UiStatus>>(source);
         else Assert.IsAssignableFrom<IUiSemanticSource<ParcelTextValue>>(source);
         return source;
     }

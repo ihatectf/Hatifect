@@ -13,6 +13,29 @@ public sealed class TypedExperienceGraphTests
     private static UiSymbolId Id(string name) => Owner.Child(name);
 
     [Fact]
+    public void StatusAuthorsCanonicalTypedGraphWithStableAliasAndLocalizedLabel()
+    {
+        UiSymbolId id = Id("element/transport");
+        var source = new UiConstantSource<UiStatus>(new(UiStatusKind.Success, "Готово"));
+        UiExperienceDefinition experience = new UiExperienceBuilder(Owner, "Network")
+            .Status(id, "Transport", "Перевозки", source)
+            .Build();
+
+        UiSemanticNode node = Assert.Single(experience.Graph.Nodes);
+        Assert.Equal(id, node.Id);
+        Assert.Equal("Transport", node.Alias);
+        Assert.Equal("Перевозки", node.Label);
+        Assert.Equal(UiDataTypes.Status, node.DataType);
+        Assert.Same(source, Assert.Single(experience.Elements).Source);
+
+        var wrongFoundation = new UiExperienceBuilder(Owner, "Invalid").Element(
+            Id("invalid"), "Invalid", "Invalid", new UiConstantSource<int>(1),
+            new UiSourceType<int>(UiDataTypes.Status), UiCapabilities.Monitor);
+        Assert.Contains(Assert.Throws<UiGraphValidationException>(() => wrongFoundation.Build()).Diagnostics,
+            diagnostic => diagnostic.Code == "UIG022");
+    }
+
+    [Fact]
     public void FailedRequiredSourceBuildCanBeRetriedWithoutSubscriptionsOrSealing()
     {
         var source = new ObservedSource<string?>(null);
