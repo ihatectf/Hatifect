@@ -384,7 +384,7 @@ Owner source `a0e558b5424e75e5afadfd5b6d81d569e32773bc`, CA test correction
 CA platform — **PASS102**, P — **PASS** 8 packages/47 files/102 CA tests. Native
 EN/RU/scale/controller остаётся открытым. [Контракт и evidence](U06_CONSUMER_STATUS_POLICY.md).
 
-U06-d typed collection density — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
+U06-d typed collection density — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
 Source `470da48` заменяет свободную строку закрытыми catalog values
 Default/Compact/Comfortable, передаёт stable identity через Planning и применяет один allocation-free
 коэффициент в layout/virtualization. UI scope
@@ -392,6 +392,16 @@ Default/Compact/Comfortable, передаёт stable identity через Plannin
 P `hatifect-ui-ca-isolated.1c3pd0fs` — **PASS** 8 packages/47 files/102 CA tests. Public API,
 21 semantic-contract tests и portable agent-check — **PASS**. Native visual не заявляется до
 consumer asset. [Результат и ограничения](U06_TYPED_DENSITY.md).
+
+U06-e semantic tooltips — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
+Source `1e0a660a3c1b21f42e78cd9430c35a7b82430ad5` добавляет локализованную semantic help для
+стабильных element/action IDs. Runtime показывает не более одной theme-owned подсказки для hover или
+keyboard/controller focus, хранит измерение в layout, выполняет viewport clamp без изменения
+основного дерева и публикует отдельное accessibility description. UI scope `run-aricgabx` —
+**PASS 1,117/1,117**; exact C `run-4jh9cnaw` — **PASS 1,920 .NET + 503 Python**; P
+`hatifect-ui-ca-isolated.1lbrxvoj` — **PASS** 8 packages/47 files/102 CA tests. Public API baseline v1
+и 21 semantic-contract tests — **PASS**. Collection-row/form-field/contribution help, display delay и
+native consumer visual matrix остаются открыты. [Контракт, evidence и ограничения](U06_TOOLTIPS.md).
 
 **U07.** Построить `UiQuick` recipes для alert/confirm/select/простого form/notification и `UiView` для небольшого декларативного layout с typed bindings/actions. Синтаксис может выводить отношения только когда вывод однозначен; явное описание остаётся доступным. Оба входа компилируются в тот же IR, что полная Experience. Выход: примеры простого диалога, формы и небольшого custom screen; одно и то же действие имеет одинаковый lifecycle во всех формах авторства. Сравнить объём и понятность authoring на реальных задачах, затем закрепить API.
 
