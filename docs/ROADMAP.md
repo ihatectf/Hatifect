@@ -464,6 +464,20 @@ input-routing gate. Focused Runtime `run-zxgg_4x6` — **PASS 701/701**; exact C
 consumer/native matrix и Flow/CA adoption остаются открыты.
 [Контракт, RED→GREEN и evidence](U06_TOOLTIP_DELAY.md).
 
+U06-k semantic validation error help — **DONE в локальной owner-ветке; ожидает локальную
+интеграцию**, полный U06 — **IN_PROGRESS**. Source
+`338e1c0111e177148e80b23ca32b4f8e1af58e93` заменяет static field help текущей внешней или typed
+validation error на каждом focusable control, сохраняя field semantic ID. Inline error остаётся в
+форме и публикуется как accessibility `Alert`; tooltip description использует raw error, а локально
+созданный inline alert сохраняет `Label: error`. Оба presentation используют theme `Text.Danger`,
+очистка ошибки возвращает локализованную help, а смена текста перезапускает pointer dwell через
+существующий bounded key. Focused Runtime `run-9u3q3kmk` — **PASS 703/703**; UI
+`run-viprhjc4` — **PASS 1,135/1,135**; exact C `run-c82nn1et` — **PASS 1,938 .NET + 503
+Python**; P `hatifect-ui-ca-isolated.zepm1frk` — **PASS** 8 packages/47 files/102 CA tests. Public
+API v1/7, 21 semantic-contract tests и architecture 26 projects/5 rule groups — **PASS**.
+Consumer/native matrix, Flow/CA adoption, fade animation и оставшиеся component/theme families
+остаются открыты. [Контракт, RED→GREEN и evidence](U06_VALIDATION_HELP.md).
+
 **U07.** Построить `UiQuick` recipes для alert/confirm/select/простого form/notification и `UiView` для небольшого декларативного layout с typed bindings/actions. Синтаксис может выводить отношения только когда вывод однозначен; явное описание остаётся доступным. Оба входа компилируются в тот же IR, что полная Experience. Выход: примеры простого диалога, формы и небольшого custom screen; одно и то же действие имеет одинаковый lifecycle во всех формах авторства. Сравнить объём и понятность authoring на реальных задачах, затем закрепить API.
 
 **U08.** После D02 добавить `UiExact`: explicit geometry/layers/canvas и pixel scaling внутри framework. Определить measure/arrange, coordinate transform, clipping, render/hitbox agreement, focus order, semantic labels и fallback для compact/controller/accessibility. Выход: точное представление использует общие lifecycle/resources/input, а неподдерживаемое окружение получает явно заданное поведение. Не публиковать exact drawing как способ обходить hit testing или доступность.

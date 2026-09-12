@@ -10,7 +10,7 @@ Consumer описывает смысл интерфейса и действия.
 
 [Редактор и language server](../docs/UI_AUTHORING.md): incremental sync, completion, hover, outline/folding, semantic tokens, references, definition, проверяемые quick fixes и workspace diagnostics. `UiBindingContextJson.Export` передаёт реальные bindings из Experience, а `tools/hatifect-ui-language-server` запускает stdio-сервер.
 
-`UiSemanticFormField` также принимает внешний `ValidationMessage`: непустое сообщение блокирует `UiFormState.Apply`, отображается и входит в accessibility tree. Типизированные Text/Number/Toggle/Choice и `Apply/Reset` сохраняются. Владелец формы вызывает `Dispose`; при ошибке снятия подписки повторный `Dispose` завершает очистку, а закрытая форма уже не уведомляет observers. Источники остаются собственностью consumer.
+`UiSemanticFormField` также принимает внешний `ValidationMessage`: непустое сообщение блокирует `UiFormState.Apply`, заменяет обычную help поля на его focusable controls и остаётся inline accessibility `Alert`. Ошибка использует theme `Text.Danger`; после очистки возвращается локализованная static help. Типизированные Text/Number/Toggle/Choice и `Apply/Reset` сохраняются. Владелец формы вызывает `Dispose`; при ошибке снятия подписки повторный `Dispose` завершает очистку, а закрытая форма уже не уведомляет observers. Источники остаются собственностью consumer.
 
 Overloads `UiExperienceBuilder` с явным `UiSymbolId` сохраняют ID элемента независимо от локализованного имени, включая пробелы. `UiSemanticGraph` переносит отдельные IDs, aliases и fallback labels через binding и metadata; Runtime разрешает visual role по alias. Старые overloads сохраняют прежнее формирование ID из имени.
 

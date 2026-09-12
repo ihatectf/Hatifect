@@ -133,7 +133,15 @@ immediately, and a focused tooltip remains visible while another hover is still 
 choose zero duration for immediate pointer help. Active host updates advance the dwell and build one
 new frame when it crosses the threshold; unchanged ticks do not rebuild layout or frames.
 
-At most one tooltip is visible. The overlay uses `Surface.Popup`, `Text.Primary`,
+When a form field has a nonblank external `ValidationMessage` or typed field `Error`, Runtime shows
+that raw error instead of the field's ordinary help on every focusable field control. The inline
+validation text remains and is exposed as an accessibility `Alert`; both presentations use the
+active theme's `Text.Danger`. Clearing the error removes the alert and restores localized static
+help. The control keeps its label as the accessible name and exposes the current error as its
+description. Error changes also restart a pending pointer dwell because tooltip text is part of the
+dwell identity.
+
+At most one tooltip is visible. An ordinary help overlay uses `Surface.Popup`, `Text.Primary`,
 `Typography.Body`, `Space.S`, `Radius.S`, and `Elevation.High` from the active theme. Tooltip text is
 measured during layout, while selecting an already measured tooltip rebuilds only the frame.
 Placement prefers the space below its target, falls back above it, and clamps both dimensions to the
