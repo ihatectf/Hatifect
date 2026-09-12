@@ -74,6 +74,7 @@ internal sealed class UiFoundationVisuals
                 values.Add(Token("padding", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
                 values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
                 values.Add(Token("elevation", UiThemeTokens.ElevationHigh.Id, UiSemanticType.ElevationToken));
+                values.Add(Token("motion", UiThemeTokens.MotionNormal.Id, UiSemanticType.MotionToken));
                 break;
         }
         bool supportsFocusVisual = kind is UiSceneNodeKind.Button or UiSceneNodeKind.RouteButton or

@@ -31,6 +31,7 @@ internal enum UiSemanticStardewOverlayRenderLayer
 /// </summary>
 internal sealed partial class UiSemanticStardewOverlaySession : IDisposable
 {
+    private static readonly TimeSpan UpdateInterval = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60);
     private UiSemanticStardewRuntime? _runtime;
     private readonly IModHelper _helper;
     private readonly UiSemanticStardewInputAdapter _input;
@@ -441,6 +442,7 @@ internal sealed partial class UiSemanticStardewOverlaySession : IDisposable
         bool reflowed = ReflowIfViewportChanged();
         if (CanRouteInput())
         {
+            Host.Session.AdvanceInteractions(UpdateInterval);
             SynchronizePointer(force: reflowed);
             SyncTextInputOwnership();
         }

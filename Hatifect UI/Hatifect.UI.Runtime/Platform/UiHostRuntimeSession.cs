@@ -162,6 +162,21 @@ internal sealed class UiHostRuntimeSession
     internal UiHostRuntimePerformanceSnapshot Performance
         => new(_layoutBuilds, _frameBuilds);
 
+    internal bool AdvanceInteractions(TimeSpan elapsed)
+    {
+        EnsureNotPreparing();
+        if (!Interactions.AdvanceTooltip(elapsed)) return false;
+        AcceptFrame(BuildFrame(_scene));
+        UiSymbolId[] changed = Interactions.Snapshot.Hovered is { } hovered
+            ? new[] { hovered }
+            : Array.Empty<UiSymbolId>();
+        LastUpdate = new UiHostUpdate(
+            LayoutChanged: false,
+            FrameChanged: true,
+            new UiSceneDiff(UiPropertyEffects.Render, changed));
+        return true;
+    }
+
     internal UiRuntimeDiagnosticSnapshot CaptureDiagnostics()
         => UiRuntimeDiagnosticCapture.Capture(
             _scene,

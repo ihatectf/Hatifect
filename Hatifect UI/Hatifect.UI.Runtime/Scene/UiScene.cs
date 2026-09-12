@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using Hatifect.UI.Experience;
 using Hatifect.UI.Runtime.Hosting;
 using Hatifect.UI.Runtime.Input;
+using Hatifect.UI.Runtime.Visual;
 using Hatifect.UI.Runtime.Visual.Resolution;
 
 namespace Hatifect.UI.Runtime.Scene;
@@ -72,11 +73,24 @@ internal sealed record UiTooltipPresentation
         Id = id;
         Text = text;
         Visual = visual ?? throw new ArgumentNullException(nameof(visual));
+        DisplayDelay = ResolveDisplayDelay(visual);
     }
 
     public UiSymbolId Id { get; }
     public string Text { get; }
     public UiVisualResolution Visual { get; }
+    public TimeSpan DisplayDelay { get; }
+
+    private static TimeSpan ResolveDisplayDelay(UiVisualResolution visual)
+    {
+        foreach (UiResolvedVisualProperty property in visual.Properties)
+        {
+            if (!string.Equals(property.Property.Name, "motion", StringComparison.Ordinal)) continue;
+            if (property.Value is UiMotion motion) return motion.Duration;
+            break;
+        }
+        throw new InvalidOperationException("A tooltip visual requires a motion value for its display delay.");
+    }
 }
 
 internal abstract class UiSceneNode

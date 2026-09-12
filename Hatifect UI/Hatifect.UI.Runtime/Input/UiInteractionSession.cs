@@ -71,7 +71,8 @@ internal sealed record UiInteractionSnapshot(
     UiSymbolId? Hovered = null,
     UiSymbolId? Pressed = null,
     UiSymbolId? Focused = null,
-    UiTextEditingSnapshot? TextEditing = null)
+    UiTextEditingSnapshot? TextEditing = null,
+    UiSymbolId? TooltipHovered = null)
 {
     public IReadOnlyList<UiVisualStateRef> StatesFor(UiSymbolId node, bool enabled = true)
     {
@@ -114,6 +115,8 @@ internal sealed class UiInteractionSession
     private readonly IUiTextMetrics? _textMetrics;
     private readonly Func<long>? _beforeMutation;
     private IUiActionResolver? _actions;
+    private TooltipDwellKey? _tooltipDwell;
+    private TimeSpan _tooltipElapsed;
 
     public UiInteractionSession(
         UiScene scene,
@@ -188,6 +191,8 @@ internal sealed class UiInteractionSession
         _focusable = candidate._focusable;
         _focusGroups = candidate._focusGroups;
         _collectionFocus = candidate._collectionFocus;
+        _tooltipDwell = candidate._tooltipDwell;
+        _tooltipElapsed = candidate._tooltipElapsed;
         Snapshot = candidate.Snapshot;
     }
 
@@ -214,8 +219,45 @@ internal sealed class UiInteractionSession
         UiSymbolId? hit = HitTest(point, includeReadOnlyCollectionHelp: true);
         UiSymbolId? hovered = hit;
         if (hovered == Snapshot.Hovered) return new UiInteractionUpdate(hit != null, StateChanged: false);
-        Snapshot = Snapshot with { Hovered = hovered };
+        Snapshot = Snapshot with
+        {
+            Hovered = hovered,
+            TooltipHovered = TooltipHoverAfterPointerMove(hovered)
+        };
         return new UiInteractionUpdate(hit != null, StateChanged: true);
+    }
+
+    internal bool AdvanceTooltip(TimeSpan elapsed)
+    {
+        _beforeMutation?.Invoke();
+        if (elapsed < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(elapsed));
+        if (!TryGetTooltipDwellKey(Snapshot.Hovered, out TooltipDwellKey key))
+        {
+            ResetTooltipDwell();
+            if (Snapshot.TooltipHovered == null) return false;
+            Snapshot = Snapshot with { TooltipHovered = null };
+            return true;
+        }
+        if (_tooltipDwell != key)
+        {
+            _tooltipDwell = key;
+            _tooltipElapsed = TimeSpan.Zero;
+            if (Snapshot.TooltipHovered != null)
+            {
+                Snapshot = Snapshot with { TooltipHovered = null };
+                return true;
+            }
+        }
+        if (Snapshot.TooltipHovered == key.Target) return false;
+        TimeSpan remaining = key.Delay - _tooltipElapsed;
+        if (elapsed < remaining)
+        {
+            _tooltipElapsed += elapsed;
+            return false;
+        }
+        _tooltipElapsed = key.Delay;
+        Snapshot = Snapshot with { TooltipHovered = key.Target };
+        return true;
     }
 
     public UiInteractionUpdate PressPointer(UiPoint point)
@@ -225,18 +267,21 @@ internal sealed class UiInteractionSession
         if (hit == null)
         {
             bool dismiss = !IsInsideHost(point) && _scene.Root.Policy.Dismiss == UiDismissPolicy.OutsideOrEscape;
-            bool changed = Snapshot.Pressed != null || Snapshot.Hovered != null;
-            Snapshot = Snapshot with { Hovered = null, Pressed = null };
+            bool changed = Snapshot.Pressed != null || Snapshot.Hovered != null || Snapshot.TooltipHovered != null;
+            ResetTooltipDwell();
+            Snapshot = Snapshot with { Hovered = null, Pressed = null, TooltipHovered = null };
             return new UiInteractionUpdate(dismiss, changed, DismissRequested: dismiss);
         }
 
         bool stateChanged = Snapshot.Pressed != hit || Snapshot.Focused != hit || Snapshot.Hovered != hit;
+        UiSymbolId? tooltipHovered = TooltipHoverAfterPointerMove(hit);
         Snapshot = Snapshot with
         {
             Hovered = hit,
             Pressed = hit,
             Focused = hit,
-            TextEditing = TextEditingForPointer(hit.Value, point)
+            TextEditing = TextEditingForPointer(hit.Value, point),
+            TooltipHovered = tooltipHovered
         };
         _collectionFocus = LocateCollectionFocus(hit);
         return new UiInteractionUpdate(Consumed: true, StateChanged: stateChanged);
@@ -249,7 +294,12 @@ internal sealed class UiInteractionSession
         UiSymbolId? pressed = Snapshot.Pressed;
         bool activate = pressed != null && hit == pressed;
         bool stateChanged = pressed != null || Snapshot.Hovered != hit;
-        Snapshot = Snapshot with { Hovered = hit, Pressed = null };
+        Snapshot = Snapshot with
+        {
+            Hovered = hit,
+            Pressed = null,
+            TooltipHovered = TooltipHoverAfterPointerMove(hit)
+        };
         if (!activate || hit == null)
             return new UiInteractionUpdate(hit != null, StateChanged: stateChanged);
         return Activate(hit.Value, stateChanged: true);
@@ -559,11 +609,72 @@ internal sealed class UiInteractionSession
             node is UiTextInputSceneNode input
                 ? ClampEditing(snapshot.TextEditing, id, input.CurrentText)
                 : null;
+        UiSymbolId? hovered = RetainHover(snapshot.Hovered);
+        UiSymbolId? tooltipHovered = ReconcileTooltipHover(hovered, snapshot.TooltipHovered);
         return new UiInteractionSnapshot(
-            Retain(snapshot.Hovered, focusableOnly: true),
+            hovered,
             Retain(snapshot.Pressed, focusableOnly: true),
             focused,
-            editing);
+            editing,
+            tooltipHovered);
+    }
+
+    private UiSymbolId? TooltipHoverAfterPointerMove(UiSymbolId? target)
+    {
+        if (target == Snapshot.Hovered) return Snapshot.TooltipHovered;
+        if (!TryGetTooltipDwellKey(target, out TooltipDwellKey key))
+        {
+            ResetTooltipDwell();
+            return null;
+        }
+        _tooltipDwell = key;
+        _tooltipElapsed = TimeSpan.Zero;
+        return key.Delay == TimeSpan.Zero ? key.Target : null;
+    }
+
+    private UiSymbolId? ReconcileTooltipHover(UiSymbolId? hovered, UiSymbolId? visible)
+    {
+        if (!TryGetTooltipDwellKey(hovered, out TooltipDwellKey key))
+        {
+            ResetTooltipDwell();
+            return null;
+        }
+        bool same = _tooltipDwell == key;
+        bool retainVisible = visible == hovered && (same || _tooltipDwell == null);
+        if (!same)
+        {
+            _tooltipDwell = key;
+            _tooltipElapsed = TimeSpan.Zero;
+        }
+        if (!retainVisible) return key.Delay == TimeSpan.Zero ? key.Target : null;
+        _tooltipElapsed = key.Delay;
+        return key.Target;
+    }
+
+    private bool TryGetTooltipDwellKey(UiSymbolId? target, out TooltipDwellKey key)
+    {
+        UiTooltipPresentation? tooltip = null;
+        if (target is { } id &&
+            _nodes.TryGetValue(id, out UiSceneNode? node) &&
+            _layout.TryGetEntry(id, out UiLayoutEntry? entry) &&
+            entry?.Tooltip is not null)
+            tooltip = node.Tooltip;
+        else if (target is { } item &&
+                 _layout.TryGetCollectionItem(item, out UiVirtualizedItemLayout itemLayout))
+            tooltip = itemLayout.Tooltip?.Presentation;
+        if (target is not { } stable || tooltip is null)
+        {
+            key = default;
+            return false;
+        }
+        key = new TooltipDwellKey(stable, tooltip.Id, tooltip.Text, tooltip.DisplayDelay);
+        return true;
+    }
+
+    private void ResetTooltipDwell()
+    {
+        _tooltipDwell = null;
+        _tooltipElapsed = TimeSpan.Zero;
     }
 
     private UiTextEditingSnapshot? TextEditingForPointer(UiSymbolId id, UiPoint point)
@@ -741,6 +852,17 @@ internal sealed class UiInteractionSession
         return _focusable.Contains(value) ? value : null;
     }
 
+    private UiSymbolId? RetainHover(UiSymbolId? id)
+    {
+        UiSymbolId? focusable = Retain(id, focusableOnly: true);
+        if (focusable is not null) return focusable;
+        return id is { } item &&
+               _layout.TryGetCollectionItem(item, out UiVirtualizedItemLayout layout) &&
+               layout.Tooltip is not null
+            ? item
+            : null;
+    }
+
     private bool TryGetBounds(UiSymbolId id, out UiRect bounds)
     {
         if (_layout.TryGetEntry(id, out UiLayoutEntry? entry) && entry != null)
@@ -855,6 +977,11 @@ internal sealed class UiInteractionSession
     }
 
     private sealed record CollectionFocus(UiSymbolId Collection, UiSymbolId? Item, int Index);
+    private readonly record struct TooltipDwellKey(
+        UiSymbolId Target,
+        UiSymbolId Tooltip,
+        string Text,
+        TimeSpan Delay);
 
     private static IEnumerable<UiSceneNode> Nodes(UiSceneNode node)
     {

@@ -81,6 +81,7 @@ internal sealed partial class UiSemanticStardewMenu : IClickableMenu, IDisposabl
         _slot.PollRetirement();
         if (_slot.CanDispatch)
         {
+            _host?.Session.AdvanceInteractions(time.ElapsedGameTime);
             base.update(time);
             SynchronizeViewport();
             CompleteInput();
