@@ -393,7 +393,7 @@ P `hatifect-ui-ca-isolated.1c3pd0fs` — **PASS** 8 packages/47 files/102 CA tes
 21 semantic-contract tests и portable agent-check — **PASS**. Native visual не заявляется до
 consumer asset. [Результат и ограничения](U06_TYPED_DENSITY.md).
 
-U06-e semantic tooltips — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
+U06-e semantic tooltips — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
 Source `1e0a660a3c1b21f42e78cd9430c35a7b82430ad5` добавляет локализованную semantic help для
 стабильных element/action IDs. Runtime показывает не более одной theme-owned подсказки для hover или
 keyboard/controller focus, хранит измерение в layout, выполняет viewport clamp без изменения
