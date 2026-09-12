@@ -214,6 +214,7 @@ public sealed class NetworkManagementTests
         var world = new GameSessionWorld();
         using FlowGameSession session = world.Open();
         world.Configure(session);
+        FlowLinkSnapshot endpoints = Assert.Single(session.ReadSnapshot().Links);
         for (int i = 0; i < FlowGameSession.MaxLinks; i++)
         {
             FlowSnapshot snapshot = session.ReadSnapshot();
@@ -221,16 +222,28 @@ public sealed class NetworkManagementTests
             Assert.Equal(FlowCommandStatus.Applied, session.Execute(new FlowNetworkCommand(snapshot.SessionId, snapshot.Revision, FlowNetworkAction.RemoveLink, Target: link)).Status);
             if (i < FlowGameSession.MaxLinks - 1) session.Link("source", "destination");
         }
+        FlowSnapshot full = session.ReadSnapshot();
+        FlowCommandResult typedRejection = session.Execute(new FlowNetworkCommand(full.SessionId, full.Revision,
+            FlowNetworkAction.AddLink, Station: endpoints.Origin, Destination: endpoints.Destination));
+        Assert.Equal(FlowCommandStatus.Rejected, typedRejection.Status);
+        Assert.Equal(FlowRejectionCode.LifetimeLinkLimit, typedRejection.Code);
+        Assert.Equal("flow.reason.LifetimeLinkLimit", typedRejection.ReasonKey);
+        Assert.Equal(full.Revision, typedRejection.Revision);
         FlowResourceLimitException error = Assert.Throws<FlowResourceLimitException>(() => session.Link("source", "destination"));
         Assert.Equal(FlowAdmissionResource.LifetimeLinks, error.Resource);
         Assert.Equal(new FlowResourceUsage(128, 128), session.ReadResources().Runtime.LifetimeLinks);
         Assert.Equal(0, session.ReadResources().Runtime.ActiveLinks);
-        Assert.Equal(new FlowAdmissionRejections(0, 1, 0), session.ReadResources().AdmissionRejections);
+        Assert.Equal(new FlowAdmissionRejections(0, 2, 0), session.ReadResources().AdmissionRejections);
         Assert.False(session.IsFaulted);
         Assert.Empty(session.ReadSnapshot().Links);
         FlowGameSave saved = GameSessionWorld.Clone(session.BeginSave());
         using FlowGameSession restored = world.Clone().Open(saved);
+        FlowSnapshot restoredFull = restored.ReadSnapshot();
+        FlowCommandResult restoredRejection = restored.Execute(new FlowNetworkCommand(restoredFull.SessionId, restoredFull.Revision,
+            FlowNetworkAction.AddLink, Station: endpoints.Origin, Destination: endpoints.Destination));
+        Assert.Equal(FlowRejectionCode.LifetimeLinkLimit, restoredRejection.Code);
         Assert.Throws<FlowResourceLimitException>(() => restored.Link("source", "destination"));
         Assert.Equal(new FlowResourceUsage(128, 128), restored.ReadResources().Runtime.LifetimeLinks);
+        Assert.Equal(new FlowAdmissionRejections(0, 2, 0), restored.ReadResources().AdmissionRejections);
     }
 }

@@ -34,6 +34,9 @@ internal static class FlowReasonText
             FlowRejectionCode.OperationPending => Text("An operation is already scheduled", "Операция уже запланирована"),
             FlowRejectionCode.ProviderUnavailable => Text("The inventory owner is temporarily unavailable", "Владелец инвентаря временно недоступен"),
             FlowRejectionCode.UnknownOutcome => Text("No settled transfer outcome is available; cargo retained", "Нет подтверждённого результата передачи; груз сохранён"),
+            FlowRejectionCode.StationLimit => Text("The station limit for this save has been reached", "Достигнут предел станций для этого сейва"),
+            FlowRejectionCode.LifetimeLinkLimit => Text("The link history limit has been reached; removing a link does not free it", "Достигнут предел истории связей; удаление связи не освобождает его"),
+            FlowRejectionCode.RetainedCargoLimit => Text("The shipment history limit has been reached; completed shipments do not free it", "Достигнут предел истории отправлений; завершённые отправления не освобождают его"),
             _ => Text("Cannot perform this action now", "Сейчас это действие недоступно")
         };
         string Text(string en, string ru) => russian ? ru : en;

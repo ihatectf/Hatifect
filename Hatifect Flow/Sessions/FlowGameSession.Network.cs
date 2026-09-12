@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Hatifect.Flow.Application;
 using Hatifect.Flow.Application.Planning;
+using Hatifect.Flow.Diagnostics;
 using Hatifect.Flow.Domain.Identity;
 using Hatifect.Flow.Inventory;
 using StardewValley.Objects;
@@ -44,6 +45,8 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
         }
         catch (SendAdmissionFailure error)
         { return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, error.Code); }
+        catch (FlowResourceLimitException error)
+        { return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, ResourceLimitCode(error.Resource)); }
         catch (ArgumentOutOfRangeException)
         { return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision); }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException)
@@ -147,6 +150,8 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
             }
             return new FlowCommandResult(FlowCommandStatus.Applied, ReadSnapshot().Revision);
         }
+        catch (FlowResourceLimitException error)
+        { return new FlowCommandResult(FlowCommandStatus.Rejected, ReadSnapshot().Revision, ResourceLimitCode(error.Resource)); }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or InvalidDataException)
         {
             return new FlowCommandResult(_faulted ? FlowCommandStatus.Faulted : FlowCommandStatus.Rejected, ReadSnapshot().Revision);
@@ -156,6 +161,14 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
 
     private StationBinding RequireStation(Guid id) => _stations.TryGetValue(id, out StationBinding? station)
         ? station : throw new ArgumentException("Unknown station identity.");
+
+    private static FlowRejectionCode ResourceLimitCode(FlowAdmissionResource resource) => resource switch
+    {
+        FlowAdmissionResource.Stations => FlowRejectionCode.StationLimit,
+        FlowAdmissionResource.LifetimeLinks => FlowRejectionCode.LifetimeLinkLimit,
+        FlowAdmissionResource.RetainedCargo => FlowRejectionCode.RetainedCargoLimit,
+        _ => throw new ArgumentOutOfRangeException(nameof(resource))
+    };
 
     private sealed class SendAdmissionFailure : InvalidOperationException
     {

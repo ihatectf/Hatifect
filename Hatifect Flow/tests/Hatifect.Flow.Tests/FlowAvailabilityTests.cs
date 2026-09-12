@@ -160,6 +160,18 @@ public sealed class FlowAvailabilityTests
         Assert.Equal(reason, FlowReasonText.Describe(FlowRejectionCode.ActionUnavailable, "flow.reason.RouteUnavailable", russian));
     }
 
+    [Theory]
+    [InlineData(FlowRejectionCode.StationLimit, false, "The station limit for this save has been reached")]
+    [InlineData(FlowRejectionCode.StationLimit, true, "Достигнут предел станций для этого сейва")]
+    [InlineData(FlowRejectionCode.LifetimeLinkLimit, false, "The link history limit has been reached; removing a link does not free it")]
+    [InlineData(FlowRejectionCode.LifetimeLinkLimit, true, "Достигнут предел истории связей; удаление связи не освобождает его")]
+    [InlineData(FlowRejectionCode.RetainedCargoLimit, false, "The shipment history limit has been reached; completed shipments do not free it")]
+    [InlineData(FlowRejectionCode.RetainedCargoLimit, true, "Достигнут предел истории отправлений; завершённые отправления не освобождают его")]
+    public void ResourceLimitReasonsExplainPersistentBackpressure(FlowRejectionCode code, bool russian, string expected)
+    {
+        Assert.Equal(expected, FlowReasonText.Describe(code, "flow.reason." + code, russian));
+    }
+
     private static FlowApplication Open(CheckpointFixture fixture) => new(fixture.Runtime, command => command(fixture.Runtime), _ => { });
     private static FlowParcelCommand Command(FlowApplication app, Guid id, FlowParcelAction action)
         => new(app.ReadSnapshot().SessionId, app.ReadSnapshot().Revision, id, action);

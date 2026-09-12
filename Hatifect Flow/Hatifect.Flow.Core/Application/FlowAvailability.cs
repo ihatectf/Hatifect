@@ -10,7 +10,7 @@ public enum FlowRejectionCode
     None, ActionUnavailable, UnsupportedAction, Paused, RecoveryRequired, SessionClosed, Faulted,
     StaleSession, StaleRevision, StateChanged, InvalidCommand, ParcelNotFound, InvalidState,
     WorkLimit, RouteUnavailable, RouteSearchLimit, CapacityUnavailable, RetryLimit, OperationPending,
-    ProviderUnavailable, UnknownOutcome
+    ProviderUnavailable, UnknownOutcome, StationLimit, LifetimeLinkLimit, RetainedCargoLimit
 }
 
 public sealed record FlowActionAvailability(FlowParcelAction Action, bool Available, FlowRejectionCode Code, string ReasonKey)
