@@ -24,26 +24,26 @@ Goal: ordinary single-player entry, two supported chests/stations, UI-authored r
 | Route editing policy | Rename keeps identity; rebind refuses queued/extraction-uncertain origin, moves no items; RemoveLink preserves admitted in-flight work; station deletion not exposed | Existing owner behavior; expose limitations and verify final UI actions |
 | Choose source/quantity and send real supported items | Existing fingerprint/quantity command and physical adapter; new clean-network test partitions8→5+3 with full XML | Managed PASS for the typed-command scenario; final native UI inventories must prove actual path |
 | No loss/duplication and correct custody | Existing F14–F17/F20 base; new test checks parcel/cargo identity, source/destination,8→5+3 and repeat refusals | Keep accepted base; new UI path and final runtime DLL checks required |
-| Useful source/cargo/route/admission errors | Existing route preview, supported inventory filtering, typed owner reasons; some host network errors remain generic ActionUnavailable | INCOMPLETE F19 review: real rejection explanations must be actionable |
+| Useful source/cargo/route/admission errors | Existing route preview and typed route reasons; local `acb1279` adds exact EN/RU `StationLimit`/`LifetimeLinkLimit`/`RetainedCargoLimit` results, saturated-budget no-mutation tests and lifetime-link preservation after reload | Managed owner-layer PASS for route and retained-resource limits; current exact native EN/RU visibility and remaining real-provider failures are still pending |
 | Permitted cancel/retry/return/reconcile | Existing parcel availability/recovery rules and prior provider failure matrix | Final UI happy/refusal/recovery scenario pending; unknown physical outcome must not replay |
 | Save/restart before and after delivery | Existing native chest crash/save matrix; new typed-command test restores Reserved and Delivered aggregates over cloned real Chest inventories | New managed test PASS; final native process/save bytes evidence required |
 | Save switching preserves separate worlds | Accepted prior real chest isolation base; current fake UI A→B→A PASS | Final ordinary scenario and exact runtime matrix still required |
 | UI framework ownership | Existing public Host API; Flow supplies semantics only; UI implements Window overflow | Source boundary respected; final combined consumer/package/runtime checks pending |
 | CA coexistence | Common package-consumer checks and earlier native baseline available to GQ | Final fixed candidate combined evidence required |
-| Player guide and limitations | FLOWLINE_PLAYER_GUIDE.md draft covers opening/stations/routes/items/pause/recovery/limits | Draft; update from actual accepted behavior and hand off to GQ |
+| Player guide and limitations | FLOWLINE_PLAYER_GUIDE.md covers opening/stations/routes/items/pause/recovery/persistent limits and is synchronized with local `acb1279` | Source guide updated; installed/runtime behavior and final GQ handoff remain pending |
 | Delivery to GQ | Exact file manifests, source reviews and raw evidence paths sent directly under user authorization | F13 and F18 integrated by GQ; common validation and final native evidence pending |
 
 ## Required validation
 
 F18 requires scoped `./tools/hatifect-test flow --platform`, `./tools/hatifect-check`, `./tools/hatifect-check --platform`; matching UI integration also needs `./tools/hatifect-isolated-ui-ca`. Each success must have nonzero actual executed tests and current source/DLL identity. No deployment to ordinary Mods or real save writes. Heavy runs are serialized with GQ/UI. The common stable-menu source already passed scoped187 and native15 in GQ; rerunning identical owner scoped adds no new evidence.
 
-Current Flow file candidates have no newly claimed local commit: this task's Git access was denied by policy, so the handoff records exact source hashes. This is not permission to bypass that boundary. GQ independently owns common integration and release evidence.
+Current Flow admission-feedback candidate is committed locally as `acb1279`; no remote branch, push or PR is part of this task. GQ independently owns final local integration composition and release evidence.
 
 ## Next dependency-ready work
 
 1. Complete common validation of the integrated F18/Window candidate; fix failures at their owner.
 2. Add the canonical ordinary Window acceptance driver using the UI-owned hosted observation extension and prove the single composite SMAPI proxy, normal entry/selection/forms/actions.
-3. Finish F19 actionable real-provider feedback and physical-input/native inventory scenario, then repeat the applicable original acceptance matrix and hand off final Flow assets/evidence to GQ.
+3. Prove the current F19 reasons in the physical-input/native inventory scenario, finish remaining real-provider feedback, then repeat the applicable original acceptance matrix and hand off final Flow assets/evidence to GQ.
 
 F13/F18/F19 remain IN_PROGRESS until their original criteria are proven. Q02 overall belongs to GQ.
 
