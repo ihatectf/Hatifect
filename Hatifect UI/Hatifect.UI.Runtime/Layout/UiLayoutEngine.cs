@@ -216,6 +216,8 @@ internal sealed class UiSceneLayoutEngine
         float preferredItemWidth = 0;
         UiTypography? collectionTypography = null;
         float inputPromptWidth = 0;
+        float inputPromptHeight = 0;
+        float inputPromptSpacing = 0;
         float actionStatusLineHeight = 0;
         UiSize? tooltipSize = null;
         UiThickness tooltipInset = default;
@@ -238,7 +240,23 @@ internal sealed class UiSceneLayoutEngine
             UiSize line = _textMetrics.Measure("M", typography, contentWidth, UiTextOverflow.Clip);
             itemLineHeight = Math.Max(1, line.Height);
             collectionTypography = typography;
-            float desiredWidth = line.Width;
+            if (InputPrompt(node) is { } prompt)
+            {
+                UiTypography promptTypography = Required<UiTypography>(node.Visual, "prompt.typography", node.Id);
+                UiSize promptSize = _textMetrics.Measure(
+                    prompt.Label,
+                    promptTypography,
+                    contentWidth,
+                    UiTextOverflow.Clip);
+                inputPromptWidth = Math.Min(contentWidth, promptSize.Width);
+                inputPromptHeight = promptSize.Height;
+                inputPromptSpacing = Required<UiSpacing>(node.Visual, "prompt.spacing", node.Id).Value;
+            }
+            float promptSpace = inputPromptWidth > 0
+                ? Math.Min(contentWidth, inputPromptWidth + inputPromptSpacing)
+                : 0;
+            float rowTextWidth = Math.Max(1, contentWidth - promptSpace);
+            float desiredWidth = line.Width + promptSpace;
             int samples = Math.Min(collection.Count, 8);
             bool hasSupportingText = collection.MayHaveSupportingText;
             int maximumSupportingLength = 0;
@@ -248,9 +266,9 @@ internal sealed class UiSceneLayoutEngine
                 UiSize sample = _textMetrics.Measure(
                     item.Label,
                     typography,
-                    contentWidth,
+                    rowTextWidth,
                     UiTextOverflow.Ellipsis);
-                desiredWidth = Math.Max(desiredWidth, sample.Width);
+                desiredWidth = Math.Max(desiredWidth, sample.Width + promptSpace);
                 if (!collection.Recipe.IsNavigation && !string.IsNullOrWhiteSpace(item.SupportingText))
                 {
                     maximumSupportingLength = Math.Max(maximumSupportingLength, item.SupportingText!.Length);
@@ -265,14 +283,15 @@ internal sealed class UiSceneLayoutEngine
                     ? Math.Clamp(
                         (int)MathF.Ceiling(
                             maximumSupportingLength * typography.Size * 0.55f * localeFactor /
-                            Math.Max(1, contentWidth)),
+                            rowTextWidth),
                         1,
                         3)
                     : 1
                 : 0;
-            itemExtent = itemLineHeight +
-                         supportingLines * itemLineHeight +
-                         (supportingLines > 0 ? itemLineHeight * 0.2f * density : 0) +
+            float textHeight = itemLineHeight +
+                               supportingLines * itemLineHeight +
+                               (supportingLines > 0 ? itemLineHeight * 0.2f * density : 0);
+            itemExtent = Math.Max(textHeight, inputPromptHeight) +
                          itemLineHeight * 0.7f * density * localeFactor;
             preferredItemWidth = Math.Max(
                 1,
@@ -398,6 +417,8 @@ internal sealed class UiSceneLayoutEngine
             heading,
             headingHeight,
             inputPromptWidth,
+            inputPromptHeight,
+            inputPromptSpacing,
             actionStatusLineHeight,
             tooltipSize,
             tooltipInset);
@@ -454,7 +475,11 @@ internal sealed class UiSceneLayoutEngine
                     own.CollectionTypography ?? throw new UiLayoutException(
                         $"Collection '{node.Id}' has no resolved typography."),
                     measurementContext,
-                    collectionViewport.RequestFor(node.Id)));
+                    collectionViewport.RequestFor(node.Id),
+                    new UiCollectionPromptMetrics(
+                        own.InputPromptWidth,
+                        own.InputPromptHeight,
+                        own.InputPromptSpacing)));
             return;
         }
         if (node.Children.Count == 0) return;
@@ -822,6 +847,7 @@ internal sealed class UiSceneLayoutEngine
         {
             UiButtonSceneNode button => button.InputPrompt,
             UiRouteButtonSceneNode route => route.InputPrompt,
+            UiCollectionSceneNode collection => collection.InputPrompt,
             _ => null
         };
 
@@ -861,6 +887,8 @@ internal sealed class UiSceneLayoutEngine
         string? Heading = null,
         float HeadingHeight = 0,
         float InputPromptWidth = 0,
+        float InputPromptHeight = 0,
+        float InputPromptSpacing = 0,
         float ActionStatusLineHeight = 0,
         UiSize? TooltipSize = null,
         UiThickness TooltipInset = default);

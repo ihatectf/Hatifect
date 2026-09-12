@@ -21,7 +21,13 @@ internal readonly record struct UiVirtualizedItemLayout(
     UiRect Clip,
     UiVisualResolution Visual,
     bool Selected,
-    UiRect? IconBounds = null);
+    UiRect? IconBounds = null,
+    UiRect? InputPromptBounds = null);
+
+internal readonly record struct UiCollectionPromptMetrics(float Width, float Height, float Spacing)
+{
+    public float ReservedWidth => Width > 0 ? Width + Spacing : 0;
+}
 
 internal sealed record UiCollectionScrollAnchor(UiSymbolId Item, float LocalOffset);
 
@@ -149,7 +155,8 @@ internal sealed class UiCollectionVirtualizer
         float lineHeight,
         UiTypography typography,
         UiSceneMeasurementContext measurementContext,
-        UiCollectionViewportRequest request)
+        UiCollectionViewportRequest request,
+        UiCollectionPromptMetrics inputPrompt = default)
     {
         ArgumentNullException.ThrowIfNull(collection);
         if (!float.IsFinite(itemExtent) || itemExtent <= 0)
@@ -158,6 +165,10 @@ internal sealed class UiCollectionVirtualizer
             throw new UiLayoutException($"Collection '{collection.Id}' resolved an invalid preferred item width.");
         if (!float.IsFinite(lineHeight) || lineHeight <= 0)
             throw new UiLayoutException($"Collection '{collection.Id}' resolved an invalid line height.");
+        if (!float.IsFinite(inputPrompt.Width) || inputPrompt.Width < 0 ||
+            !float.IsFinite(inputPrompt.Height) || inputPrompt.Height < 0 ||
+            !float.IsFinite(inputPrompt.Spacing) || inputPrompt.Spacing < 0)
+            throw new UiLayoutException($"Collection '{collection.Id}' resolved invalid input prompt metrics.");
 
         int count = collection.Count;
         int columns = Columns(collection.Recipe, viewport.Width, preferredItemWidth, count);
@@ -173,7 +184,8 @@ internal sealed class UiCollectionVirtualizer
                 columns,
                 typography,
                 measurementContext,
-                request)
+                request,
+                inputPrompt)
             : MaterializeUniform(
                 collection,
                 viewport,
@@ -182,7 +194,8 @@ internal sealed class UiCollectionVirtualizer
                 lineHeight,
                 columns,
                 request,
-                measurementContext);
+                measurementContext,
+                inputPrompt);
         state.Remember(collection);
         return window;
     }
@@ -223,7 +236,8 @@ internal sealed class UiCollectionVirtualizer
         float lineHeight,
         int columns,
         UiCollectionViewportRequest request,
-        UiSceneMeasurementContext measurementContext)
+        UiSceneMeasurementContext measurementContext,
+        UiCollectionPromptMetrics inputPrompt)
     {
         int count = collection.Count;
         int totalRows = Rows(count, columns);
@@ -260,7 +274,8 @@ internal sealed class UiCollectionVirtualizer
             state,
             measureExactly: false,
             measurementContext,
-            typography: null);
+            typography: null,
+            inputPrompt);
         int anchorIndex = retainedIndex >= 0 ? retainedIndex : Math.Min(count - 1, firstVisibleRow * columns);
         UiSemanticCollectionItem anchorItem = collection.ItemAt(anchorIndex);
         return new UiCollectionLayoutWindow(
@@ -284,7 +299,8 @@ internal sealed class UiCollectionVirtualizer
         int columns,
         UiTypography typography,
         UiSceneMeasurementContext measurementContext,
-        UiCollectionViewportRequest request)
+        UiCollectionViewportRequest request,
+        UiCollectionPromptMetrics inputPrompt)
     {
         int count = collection.Count;
         int totalRows = Rows(count, columns);
@@ -303,7 +319,8 @@ internal sealed class UiCollectionVirtualizer
             measurementContext.Theme,
             themeMetrics,
             collection.Recipe.ItemSizing,
-            collection.Recipe.Density);
+            collection.Recipe.Density,
+            inputPrompt);
         state.Prepare(collection, scope);
         AdaptiveRowHeightIndex heights = state.Heights;
 
@@ -326,7 +343,8 @@ internal sealed class UiCollectionVirtualizer
                 scope.ItemWidth,
                 lineHeight,
                 typography,
-                measurementContext);
+                measurementContext,
+                inputPrompt);
             float refinedOffset = ClampOffset(
                 heights.Prefix(anchor.Row) + anchor.Anchor.LocalOffset,
                 heights.TotalExtent,
@@ -358,7 +376,8 @@ internal sealed class UiCollectionVirtualizer
             state,
             measureExactly: true,
             measurementContext,
-            typography);
+            typography,
+            inputPrompt);
         return new UiCollectionLayoutWindow(
             collection.Id,
             count,
@@ -380,7 +399,8 @@ internal sealed class UiCollectionVirtualizer
         float itemWidth,
         float lineHeight,
         UiTypography typography,
-        UiSceneMeasurementContext measurementContext)
+        UiSceneMeasurementContext measurementContext,
+        UiCollectionPromptMetrics inputPrompt)
     {
         for (int row = firstRow; row < endRow; row++)
         {
@@ -399,7 +419,8 @@ internal sealed class UiCollectionVirtualizer
                     itemWidth,
                     lineHeight,
                     typography,
-                    measurementContext);
+                    measurementContext,
+                    inputPrompt);
                 exact = Math.Max(exact, measured.Height);
             }
             state.Heights.SetExact(row, Math.Max(1, exact));
@@ -413,7 +434,8 @@ internal sealed class UiCollectionVirtualizer
         float itemWidth,
         float lineHeight,
         UiTypography typography,
-        UiSceneMeasurementContext context)
+        UiSceneMeasurementContext context,
+        UiCollectionPromptMetrics inputPrompt)
     {
         var themeMetrics = new ThemeMetricIdentity(typography, lineHeight);
         var key = new MeasurementKey(
@@ -425,7 +447,8 @@ internal sealed class UiCollectionVirtualizer
             context.Theme,
             themeMetrics,
             collection.Recipe.ItemSizing,
-            collection.Recipe.Density);
+            collection.Recipe.Density,
+            inputPrompt);
         if (state.Measurements.TryGetValue(key, out CachedMeasurement cached) &&
             cached.ContentVersion == item.ContentVersion &&
             string.Equals(cached.Label, item.Label, StringComparison.Ordinal) &&
@@ -433,7 +456,10 @@ internal sealed class UiCollectionVirtualizer
             return cached.Measurement;
 
         RecipeMetrics recipe = Metrics(collection.Recipe, lineHeight, context.Profile, context.Locale);
-        float contentWidth = Math.Max(1, itemWidth - recipe.HorizontalPadding * 2 - (item.Icon != null ? lineHeight + 4 : 0));
+        float contentWidth = Math.Max(
+            1,
+            itemWidth - recipe.HorizontalPadding * 2 -
+            (item.Icon != null ? lineHeight + 4 : 0) - inputPrompt.ReservedWidth);
         UiSize label = _textMetrics.Measure(item.Label, typography, contentWidth, UiTextOverflow.Ellipsis);
         float labelHeight = Math.Max(lineHeight, label.Height);
         float supportingHeight = 0;
@@ -448,7 +474,7 @@ internal sealed class UiCollectionVirtualizer
         }
         float gap = supportingHeight > 0 ? recipe.SupportingGap : 0;
         var measured = new MeasuredItem(
-            recipe.VerticalPadding * 2 + labelHeight + gap + supportingHeight,
+            recipe.VerticalPadding * 2 + Math.Max(labelHeight + gap + supportingHeight, inputPrompt.Height),
             labelHeight,
             supportingHeight,
             recipe.HorizontalPadding,
@@ -473,7 +499,8 @@ internal sealed class UiCollectionVirtualizer
         CollectionState state,
         bool measureExactly,
         UiSceneMeasurementContext measurementContext,
-        UiTypography? typography)
+        UiTypography? typography,
+        UiCollectionPromptMetrics inputPrompt)
     {
         int first = firstRow * columns;
         int end = Math.Min(collection.Count, endRow * columns);
@@ -496,7 +523,7 @@ internal sealed class UiCollectionVirtualizer
                 itemWidth,
                 height);
             MeasuredItem content = !measureExactly
-                ? EstimateUniformItem(collection, item, lineHeight, measurementContext)
+                ? EstimateUniformItem(collection, item, lineHeight, measurementContext, inputPrompt)
                 : MeasureItem(
                     state,
                     collection,
@@ -504,14 +531,15 @@ internal sealed class UiCollectionVirtualizer
                     itemWidth,
                     lineHeight,
                     typography!,
-                    measurementContext);
+                    measurementContext,
+                    inputPrompt);
             float iconSpace = item.Icon != null ? lineHeight + 4 : 0;
             UiRect? iconBounds = item.Icon != null ? new UiRect(bounds.X + content.HorizontalPadding,
                 bounds.Y + content.VerticalPadding, lineHeight, lineHeight) : null;
             var labelBounds = new UiRect(
                 bounds.X + content.HorizontalPadding + iconSpace,
                 bounds.Y + content.VerticalPadding,
-                Math.Max(0, bounds.Width - content.HorizontalPadding * 2 - iconSpace),
+                Math.Max(0, bounds.Width - content.HorizontalPadding * 2 - iconSpace - inputPrompt.ReservedWidth),
                 Math.Min(content.LabelHeight, Math.Max(0, bounds.Height - content.VerticalPadding * 2)));
             UiRect? supportingBounds = content.SupportingHeight > 0
                 ? new UiRect(
@@ -521,6 +549,13 @@ internal sealed class UiCollectionVirtualizer
                     Math.Min(
                         content.SupportingHeight,
                         Math.Max(0, bounds.Bottom - content.VerticalPadding - labelBounds.Bottom - content.Gap)))
+                : null;
+            UiRect? inputPromptBounds = inputPrompt.Width > 0 && inputPrompt.Height > 0
+                ? new UiRect(
+                    bounds.Right - content.HorizontalPadding - inputPrompt.Width,
+                    bounds.Y + Math.Max(content.VerticalPadding, (bounds.Height - inputPrompt.Height) / 2),
+                    inputPrompt.Width,
+                    inputPrompt.Height)
                 : null;
             UiSymbolId node = state.NodeFor(collection, item.Id);
             items[index - first] = new UiVirtualizedItemLayout(
@@ -533,7 +568,7 @@ internal sealed class UiCollectionVirtualizer
                 collection.Recipe.IsAdaptive ? UiTextOverflow.Wrap : UiTextOverflow.Ellipsis,
                 UiRect.Intersect(clip, bounds),
                 collection.VisualFor(node, item.Id),
-                collection.IsSelected(item.Id), iconBounds);
+                collection.IsSelected(item.Id), iconBounds, inputPromptBounds);
         }
         return items;
     }
@@ -542,7 +577,8 @@ internal sealed class UiCollectionVirtualizer
         UiCollectionSceneNode collection,
         UiSemanticCollectionItem item,
         float lineHeight,
-        UiSceneMeasurementContext context)
+        UiSceneMeasurementContext context,
+        UiCollectionPromptMetrics inputPrompt)
     {
         RecipeMetrics recipe = Metrics(
             collection.Recipe,
@@ -552,7 +588,9 @@ internal sealed class UiCollectionVirtualizer
         bool hasSupporting = !collection.Recipe.IsNavigation && !string.IsNullOrWhiteSpace(item.SupportingText);
         float support = hasSupporting ? lineHeight : 0;
         return new MeasuredItem(
-            recipe.VerticalPadding * 2 + lineHeight + (hasSupporting ? recipe.SupportingGap : 0) + support,
+            recipe.VerticalPadding * 2 + Math.Max(
+                lineHeight + (hasSupporting ? recipe.SupportingGap : 0) + support,
+                inputPrompt.Height),
             lineHeight,
             support,
             recipe.HorizontalPadding,
@@ -670,7 +708,8 @@ internal sealed class UiCollectionVirtualizer
         UiSymbolId Theme,
         ThemeMetricIdentity ThemeMetrics,
         UiSymbolId ItemSizing,
-        UiCollectionDensity Density);
+        UiCollectionDensity Density,
+        UiCollectionPromptMetrics InputPrompt);
 
     private readonly record struct HeightScope(
         int Rows,
@@ -682,7 +721,8 @@ internal sealed class UiCollectionVirtualizer
         UiSymbolId Theme,
         ThemeMetricIdentity ThemeMetrics,
         UiSymbolId ItemSizing,
-        UiCollectionDensity Density);
+        UiCollectionDensity Density,
+        UiCollectionPromptMetrics InputPrompt);
 
     private readonly record struct CachedMeasurement(
         long ContentVersion,

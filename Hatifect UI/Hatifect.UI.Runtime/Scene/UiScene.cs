@@ -187,9 +187,10 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
         IUiSemanticCollectionSource source,
         UiCollectionPresentationRecipe recipe,
         IDictionary<UiSymbolId, UiVisualResolution>? activeItemVisuals = null,
-        IUiSemanticCollectionSnapshot? publicationSnapshot = null)
+        IUiSemanticCollectionSnapshot? publicationSnapshot = null,
+        UiInputPrompt? inputPrompt = null)
         : this(id, role, visual, selectedItemVisual, semanticName, source, recipe,
-            activeItemVisuals, publicationSnapshot, stateVisuals: null) { }
+            activeItemVisuals, publicationSnapshot, stateVisuals: null, inputPrompt: inputPrompt) { }
 
     internal UiCollectionSceneNode(
         UiSymbolId id,
@@ -201,7 +202,8 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
         UiCollectionPresentationRecipe recipe,
         IDictionary<UiSymbolId, UiVisualResolution>? activeItemVisuals,
         IUiSemanticCollectionSnapshot? publicationSnapshot,
-        UiCollectionStateVisuals? stateVisuals)
+        UiCollectionStateVisuals? stateVisuals,
+        UiInputPrompt? inputPrompt = null)
         : base(id, UiSceneNodeKind.Collection, role, visual)
     {
         if (string.IsNullOrWhiteSpace(semanticName))
@@ -238,6 +240,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
             new Dictionary<UiSymbolId, UiVisualResolution>(
                 activeItemVisuals ?? new Dictionary<UiSymbolId, UiVisualResolution>()));
         _stateVisuals = stateVisuals;
+        InputPrompt = inputPrompt;
     }
 
     public string SemanticName { get; }
@@ -252,6 +255,7 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
     public UiVisualResolution SelectedItemVisual { get; }
     public UiSymbolId? SelectedItemId { get; }
     public bool IsSelectable => _selection != null;
+    public UiInputPrompt? InputPrompt { get; }
     internal bool HasCapturedItems => _captured;
     internal IReadOnlyDictionary<UiSymbolId, UiVisualResolution> ActiveItemVisuals => _activeItemVisuals;
 

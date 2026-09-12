@@ -82,6 +82,9 @@ internal sealed class UiFoundationVisuals
             values.Add(Token("border", UiThemeTokens.BorderFocus.Id, UiSemanticType.Border));
         if (kind == UiSceneNodeKind.Collection)
         {
+            values.Add(Token("prompt.foreground", UiThemeTokens.TextInputPrompt.Id, UiSemanticType.ColorToken));
+            values.Add(Token("prompt.typography", UiThemeTokens.TypographyInputPrompt.Id, UiSemanticType.TypographyToken));
+            values.Add(Token("prompt.spacing", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
             bool selected = Contains(domainStates, UiVisualStates.Selected);
             bool hovered = Contains(interactionStates, UiVisualStates.Hover);
             bool pressed = Contains(interactionStates, UiVisualStates.Pressed);

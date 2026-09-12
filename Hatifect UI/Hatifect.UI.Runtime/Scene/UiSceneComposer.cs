@@ -368,7 +368,8 @@ internal sealed class UiSceneComposer
             recipe,
             activeVisuals,
             capturedCollection,
-            stateVisuals)
+            stateVisuals,
+            collection is IUiSelectableCollectionSource ? ActivationPrompt(invocation) : null)
         {
             SemanticId = element.Id,
             Tooltip = Tooltip(invocation, element.Id, nodeId, locale)

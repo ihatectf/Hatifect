@@ -157,7 +157,8 @@ internal sealed class UiAccessibilitySnapshotBuilder
                     item.Clip,
                     Array.Empty<UiAccessibilityNodeSnapshot>(),
                     item.Index + 1,
-                    window.TotalCount))
+                    window.TotalCount,
+                    shortcut: collection.InputPrompt?.Label))
                 .ToArray();
         }
 
