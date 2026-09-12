@@ -436,8 +436,9 @@ activation, registration ownership, layout и renderer не меняются. UI
 и 21 semantic-contract tests — **PASS**. Collection-item help, delay policy и consumer/native
 матрица остаются открыты. [Контракт, RED→GREEN и evidence](U06_CONTRIBUTION_HELP.md).
 
-U06-i semantic collection item help — **DONE в локальной owner-ветке, ожидает локальной интеграции**,
-полный U06 — **IN_PROGRESS**. Source `35dc94660415e2f31c6d6110b0339c4b17856e78` добавляет
+U06-i semantic collection item help — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
+Source `35dc94660415e2f31c6d6110b0339c4b17856e78`, общий локальный merge
+`30281a934a2cfaaec9e51c468437ac3e52eee48a` добавляют
 immutable локализованную help в static/mutable/selectable/published collection snapshots через
 совместимые overloads. Layout разрешает и измеряет её только для materialized window, сохраняет
 измерения в bounded LRU 1,024 на active collection и публикует O(1) индекс видимых item IDs; render
