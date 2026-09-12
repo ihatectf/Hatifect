@@ -403,7 +403,7 @@ keyboard/controller focus, хранит измерение в layout, выпол
 и 21 semantic-contract tests — **PASS**. Collection-row/form-field/contribution help, display delay и
 native consumer visual matrix остаются открыты. [Контракт, evidence и ограничения](U06_TOOLTIPS.md).
 
-U06-f collection-row input prompts — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
+U06-f collection-row input prompts — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
 Source `373c854a216cb190f3f6457d32470188ad00d03a` распространяет общий `Enter`/`A` prompt на
 материализованные строки selectable collections; read-only Browse не получает ложную активацию.
 Layout один раз измеряет prompt, резервирует правую колонку и включает её метрики в bounded
