@@ -1,4 +1,3 @@
-using System.IO.Pipes;
 using System.Text.Json;
 using Hatifect.UI.Experience;
 using Hatifect.UI.Planning;
@@ -41,13 +40,10 @@ public sealed class PlannerTraceServerTests
             "ru", owner.Child("theme"), new UiAccessibilityPreferences(true, true),
             new UiEnvironmentOrigins("Tooling request", "Tooling request", "Tooling request", "Tooling request", "Tooling request", "Tooling request"));
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        using var serverInput = new AnonymousPipeServerStream(PipeDirection.In);
-        using var clientOutput = new AnonymousPipeClientStream(PipeDirection.Out, serverInput.GetClientHandleAsString());
-        using var serverOutput = new AnonymousPipeServerStream(PipeDirection.Out);
-        using var clientInput = new AnonymousPipeClientStream(PipeDirection.In, serverOutput.GetClientHandleAsString());
+        using var transport = await ToolingTestDuplexPipe.ConnectAsync(deadline.Token);
         using var errors = new StringWriter();
-        Task<int> server = UiToolingServer.RunAsync(serverInput, serverOutput, errors, deadline.Token).AsTask();
-        using var frames = new UiLspMessageStream(clientInput, clientOutput);
+        Task<int> server = UiToolingServer.RunAsync(transport.Server, transport.Server, errors, deadline.Token).AsTask();
+        using var frames = new UiLspMessageStream(transport.Client, transport.Client);
         int nextId = 0;
         JsonElement initialized = await Request("initialize", new { initializationOptions = new
         {
