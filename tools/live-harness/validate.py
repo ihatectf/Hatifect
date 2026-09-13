@@ -375,7 +375,9 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _serialized_json(payload: dict[str, Any]) -> bytes:
-    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    return (
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -565,7 +567,7 @@ def _failure_record(
     causal_component: str | None = None,
     timestamp: str | None = None,
 ) -> dict[str, Any]:
-    assertion_id = _bounded_text(assertion["id"])
+    assertion_id = assertion["id"]
     expected = _bounded_text(assertion["expected"]) or "not specified"
     actual = _bounded_text(assertion["actual"]) or "not specified"
     resolved_phase, resolved_class, resolved_component = _failure_context(
@@ -659,15 +661,7 @@ def _compact_failure_text(value: str) -> str:
 
 def _compact_record_context(records: list[dict[str, Any]]) -> None:
     for record in records:
-        for field in (
-            "id",
-            "phase",
-            "failure_class",
-            "expected",
-            "actual",
-            "message",
-            "causal_component",
-        ):
+        for field in ("expected", "actual", "message"):
             record[field] = _compact_failure_text(record[field])
 
 

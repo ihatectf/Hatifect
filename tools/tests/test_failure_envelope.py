@@ -383,6 +383,104 @@ class FailureEnvelopeTests(unittest.TestCase):
         self.assertEqual(payloads[0], payloads[1])
         self.assertEqual(summaries[0], summaries[1])
 
+    def test_maximum_unicode_root_context_round_trips_with_literal_utf8(self) -> None:
+        text = "\U0001f600" * HARNESS.MAX_FAILURE_TEXT
+        payloads = []
+        for _ in range(2):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result_path = root / "result.json"
+                HARNESS.write_result(
+                    result_path,
+                    "FAIL",
+                    "runtime.boot",
+                    text,
+                    run_id=text,
+                    assertions=[self._assertion(text, "FAIL", text, text)],
+                    failure_timestamp=TIMESTAMP,
+                    failure_phase=text,
+                    failure_class=text,
+                    causal_component=text,
+                )
+
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                failure_path = root / "failure.json"
+                summary_path = root / "failure-summary.txt"
+                envelope = HARNESS.validate_failure_artifacts(result_path, result)
+                payload = failure_path.read_bytes()
+                self.assertTrue(result_path.is_file())
+                self.assertTrue(failure_path.is_file())
+                self.assertTrue(summary_path.is_file())
+                self.assertLessEqual(
+                    failure_path.stat().st_size,
+                    HARNESS.MAX_FAILURE_ENVELOPE_BYTES,
+                )
+                self.assertIn(text.encode("utf-8"), payload)
+                self.assertEqual(envelope["root_failure"]["id"], text)
+                self.assertEqual(
+                    envelope["result_fingerprint"],
+                    HARNESS._result_fingerprint(result),
+                )
+                payloads.append(payload)
+
+        self.assertEqual(payloads[0], payloads[1])
+
+    def test_compaction_preserves_unique_supplementary_assertion_ids(self) -> None:
+        prefix = "cascade-" + "c" * (
+            HARNESS.MAX_FAILURE_TEXT - len("cascade-") - 2
+        )
+        cascade_ids = [f"{prefix}{index:02d}" for index in range(
+            HARNESS.MAX_CASCADE_RECORDS
+        )]
+        text = "x" * HARNESS.MAX_FAILURE_TEXT
+        root_id = "runtime.boot.loaded"
+        assertions = [
+            self._assertion(root_id, "FAIL", "loaded", "missing"),
+            *[
+                self._assertion(assertion_id, "FAIL", text, text)
+                for assertion_id in cascade_ids
+            ],
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_path = root / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "FAIL",
+                "runtime.boot",
+                "failure",
+                run_id="collision-run",
+                assertions=assertions,
+                failure_timestamp=TIMESTAMP,
+                cascade_dependencies={
+                    assertion_id: root_id for assertion_id in cascade_ids
+                },
+            )
+
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            envelope = HARNESS.validate_failure_artifacts(result_path, result)
+            records = envelope["cascade_records"]
+            retained = [
+                record for record in records
+                if record["id"] != "HARNESS-CASCADE-REMAINDER"
+            ]
+            retained_ids = [record["id"] for record in retained]
+
+            self.assertLessEqual(
+                (root / "failure.json").stat().st_size,
+                HARNESS.MAX_FAILURE_ENVELOPE_BYTES,
+            )
+            self.assertEqual(len(retained_ids), len(set(retained_ids)))
+            self.assertTrue(set(retained_ids).issubset(set(cascade_ids)))
+            self.assertTrue(all(
+                any(assertion["id"] == record["id"] for assertion in result["assertions"])
+                for record in retained
+            ))
+            if len(retained) < len(cascade_ids):
+                self.assertEqual(records[-1]["id"], "HARNESS-CASCADE-REMAINDER")
+            else:
+                self.assertEqual(retained_ids, cascade_ids)
+
     def test_explicit_cascade_context_is_bounded_without_changing_legacy_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result_path = Path(directory) / "result.json"

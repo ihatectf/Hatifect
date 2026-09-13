@@ -43,10 +43,13 @@ and record order are deterministic for identical evidence and timestamp.
 
 `failure.json` has one shared serialized-size budget of 256 KiB for generation, persistence and
 strict reading. If field/count bounds would exceed it, the generator first truncates deterministic
-non-root record context to 128 characters, then replaces supplementary collections in fixed order
-with their typed remainder record and removes optional environment/artifact context as necessary.
-The root failure, its duplicated top-level fields and the authoritative result fingerprint are
-never reduced.
+free-text (`expected`, `actual` and `message`) in non-root records to 128 characters. Assertion
+IDs, phase, failure class, causal component and root references are never truncated; if their
+full identity/provenance still exceeds the budget, the supplementary collection is replaced in
+fixed order with its typed remainder record. Optional environment/artifact context is then removed
+as necessary. The root failure, its duplicated top-level fields and the authoritative result
+fingerprint are never reduced. JSON sidecars use deterministic, sorted, indented UTF-8 with
+literal Unicode code points, avoiding size inflation from ASCII escape sequences.
 
 Strict validation reads `failure-summary.txt` with the same 8,192-character bound. Replacing a
 non-PASS `result.json` with PASS removes both failure sidecars, preventing stale diagnostics from
