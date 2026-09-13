@@ -1,0 +1,272 @@
+{
+  "changeRules": [
+    {
+      "component": "repository-validation",
+      "forceLevel": 5,
+      "integrationArea": "repository",
+      "pattern": ".github/*"
+    },
+    {
+      "component": "repository-validation",
+      "forceLevel": 5,
+      "integrationArea": "repository",
+      "pattern": ".agents/*"
+    },
+    {
+      "component": "repository-validation",
+      "forceLevel": 5,
+      "integrationArea": "repository",
+      "pattern": "AGENTS.md"
+    },
+    {
+      "component": "repository-validation",
+      "forceLevel": 5,
+      "integrationArea": "repository",
+      "pattern": "Hatifect.slnx"
+    },
+    {
+      "component": "repository-validation",
+      "forceLevel": 5,
+      "integrationArea": "repository",
+      "pattern": "Directory.*"
+    },
+    {
+      "component": "repository-validation",
+      "forceLevel": 5,
+      "integrationArea": "repository",
+      "pattern": "global.json"
+    },
+    {
+      "component": "repository-validation",
+      "forceLevel": 5,
+      "integrationArea": "repository",
+      "pattern": "release.sh"
+    },
+    {
+      "component": "progressive-regression",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "tools/progressive_regression.py"
+    },
+    {
+      "component": "progressive-regression",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "tools/regression-selection.json"
+    },
+    {
+      "component": "progressive-regression",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "tools/hatifect-regression"
+    },
+    {
+      "component": "progressive-regression",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "tools/tests/test_progressive_regression.py"
+    },
+    {
+      "component": "diagnostic-packet",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "tools/live-harness/diagnostic_packet.py"
+    },
+    {
+      "component": "reproduction-planner",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "tools/live-harness/reproduction.py"
+    },
+    {
+      "component": "harness-validator",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "tools/live-harness/validate.py"
+    },
+    {
+      "component": "live-harness",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "tools/live-harness/*"
+    },
+    {
+      "component": "repository-validation",
+      "forceLevel": 5,
+      "integrationArea": "repository",
+      "pattern": "tools/validation.py"
+    },
+    {
+      "component": "repository-validation",
+      "forceLevel": 5,
+      "integrationArea": "repository",
+      "pattern": "tools/test_inventory.py"
+    },
+    {
+      "component": "repository-validation",
+      "forceLevel": 5,
+      "integrationArea": "repository",
+      "pattern": "tools/ci_contract.py"
+    },
+    {
+      "component": "tooling",
+      "forceLevel": 4,
+      "integrationArea": "tooling",
+      "pattern": "tools/*"
+    },
+    {
+      "component": "semantic-ui",
+      "forceLevel": 3,
+      "integrationArea": "ui",
+      "pattern": "Hatifect UI/*"
+    },
+    {
+      "component": "flow-runtime",
+      "forceLevel": 3,
+      "integrationArea": "flow",
+      "pattern": "Hatifect Flow/*"
+    },
+    {
+      "component": "chests-anywhere",
+      "forceLevel": 3,
+      "integrationArea": "ca",
+      "pattern": "Integrations/Chests Anywhere/*"
+    },
+    {
+      "component": "progressive-regression",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "docs/PROGRESSIVE_REGRESSION.md"
+    },
+    {
+      "component": "diagnostic-packet",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "docs/AI_DIAGNOSTIC_PACKET.md"
+    },
+    {
+      "component": "harness-validator",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "docs/FAILURE_ENVELOPE.md"
+    },
+    {
+      "component": "harness-validator",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "docs/SEMANTIC_EVENTS.md"
+    },
+    {
+      "component": "reproduction-planner",
+      "forceLevel": 3,
+      "integrationArea": "tooling",
+      "pattern": "docs/TARGETED_REPRODUCTION.md"
+    },
+    {
+      "component": "tooling",
+      "forceLevel": 4,
+      "integrationArea": "tooling",
+      "pattern": "docs/DEVELOPMENT.md"
+    }
+  ],
+  "components": {
+    "chests-anywhere": {
+      "directTestFiles": [],
+      "integrationArea": "ca"
+    },
+    "diagnostic-packet": {
+      "directTestFiles": [
+        "tools/tests/test_diagnostic_packet.py"
+      ],
+      "integrationArea": "tooling"
+    },
+    "flow-runtime": {
+      "directTestFiles": [],
+      "integrationArea": "flow"
+    },
+    "flow-ui": {
+      "directTestFiles": [],
+      "integrationArea": "flow"
+    },
+    "harness-validator": {
+      "directTestFiles": [
+        "tools/tests/test_failure_envelope.py",
+        "tools/tests/test_semantic_event_stream.py",
+        "tools/tests/test_capability_preflight.py"
+      ],
+      "integrationArea": "tooling"
+    },
+    "live-harness": {
+      "directTestFiles": [
+        "tools/tests/test_live_harness.py"
+      ],
+      "integrationArea": "tooling"
+    },
+    "progressive-regression": {
+      "directTestFiles": [
+        "tools/tests/test_progressive_regression.py"
+      ],
+      "integrationArea": "tooling"
+    },
+    "repository-validation": {
+      "directTestFiles": [
+        "tools/tests/test_validation.py"
+      ],
+      "integrationArea": "repository"
+    },
+    "reproduction-planner": {
+      "directTestFiles": [
+        "tools/tests/test_reproduction.py"
+      ],
+      "integrationArea": "tooling"
+    },
+    "semantic-ui": {
+      "directTestFiles": [],
+      "integrationArea": "ui"
+    },
+    "tooling": {
+      "directTestFiles": [
+        "tools/tests/test_validation.py"
+      ],
+      "integrationArea": "tooling"
+    }
+  },
+  "formatVersion": 1,
+  "fullGate": {
+    "command": [
+      "./tools/hatifect-check"
+    ],
+    "scopeId": "full-host-free"
+  },
+  "integrationAreas": {
+    "ca": {
+      "command": [
+        "./tools/hatifect-test",
+        "ca",
+        "--platform"
+      ],
+      "scopeId": "ca-platform"
+    },
+    "flow": {
+      "command": [
+        "./tools/hatifect-test",
+        "flow"
+      ],
+      "scopeId": "flow-host-free"
+    },
+    "tooling": {
+      "command": [
+        "./tools/hatifect-test",
+        "tools"
+      ],
+      "scopeId": "python-tooling"
+    },
+    "ui": {
+      "command": [
+        "./tools/hatifect-test",
+        "ui"
+      ],
+      "scopeId": "ui-host-free"
+    }
+  }
+}

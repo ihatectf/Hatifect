@@ -1,8 +1,9 @@
 # Bounded AI diagnostic packet
 
-Status: Phase 5 implemented. This tooling-only projection does not start Phase 6 progressive
-regression selection and does not change `result.json` protocol v1, failure-envelope format v3,
-semantic-event format v1, direct transport v2, user-session protocol v1 or targeted reproduction.
+Status: Phase 5 implemented. Phase 6 [progressive regression selection](PROGRESSIVE_REGRESSION.md)
+consumes repository ownership independently; this projection does not change `result.json`
+protocol v1, failure-envelope format v3, semantic-event format v1, direct transport v2,
+user-session protocol v1 or targeted reproduction.
 
 ## Ownership and invocation
 

@@ -5,7 +5,8 @@ UI authoring: [подключение language server, экспорт метад
 Runtime-диагностика: [capability preflight](CAPABILITY_PREFLIGHT.md),
 [failure envelope](FAILURE_ENVELOPE.md), [semantic events](SEMANTIC_EVENTS.md),
 [targeted reproduction](TARGETED_REPRODUCTION.md) и
-[bounded AI diagnostic packet](AI_DIAGNOSTIC_PACKET.md).
+[bounded AI diagnostic packet](AI_DIAGNOSTIC_PACKET.md). Локальный выбор минимальной проверки
+описан в [progressive regression selection](PROGRESSIVE_REGRESSION.md).
 
 Последовательность развития и acceptance criteria — в [утверждённой roadmap](ROADMAP.md). После каждого среза обновляются его статус, commit/evidence и следующий готовый шаг; переходы в рамках утверждённой задачи не требуют повторного согласования.
 
@@ -31,6 +32,7 @@ Runtime-диагностика: [capability preflight](CAPABILITY_PREFLIGHT.md),
 | `./tools/hatifect-agent-check --route flowline` | Та же проверка с обязательной доступностью skills выбранного маршрута |
 | `./tools/hatifect-repro <run-id>` | Проверяет bounded failure evidence и повторяет только выбранный сценарий с нового `preflight` |
 | `./tools/hatifect-diagnostic-packet <run-id>` | Атомарно создаёт детерминированную 128 KiB проекцию finalized failure evidence без запуска runtime |
+| `./tools/hatifect-regression plan\|run [context]` | Выбирает и, для `run`, выполняет Level 1–5 progressive regression; `--final` всегда выбирает полный gate |
 | `./tools/hatifect-pack-ui` | Точные локальные UI packages из текущих исходников |
 | `./tools/hatifect-isolated-ui-ca` | Сборка consumer из UI packages без исходников framework |
 | `./release.sh` | Локальная сборка и проверка runtime-архива без установки и публикации |

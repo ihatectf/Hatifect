@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 TOOLS = Path(__file__).resolve().parents[1]
@@ -265,6 +265,80 @@ class ValidationTests(unittest.TestCase):
                 run.build(inventory, inventory.select(tests=True), "/sdk/dotnet")
         command.assert_called_once_with(
             "build-metadata-tests", [sys.executable, str(self.root / "tools/build_metadata_tests.py")])
+
+    def test_exact_test_filter_is_additive_and_preserves_trx_validation(self) -> None:
+        tests = self.project("Hatifect.Flow.Tests", test=True)
+        inventory = test_inventory.Inventory(self.solution(tests))
+        selected = inventory.select(tests=True)
+        run = validation.Run(self.root)
+        calls: list[list[str]] = []
+
+        def command(name, arguments, **_):
+            calls.append(arguments)
+            output = Path(arguments[arguments.index("--results-directory") + 1]) / "tests.trx"
+            output.write_bytes(self.trx(total=1, executed=1, passed=1,
+                                        outcomes=("Passed",), execution_ids=("only",)).read_bytes())
+            run.stages.append({"name": name, "status": "PASS"})
+            return ""
+
+        with patch.object(run, "command", side_effect=command):
+            run.tests(selected, "/sdk/dotnet", "Example.Namespace.Tests.OneCase")
+
+        self.assertEqual(1, len(calls))
+        self.assertEqual(
+            "FullyQualifiedName=Example.Namespace.Tests.OneCase",
+            calls[0][calls[0].index("--filter") + 1],
+        )
+        self.assertEqual(1, run.stages[-1]["passed"])
+
+    def test_exact_test_filter_still_rejects_empty_or_malformed_trx(self) -> None:
+        tests = self.project("Hatifect.Flow.Tests", test=True)
+        inventory = test_inventory.Inventory(self.solution(tests))
+        selected = inventory.select(tests=True)
+        fixtures = (
+            self.trx(total=0, executed=0, passed=0, outcomes=(), execution_ids=()).read_bytes(),
+            b"not xml",
+        )
+        for fixture in fixtures:
+            with self.subTest(fixture=fixture[:12]):
+                run = validation.Run(self.root)
+
+                def command(name, arguments, **_):
+                    output = Path(
+                        arguments[arguments.index("--results-directory") + 1]
+                    ) / "tests.trx"
+                    output.write_bytes(fixture)
+                    run.stages.append({"name": name, "status": "PASS"})
+                    return ""
+
+                with patch.object(run, "command", side_effect=command):
+                    with self.assertRaises(validation.ValidationError):
+                        run.tests(
+                            selected,
+                            "/sdk/dotnet",
+                            "Example.Namespace.Tests.OneCase",
+                        )
+                self.assertEqual("FAIL", run.stages[-1]["status"])
+
+    def test_cli_test_filter_requires_project_and_nonempty_exact_fqn(self) -> None:
+        cases = (
+            ["test", "all", "--project", "Example.Tests.csproj", "--test-filter", ""],
+            ["test", "all", "--test-filter", "Example.Tests.One"],
+            ["build", "all", "--project", "Example.Tests.csproj", "--test-filter", "Example.Tests.One"],
+            ["test", "all", "--project", "Example.Tests.csproj", "--test-filter", "Example;rm"],
+        )
+        for arguments in cases:
+            run = Mock()
+            with self.subTest(arguments=arguments), patch.object(
+                sys, "argv", ["validation.py", *arguments]
+            ), patch.object(validation, "Run", return_value=run):
+                exit_code = validation.main()
+
+            self.assertEqual(1, exit_code)
+            run.static.assert_not_called()
+            run.build.assert_not_called()
+            run.tests.assert_not_called()
+            self.assertEqual("FAIL", run.finish.call_args.args[0])
 
     def platform_graph(self) -> test_inventory.Inventory:
         production = self.project("Hatifect.Flow", packages=("Pathoschild.Stardew.ModBuildConfig",))
