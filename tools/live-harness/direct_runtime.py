@@ -815,6 +815,7 @@ def _write_harness_result(
     started_at: float,
     *,
     exception_type: str | None = None,
+    cleanup_failures: list[dict[str, str]] | None = None,
 ) -> None:
     validator = _load_module(
         "hatifect_direct_runtime_result_writer",
@@ -839,6 +840,7 @@ def _write_harness_result(
             if exception_type else []
         ),
         artifacts=validator.collect_artifacts(Path(request["artifactDirectory"])),
+        cleanup_failures=cleanup_failures,
     )
 
 
@@ -969,14 +971,39 @@ def _prepare_request_saves(request: dict[str, Any], metadata: dict[str, Any]) ->
 
 
 @contextlib.contextmanager
-def _prepared_request_saves(request: dict[str, Any], metadata: dict[str, Any]):
+def _prepared_request_saves(
+    request: dict[str, Any],
+    metadata: dict[str, Any],
+    cleanup_failures: list[dict[str, str]] | None = None,
+):
     prepared = _prepare_request_saves(request, metadata)
     try:
         yield
     finally:
         if prepared is not None:
             provisioner, runtime_id, owned = prepared
-            _cleanup_owned_copies(provisioner, Path(request["isolatedRoot"]), runtime_id, owned, remaining_only=True, scenario_id=request["scenarioId"])
+            try:
+                _cleanup_owned_copies(
+                    provisioner,
+                    Path(request["isolatedRoot"]),
+                    runtime_id,
+                    owned,
+                    remaining_only=True,
+                    scenario_id=request["scenarioId"],
+                )
+            except (OSError, ValueError) as error:
+                if cleanup_failures is None:
+                    raise
+                cleanup_failures.append({
+                    "id": "HARNESS-SAVE-CLEANUP",
+                    "status": "FAIL",
+                    "phase": "cleanup",
+                    "expected": "Every request-owned save copy is removed.",
+                    "actual": str(error),
+                    "message": str(error),
+                    "causal_component": "save-provisioning",
+                    "artifact": "diagnostics/save-provisioning.json",
+                })
 
 
 def _acceptance_report_source(isolated: Path, scenario_id: str) -> Path:
@@ -1147,6 +1174,10 @@ def _execute_request(
     report_artifact = artifact / "host-acceptance-report.json"
     started_at = time.time()
     teardown_errors: list[str] = []
+    cleanup_failures: list[dict[str, str]] = []
+    observed_exit_code: int | None = None
+    saved_crash_failure: str | None = None
+    run_completed = False
     if report_source.exists():
         os.replace(report_source, artifact / "previous-acceptance-report.json")
     run_process = _load_module(
@@ -1195,6 +1226,8 @@ def _execute_request(
         )
 
     def on_completed(observed_exit: int, errors: list[str]) -> None:
+        nonlocal observed_exit_code
+        observed_exit_code = observed_exit
         teardown_errors.extend(errors)
         process_path = artifact / "process.json"
         if not process_path.is_file():
@@ -1205,56 +1238,114 @@ def _execute_request(
         process_document["teardownErrors"] = list(errors)
         _atomic_write_json(process_path, process_document, replace=True)
 
-    with _background_game_options(request):
-        try:
-            if request["scenarioId"] in SAVED_CRASH_BOUNDARIES:
-                exit_code = _run_saved_crash(request, metadata, run_process, active_path, cancellation_path, on_started, on_completed)
-            else:
-                exit_code = run_process.run(
-                    [str(smapi)],
-                    smapi_directory,
-                    artifact / "smapi.log",
-                    request["timeoutSeconds"],
-                    5.0,
-                    environment=_minimal_environment(request, metadata),
-                    on_started=on_started,
-                    cancel_requested=cancellation_path.exists,
-                    on_completed=on_completed,
-                )
-        except DirectRuntimeError as error:
-            if request["scenarioId"] not in SAVED_CRASH_BOUNDARIES:
-                raise
-            _copy_smapi_logs(isolated, artifact)
-            if report_source.is_file():
-                shutil.copy2(report_source, report_artifact)
-            _complete_save_lifecycle(request, metadata, process_succeeded=False, report_exists=False)
-            message = f"Controlled saved-crash evidence failed: {error}"
-            _write_harness_result(metadata, request, "FAIL", message, "HARNESS-CRASH-EVIDENCE", started_at, exception_type="CrashEvidence")
-            _write_transport_diagnostics(request, metadata, phase="completed", status="FAIL")
-            return "Failed", "FAIL", 1, "ScenarioFailure", message, False
+    try:
+        with _background_game_options(request):
+            try:
+                if request["scenarioId"] in SAVED_CRASH_BOUNDARIES:
+                    exit_code = _run_saved_crash(request, metadata, run_process, active_path, cancellation_path, on_started, on_completed)
+                else:
+                    exit_code = run_process.run(
+                        [str(smapi)],
+                        smapi_directory,
+                        artifact / "smapi.log",
+                        request["timeoutSeconds"],
+                        5.0,
+                        environment=_minimal_environment(request, metadata),
+                        on_started=on_started,
+                        cancel_requested=cancellation_path.exists,
+                        on_completed=on_completed,
+                    )
+                run_completed = True
+            except DirectRuntimeError as error:
+                if request["scenarioId"] not in SAVED_CRASH_BOUNDARIES:
+                    raise
+                _copy_smapi_logs(isolated, artifact)
+                if report_source.is_file():
+                    shutil.copy2(report_source, report_artifact)
+                try:
+                    _complete_save_lifecycle(request, metadata, process_succeeded=False, report_exists=False)
+                except (OSError, ValueError) as cleanup_error:
+                    cleanup_failures.append({
+                        "id": "HARNESS-SAVE-CLEANUP",
+                        "status": "FAIL",
+                        "phase": "cleanup",
+                        "expected": "Every request-owned save copy is removed.",
+                        "actual": str(cleanup_error),
+                        "message": str(cleanup_error),
+                        "causal_component": "save-provisioning",
+                        "artifact": "diagnostics/save-provisioning.json",
+                    })
+                saved_crash_failure = f"Controlled saved-crash evidence failed: {error}"
+    except (DirectRuntimeError, OSError, ValueError) as error:
+        if not run_completed and saved_crash_failure is None:
+            raise
+        cleanup_failures.append({
+            "id": "HARNESS-OPTIONS-RESTORE",
+            "status": "FAIL",
+            "phase": "cleanup",
+            "expected": "Isolated game options are restored exactly.",
+            "actual": str(error),
+            "message": str(error),
+            "causal_component": "runtime-options",
+            "artifact": "diagnostics/runtime-options.json",
+        })
+        if observed_exit_code is not None:
+            exit_code = observed_exit_code
+    if saved_crash_failure is not None:
+        _write_harness_result(
+            metadata,
+            request,
+            "FAIL",
+            saved_crash_failure,
+            "HARNESS-CRASH-EVIDENCE",
+            started_at,
+            exception_type="CrashEvidence",
+            cleanup_failures=cleanup_failures,
+        )
+        _write_transport_diagnostics(request, metadata, phase="completed", status="FAIL")
+        return "Failed", "FAIL", 1, "ScenarioFailure", saved_crash_failure, False
     _copy_smapi_logs(isolated, artifact)
     if report_source.is_file():
         shutil.copy2(report_source, report_artifact)
-    _complete_save_lifecycle(
-        request,
-        metadata,
-        process_succeeded=exit_code == 0,
-        report_exists=report_artifact.is_file(),
-    )
+    try:
+        _complete_save_lifecycle(
+            request,
+            metadata,
+            process_succeeded=exit_code == 0,
+            report_exists=report_artifact.is_file(),
+        )
+    except (OSError, ValueError) as error:
+        cleanup_failures.append({
+            "id": "HARNESS-SAVE-CLEANUP",
+            "status": "FAIL",
+            "phase": "cleanup",
+            "expected": "Every request-owned save copy is finalized and removed.",
+            "actual": str(error),
+            "message": str(error),
+            "causal_component": "save-provisioning",
+            "artifact": "diagnostics/save-provisioning.json",
+        })
 
     if exit_code == run_process.TEARDOWN_FAILURE_EXIT:
-        message = "Owned process teardown failed: " + "; ".join(teardown_errors)
-        _write_harness_result(metadata, request, "BLOCKED", message, "HARNESS-PROCESS-TEARDOWN", started_at, exception_type="ProcessTeardown")
-        _write_transport_diagnostics(request, metadata, phase="completed", status="BLOCKED")
-        return "Failed", "BLOCKED", 2, "BrokerFailure", message, False
+        cleanup_failures.append({
+            "id": "HARNESS-PROCESS-TEARDOWN",
+            "status": "FAIL",
+            "phase": "cleanup",
+            "expected": "The owned SMAPI process group terminates cleanly.",
+            "actual": "; ".join(teardown_errors) or "Owned process teardown failed.",
+            "message": "; ".join(teardown_errors) or "Owned process teardown failed.",
+            "causal_component": "runtime-process",
+            "artifact": "process.json",
+        })
+        exit_code = observed_exit_code if observed_exit_code is not None else run_process.START_FAILURE_EXIT
     if exit_code == run_process.TIMEOUT_EXIT:
         message = f"The automated SMAPI process exceeded {request['timeoutSeconds']} seconds."
-        _write_harness_result(metadata, request, "BLOCKED", message, "HARNESS-PROCESS-TIMEOUT", started_at, exception_type="Timeout")
+        _write_harness_result(metadata, request, "BLOCKED", message, "HARNESS-PROCESS-TIMEOUT", started_at, exception_type="Timeout", cleanup_failures=cleanup_failures)
         _write_transport_diagnostics(request, metadata, phase="completed", status="BLOCKED")
         return "TimedOut", "BLOCKED", 2, "Timeout", message, False
     if exit_code in {run_process.START_FAILURE_EXIT, run_process.INTERRUPTED_EXIT}:
         message = f"The automated SMAPI process could not complete (exit {exit_code})."
-        _write_harness_result(metadata, request, "BLOCKED", message, "HARNESS-PROCESS-START", started_at, exception_type="ProcessExit")
+        _write_harness_result(metadata, request, "BLOCKED", message, "HARNESS-PROCESS-START", started_at, exception_type="ProcessExit", cleanup_failures=cleanup_failures)
         _write_transport_diagnostics(request, metadata, phase="completed", status="BLOCKED")
         runtime_stopping = (
             exit_code == run_process.INTERRUPTED_EXIT
@@ -1275,17 +1366,17 @@ def _execute_request(
             message = f"SMAPI exited with code {exit_code} after reaching the Hatifect runtime but before producing automated acceptance evidence."
             assertion_id = "HARNESS-PROCESS-BOOT"
             failure_kind = "ProductRuntimeFailure"
-        _write_harness_result(metadata, request, "BLOCKED", message, assertion_id, started_at, exception_type="ProcessExit")
+        _write_harness_result(metadata, request, "BLOCKED", message, assertion_id, started_at, exception_type="ProcessExit", cleanup_failures=cleanup_failures)
         _write_transport_diagnostics(request, metadata, phase="completed", status="BLOCKED")
         return "Failed", "BLOCKED", 2, failure_kind, message, False
     if exit_code != 0:
         message = f"SMAPI exited with code {exit_code} after producing acceptance evidence."
-        _write_harness_result(metadata, request, "FAIL", message, "HARNESS-PROCESS-EXIT", started_at, exception_type="ProcessExit")
+        _write_harness_result(metadata, request, "FAIL", message, "HARNESS-PROCESS-EXIT", started_at, exception_type="ProcessExit", cleanup_failures=cleanup_failures)
         _write_transport_diagnostics(request, metadata, phase="completed", status="FAIL")
         return "Failed", "FAIL", 1, "ProductRuntimeFailure", message, False
     if not report_artifact.is_file():
         message = "SMAPI exited without a fresh automated acceptance report."
-        _write_harness_result(metadata, request, "BLOCKED", message, "HARNESS-REPORT-MISSING", started_at)
+        _write_harness_result(metadata, request, "BLOCKED", message, "HARNESS-REPORT-MISSING", started_at, cleanup_failures=cleanup_failures)
         _write_transport_diagnostics(request, metadata, phase="completed", status="BLOCKED")
         return "Failed", "BLOCKED", 2, "ProductRuntimeFailure", message, False
 
@@ -1316,12 +1407,33 @@ def _execute_request(
     expected_exit = _exit_code(status)
     if finalized != expected_exit:
         raise DirectRuntimeError("Harness finalizer exit code conflicts with result status.")
+    scenario_status = status
+    for cleanup_failure in cleanup_failures:
+        validator.record_cleanup_failure(
+            Path(request["resultPath"]),
+            failure_id=cleanup_failure["id"],
+            message=cleanup_failure["message"],
+            expected=cleanup_failure["expected"],
+            causal_component=cleanup_failure["causal_component"],
+            artifact=cleanup_failure.get("artifact"),
+        )
+    if cleanup_failures:
+        result = _read_json(Path(request["resultPath"]))
+        status = validator.validate_result(result, request["scenarioId"])
+    expected_exit = _exit_code(status)
     with (artifact / "harness.log").open("a", encoding="utf-8") as stream:
         stream.write(f"{_timestamp()} status={status} result=result.json\n")
     _write_transport_diagnostics(request, metadata, phase="completed", status=status)
     state = "Completed" if status == "PASS" else "Failed"
-    failure_kind = None if status == "PASS" else "ScenarioFailure"
-    return state, status, expected_exit, failure_kind, "Automated acceptance evidence finalized.", False
+    failure_kind = None if status == "PASS" else (
+        "BrokerFailure" if scenario_status == "PASS" else "ScenarioFailure"
+    )
+    message = (
+        "Automated acceptance evidence finalized."
+        if not cleanup_failures
+        else "Automated acceptance evidence finalized; cleanup failures are recorded separately."
+    )
+    return state, status, expected_exit, failure_kind, message, False
 
 
 
@@ -1468,6 +1580,7 @@ def direct(args: argparse.Namespace) -> int:
     request: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
     active_path = artifact / "direct-process-state.json"
+    deferred_cleanup_failures: list[dict[str, str]] = []
     try:
         metadata = _direct_metadata(repository, isolated, Path(args.smapi_path))
         request, metadata = _build_request(
@@ -1482,7 +1595,7 @@ def direct(args: argparse.Namespace) -> int:
             args.timeout_seconds,
             args.seed,
         )
-        with _direct_run_lock(isolated), _prepared_request_saves(request, metadata):
+        with _direct_run_lock(isolated):
             _atomic_write_json(active_path, request)
             _transition(
                 active_path,
@@ -1491,16 +1604,49 @@ def direct(args: argparse.Namespace) -> int:
                 "Typed request accepted by the direct-process transport lock.",
             )
             try:
-                state, status, exit_code, failure_kind, message, _ = _execute_request(
-                    request,
-                    metadata,
-                    active_path,
-                    artifact / ".cancel-requested",
-                )
-                _transition(active_path, request, state, message)
+                with _prepared_request_saves(
+                    request, metadata, deferred_cleanup_failures
+                ):
+                    state, status, exit_code, failure_kind, message, _ = _execute_request(
+                        request,
+                        metadata,
+                        active_path,
+                        artifact / ".cancel-requested",
+                    )
             except (DirectRuntimeError, OSError, ValueError, json.JSONDecodeError) as error:
                 state, status, exit_code, failure_kind, message = _finalize_direct_failure(
                     request, metadata, active_path, error, started_at
+                )
+            if deferred_cleanup_failures:
+                validator = _load_module(
+                    "hatifect_direct_cleanup_recorder",
+                    Path(metadata["validatorExecutable"]),
+                )
+                for cleanup_failure in deferred_cleanup_failures:
+                    validator.record_cleanup_failure(
+                        Path(request["resultPath"]),
+                        failure_id=cleanup_failure["id"],
+                        message=cleanup_failure["message"],
+                        expected=cleanup_failure["expected"],
+                        causal_component=cleanup_failure["causal_component"],
+                        artifact=cleanup_failure.get("artifact"),
+                    )
+                result = _read_json(Path(request["resultPath"]))
+                status = validator.validate_result(result, request["scenarioId"])
+                exit_code = _exit_code(status)
+                state = "Failed"
+                if failure_kind is None:
+                    failure_kind = "BrokerFailure"
+                    message = "Scenario completed, but request-owned save cleanup failed."
+            if state in STATE_TRANSITIONS.get(
+                _read_json(active_path).get("lifecycleState"), set()
+            ):
+                _transition(active_path, request, state, message)
+            elif deferred_cleanup_failures:
+                _append_transport_log(
+                    request,
+                    state,
+                    "Cleanup failure recorded after the terminal runtime state: " + message,
                 )
             response = _response(
                 request,

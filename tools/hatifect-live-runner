@@ -232,21 +232,29 @@ if [[ -f "$artifact_dir/.cancel-requested" ]] \
   semantic_failure_marker=true
 fi
 
-if [[ "$semantic_failure_marker" == "true" ]]; then
-  printf '%s\n' "ERROR: semantic test companion failed (exit ${semantic_agent_exit:-unknown}); the runtime cancellation is secondary." >&2
-  if [[ -f "$artifact_dir/semantic-test-agent.log" ]]; then
-    printf '%s\n' "--- semantic-test-agent.log (tail) ---" >&2
-    tail -n 120 "$artifact_dir/semantic-test-agent.log" >&2
+if [[ "$semantic_failure_marker" == "true" ]] \
+  || { (( runtime_exit == 0 )) && [[ "$semantic_agent_exit" != "0" ]]; }; then
+  if [[ "$semantic_failure_marker" == "true" ]]; then
+    semantic_failure_message="Semantic test companion exited ${semantic_agent_exit:-unknown}; the runtime cancellation is secondary."
+  else
+    semantic_failure_message="Semantic test companion exited ${semantic_agent_exit:-unknown} after the runtime completed successfully."
   fi
-  if [[ -f "$artifact_dir/diagnostics/semantic-test-agent.json" ]]; then
-    printf '%s\n' "--- diagnostics/semantic-test-agent.json ---" >&2
-    cat "$artifact_dir/diagnostics/semantic-test-agent.json" >&2
+  printf '%s\n' "ERROR: $semantic_failure_message" >&2
+  if [[ -f "$result" ]]; then
+    mv -f "$result" "$artifact_dir/runtime-result.secondary.json"
+  fi
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "$semantic_failure_message" \
+    --run-id "$run_id" \
+    --assertion-id HARNESS-SEMANTIC-TEST-AGENT \
+    --expected "The checked-in semantic test companion completes successfully." \
+    --exception-type ProcessExit \
+    --artifact-root "$artifact_dir"
+  if [[ -f "$artifact_dir/failure-summary.txt" ]]; then
+    printf '%s\n' "--- failure-summary.txt ---" >&2
+    cat "$artifact_dir/failure-summary.txt" >&2
   fi
   exit 2
 fi
 
-if (( runtime_exit == 0 )) && [[ "$semantic_agent_exit" != "0" ]]; then
-  printf '%s\n' "ERROR: semantic test companion did not complete successfully (exit ${semantic_agent_exit:-unknown})." >&2
-  exit 2
-fi
 exit "$runtime_exit"

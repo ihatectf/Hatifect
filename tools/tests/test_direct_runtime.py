@@ -1,3 +1,4 @@
+import contextlib
 import datetime as dt
 import importlib.util
 import json
@@ -192,6 +193,86 @@ class DirectRuntimeTests(unittest.TestCase):
                     DIRECT_RUNTIME._execute_request(fixture.request, fixture.metadata, active, Path(fixture.temporary.name) / 'cancel')
             result_writer.assert_not_called()
 
+    def test_saved_crash_root_survives_options_restoration_failure(self) -> None:
+        with _RequestFixture() as fixture:
+            fixture.request["scenarioId"] = "flow.chest.crash-after-save"
+            active = Path(fixture.temporary.name) / "active.json"
+            DIRECT_RUNTIME._atomic_write_json(active, fixture.request)
+            DIRECT_RUNTIME._transition(active, fixture.request, "Accepted", "accepted")
+
+            @contextlib.contextmanager
+            def options(_request):
+                try:
+                    yield
+                finally:
+                    raise DIRECT_RUNTIME.DirectRuntimeError("restore denied")
+
+            modules = SimpleNamespace()
+            with mock.patch.object(
+                DIRECT_RUNTIME, "_background_game_options", side_effect=options
+            ), mock.patch.object(
+                DIRECT_RUNTIME,
+                "_run_saved_crash",
+                side_effect=DIRECT_RUNTIME.DirectRuntimeError("crash marker invalid"),
+            ), mock.patch.object(
+                DIRECT_RUNTIME, "_load_module", return_value=modules
+            ), mock.patch.object(
+                DIRECT_RUNTIME, "_complete_save_lifecycle"
+            ), mock.patch.object(
+                DIRECT_RUNTIME, "_write_harness_result"
+            ) as result_writer:
+                outcome = DIRECT_RUNTIME._execute_request(
+                    fixture.request,
+                    fixture.metadata,
+                    active,
+                    Path(fixture.temporary.name) / "cancel",
+                )
+
+            self.assertEqual(outcome[:4], ("Failed", "FAIL", 1, "ScenarioFailure"))
+            self.assertIn("crash marker invalid", outcome[4])
+            self.assertEqual(
+                result_writer.call_args.args[4],
+                "HARNESS-CRASH-EVIDENCE",
+            )
+            cleanup_failures = result_writer.call_args.kwargs["cleanup_failures"]
+            self.assertEqual(cleanup_failures[0]["id"], "HARNESS-OPTIONS-RESTORE")
+            self.assertIn("restore denied", cleanup_failures[0]["message"])
+
+    def test_runtime_body_failure_is_not_misclassified_as_options_cleanup(self) -> None:
+        with _RequestFixture() as fixture:
+            active = Path(fixture.temporary.name) / "active.json"
+            DIRECT_RUNTIME._atomic_write_json(active, fixture.request)
+            DIRECT_RUNTIME._transition(active, fixture.request, "Accepted", "accepted")
+
+            def run(*_args, **kwargs):
+                kwargs["on_completed"](1, [])
+                raise DIRECT_RUNTIME.DirectRuntimeError("runtime callback failed")
+
+            supervisor = SimpleNamespace(
+                run=run,
+                TEARDOWN_FAILURE_EXIT=125,
+                TIMEOUT_EXIT=124,
+                START_FAILURE_EXIT=126,
+                INTERRUPTED_EXIT=130,
+            )
+            with mock.patch.object(
+                DIRECT_RUNTIME, "_load_module", return_value=supervisor
+            ), mock.patch.object(
+                DIRECT_RUNTIME, "_write_harness_result"
+            ) as result_writer:
+                with self.assertRaisesRegex(
+                    DIRECT_RUNTIME.DirectRuntimeError,
+                    "runtime callback failed",
+                ):
+                    DIRECT_RUNTIME._execute_request(
+                        fixture.request,
+                        fixture.metadata,
+                        active,
+                        Path(fixture.temporary.name) / "cancel",
+                    )
+
+            result_writer.assert_not_called()
+
     def test_canonical_flow_save_is_cleaned_on_launch_failure_with_same_scenario_authority(self) -> None:
         for scenario in ('flow.chest.roundtrip', 'flow.chest.performance', 'flow.chest.resources'):
             with self.subTest(scenario=scenario):
@@ -213,6 +294,32 @@ class DirectRuntimeTests(unittest.TestCase):
                     self.assertFalse(path.exists())
                     provisioner.prepare_secondary.assert_not_called()
                     provisioner.cleanup_working_copy.assert_called_once_with(isolated, path, 'runtime', fixture.request['requestId'], scenario, role='primary')
+
+    def test_post_failure_save_cleanup_is_collected_without_replacing_root(self) -> None:
+        with _RequestFixture() as fixture:
+            isolated = Path(fixture.request["isolatedRoot"])
+            path = isolated / ("HatifectHarness_" + fixture.request["requestId"].replace("-", ""))
+            path.mkdir()
+            fixture.request["savePath"] = str(path)
+            fixture.metadata["saveProvisionerExecutable"] = "save.py"
+            provisioner = mock.Mock()
+            provisioner.SaveProvisioningError = ValueError
+            provisioner.validate_fixture.return_value = ({"runtimeId": "runtime"}, None)
+            provisioner.prepare_working_copy.return_value = path
+            provisioner.cleanup_working_copy.side_effect = OSError("cleanup denied")
+            cleanup_failures = []
+
+            with mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=provisioner):
+                with DIRECT_RUNTIME._prepared_request_saves(
+                    fixture.request,
+                    fixture.metadata,
+                    cleanup_failures,
+                ):
+                    pass
+
+            self.assertEqual(len(cleanup_failures), 1)
+            self.assertEqual(cleanup_failures[0]["id"], "HARNESS-SAVE-CLEANUP")
+            self.assertIn("cleanup denied", cleanup_failures[0]["message"])
 
     def test_flow_lifecycle_report_has_fixed_module_ownership(self) -> None:
         isolated = Path("/isolated")
@@ -818,6 +925,74 @@ class DirectRuntimeTests(unittest.TestCase):
                 / "transport-result.json"
             )
             self.assertEqual(response["status"], "PASS")
+
+    def test_direct_transport_records_deferred_cleanup_before_final_transition(self) -> None:
+        with self._request_fixture() as fixture:
+            result_path = Path(fixture.request["resultPath"])
+            args = SimpleNamespace(
+                repository_root=str(fixture.repository),
+                smapi_path=fixture.metadata["smapiPath"],
+                kind=fixture.request["kind"],
+                scenario=fixture.request["scenarioId"],
+                isolated_root=fixture.request["isolatedRoot"],
+                artifact_directory=fixture.request["artifactDirectory"],
+                result=fixture.request["resultPath"],
+                save_path=None,
+                timeout_seconds=fixture.request["timeoutSeconds"],
+                seed=fixture.request["seed"],
+            )
+
+            def execute(request, _metadata, active, _cancellation):
+                DIRECT_RUNTIME._transition(active, request, "Launching", "launching")
+                DIRECT_RUNTIME._transition(active, request, "Running", "running")
+                result_path.write_text('{"status":"FAIL"}\n', encoding="utf-8")
+                raise DIRECT_RUNTIME.DirectRuntimeError("root failure")
+
+            @contextlib.contextmanager
+            def prepared(_request, _metadata, cleanup_failures):
+                try:
+                    yield
+                finally:
+                    cleanup_failures.append({
+                        "id": "HARNESS-SAVE-CLEANUP",
+                        "expected": "clean",
+                        "message": "cleanup denied",
+                        "causal_component": "save-provisioning",
+                    })
+
+            cleanup_recorder = mock.Mock()
+            validator = SimpleNamespace(
+                validate_result=lambda result, _scenario: result["status"],
+                record_cleanup_failure=cleanup_recorder,
+            )
+            with mock.patch.object(
+                DIRECT_RUNTIME, "_direct_metadata", return_value=fixture.metadata
+            ), mock.patch.object(
+                DIRECT_RUNTIME,
+                "_build_request",
+                return_value=(fixture.request, fixture.metadata),
+            ), mock.patch.object(
+                DIRECT_RUNTIME, "_prepared_request_saves", side_effect=prepared
+            ), mock.patch.object(
+                DIRECT_RUNTIME, "_execute_request", side_effect=execute
+            ), mock.patch.object(
+                DIRECT_RUNTIME, "_load_module", return_value=validator
+            ):
+                exit_code = DIRECT_RUNTIME.direct(args)
+
+            self.assertEqual(exit_code, 1)
+            cleanup_recorder.assert_called_once()
+            state = DIRECT_RUNTIME._read_json(
+                Path(fixture.request["artifactDirectory"]) / "direct-process-state.json"
+            )
+            self.assertEqual(state["lifecycleState"], "Failed")
+            response = DIRECT_RUNTIME._read_json(
+                Path(fixture.request["artifactDirectory"])
+                / "diagnostics"
+                / "transport-result.json"
+            )
+            self.assertEqual(response["status"], "FAIL")
+            self.assertEqual(response["failureKind"], "BrokerFailure")
 
     def test_atomic_state_refuses_implicit_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

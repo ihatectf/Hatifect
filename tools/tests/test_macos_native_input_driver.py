@@ -37,7 +37,7 @@ class MacOsNativeInputDriverTests(unittest.TestCase):
         self.assertIn('native_input_backend="$TOOLS_DIR/live-harness/macos_native_input_driver.py"', body)
         self.assertIn('.cancel-requested', body)
         self.assertIn('semantic_agent_exit', body)
-        self.assertIn('semantic test companion did not complete successfully', body)
+        self.assertIn('Semantic test companion exited', body)
         self.assertNotIn('[[ "$scenario" != "flow.ui.player.input" ]]', body)
         self.assertTrue(SEMANTIC_AGENT_PATH.is_file())
 

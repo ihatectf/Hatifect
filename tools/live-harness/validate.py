@@ -9,6 +9,7 @@ import json
 import math
 import uuid
 import os
+import platform
 import re
 import sys
 import tempfile
@@ -24,6 +25,12 @@ DEFAULT_MANIFEST = Path(__file__).with_name("scenarios.json")
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+$")
 MOD_UNIQUE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 STATUSES = {"PASS", "FAIL", "BLOCKED"}
+FAILURE_ENVELOPE_FORMAT_VERSION = 1
+FAILURE_RECORD_TYPES = {"ROOT_FAILURE", "CASCADE_SKIPPED", "CLEANUP_FAILURE"}
+MAX_FAILURE_TEXT = 2048
+MAX_RELEVANT_ARTIFACTS = 12
+MAX_CASCADE_RECORDS = 32
+MAX_CLEANUP_FAILURES = 8
 FLOW_PERFORMANCE = {'scenarioId': 'flow.chest.performance', 'warmupFrames': 120, 'measurementFrames': 600, 'shipments': 80, 'routes': 3, 'maxOperationsPerTick': 64, 'maximumP95TickMs': 0.25, 'maximumP99TickMs': 1.0, 'maximumAllocatedBytesPerTick': 0}
 FLOW_PERFORMANCE_CHECKS = [
     'flow.chest.performance.' + suffix for suffix in (
@@ -294,7 +301,7 @@ def collect_artifacts(root: Path | None) -> list[dict[str, str]]:
     artifacts: list[dict[str, str]] = []
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
         relative = path.relative_to(root).as_posix()
-        if relative == "result.json" or relative.endswith(".tmp"):
+        if relative in {"result.json", "failure.json", "failure-summary.txt"} or relative.endswith(".tmp"):
             continue
         if relative == "host-acceptance-report.json":
             artifact_type = "acceptance-report"
@@ -335,6 +342,535 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
             pass
 
 
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        directory_descriptor = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _bounded_text(value: Any) -> str:
+    return str(value)[:MAX_FAILURE_TEXT]
+
+
+def _failure_context(
+    assertion_id: str,
+    status: str,
+    *,
+    phase: str | None = None,
+    failure_class: str | None = None,
+    causal_component: str | None = None,
+) -> tuple[str, str, str]:
+    upper = assertion_id.upper()
+    if "CLEANUP" in upper or "TEARDOWN" in upper or "RESTORE" in upper:
+        defaults = ("cleanup", "CLEANUP_FAILURE", "runtime-cleanup")
+    elif upper == "HARNESS-SEMANTIC-TEST-AGENT":
+        defaults = ("input", "AUTOMATION_DRIVER_FAILURE", "semantic-test-agent")
+    elif upper == "HARNESS-PREPARE":
+        defaults = ("prepare", "PREPARATION_FAILURE", "deployment-preparer")
+    elif upper.startswith(("HARNESS-ENV-", "HARNESS-SCENARIO", "HARNESS-SAVE-")):
+        defaults = ("preflight", "PREFLIGHT_FAILURE", "harness-preflight")
+    elif upper.startswith(("HARNESS-PROCESS-", "HARNESS-DIRECT-", "HARNESS-EXECUTOR-",
+                           "HARNESS-CRASH-", "HARNESS-LOCAL-INFRA-")):
+        defaults = ("runtime", "RUNTIME_EXECUTOR_FAILURE", "runtime-executor")
+    elif upper.startswith(("HARNESS-REPORT-", "HARNESS-RESULT-", "HARNESS-RUNTIME-",
+                           "HARNESS-EVIDENCE-")):
+        defaults = ("validation", "EVIDENCE_FAILURE", "harness-validator")
+    else:
+        defaults = (
+            "scenario",
+            "INFRASTRUCTURE_BLOCK" if status == "BLOCKED" else "ASSERTION_FAILURE",
+            "scenario",
+        )
+    return (
+        phase or defaults[0],
+        failure_class or defaults[1],
+        causal_component or defaults[2],
+    )
+
+
+def _read_bounded_json(path: Path) -> dict[str, Any] | None:
+    try:
+        if not path.is_file() or path.stat().st_size > 256 * 1024:
+            return None
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else None
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+
+
+def _environment_summary(artifact_root: Path) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "platform": platform.system() or sys.platform,
+        "machine": platform.machine() or "unknown",
+        "python_version": platform.python_version(),
+    }
+    request = _read_bounded_json(artifact_root / "request.json")
+    if request is not None:
+        for source, target in (
+            ("repositoryHead", "checkout_sha"),
+            ("checkoutSha", "checkout_sha"),
+            ("kind", "runner_kind"),
+            ("timeoutSeconds", "timeout_seconds"),
+            ("seed", "seed"),
+        ):
+            value = request.get(source)
+            if isinstance(value, (str, int)) and not isinstance(value, bool):
+                summary.setdefault(target, value)
+    report = _read_bounded_json(artifact_root / "host-acceptance-report.json")
+    if report is not None:
+        for source, target in (
+            ("GameVersion", "game_version"),
+            ("SmapiVersion", "smapi_version"),
+            ("RuntimeFingerprint", "runtime_fingerprint"),
+        ):
+            value = report.get(source)
+            if isinstance(value, str) and value:
+                summary[target] = _bounded_text(value)
+    return summary
+
+
+def _relevant_artifacts(
+    result: dict[str, Any],
+    artifact_root: Path,
+    additions: list[str] | None = None,
+) -> list[str]:
+    candidates = {"result.json"}
+    for artifact in result.get("artifacts", []):
+        if isinstance(artifact, dict) and isinstance(artifact.get("path"), str):
+            candidates.add(artifact["path"])
+    candidates.update(additions or [])
+    priority = {
+        "host-acceptance-report.json": 0,
+        "diagnostics/runtime.json": 1,
+        "diagnostics/semantic-test-agent.json": 2,
+        "diagnostics/executor-failure.json": 3,
+        "diagnostics/worker-failure.json": 4,
+        "diagnostics/transport-result.json": 5,
+        "semantic-test-agent.log": 6,
+        "smapi.log": 7,
+        "harness.log": 8,
+        "result.json": 9,
+    }
+    contained: list[str] = []
+    for relative in candidates:
+        candidate = Path(relative)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            continue
+        if relative == "result.json" or (artifact_root / candidate).is_file():
+            contained.append(relative)
+    return sorted(
+        set(contained),
+        key=lambda item: (priority.get(item, 8), item),
+    )[:MAX_RELEVANT_ARTIFACTS]
+
+
+def _executor_failure_context(artifact_root: Path) -> tuple[str, str] | None:
+    executor = _read_bounded_json(artifact_root / "diagnostics" / "executor-failure.json")
+    if executor is not None:
+        exception_type = executor.get("exceptionType")
+        message = executor.get("message")
+        if isinstance(exception_type, str) and isinstance(message, str):
+            return "runtime-executor", _bounded_text(f"{exception_type}: {message}")
+    worker = _read_bounded_json(artifact_root / "diagnostics" / "worker-failure.json")
+    if worker is not None:
+        exit_code = worker.get("workerExitCode")
+        message = worker.get("message")
+        if isinstance(exit_code, int) and not isinstance(exit_code, bool) and isinstance(message, str):
+            return "runtime-worker", _bounded_text(f"Worker exit {exit_code}: {message}")
+    return None
+
+
+def _failure_record(
+    assertion: dict[str, Any],
+    record_type: str,
+    *,
+    root_failure_id: str | None = None,
+    phase: str | None = None,
+    failure_class: str | None = None,
+    causal_component: str | None = None,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
+    assertion_id = _bounded_text(assertion["id"])
+    expected = _bounded_text(assertion["expected"]) or "not specified"
+    actual = _bounded_text(assertion["actual"]) or "not specified"
+    resolved_phase, resolved_class, resolved_component = _failure_context(
+        assertion_id,
+        assertion["status"],
+        phase=phase,
+        failure_class=failure_class,
+        causal_component=causal_component,
+    )
+    record = {
+        "classification": record_type,
+        "id": assertion_id,
+        "phase": resolved_phase,
+        "failure_class": resolved_class,
+        "expected": expected,
+        "actual": actual,
+        "message": actual,
+        "causal_component": resolved_component,
+        "original_status": assertion["status"],
+    }
+    if root_failure_id is not None:
+        record["root_failure_id"] = root_failure_id
+    if timestamp is not None:
+        record["timestamp"] = timestamp
+    return record
+
+
+def build_failure_envelope(
+    result: dict[str, Any],
+    artifact_root: Path,
+    *,
+    timestamp: str | None = None,
+    phase: str | None = None,
+    failure_class: str | None = None,
+    causal_component: str | None = None,
+    cleanup_failures: list[dict[str, str]] | None = None,
+) -> dict[str, Any] | None:
+    validate_result(result)
+    if result["status"] == "PASS":
+        return None
+    if cleanup_failures is not None and len(cleanup_failures) > MAX_CLEANUP_FAILURES:
+        raise HarnessError("Failure envelope cleanup input exceeds its deterministic bound.")
+    captured_at = timestamp or dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+    failed_assertions = [
+        assertion for assertion in result["assertions"] if assertion["status"] != "PASS"
+    ]
+    if not failed_assertions:
+        failed_assertions = [_assertion(
+            "HARNESS-EXECUTION",
+            result["status"],
+            result["scenario"],
+            "The isolated scenario completes successfully.",
+            f"Scenario ended with {result['status']}.",
+        )]
+    cleanup_assertions = [
+        assertion for assertion in failed_assertions
+        if _failure_context(assertion["id"], assertion["status"])[1] == "CLEANUP_FAILURE"
+    ]
+    causal_assertions = [
+        assertion for assertion in failed_assertions if assertion not in cleanup_assertions
+    ]
+    root_assertion = causal_assertions[0] if causal_assertions else cleanup_assertions.pop(0)
+    root = _failure_record(
+        root_assertion,
+        "ROOT_FAILURE",
+        phase=phase,
+        failure_class=failure_class,
+        causal_component=causal_component,
+    )
+    if root["id"] in {"HARNESS-RESULT-MISSING", "HARNESS-RESULT-INVALID", "HARNESS-RESULT-CONFLICT"}:
+        executor_context = _executor_failure_context(artifact_root)
+        if executor_context is not None:
+            root["phase"] = "executor"
+            root["failure_class"] = "RUNTIME_EXECUTOR_FAILURE"
+            root["causal_component"], root["actual"] = executor_context
+            root["message"] = root["actual"]
+    root_id = root["id"]
+    cascade_assertions = causal_assertions[1:]
+    visible_cascade_assertions = cascade_assertions[:MAX_CASCADE_RECORDS]
+    if len(cascade_assertions) > MAX_CASCADE_RECORDS:
+        omitted = len(cascade_assertions) - (MAX_CASCADE_RECORDS - 1)
+        visible_cascade_assertions = cascade_assertions[:MAX_CASCADE_RECORDS - 1] + [
+            _assertion(
+                "HARNESS-CASCADE-REMAINDER",
+                root_assertion["status"],
+                result["scenario"],
+                "All dependent failures remain available in result.json.",
+                f"{omitted} additional dependent failures remain in result.json.",
+            )
+        ]
+    cascades = [
+        _failure_record(assertion, "CASCADE_SKIPPED", root_failure_id=root_id)
+        for assertion in visible_cascade_assertions
+    ]
+    cleanup_records = [
+        _failure_record(assertion, "CLEANUP_FAILURE", root_failure_id=root_id)
+        for assertion in cleanup_assertions
+    ]
+    extra_artifacts: list[str] = []
+    for index, failure in enumerate(cleanup_failures or []):
+        assertion = _assertion(
+            failure.get("id") or f"HARNESS-CLEANUP-{index + 1}",
+            failure.get("status") or "FAIL",
+            result["scenario"],
+            failure.get("expected") or "Cleanup completes without errors.",
+            failure.get("actual") or failure.get("message") or "Cleanup failed.",
+        )
+        cleanup_records.append(_failure_record(
+            assertion,
+            "CLEANUP_FAILURE",
+            root_failure_id=root_id,
+            phase=failure.get("phase") or "cleanup",
+            failure_class="CLEANUP_FAILURE",
+            causal_component=failure.get("causal_component") or "runtime-cleanup",
+            timestamp=failure.get("timestamp") or captured_at,
+        ))
+        artifact = failure.get("artifact")
+        if artifact:
+            extra_artifacts.append(artifact)
+    if len(cleanup_records) > MAX_CLEANUP_FAILURES:
+        omitted = len(cleanup_records) - (MAX_CLEANUP_FAILURES - 1)
+        cleanup_records = cleanup_records[:MAX_CLEANUP_FAILURES - 1] + [
+            _failure_record(
+                _assertion(
+                    "HARNESS-CLEANUP-REMAINDER",
+                    "FAIL",
+                    result["scenario"],
+                    "All cleanup failures remain available in result.json.",
+                    f"{omitted} additional cleanup failures remain in result.json.",
+                ),
+                "CLEANUP_FAILURE",
+                root_failure_id=root_id,
+            )
+        ]
+    envelope = {
+        "format_version": FAILURE_ENVELOPE_FORMAT_VERSION,
+        "scenario": result["scenario"],
+        "run_id": result["runId"],
+        "phase": root["phase"],
+        "timestamp": captured_at,
+        "status": result["status"],
+        "failure_class": root["failure_class"],
+        "root_failure": root,
+        "expected": root["expected"],
+        "actual": root["actual"],
+        "message": root["message"],
+        "causal_component": root["causal_component"],
+        "cascade_records": cascades,
+        "cleanup_failures": cleanup_records,
+        "relevant_artifacts": _relevant_artifacts(result, artifact_root, extra_artifacts),
+        "environment_summary": _environment_summary(artifact_root),
+    }
+    validate_failure_envelope(envelope)
+    return envelope
+
+
+def validate_failure_envelope(envelope: Any) -> None:
+    keys = {
+        "format_version", "scenario", "run_id", "phase", "timestamp", "status",
+        "failure_class", "root_failure", "expected", "actual", "message",
+        "causal_component", "cascade_records", "cleanup_failures",
+        "relevant_artifacts", "environment_summary",
+    }
+    if not isinstance(envelope, dict) or set(envelope) != keys:
+        raise HarnessError("Failure envelope does not match format v1 fields.")
+    if envelope["format_version"] != FAILURE_ENVELOPE_FORMAT_VERSION:
+        raise HarnessError("Failure envelope has an unsupported format_version.")
+    if envelope["status"] not in {"FAIL", "BLOCKED"}:
+        raise HarnessError("Failure envelope must describe a failed or blocked run.")
+    for field in (
+        "scenario", "run_id", "phase", "timestamp", "failure_class", "expected",
+        "actual", "message", "causal_component",
+    ):
+        if not isinstance(envelope[field], str) or not envelope[field]:
+            raise HarnessError(f"Failure envelope {field} must be a non-empty string.")
+    _parse_timestamp(envelope["timestamp"])
+    root = envelope["root_failure"]
+    record_keys = {
+        "classification", "id", "phase", "failure_class", "expected", "actual",
+        "message", "causal_component", "original_status",
+    }
+    if not isinstance(root, dict) or set(root) != record_keys:
+        raise HarnessError("Failure envelope must contain exactly one root failure.")
+    if root["classification"] != "ROOT_FAILURE" or root["original_status"] not in {"FAIL", "BLOCKED"}:
+        raise HarnessError("Failure envelope root classification is invalid.")
+    if root["classification"] not in FAILURE_RECORD_TYPES:
+        raise HarnessError("Failure envelope root has an unknown classification.")
+    for collection_name, classification in (
+        ("cascade_records", "CASCADE_SKIPPED"),
+        ("cleanup_failures", "CLEANUP_FAILURE"),
+    ):
+        records = envelope[collection_name]
+        if not isinstance(records, list):
+            raise HarnessError(f"Failure envelope {collection_name} must be an array.")
+        maximum = (
+            MAX_CASCADE_RECORDS
+            if collection_name == "cascade_records"
+            else MAX_CLEANUP_FAILURES
+        )
+        if len(records) > maximum:
+            raise HarnessError(f"Failure envelope {collection_name} exceeds its bound.")
+        for record in records:
+            allowed = record_keys | {"root_failure_id", "timestamp"}
+            required = record_keys | {"root_failure_id"}
+            if (
+                not isinstance(record, dict)
+                or not required <= set(record)
+                or not set(record) <= allowed
+            ):
+                raise HarnessError(f"Failure envelope contains a malformed {classification} record.")
+            if record["classification"] != classification or record["root_failure_id"] != root["id"]:
+                raise HarnessError(f"Failure envelope {classification} does not reference its root.")
+            if "timestamp" in record:
+                _parse_timestamp(record["timestamp"])
+    artifacts = envelope["relevant_artifacts"]
+    if (
+        not isinstance(artifacts, list)
+        or len(artifacts) > MAX_RELEVANT_ARTIFACTS
+        or artifacts != list(dict.fromkeys(artifacts))
+        or any(not isinstance(item, str) or not item for item in artifacts)
+    ):
+        raise HarnessError("Failure envelope relevant_artifacts are invalid or unbounded.")
+    if not isinstance(envelope["environment_summary"], dict):
+        raise HarnessError("Failure envelope environment_summary must be an object.")
+
+
+def _failure_summary(envelope: dict[str, Any]) -> str:
+    root = envelope["root_failure"]
+    artifacts = ", ".join(envelope["relevant_artifacts"]) or "none"
+    lines = [
+        f"{envelope['status']} {envelope['scenario']} ({envelope['run_id']})",
+        f"ROOT_FAILURE [{envelope['failure_class']}] {root['id']}",
+        f"Phase: {envelope['phase']}; component: {envelope['causal_component']}",
+        f"Expected: {envelope['expected']}",
+        f"Actual: {envelope['actual']}",
+        f"Cascade records: {len(envelope['cascade_records'])}",
+        f"Cleanup failures: {len(envelope['cleanup_failures'])}",
+        f"Relevant artifacts: {artifacts}",
+    ]
+    return "\n".join(lines)[:8191] + "\n"
+
+
+def write_failure_artifacts(
+    result_path: Path,
+    result: dict[str, Any],
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    envelope = build_failure_envelope(result, result_path.parent, **kwargs)
+    if envelope is None:
+        return None
+    _atomic_write_json(result_path.parent / "failure.json", envelope)
+    _atomic_write_text(result_path.parent / "failure-summary.txt", _failure_summary(envelope))
+    return envelope
+
+
+def validate_failure_artifacts(
+    result_path: Path,
+    result: dict[str, Any],
+) -> dict[str, Any] | None:
+    if result["status"] == "PASS":
+        return None
+    failure_path = result_path.parent / "failure.json"
+    summary_path = result_path.parent / "failure-summary.txt"
+    envelope = _read_bounded_json(failure_path)
+    if envelope is None:
+        raise HarnessError("Non-PASS scenario result has no bounded failure.json.")
+    validate_failure_envelope(envelope)
+    if (
+        envelope["scenario"] != result["scenario"]
+        or envelope["run_id"] != result["runId"]
+        or envelope["status"] != result["status"]
+    ):
+        raise HarnessError("Failure envelope identity conflicts with result.json.")
+    try:
+        summary = summary_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise HarnessError("Non-PASS scenario result has no readable failure-summary.txt.") from error
+    if summary != _failure_summary(envelope):
+        raise HarnessError("Failure summary conflicts with failure.json.")
+    return envelope
+
+
+def record_cleanup_failure(
+    result_path: Path,
+    *,
+    failure_id: str,
+    message: str,
+    expected: str = "Cleanup completes without errors.",
+    causal_component: str = "runtime-cleanup",
+    artifact: str | None = None,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
+    result = _read_bounded_json(result_path)
+    if result is None:
+        raise HarnessError("Cannot record cleanup failure without canonical result.json.")
+    cleanup = {
+        "id": failure_id,
+        "status": "FAIL",
+        "phase": "cleanup",
+        "expected": expected,
+        "actual": message,
+        "message": message,
+        "causal_component": causal_component,
+        "timestamp": timestamp or dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    if artifact is not None:
+        cleanup["artifact"] = artifact
+    if result["status"] == "PASS":
+        result["status"] = "BLOCKED"
+        result["assertions"].append(_assertion(
+            failure_id,
+            "BLOCKED",
+            result["scenario"],
+            expected,
+            message,
+        ))
+        _atomic_write_json(result_path, result)
+        envelope = build_failure_envelope(
+            result,
+            result_path.parent,
+            timestamp=cleanup["timestamp"],
+            phase="cleanup",
+            failure_class="CLEANUP_FAILURE",
+            causal_component=causal_component,
+        )
+        if envelope is not None and artifact is not None:
+            envelope["relevant_artifacts"] = _relevant_artifacts(
+                result, result_path.parent, [artifact]
+            )
+    else:
+        existing = _read_bounded_json(result_path.parent / "failure.json")
+        if existing is None:
+            envelope = build_failure_envelope(
+                result,
+                result_path.parent,
+                cleanup_failures=[cleanup],
+            )
+        else:
+            validate_failure_envelope(existing)
+            envelope = existing
+            record = _failure_record(
+                _assertion(failure_id, "FAIL", result["scenario"], expected, message),
+                "CLEANUP_FAILURE",
+                root_failure_id=envelope["root_failure"]["id"],
+                phase="cleanup",
+                failure_class="CLEANUP_FAILURE",
+                causal_component=causal_component,
+                timestamp=cleanup["timestamp"],
+            )
+            if record not in envelope["cleanup_failures"]:
+                envelope["cleanup_failures"].append(record)
+            envelope["relevant_artifacts"] = _relevant_artifacts(
+                result, result_path.parent, [artifact] if artifact else None
+            )
+            validate_failure_envelope(envelope)
+    if envelope is None:
+        raise HarnessError("Cleanup failure did not produce a failure envelope.")
+    _atomic_write_json(result_path.parent / "failure.json", envelope)
+    _atomic_write_text(result_path.parent / "failure-summary.txt", _failure_summary(envelope))
+    return envelope
+
+
 def write_result(
     path: Path,
     status: str,
@@ -346,6 +882,11 @@ def write_result(
     assertions: list[dict[str, Any]] | None = None,
     exceptions: list[dict[str, str]] | None = None,
     artifacts: list[dict[str, str]] | None = None,
+    failure_timestamp: str | None = None,
+    failure_phase: str | None = None,
+    failure_class: str | None = None,
+    causal_component: str | None = None,
+    cleanup_failures: list[dict[str, str]] | None = None,
 ) -> None:
     if status not in STATUSES:
         raise HarnessError(f"Invalid harness result status '{status}'.")
@@ -373,6 +914,15 @@ def write_result(
     }
     validate_result(payload, scenario)
     _atomic_write_json(path, payload)
+    write_failure_artifacts(
+        path,
+        payload,
+        timestamp=failure_timestamp,
+        phase=failure_phase,
+        failure_class=failure_class,
+        causal_component=causal_component,
+        cleanup_failures=cleanup_failures,
+    )
 
 
 def validate_result(document: Any, expected_scenario: str | None = None) -> str:
@@ -1211,6 +1761,8 @@ def command_validate_result(args: argparse.Namespace) -> int:
         with Path(args.result).open("r", encoding="utf-8") as stream:
             document = json.load(stream)
         status = validate_result(document, args.scenario)
+        if args.require_failure_envelope:
+            validate_failure_artifacts(Path(args.result), document)
     except (HarnessError, OSError, json.JSONDecodeError) as error:
         print(f"Invalid scenario result: {error}", file=sys.stderr)
         return 2
@@ -1323,6 +1875,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("result")
     validate.add_argument("scenario", nargs="?", default=None)
     validate.add_argument("--field", choices=("status",), default=None)
+    validate.add_argument("--require-failure-envelope", action="store_true")
     validate.set_defaults(function=command_validate_result)
 
     deployment = subparsers.add_parser("validate-deployment")
