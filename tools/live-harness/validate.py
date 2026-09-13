@@ -36,6 +36,7 @@ FAILURE_RECORD_TYPES = {
 MAX_FAILURE_TEXT = 2048
 MAX_FAILURE_ENVELOPE_BYTES = 256 * 1024
 MAX_FAILURE_RECORD_CONTEXT_TEXT = 128
+MAX_FAILURE_SUMMARY_CHARACTERS = 8192
 MAX_RELEVANT_ARTIFACTS = 12
 MAX_CASCADE_RECORDS = 32
 MAX_CLEANUP_FAILURES = 8
@@ -1091,7 +1092,26 @@ def _failure_summary(envelope: dict[str, Any]) -> str:
         f"Cleanup failures: {len(envelope['cleanup_failures'])}",
         f"Relevant artifacts: {artifacts}",
     ]
-    return "\n".join(lines)[:8191] + "\n"
+    return "\n".join(lines)[:MAX_FAILURE_SUMMARY_CHARACTERS - 1] + "\n"
+
+
+def _read_bounded_text(path: Path, maximum_characters: int) -> str | None:
+    try:
+        with path.open(encoding="utf-8") as stream:
+            value = stream.read(maximum_characters + 1)
+    except (OSError, UnicodeError):
+        return None
+    return value if len(value) <= maximum_characters else None
+
+
+def _remove_failure_artifacts(artifact_root: Path) -> None:
+    for name in ("failure.json", "failure-summary.txt"):
+        try:
+            (artifact_root / name).unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            raise HarnessError(f"Cannot remove stale {name}.") from error
 
 
 def write_failure_artifacts(
@@ -1101,6 +1121,7 @@ def write_failure_artifacts(
 ) -> dict[str, Any] | None:
     envelope = build_failure_envelope(result, result_path.parent, **kwargs)
     if envelope is None:
+        _remove_failure_artifacts(result_path.parent)
         return None
     _atomic_write_json(result_path.parent / "failure.json", envelope)
     _atomic_write_text(result_path.parent / "failure-summary.txt", _failure_summary(envelope))
@@ -1131,10 +1152,11 @@ def validate_failure_artifacts(
     if envelope["result_fingerprint"] != _result_fingerprint(result):
         raise HarnessError("Failure envelope fingerprint conflicts with result.json.")
     _validate_root_result_evidence(envelope["root_failure"], result)
-    try:
-        summary = summary_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as error:
-        raise HarnessError("Non-PASS scenario result has no readable failure-summary.txt.") from error
+    summary = _read_bounded_text(summary_path, MAX_FAILURE_SUMMARY_CHARACTERS)
+    if summary is None:
+        raise HarnessError(
+            "Non-PASS scenario result has no bounded readable failure-summary.txt."
+        )
     if summary != _failure_summary(envelope):
         raise HarnessError("Failure summary conflicts with failure.json.")
     return envelope

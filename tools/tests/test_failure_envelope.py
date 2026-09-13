@@ -317,6 +317,46 @@ class FailureEnvelopeTests(unittest.TestCase):
         self.assertFalse((root / "failure.json").exists())
         self.assertFalse((root / "failure-summary.txt").exists())
 
+    def test_successful_rewrite_removes_previous_failure_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_path = self._write_failed_result(root)
+            self.assertTrue((root / "failure.json").is_file())
+            self.assertTrue((root / "failure-summary.txt").is_file())
+
+            HARNESS.write_result(
+                result_path,
+                "PASS",
+                "runtime.boot",
+                "passed",
+                run_id="test-run",
+                assertions=[self._assertion(
+                    "runtime.boot.loaded",
+                    "PASS",
+                    "loaded",
+                    "loaded",
+                )],
+                failure_timestamp=TIMESTAMP,
+            )
+
+        self.assertFalse((root / "failure.json").exists())
+        self.assertFalse((root / "failure-summary.txt").exists())
+
+    def test_strict_validator_rejects_oversized_failure_summary_without_loading_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = self._write_failed_result(Path(directory))
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            (result_path.parent / "failure-summary.txt").write_text(
+                "x" * (HARNESS.MAX_FAILURE_SUMMARY_CHARACTERS + 1),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                HARNESS.HarnessError,
+                "bounded readable failure-summary",
+            ):
+                HARNESS.validate_failure_artifacts(result_path, result)
+
     def test_serialization_is_byte_stable_for_identical_evidence(self) -> None:
         payloads = []
         summaries = []

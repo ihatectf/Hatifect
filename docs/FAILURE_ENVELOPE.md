@@ -48,6 +48,10 @@ with their typed remainder record and removes optional environment/artifact cont
 The root failure, its duplicated top-level fields and the authoritative result fingerprint are
 never reduced.
 
+Strict validation reads `failure-summary.txt` with the same 8,192-character bound. Replacing a
+non-PASS `result.json` with PASS removes both failure sidecars, preventing stale diagnostics from
+being associated with a successful run.
+
 `tools/live-harness/direct_runtime.py` remains responsible for process, game-option and owned-save
 cleanup. It supplies cleanup outcomes to the validator so cleanup still runs and remains visible
 without replacing an existing scenario root.

@@ -1176,6 +1176,7 @@ def _execute_request(
     teardown_errors: list[str] = []
     cleanup_failures: list[dict[str, str]] = []
     observed_exit_code: int | None = None
+    exit_code: int | None = None
     saved_crash_failure: str | None = None
     run_completed = False
     if report_source.exists():
@@ -1289,7 +1290,10 @@ def _execute_request(
             "causal_component": "runtime-options",
             "artifact": "diagnostics/runtime-options.json",
         })
-        if observed_exit_code is not None:
+        if (
+            observed_exit_code is not None
+            and exit_code != run_process.TEARDOWN_FAILURE_EXIT
+        ):
             exit_code = observed_exit_code
     if saved_crash_failure is not None:
         _write_harness_result(
@@ -1570,6 +1574,28 @@ def _finalize_direct_failure(
     return state, "BLOCKED", 2, failure_kind, message
 
 
+def _record_deferred_cleanup_failures(
+    request: dict[str, Any],
+    metadata: dict[str, Any],
+    cleanup_failures: list[dict[str, str]],
+) -> str:
+    validator = _load_module(
+        "hatifect_direct_cleanup_recorder",
+        Path(metadata["validatorExecutable"]),
+    )
+    for cleanup_failure in cleanup_failures:
+        validator.record_cleanup_failure(
+            Path(request["resultPath"]),
+            failure_id=cleanup_failure["id"],
+            message=cleanup_failure["message"],
+            expected=cleanup_failure["expected"],
+            causal_component=cleanup_failure["causal_component"],
+            artifact=cleanup_failure.get("artifact"),
+        )
+    result = _read_json(Path(request["resultPath"]))
+    return validator.validate_result(result, request["scenarioId"])
+
+
 def direct(args: argparse.Namespace) -> int:
     repository = Path(args.repository_root)
     isolated = Path(args.isolated_root)
@@ -1618,23 +1644,12 @@ def direct(args: argparse.Namespace) -> int:
                     request, metadata, active_path, error, started_at
                 )
             if deferred_cleanup_failures:
-                validator = _load_module(
-                    "hatifect_direct_cleanup_recorder",
-                    Path(metadata["validatorExecutable"]),
+                status = _record_deferred_cleanup_failures(
+                    request, metadata, deferred_cleanup_failures
                 )
-                for cleanup_failure in deferred_cleanup_failures:
-                    validator.record_cleanup_failure(
-                        Path(request["resultPath"]),
-                        failure_id=cleanup_failure["id"],
-                        message=cleanup_failure["message"],
-                        expected=cleanup_failure["expected"],
-                        causal_component=cleanup_failure["causal_component"],
-                        artifact=cleanup_failure.get("artifact"),
-                    )
-                result = _read_json(Path(request["resultPath"]))
-                status = validator.validate_result(result, request["scenarioId"])
                 exit_code = _exit_code(status)
-                state = "Failed"
+                if state not in {"TimedOut", "Cancelled"}:
+                    state = "Failed"
                 if failure_kind is None:
                     failure_kind = "BrokerFailure"
                     message = "Scenario completed, but request-owned save cleanup failed."
@@ -1687,6 +1702,11 @@ def direct(args: argparse.Namespace) -> int:
                 state, status, exit_code, failure_kind, message = _finalize_direct_failure(
                     request, metadata, active_path, error, started_at
                 )
+                if deferred_cleanup_failures:
+                    status = _record_deferred_cleanup_failures(
+                        request, metadata, deferred_cleanup_failures
+                    )
+                    exit_code = _exit_code(status)
                 response = _response(
                     request,
                     state,
