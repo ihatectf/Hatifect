@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fcntl
 import hashlib
 import json
 import math
@@ -12,6 +13,7 @@ import uuid
 import os
 import platform
 import re
+import stat
 import sys
 import tempfile
 import time
@@ -26,7 +28,8 @@ DEFAULT_MANIFEST = Path(__file__).with_name("scenarios.json")
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+$")
 MOD_UNIQUE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 STATUSES = {"PASS", "FAIL", "BLOCKED"}
-FAILURE_ENVELOPE_FORMAT_VERSION = 2
+FAILURE_ENVELOPE_FORMAT_VERSION = 3
+LEGACY_FAILURE_ENVELOPE_FORMAT_VERSION = 2
 FAILURE_RECORD_TYPES = {
     "ROOT_FAILURE",
     "CASCADE_SKIPPED",
@@ -41,6 +44,46 @@ MAX_RELEVANT_ARTIFACTS = 12
 MAX_CASCADE_RECORDS = 32
 MAX_CLEANUP_FAILURES = 8
 MAX_ADDITIONAL_FAILURES = 32
+SEMANTIC_EVENT_FORMAT_VERSION = 1
+SEMANTIC_EVENT_FILE_NAME = "semantic-events.jsonl"
+SEMANTIC_EVENT_LOCK_FILE_NAME = ".semantic-events.lock"
+SEMANTIC_EVENT_ERROR_PATH = "diagnostics/semantic-events-error.json"
+MAX_RETAINED_SEMANTIC_EVENTS = 128
+MAX_FAILURE_TAIL_EVENTS = 16
+MAX_SEMANTIC_EVENT_BYTES = 16 * 1024
+MAX_SEMANTIC_STREAM_BYTES = 256 * 1024
+MAX_FAILURE_TAIL_BYTES = 32 * 1024
+MAX_SEMANTIC_FIELDS = 12
+MAX_SEMANTIC_FIELD_TEXT = 256
+MAX_SEMANTIC_INTEGER = 9_223_372_036_854_775_807
+SEMANTIC_EVENT_COMPONENTS = {
+    "Scenario.Started": "Scenario",
+    "Preflight.Completed": "Preflight",
+    "Preflight.Failed": "Preflight",
+    "Runtime.StateChanged": "Runtime",
+    "GameProcess.Started": "GameProcess",
+    "GameProcess.Completed": "GameProcess",
+    "Validation.Started": "Validation",
+    "Validation.Completed": "Validation",
+    "SemanticAgent.Started": "SemanticAgent",
+    "SemanticAgent.Completed": "SemanticAgent",
+    "SemanticAgent.Failed": "SemanticAgent",
+    "Assertion.Failed": "Assertion",
+    "Cleanup.Failed": "Cleanup",
+    "Scenario.Completed": "Scenario",
+    "Result.Published": "Result",
+}
+SEMANTIC_FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+SEMANTIC_EVENT_FIELDS = {
+    "format_version",
+    "seq",
+    "time",
+    "scenario",
+    "run_id",
+    "component",
+    "event",
+    "fields",
+}
 HARNESS_CLEANUP_ASSERTION_IDS = frozenset({
     "HARNESS-OPTIONS-RESTORE",
     "HARNESS-PROCESS-TEARDOWN",
@@ -78,6 +121,579 @@ class HarnessError(ValueError):
     def __init__(self, message: str, assertions: list[dict[str, Any]] | None = None):
         super().__init__(message)
         self.assertions = assertions or []
+
+
+def _semantic_timestamp(value: str | None = None) -> str:
+    if value is not None:
+        _parse_timestamp(value)
+        return value
+    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _validate_semantic_identity(value: Any, description: str) -> None:
+    if not isinstance(value, str) or not value or len(value) > MAX_FAILURE_TEXT:
+        raise HarnessError(
+            f"Semantic event {description} must be a non-empty string no longer "
+            f"than {MAX_FAILURE_TEXT} characters."
+        )
+
+
+def _validate_semantic_field_value(value: Any) -> None:
+    if value is None or isinstance(value, bool):
+        return
+    if isinstance(value, str):
+        if len(value) > MAX_SEMANTIC_FIELD_TEXT:
+            raise HarnessError("Semantic event field text exceeds its bound.")
+        return
+    if isinstance(value, int):
+        if abs(value) > MAX_SEMANTIC_INTEGER:
+            raise HarnessError("Semantic event integer field exceeds its bound.")
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise HarnessError("Semantic event numeric field must be finite.")
+        return
+    raise HarnessError(
+        "Semantic event fields must contain only bounded scalar values."
+    )
+
+
+def serialize_semantic_event(record: dict[str, Any]) -> bytes:
+    encoded = (
+        json.dumps(record, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        + "\n"
+    ).encode("utf-8")
+    if len(encoded) > MAX_SEMANTIC_EVENT_BYTES:
+        raise HarnessError("Semantic event exceeds its serialized-size budget.")
+    return encoded
+
+
+def validate_semantic_event(
+    record: Any,
+    *,
+    expected_scenario: str | None = None,
+    expected_run_id: str | None = None,
+    previous_seq: int | None = None,
+) -> dict[str, Any]:
+    if not isinstance(record, dict) or set(record) != SEMANTIC_EVENT_FIELDS:
+        raise HarnessError("Semantic event does not match format v1 fields.")
+    if record["format_version"] != SEMANTIC_EVENT_FORMAT_VERSION:
+        raise HarnessError("Semantic event has an unsupported format version.")
+    sequence = record["seq"]
+    if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence <= 0:
+        raise HarnessError("Semantic event sequence is invalid.")
+    if previous_seq is not None and sequence <= previous_seq:
+        raise HarnessError("Semantic event sequence is not monotonically increasing.")
+    _parse_timestamp(record["time"])
+    _validate_semantic_identity(record["scenario"], "scenario")
+    _validate_semantic_identity(record["run_id"], "run_id")
+    if expected_scenario is not None and record["scenario"] != expected_scenario:
+        raise HarnessError("Semantic event belongs to another scenario.")
+    if expected_run_id is not None and record["run_id"] != expected_run_id:
+        raise HarnessError("Semantic event belongs to another run.")
+    event = record["event"]
+    component = record["component"]
+    if event not in SEMANTIC_EVENT_COMPONENTS:
+        raise HarnessError("Semantic event name is unsupported.")
+    if component != SEMANTIC_EVENT_COMPONENTS[event]:
+        raise HarnessError("Semantic event component conflicts with its name.")
+    fields = record["fields"]
+    if not isinstance(fields, dict) or len(fields) > MAX_SEMANTIC_FIELDS:
+        raise HarnessError("Semantic event fields exceed their count bound.")
+    for name, value in fields.items():
+        if not isinstance(name, str) or SEMANTIC_FIELD_NAME.fullmatch(name) is None:
+            raise HarnessError("Semantic event field name is invalid.")
+        _validate_semantic_field_value(value)
+    serialize_semantic_event(record)
+    return record
+
+
+def _read_semantic_events_path(
+    path: Path,
+    *,
+    expected_scenario: str | None = None,
+    expected_run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return []
+    except OSError as error:
+        raise HarnessError("Cannot inspect semantic event stream.") from error
+    try:
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid()
+            or info.st_nlink != 1
+            or stat.S_IMODE(info.st_mode) != 0o600
+            or info.st_size <= 0
+            or info.st_size > MAX_SEMANTIC_STREAM_BYTES
+        ):
+            raise HarnessError(
+                "Semantic event stream is not a bounded owned regular file."
+            )
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            encoded = stream.read(MAX_SEMANTIC_STREAM_BYTES + 1)
+    except OSError as error:
+        raise HarnessError("Cannot read semantic event stream.") from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if len(encoded) > MAX_SEMANTIC_STREAM_BYTES:
+        raise HarnessError("Semantic event stream exceeds its byte budget.")
+    if not encoded.endswith(b"\n"):
+        raise HarnessError("Semantic event stream contains an incomplete record.")
+    lines = encoded.splitlines(keepends=True)
+    if len(lines) > MAX_RETAINED_SEMANTIC_EVENTS:
+        raise HarnessError("Semantic event stream exceeds its retention bound.")
+    events: list[dict[str, Any]] = []
+    previous_seq: int | None = None
+    for line in lines:
+        if len(line) > MAX_SEMANTIC_EVENT_BYTES:
+            raise HarnessError("Semantic event exceeds its serialized-size budget.")
+        try:
+            record = json.loads(line)
+        except (UnicodeError, json.JSONDecodeError, RecursionError) as error:
+            raise HarnessError(
+                "Semantic event stream contains malformed JSON."
+            ) from error
+        validate_semantic_event(
+            record,
+            expected_scenario=expected_scenario,
+            expected_run_id=expected_run_id,
+            previous_seq=previous_seq,
+        )
+        previous_seq = record["seq"]
+        events.append(record)
+    return events
+
+
+def read_semantic_events(
+    artifact_root: Path,
+    *,
+    expected_scenario: str | None = None,
+    expected_run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    return _read_semantic_events_path(
+        artifact_root / SEMANTIC_EVENT_FILE_NAME,
+        expected_scenario=expected_scenario,
+        expected_run_id=expected_run_id,
+    )
+
+
+def _atomic_write_semantic_events(path: Path, content: bytes) -> None:
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        directory_descriptor = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _semantic_record(
+    sequence: int,
+    scenario: str,
+    run_id: str,
+    event: str,
+    fields: dict[str, Any],
+    timestamp: str,
+) -> dict[str, Any]:
+    return {
+        "format_version": SEMANTIC_EVENT_FORMAT_VERSION,
+        "seq": sequence,
+        "time": timestamp,
+        "scenario": scenario,
+        "run_id": run_id,
+        "component": SEMANTIC_EVENT_COMPONENTS.get(event),
+        "event": event,
+        "fields": dict(fields),
+    }
+
+
+def record_semantic_event(
+    artifact_root: Path,
+    *,
+    scenario: str,
+    run_id: str,
+    event: str,
+    fields: dict[str, Any] | None = None,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
+    _validate_semantic_identity(scenario, "scenario")
+    _validate_semantic_identity(run_id, "run_id")
+    if event not in SEMANTIC_EVENT_COMPONENTS:
+        raise HarnessError("Semantic event name is unsupported.")
+    payload_fields = {} if fields is None else fields
+    if not isinstance(payload_fields, dict):
+        raise HarnessError("Semantic event fields must be an object.")
+    captured_at = _semantic_timestamp(timestamp)
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    lock_path = artifact_root / SEMANTIC_EVENT_LOCK_FILE_NAME
+    try:
+        descriptor = os.open(
+            lock_path,
+            os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+    except OSError as error:
+        raise HarnessError("Cannot open semantic event stream lock.") from error
+    try:
+        lock_info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(lock_info.st_mode)
+            or lock_info.st_uid != os.getuid()
+            or lock_info.st_nlink != 1
+            or stat.S_IMODE(lock_info.st_mode) != 0o600
+        ):
+            raise HarnessError("Semantic event stream lock is not an owned regular file.")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        path = artifact_root / SEMANTIC_EVENT_FILE_NAME
+        events = _read_semantic_events_path(
+            path,
+            expected_scenario=scenario,
+            expected_run_id=run_id,
+        )
+        appended: list[dict[str, Any]] = []
+        next_sequence = events[-1]["seq"] + 1 if events else 1
+        if not events and event != "Scenario.Started":
+            started = _semantic_record(
+                next_sequence,
+                scenario,
+                run_id,
+                "Scenario.Started",
+                {},
+                captured_at,
+            )
+            validate_semantic_event(started)
+            appended.append(started)
+            next_sequence += 1
+        elif events and event == "Scenario.Started":
+            raise HarnessError("Scenario.Started may only begin an empty stream.")
+        record = _semantic_record(
+            next_sequence,
+            scenario,
+            run_id,
+            event,
+            payload_fields,
+            captured_at,
+        )
+        validate_semantic_event(
+            record,
+            previous_seq=next_sequence - 1 if next_sequence > 1 else None,
+        )
+        appended.append(record)
+        retained = (events + appended)[-MAX_RETAINED_SEMANTIC_EVENTS:]
+        encoded = b"".join(serialize_semantic_event(item) for item in retained)
+        while len(encoded) > MAX_SEMANTIC_STREAM_BYTES and len(retained) > 1:
+            retained.pop(0)
+            encoded = b"".join(
+                serialize_semantic_event(item) for item in retained
+            )
+        if len(encoded) > MAX_SEMANTIC_STREAM_BYTES:
+            raise HarnessError("Semantic event stream exceeds its byte budget.")
+        _atomic_write_semantic_events(path, encoded)
+        return record
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
+def try_record_semantic_event(
+    artifact_root: Path,
+    *,
+    scenario: str,
+    run_id: str,
+    event: str,
+    fields: dict[str, Any] | None = None,
+    timestamp: str | None = None,
+) -> dict[str, Any] | None:
+    try:
+        return record_semantic_event(
+            artifact_root,
+            scenario=scenario,
+            run_id=run_id,
+            event=event,
+            fields=fields,
+            timestamp=timestamp,
+        )
+    except (OSError, TypeError, ValueError) as error:
+        try:
+            _atomic_write_json(
+                artifact_root / SEMANTIC_EVENT_ERROR_PATH,
+                {
+                    "formatVersion": 1,
+                    "scenario": _bounded_text(scenario),
+                    "runId": _bounded_text(run_id),
+                    "event": _bounded_text(event),
+                    "errorType": type(error).__name__,
+                    "message": _bounded_text(error),
+                    "capturedAtUtc": dt.datetime.now(dt.timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                },
+            )
+        except (OSError, TypeError, ValueError):
+            pass
+        return None
+
+
+def semantic_event_tail(
+    artifact_root: Path,
+    *,
+    scenario: str,
+    run_id: str,
+    maximum: int = MAX_FAILURE_TAIL_EVENTS,
+) -> list[dict[str, Any]]:
+    if (
+        not isinstance(maximum, int)
+        or isinstance(maximum, bool)
+        or not 0 <= maximum <= MAX_FAILURE_TAIL_EVENTS
+    ):
+        raise HarnessError("Semantic event tail limit is invalid.")
+    events = read_semantic_events(
+        artifact_root,
+        expected_scenario=scenario,
+        expected_run_id=run_id,
+    )
+    if maximum == 0:
+        return []
+    tail: list[dict[str, Any]] = []
+    size = 0
+    for event in reversed(events[-maximum:]):
+        event_size = len(serialize_semantic_event(event))
+        if tail and size + event_size > MAX_FAILURE_TAIL_BYTES:
+            break
+        if event_size > MAX_FAILURE_TAIL_BYTES:
+            continue
+        tail.append(event)
+        size += event_size
+    return list(reversed(tail))
+
+
+def _safe_semantic_event_tail(
+    artifact_root: Path,
+    *,
+    scenario: str,
+    run_id: str,
+) -> list[dict[str, Any]]:
+    try:
+        return semantic_event_tail(
+            artifact_root,
+            scenario=scenario,
+            run_id=run_id,
+        )
+    except (OSError, TypeError, ValueError) as error:
+        try_record_semantic_event(
+            artifact_root,
+            scenario=scenario,
+            run_id=run_id,
+            event="Result.Published",
+            fields={"semantic_tail_unavailable": True},
+        )
+        if not (artifact_root / SEMANTIC_EVENT_ERROR_PATH).exists():
+            try:
+                _atomic_write_json(
+                    artifact_root / SEMANTIC_EVENT_ERROR_PATH,
+                    {
+                        "formatVersion": 1,
+                        "scenario": _bounded_text(scenario),
+                        "runId": _bounded_text(run_id),
+                        "event": "semantic-tail-read",
+                        "errorType": type(error).__name__,
+                        "message": _bounded_text(error),
+                        "capturedAtUtc": dt.datetime.now(dt.timezone.utc)
+                        .isoformat()
+                        .replace("+00:00", "Z"),
+                    },
+                )
+            except (OSError, TypeError, ValueError):
+                pass
+        return []
+
+
+def _reset_semantic_events(artifact_root: Path) -> None:
+    lock_path = artifact_root / SEMANTIC_EVENT_LOCK_FILE_NAME
+    try:
+        descriptor = os.open(
+            lock_path,
+            os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+    except OSError as error:
+        raise HarnessError("Cannot open semantic event stream lock.") from error
+    try:
+        lock_info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(lock_info.st_mode)
+            or lock_info.st_uid != os.getuid()
+            or lock_info.st_nlink != 1
+            or stat.S_IMODE(lock_info.st_mode) != 0o600
+        ):
+            raise HarnessError("Semantic event stream lock is not an owned regular file.")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        path = artifact_root / SEMANTIC_EVENT_FILE_NAME
+        if path.exists() or path.is_symlink():
+            _read_semantic_events_path(path)
+            path.unlink()
+            directory_descriptor = os.open(artifact_root, os.O_RDONLY)
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
+def _semantic_field_text(value: Any) -> str:
+    return str(value)[:MAX_SEMANTIC_FIELD_TEXT]
+
+
+def _record_result_semantic_events(
+    result: dict[str, Any],
+    artifact_root: Path,
+    *,
+    timestamp: str | None,
+    failure_phase: str | None,
+    failure_class: str | None,
+    cleanup_failures: list[dict[str, str]] | None,
+) -> None:
+    captured_at = _semantic_timestamp(timestamp)
+    first_failure = next(
+        (
+            assertion
+            for assertion in result["assertions"]
+            if assertion["status"] != "PASS"
+        ),
+        None,
+    )
+    if first_failure is not None:
+        phase, failure_class, _ = _failure_context(
+            first_failure["id"],
+            first_failure["status"],
+            phase=failure_phase,
+            failure_class=failure_class,
+        )
+        if phase == "preflight":
+            try_record_semantic_event(
+                artifact_root,
+                scenario=result["scenario"],
+                run_id=result["runId"],
+                event="Preflight.Failed",
+                fields={
+                    "assertion_id": _semantic_field_text(first_failure["id"]),
+                    "status": first_failure["status"],
+                },
+                timestamp=captured_at,
+            )
+        try_record_semantic_event(
+            artifact_root,
+            scenario=result["scenario"],
+            run_id=result["runId"],
+            event="Assertion.Failed",
+            fields={
+                "assertion_id": _semantic_field_text(first_failure["id"]),
+                "failure_class": _semantic_field_text(failure_class),
+                "phase": _semantic_field_text(phase),
+                "status": first_failure["status"],
+            },
+            timestamp=captured_at,
+        )
+    for cleanup in cleanup_failures or []:
+        try_record_semantic_event(
+            artifact_root,
+            scenario=result["scenario"],
+            run_id=result["runId"],
+            event="Cleanup.Failed",
+            fields={
+                "assertion_id": _semantic_field_text(
+                    cleanup.get("id") or "HARNESS-CLEANUP"
+                ),
+                "component": _semantic_field_text(
+                    cleanup.get("causal_component") or "runtime-cleanup"
+                ),
+            },
+            timestamp=_semantic_timestamp(cleanup.get("timestamp") or captured_at),
+        )
+    try_record_semantic_event(
+        artifact_root,
+        scenario=result["scenario"],
+        run_id=result["runId"],
+        event="Result.Published",
+        fields={
+            "result_fingerprint": _result_fingerprint(result),
+            "status": result["status"],
+        },
+        timestamp=captured_at,
+    )
+
+
+def complete_scenario(
+    result_path: Path,
+    *,
+    timestamp: str | None = None,
+) -> dict[str, Any] | None:
+    result = _read_bounded_json(result_path)
+    if result is None:
+        return None
+    try:
+        validate_result(result)
+    except HarnessError:
+        return None
+    fingerprint = _result_fingerprint(result)
+    existing: list[dict[str, Any]] = []
+    try:
+        existing = read_semantic_events(
+            result_path.parent,
+            expected_scenario=result["scenario"],
+            expected_run_id=result["runId"],
+        )
+    except (OSError, TypeError, ValueError):
+        pass
+    if not any(
+        event["event"] == "Scenario.Completed"
+        and event["fields"].get("result_fingerprint") == fingerprint
+        for event in existing
+    ):
+        try_record_semantic_event(
+            result_path.parent,
+            scenario=result["scenario"],
+            run_id=result["runId"],
+            event="Scenario.Completed",
+            fields={
+                "duration_ms": result["durationMs"],
+                "result_fingerprint": fingerprint,
+                "status": result["status"],
+            },
+            timestamp=timestamp,
+        )
+    if result["status"] != "PASS":
+        try:
+            return refresh_failure_event_tail(result_path)
+        except (OSError, TypeError, ValueError):
+            return result
+    return result
 
 
 def _is_scenario_identifier(value: Any) -> bool:
@@ -333,7 +949,12 @@ def collect_artifacts(root: Path | None) -> list[dict[str, str]]:
     artifacts: list[dict[str, str]] = []
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
         relative = path.relative_to(root).as_posix()
-        if relative in {"result.json", "failure.json", "failure-summary.txt"} or relative.endswith(".tmp"):
+        if relative in {
+            "result.json",
+            "failure.json",
+            "failure-summary.txt",
+            SEMANTIC_EVENT_LOCK_FILE_NAME,
+        } or relative.endswith(".tmp"):
             continue
         if relative == "host-acceptance-report.json":
             artifact_type = "acceptance-report"
@@ -343,6 +964,8 @@ def collect_artifacts(root: Path | None) -> list[dict[str, str]]:
             artifact_type = "screenshot"
         elif relative == "instructions.txt":
             artifact_type = "instructions"
+        elif relative == SEMANTIC_EVENT_FILE_NAME:
+            artifact_type = "semantic-events"
         else:
             artifact_type = "diagnostic"
         artifacts.append({"type": artifact_type, "path": relative})
@@ -512,21 +1135,27 @@ def _relevant_artifacts(
     additions: list[str] | None = None,
 ) -> list[str]:
     candidates = {"result.json"}
+    if (artifact_root / SEMANTIC_EVENT_FILE_NAME).is_file():
+        candidates.add(SEMANTIC_EVENT_FILE_NAME)
+    if (artifact_root / SEMANTIC_EVENT_ERROR_PATH).is_file():
+        candidates.add(SEMANTIC_EVENT_ERROR_PATH)
     for artifact in result.get("artifacts", []):
         if isinstance(artifact, dict) and isinstance(artifact.get("path"), str):
             candidates.add(artifact["path"])
     candidates.update(additions or [])
     priority = {
         "result.json": 0,
-        "host-acceptance-report.json": 1,
-        "diagnostics/runtime.json": 2,
-        "diagnostics/semantic-test-agent.json": 3,
-        "diagnostics/executor-failure.json": 4,
-        "diagnostics/worker-failure.json": 5,
-        "diagnostics/transport-result.json": 6,
-        "semantic-test-agent.log": 7,
-        "smapi.log": 8,
-        "harness.log": 9,
+        SEMANTIC_EVENT_FILE_NAME: 1,
+        SEMANTIC_EVENT_ERROR_PATH: 2,
+        "host-acceptance-report.json": 3,
+        "diagnostics/runtime.json": 4,
+        "diagnostics/semantic-test-agent.json": 5,
+        "diagnostics/executor-failure.json": 6,
+        "diagnostics/worker-failure.json": 7,
+        "diagnostics/transport-result.json": 8,
+        "semantic-test-agent.log": 9,
+        "smapi.log": 10,
+        "harness.log": 11,
     }
     contained: list[str] = []
     for relative in candidates:
@@ -885,6 +1514,11 @@ def build_failure_envelope(
         "cascade_records": cascades,
         "additional_failures": additional_failures,
         "cleanup_failures": cleanup_records,
+        "semantic_event_tail": _safe_semantic_event_tail(
+            artifact_root,
+            scenario=result["scenario"],
+            run_id=result["runId"],
+        ),
         "relevant_artifacts": _relevant_artifacts(result, artifact_root, extra_artifacts),
         "environment_summary": _environment_summary(artifact_root),
     }
@@ -894,18 +1528,29 @@ def build_failure_envelope(
 
 
 def validate_failure_envelope(envelope: Any) -> None:
-    keys = {
+    base_keys = {
         "format_version", "scenario", "run_id", "phase", "timestamp", "status",
         "failure_class", "root_failure", "expected", "actual", "message",
         "causal_component", "cascade_records", "cleanup_failures",
         "additional_failures", "relevant_artifacts", "environment_summary",
         "result_fingerprint",
     }
-    if not isinstance(envelope, dict) or set(envelope) != keys:
-        raise HarnessError("Failure envelope does not match format v2 fields.")
+    if not isinstance(envelope, dict):
+        raise HarnessError("Failure envelope must be an object.")
+    format_version = envelope.get("format_version")
+    expected_keys = (
+        base_keys | {"semantic_event_tail"}
+        if format_version == FAILURE_ENVELOPE_FORMAT_VERSION
+        else base_keys
+    )
+    if set(envelope) != expected_keys:
+        raise HarnessError("Failure envelope does not match its versioned fields.")
     if len(_serialized_json(envelope)) > MAX_FAILURE_ENVELOPE_BYTES:
         raise HarnessError("Failure envelope exceeds its serialized-size budget.")
-    if envelope["format_version"] != FAILURE_ENVELOPE_FORMAT_VERSION:
+    if format_version not in {
+        LEGACY_FAILURE_ENVELOPE_FORMAT_VERSION,
+        FAILURE_ENVELOPE_FORMAT_VERSION,
+    }:
         raise HarnessError("Failure envelope has an unsupported format_version.")
     if envelope["status"] not in {"FAIL", "BLOCKED"}:
         raise HarnessError("Failure envelope must describe a failed or blocked run.")
@@ -973,6 +1618,24 @@ def validate_failure_envelope(envelope: Any) -> None:
                 root_failure_id=root["id"] if requires_root_reference else None,
                 allow_timestamp=collection_name == "cleanup_failures",
             )
+    if format_version == FAILURE_ENVELOPE_FORMAT_VERSION:
+        event_tail = envelope["semantic_event_tail"]
+        if (
+            not isinstance(event_tail, list)
+            or len(event_tail) > MAX_FAILURE_TAIL_EVENTS
+        ):
+            raise HarnessError("Failure envelope semantic_event_tail exceeds its bound.")
+        previous_seq: int | None = None
+        for event in event_tail:
+            validate_semantic_event(
+                event,
+                expected_scenario=envelope["scenario"],
+                expected_run_id=envelope["run_id"],
+                previous_seq=previous_seq,
+            )
+            previous_seq = event["seq"]
+        if sum(len(serialize_semantic_event(event)) for event in event_tail) > MAX_FAILURE_TAIL_BYTES:
+            raise HarnessError("Failure envelope semantic_event_tail exceeds its byte bound.")
     artifacts = envelope["relevant_artifacts"]
     if (
         not isinstance(artifacts, list)
@@ -1156,6 +1819,37 @@ def validate_failure_artifacts(
     return envelope
 
 
+def refresh_failure_event_tail(result_path: Path) -> dict[str, Any] | None:
+    result = _read_bounded_json(result_path)
+    if result is None:
+        raise HarnessError("Cannot refresh failure events without canonical result.json.")
+    validate_result(result, result.get("scenario"))
+    if result["status"] == "PASS":
+        return None
+    envelope = _read_bounded_json(result_path.parent / "failure.json")
+    if envelope is None:
+        raise HarnessError("Cannot refresh semantic event tail without failure.json.")
+    validate_failure_envelope(envelope)
+    if (
+        envelope["scenario"] != result["scenario"]
+        or envelope["run_id"] != result["runId"]
+    ):
+        raise HarnessError("Failure envelope identity conflicts with result.json.")
+    envelope["format_version"] = FAILURE_ENVELOPE_FORMAT_VERSION
+    envelope["semantic_event_tail"] = _safe_semantic_event_tail(
+        result_path.parent,
+        scenario=result["scenario"],
+        run_id=result["runId"],
+    )
+    _compact_failure_envelope(envelope)
+    validate_failure_envelope(envelope)
+    _atomic_write_json(result_path.parent / "failure.json", envelope)
+    _atomic_write_text(
+        result_path.parent / "failure-summary.txt", _failure_summary(envelope)
+    )
+    return envelope
+
+
 def _validate_root_result_evidence(
     root: dict[str, Any],
     result: dict[str, Any],
@@ -1228,6 +1922,28 @@ def record_cleanup_failure(
             message,
         ))
         _atomic_write_json(result_path, result)
+        try_record_semantic_event(
+            result_path.parent,
+            scenario=result["scenario"],
+            run_id=result["runId"],
+            event="Cleanup.Failed",
+            fields={
+                "assertion_id": failure_id,
+                "component": _semantic_field_text(causal_component),
+            },
+            timestamp=cleanup["timestamp"],
+        )
+        try_record_semantic_event(
+            result_path.parent,
+            scenario=result["scenario"],
+            run_id=result["runId"],
+            event="Result.Published",
+            fields={
+                "result_fingerprint": _result_fingerprint(result),
+                "status": result["status"],
+            },
+            timestamp=cleanup["timestamp"],
+        )
         envelope = build_failure_envelope(
             result,
             result_path.parent,
@@ -1241,6 +1957,17 @@ def record_cleanup_failure(
                 result, result_path.parent, [artifact]
             )
     else:
+        try_record_semantic_event(
+            result_path.parent,
+            scenario=result["scenario"],
+            run_id=result["runId"],
+            event="Cleanup.Failed",
+            fields={
+                "assertion_id": failure_id,
+                "component": _semantic_field_text(causal_component),
+            },
+            timestamp=cleanup["timestamp"],
+        )
         existing = _read_bounded_json(result_path.parent / "failure.json")
         if existing is None:
             envelope = build_failure_envelope(
@@ -1251,6 +1978,7 @@ def record_cleanup_failure(
         else:
             validate_failure_envelope(existing)
             envelope = existing
+            envelope["format_version"] = FAILURE_ENVELOPE_FORMAT_VERSION
             record = _failure_record(
                 _assertion(failure_id, "FAIL", result["scenario"], expected, message),
                 "CLEANUP_FAILURE",
@@ -1265,11 +1993,23 @@ def record_cleanup_failure(
             envelope["relevant_artifacts"] = _relevant_artifacts(
                 result, result_path.parent, [artifact] if artifact else None
             )
+            envelope["semantic_event_tail"] = _safe_semantic_event_tail(
+                result_path.parent,
+                scenario=result["scenario"],
+                run_id=result["runId"],
+            )
+            _compact_failure_envelope(envelope)
             validate_failure_envelope(envelope)
     if envelope is None:
         raise HarnessError("Cleanup failure did not produce a failure envelope.")
     _atomic_write_json(result_path.parent / "failure.json", envelope)
     _atomic_write_text(result_path.parent / "failure-summary.txt", _failure_summary(envelope))
+    if not (result_path.parent / "direct-process-state.json").exists() and not (
+        result_path.parent / "semantic-test-agent.log"
+    ).exists():
+        completed = complete_scenario(result_path, timestamp=cleanup["timestamp"])
+        if isinstance(completed, dict) and "semantic_event_tail" in completed:
+            envelope = completed
     return envelope
 
 
@@ -1316,7 +2056,31 @@ def write_result(
         "artifacts": artifacts or [],
     }
     validate_result(payload, scenario)
+    previous = _read_bounded_json(path)
+    if previous is not None:
+        try:
+            validate_result(previous)
+        except HarnessError:
+            previous = None
+    if previous is not None and (
+        previous["scenario"] != payload["scenario"]
+        or previous["runId"] != payload["runId"]
+    ):
+        try:
+            _reset_semantic_events(path.parent)
+        except (OSError, TypeError, ValueError):
+            # The semantic stream is diagnostic-only. A stale or malformed
+            # stream must not prevent publication of the canonical result.
+            pass
     _atomic_write_json(path, payload)
+    _record_result_semantic_events(
+        payload,
+        path.parent,
+        timestamp=failure_timestamp,
+        failure_phase=failure_phase,
+        failure_class=failure_class,
+        cleanup_failures=cleanup_failures,
+    )
     write_failure_artifacts(
         path,
         payload,
@@ -1327,6 +2091,10 @@ def write_result(
         cleanup_failures=cleanup_failures,
         cascade_dependencies=cascade_dependencies,
     )
+    if not (path.parent / "direct-process-state.json").exists() and not (
+        path.parent / "semantic-test-agent.log"
+    ).exists():
+        complete_scenario(path, timestamp=failure_timestamp)
 
 
 def validate_result(document: Any, expected_scenario: str | None = None) -> str:
@@ -2231,6 +2999,25 @@ def command_contained(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_record_event(args: argparse.Namespace) -> int:
+    try_record_semantic_event(
+        Path(args.artifact_root),
+        scenario=args.scenario,
+        run_id=args.run_id,
+        event=args.event,
+        fields={},
+    )
+    return 0
+
+
+def command_complete_scenario(args: argparse.Namespace) -> int:
+    completed = complete_scenario(Path(args.result))
+    if completed is None:
+        print("Cannot complete semantic diagnostics without valid result.json.", file=sys.stderr)
+        return 2
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.set_defaults(function=None)
@@ -2301,6 +3088,17 @@ def build_parser() -> argparse.ArgumentParser:
     contained.add_argument("root")
     contained.add_argument("path")
     contained.set_defaults(function=command_contained)
+
+    record_event = subparsers.add_parser("record-event")
+    record_event.add_argument("artifact_root")
+    record_event.add_argument("scenario")
+    record_event.add_argument("run_id")
+    record_event.add_argument("event", choices=tuple(SEMANTIC_EVENT_COMPONENTS))
+    record_event.set_defaults(function=command_record_event)
+
+    complete = subparsers.add_parser("complete-scenario")
+    complete.add_argument("result")
+    complete.set_defaults(function=command_complete_scenario)
     return parser
 
 

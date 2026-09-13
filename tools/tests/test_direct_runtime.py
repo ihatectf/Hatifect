@@ -870,6 +870,17 @@ class DirectRuntimeTests(unittest.TestCase):
                 captured["environment"]["SMAPI_MODS_PATH"],
                 str(Path(fixture.request["isolatedRoot"]) / "Mods"),
             )
+            self.assertEqual(
+                [call.args[2] for call in fixture.semantic_event_recorder.call_args_list],
+                [
+                    "Runtime.StateChanged",
+                    "Runtime.StateChanged",
+                    "GameProcess.Started",
+                    "GameProcess.Completed",
+                    "Validation.Started",
+                    "Validation.Completed",
+                ],
+            )
 
     def test_direct_transport_has_no_launchagent_or_installed_state_surface(self) -> None:
         self.assertFalse(hasattr(DIRECT_RUNTIME, "_launchctl"))
@@ -899,7 +910,10 @@ class DirectRuntimeTests(unittest.TestCase):
                 result_path.write_text('{"status":"PASS"}\n', encoding="utf-8")
                 return "Completed", "PASS", 0, None, "completed", False
 
-            validator = SimpleNamespace(validate_result=lambda _result, _scenario: "PASS")
+            validator = SimpleNamespace(
+                validate_result=lambda _result, _scenario: "PASS",
+                complete_scenario=lambda _path: None,
+            )
             with mock.patch.object(
                 DIRECT_RUNTIME, "_direct_metadata", return_value=fixture.metadata
             ), mock.patch.object(
@@ -925,6 +939,14 @@ class DirectRuntimeTests(unittest.TestCase):
                 / "transport-result.json"
             )
             self.assertEqual(response["status"], "PASS")
+            self.assertEqual(
+                [call.args[2] for call in fixture.semantic_event_recorder.call_args_list],
+                [
+                    "Preflight.Completed",
+                    "Runtime.StateChanged",
+                    "Runtime.StateChanged",
+                ],
+            )
 
     def test_direct_transport_records_deferred_cleanup_before_final_transition(self) -> None:
         with self._request_fixture() as fixture:
@@ -964,6 +986,7 @@ class DirectRuntimeTests(unittest.TestCase):
             validator = SimpleNamespace(
                 validate_result=lambda result, _scenario: result["status"],
                 record_cleanup_failure=cleanup_recorder,
+                complete_scenario=lambda _path: None,
             )
             with mock.patch.object(
                 DIRECT_RUNTIME, "_direct_metadata", return_value=fixture.metadata
@@ -1032,6 +1055,7 @@ class DirectRuntimeTests(unittest.TestCase):
             validator = SimpleNamespace(
                 validate_result=lambda result, _scenario: result["status"],
                 record_cleanup_failure=cleanup_recorder,
+                complete_scenario=lambda _path: None,
             )
             with mock.patch.object(
                 DIRECT_RUNTIME, "_direct_metadata", return_value=fixture.metadata
@@ -1102,6 +1126,7 @@ class DirectRuntimeTests(unittest.TestCase):
             validator = SimpleNamespace(
                 validate_result=lambda result, _scenario: result["status"],
                 record_cleanup_failure=cleanup_recorder,
+                complete_scenario=lambda _path: None,
             )
             with mock.patch.object(
                 DIRECT_RUNTIME, "_direct_metadata", return_value=fixture.metadata
@@ -1285,12 +1310,21 @@ class _RequestFixture:
             "requiresSave": False,
             "timeoutSeconds": 1800,
         }
-        validator = SimpleNamespace(command_validate_deployment=lambda _args: 0)
+        validator = SimpleNamespace(
+            command_validate_deployment=lambda _args: 0,
+            complete_scenario=lambda _path: None,
+        )
+        self.semantic_event_recorder = mock.Mock()
         self.patches = (
             mock.patch.object(DIRECT_RUNTIME, "_scenario", return_value=scenario),
             mock.patch.object(DIRECT_RUNTIME, "_repository_head", return_value="a" * 40),
             mock.patch.object(DIRECT_RUNTIME, "_validate_transport_sources"),
             mock.patch.object(DIRECT_RUNTIME, "_validate_repository_transport_sources"),
+            mock.patch.object(
+                DIRECT_RUNTIME,
+                "_record_semantic_event",
+                self.semantic_event_recorder,
+            ),
             mock.patch.object(DIRECT_RUNTIME, "_load_module", return_value=validator),
             mock.patch.object(DIRECT_RUNTIME, "_validate_isolated_root", return_value=isolated),
         )

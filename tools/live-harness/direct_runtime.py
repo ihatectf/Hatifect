@@ -116,6 +116,32 @@ class DirectRuntimeError(ValueError):
     pass
 
 
+_SEMANTIC_VALIDATORS: dict[str, Any] = {}
+
+
+def _record_semantic_event(
+    metadata: dict[str, Any],
+    request: dict[str, Any],
+    event: str,
+    fields: dict[str, Any],
+) -> None:
+    validator_path = Path(metadata["validatorExecutable"])
+    cache_key = f"{validator_path}:{metadata.get('validatorSha256', '')}"
+    validator = _SEMANTIC_VALIDATORS.get(cache_key)
+    if validator is None:
+        validator = _load_module(
+            "hatifect_direct_runtime_semantic_events", validator_path
+        )
+        _SEMANTIC_VALIDATORS[cache_key] = validator
+    validator.try_record_semantic_event(
+        Path(request["artifactDirectory"]),
+        scenario=request["scenarioId"],
+        run_id=request["requestId"],
+        event=event,
+        fields=fields,
+    )
+
+
 def _exit_code(status: str) -> int:
     try:
         return {"PASS": 0, "FAIL": 1, "BLOCKED": 2}[status]
@@ -1187,6 +1213,12 @@ def _execute_request(
     )
 
     _transition(active_path, request, "Launching", "Starting the fixed configured SMAPI executable.")
+    _record_semantic_event(
+        metadata,
+        request,
+        "Runtime.StateChanged",
+        {"state_before": "Accepted", "state_after": "Launching"},
+    )
     _atomic_write_json(
         artifact / "process.json",
         {
@@ -1203,9 +1235,25 @@ def _execute_request(
         encoding="utf-8",
     )
     _write_transport_diagnostics(request, metadata, phase="starting")
+    process_attempt = 0
 
     def on_started(pid: int, process_group: int, started: dt.datetime, continuation: bool = False) -> None:
+        nonlocal process_attempt
+        process_attempt += 1
         _record_started_process(active_path, request, smapi, pid, process_group, continuation=continuation)
+        if not continuation:
+            _record_semantic_event(
+                metadata,
+                request,
+                "Runtime.StateChanged",
+                {"state_before": "Launching", "state_after": "Running"},
+            )
+        _record_semantic_event(
+            metadata,
+            request,
+            "GameProcess.Started",
+            {"attempt": process_attempt},
+        )
         _atomic_write_json(
             artifact / "process.json",
             {
@@ -1238,6 +1286,12 @@ def _execute_request(
         process_document["observedExitCode"] = observed_exit
         process_document["teardownErrors"] = list(errors)
         _atomic_write_json(process_path, process_document, replace=True)
+        _record_semantic_event(
+            metadata,
+            request,
+            "GameProcess.Completed",
+            {"attempt": process_attempt, "exit_code": observed_exit},
+        )
 
     try:
         with _background_game_options(request):
@@ -1390,6 +1444,7 @@ def _execute_request(
     )
     with (artifact / "harness.log").open("a", encoding="utf-8") as stream:
         stream.write(f"{_timestamp()} phase=finalizing acceptance report\n")
+    _record_semantic_event(metadata, request, "Validation.Started", {})
     process_path = artifact / "process.json"
     if process_path.is_file():
         process_document = _read_json(process_path)
@@ -1411,6 +1466,12 @@ def _execute_request(
     expected_exit = _exit_code(status)
     if finalized != expected_exit:
         raise DirectRuntimeError("Harness finalizer exit code conflicts with result status.")
+    _record_semantic_event(
+        metadata,
+        request,
+        "Validation.Completed",
+        {"status": status},
+    )
     scenario_status = status
     for cleanup_failure in cleanup_failures:
         validator.record_cleanup_failure(
@@ -1569,6 +1630,12 @@ def _finalize_direct_failure(
         )
     if state in STATE_TRANSITIONS.get(previous, set()):
         _transition(active_path, request, state, message)
+        _record_semantic_event(
+            metadata,
+            request,
+            "Runtime.StateChanged",
+            {"state_before": previous, "state_after": state},
+        )
     else:
         _append_transport_log(request, state, message)
     return state, "BLOCKED", 2, failure_kind, message
@@ -1629,6 +1696,18 @@ def direct(args: argparse.Namespace) -> int:
                 "Accepted",
                 "Typed request accepted by the direct-process transport lock.",
             )
+            _record_semantic_event(
+                metadata,
+                request,
+                "Preflight.Completed",
+                {"status": "PASS"},
+            )
+            _record_semantic_event(
+                metadata,
+                request,
+                "Runtime.StateChanged",
+                {"state_before": None, "state_after": "Accepted"},
+            )
             try:
                 with _prepared_request_saves(
                     request, metadata, deferred_cleanup_failures
@@ -1656,7 +1735,14 @@ def direct(args: argparse.Namespace) -> int:
             if state in STATE_TRANSITIONS.get(
                 _read_json(active_path).get("lifecycleState"), set()
             ):
+                previous_state = _read_json(active_path).get("lifecycleState")
                 _transition(active_path, request, state, message)
+                _record_semantic_event(
+                    metadata,
+                    request,
+                    "Runtime.StateChanged",
+                    {"state_before": previous_state, "state_after": state},
+                )
             elif deferred_cleanup_failures:
                 _append_transport_log(
                     request,
@@ -1680,6 +1766,8 @@ def direct(args: argparse.Namespace) -> int:
                 Path(metadata["validatorExecutable"]),
             )
             result_status = validator.validate_result(_read_json(result_path), args.scenario)
+            if not (artifact / "semantic-test-agent.log").exists():
+                validator.complete_scenario(result_path)
             if result_status != status or _exit_code(result_status) != exit_code:
                 raise DirectRuntimeError(
                     "Direct transport response conflicts with authoritative result.json."
@@ -1707,6 +1795,12 @@ def direct(args: argparse.Namespace) -> int:
                         request, metadata, deferred_cleanup_failures
                     )
                     exit_code = _exit_code(status)
+                validator = _load_module(
+                    "hatifect_direct_client_error_tail",
+                    Path(metadata["validatorExecutable"]),
+                )
+                if not (artifact / "semantic-test-agent.log").exists():
+                    validator.complete_scenario(result_path)
                 response = _response(
                     request,
                     state,

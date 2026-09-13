@@ -1,7 +1,7 @@
 # Canonical failure envelope
 
-Status: Phase 1 implemented. This change is outside the numbered product roadmap and does not
-start or define later diagnostics phases.
+Status: Phase 1 implemented; Phase 2 adds the bounded semantic tail described below. These changes
+are outside the numbered product roadmap and do not start or define later diagnostics phases.
 
 ## Decision and ownership
 
@@ -15,7 +15,8 @@ direct runtime → TestHarness acceptance report → validator.
 `result.json` remains protocol v1 and authoritative for existing consumers. Every new non-PASS
 result also writes:
 
-- `failure.json`: bounded machine-readable format v2;
+- `failure.json`: bounded machine-readable format v3 for new runs; strict reading remains backward
+  compatible with Phase 1 format v2;
 - `failure-summary.txt`: an eight-line first-pass diagnosis;
 - existing logs, screenshots, reports and transport diagnostics remain unchanged.
 
@@ -31,7 +32,10 @@ otherwise successful run to BLOCKED, matching the existing fail-closed runtime b
 
 The top level contains `scenario`, `run_id`, `phase`, `timestamp`, `status`, `failure_class`,
 `root_failure`, `expected`, `actual`, `message`, `causal_component`, `relevant_artifacts` and
-`environment_summary`. Text fields are limited to 2,048 characters, cascade context to 32 records,
+`environment_summary`. Format v3 additionally contains `semantic_event_tail`: at most 16 newest
+validated records and at most 32 KiB of the request-owned semantic stream. The stream contract and
+vocabulary are documented in [Semantic diagnostic event stream](SEMANTIC_EVENTS.md). Text fields
+are limited to 2,048 characters, cascade context to 32 records,
 additional-failure context to 32 records, cleanup context to 8 records, artifact references to 12
 sorted request-relative paths, and the summary to 8,192 characters. Any overflow of result-backed
 cascades or additional failures is represented by one bounded remainder record while the unchanged

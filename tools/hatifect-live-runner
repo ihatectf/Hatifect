@@ -175,6 +175,23 @@ if [[ "$(uname -s)" != "Darwin" || ! -f "$semantic_test_agent" || ! -f "$native_
     --artifact-root "$artifact_dir"
   exit 2
 fi
+need_cmd shasum
+validator_sha256="$(shasum -a 256 "$validator")"
+validator_sha256="${validator_sha256%% *}"
+semantic_validator() {
+  local current_sha256
+  current_sha256="$(shasum -a 256 "$validator")"
+  current_sha256="${current_sha256%% *}"
+  if [[ "$current_sha256" != "$validator_sha256" ]]; then
+    printf '%s\n' "Semantic diagnostics skipped: validator source changed during the run." \
+      >> "$artifact_dir/harness.log"
+    return 0
+  fi
+  if ! python3 "$validator" "$@"; then
+    printf '%s\n' "Semantic diagnostics publication failed; canonical result is unchanged." \
+      >> "$artifact_dir/harness.log"
+  fi
+}
 
 semantic_agent_pid=""
 semantic_agent_exit=""
@@ -194,6 +211,8 @@ cleanup_semantic_agent() {
 trap cleanup_semantic_agent EXIT INT TERM
 
 say "Semantic input: checked-in workflow -> state-driven macOS Quartz agent"
+semantic_validator record-event "$artifact_dir" "$scenario" "$run_id" \
+  SemanticAgent.Started >/dev/null 2>&1
 (
   set +e
   python3 "$semantic_test_agent" \
@@ -226,6 +245,14 @@ fi
 cleanup_semantic_agent
 trap - EXIT INT TERM
 
+if [[ "$semantic_agent_exit" == "0" ]]; then
+  semantic_validator record-event "$artifact_dir" "$scenario" "$run_id" \
+    SemanticAgent.Completed >/dev/null 2>&1
+else
+  semantic_validator record-event "$artifact_dir" "$scenario" "$run_id" \
+    SemanticAgent.Failed >/dev/null 2>&1
+fi
+
 semantic_failure_marker=false
 if [[ -f "$artifact_dir/.cancel-requested" ]] \
   && grep -qx "semantic-test-agent-failed" "$artifact_dir/.cancel-requested" 2>/dev/null; then
@@ -250,6 +277,7 @@ if [[ "$semantic_failure_marker" == "true" ]] \
     --expected "The checked-in semantic test companion completes successfully." \
     --exception-type ProcessExit \
     --artifact-root "$artifact_dir"
+  semantic_validator complete-scenario "$result" >/dev/null 2>&1
   if [[ -f "$artifact_dir/failure-summary.txt" ]]; then
     printf '%s\n' "--- failure-summary.txt ---" >&2
     cat "$artifact_dir/failure-summary.txt" >&2
@@ -257,4 +285,5 @@ if [[ "$semantic_failure_marker" == "true" ]] \
   exit 2
 fi
 
+semantic_validator complete-scenario "$result" >/dev/null 2>&1
 exit "$runtime_exit"

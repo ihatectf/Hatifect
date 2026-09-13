@@ -2,6 +2,9 @@
 
 UI authoring: [подключение language server, экспорт метаданных, операции редактора и ограничения](UI_AUTHORING.md).
 
+Диагностика runtime-запусков: [канонический failure envelope](FAILURE_ENVELOPE.md) и
+[bounded semantic event stream](SEMANTIC_EVENTS.md).
+
 Последовательность развития и acceptance criteria — в [утверждённой roadmap](ROADMAP.md). После каждого среза обновляются его статус, commit/evidence и следующий готовый шаг; переходы в рамках утверждённой задачи не требуют повторного согласования.
 
 ## Инструменты
