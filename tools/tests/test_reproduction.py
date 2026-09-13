@@ -27,7 +27,7 @@ def _timestamp() -> str:
 
 class ReproductionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.runtime_root = Path(tempfile.mkdtemp(prefix="hatifect-repro-", dir="/private/tmp"))
+        self.runtime_root = Path(tempfile.mkdtemp(prefix="hatifect-repro-"))
         self.addCleanup(shutil.rmtree, self.runtime_root, True)
         REPRO.RUNTIME_ROOT = self.runtime_root
         self.source_id = str(uuid.uuid4())
