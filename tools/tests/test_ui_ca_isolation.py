@@ -81,7 +81,7 @@ def _write_projection_fixture(repository: Path) -> tuple[str, ...]:
     for forbidden in (
         "Hatifect UI/Hatifect.UI.Experience/Hatifect.UI.Experience.csproj",
         "Hatifect Flow/Hatifect.Flow.csproj",
-        "Hatifect/Hatifect.csproj",
+        "Outside Module/Outside.csproj",
         "unlisted-root.txt",
     ):
         path = repository / forbidden

@@ -44,12 +44,6 @@ PLATFORM_PROJECTS = frozenset({
     "Hatifect.UI.Stardew", "Hatifect.UI.Stardew.Tests", "Hatifect.Flow", "Hatifect.Flow.Stardew.Tests",
     "Hatifect.ChestsAnywhereOverlay", "Hatifect.ChestsAnywhereOverlay.Tests",
 })
-RETIRED_DIRECTORIES = (
-    "Hatifect Terminal", "Hatifect Flow", "Hatifect",
-    "Hatifect UI/Hatifect.UI.Runtime", "Hatifect UI/Hatifect.UI.Experience",
-    "Hatifect UI/tests/Hatifect.UI.Runtime.Tests",
-)
-
 
 def dependency_issues(inventory: Inventory) -> list[str]:
     issues: list[str] = []
@@ -78,9 +72,6 @@ def validate_architecture(root: Path) -> tuple[int, list[str], dict]:
     names = {project.name for project in inventory.projects.values()}
     for missing in sorted(REQUIRED_PROJECTS - names):
         issues.append(f"required current project is missing: {missing}")
-    for relative in RETIRED_DIRECTORIES:
-        if (root / relative).exists():
-            issues.append(f"retired implementation directory remains: {relative}")
     return 5, issues, inventory.projects
 
 

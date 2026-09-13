@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Diagnostics;
 using System.Linq;
@@ -92,13 +91,7 @@ public sealed partial class ModEntry
     }
 
     private FlowGameSave? ReadGameSaveData()
-    {
-        IDictionary<string, string>[] fields = SaveGame.loaded is null
-            ? new IDictionary<string, string>[] { Game1.CustomData }
-            : new IDictionary<string, string>[] { Game1.CustomData, SaveGame.loaded.CustomData };
-        return FlowSaveDataMigration.Read(
-            () => Helper.Data.ReadSaveData<FlowGameSave>(FlowGameSession.SaveKey), fields);
-    }
+        => Helper.Data.ReadSaveData<FlowGameSave>(FlowGameSession.SaveKey);
 
     private static Chest? ResolveStationChest(StationBinding binding)
     {

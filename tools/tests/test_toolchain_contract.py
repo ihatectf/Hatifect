@@ -202,7 +202,7 @@ class ReleaseSourceTests(ReleaseFixture):
             contract = copy.deepcopy(self.contract)
             contract['Modules'][0][key] = value
             cases.append(contract)
-        for filename in ('Hatifect.UI.Runtime.dll', 'hatifect.ui.runtime.dll', 'Hatifect.UI.dll'):
+        for filename in ('Hatifect.UI.Runtime.dll', 'hatifect.ui.runtime.dll'):
             contract = copy.deepcopy(self.contract)
             contract['Modules'][1]['AllowedRootFiles'].append(filename)
             cases.append(contract)
@@ -260,7 +260,7 @@ class ReleasePackageTests(ReleaseFixture):
     def test_package_rejects_unlisted_sources_binaries_and_empty_directories(self) -> None:
         package = self.package()
         for relative in ('Hatifect UI/Source.cs', 'Hatifect Flow/Foreign.dll',
-                         'Hatifect UI/Hatifect.UI.Runtime.dll', 'extra.json', 'README.md'):
+                         'Hatifect UI/Unexpected.Runtime.dll', 'extra.json', 'README.md'):
             path = package / relative
             path.write_text('unexpected', encoding='utf-8')
             with self.subTest(relative=relative), self.assertRaisesRegex(release_tool.ReleaseError, 'unexpected runtime files'):
@@ -311,16 +311,16 @@ class ReleasePackageTests(ReleaseFixture):
                 (package / relative).write_bytes(image)
                 release_tool.verify_package(self.contract, package)
 
-    def test_package_rejects_retired_binary_references_in_both_encodings(self) -> None:
+    def test_package_rejects_forbidden_flow_dependency_in_both_encodings(self) -> None:
         package = self.package()
         module = self.modules['Hatifect.ChestsAnywhereOverlay']
         for name in (name for name in module['AllowedRootFiles'] if name.endswith('.dll')):
-            for token in ('Hatifect.UI.Experience', 'Hatifect.UI', 'UiStyleParser', 'FlowObject', 'Hatifect.Flow'):
+            for token in ('Hatifect.Flow',):
                 for encoding in ('utf-8', 'utf-16-le'):
                     path = package / module['Path'] / name
                     with self.subTest(name=name, token=token, encoding=encoding):
                         path.write_bytes(managed_image((token + '\0').encode(encoding)))
-                        with self.assertRaisesRegex(release_tool.ReleaseError, 'retired binary dependency/type'):
+                        with self.assertRaisesRegex(release_tool.ReleaseError, 'forbidden binary dependency/type'):
                             release_tool.verify_package(self.contract, package)
                         path.write_bytes(self.binaries[module['Path'] + '/' + name])
 

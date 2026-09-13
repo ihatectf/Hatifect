@@ -20,12 +20,10 @@ public sealed class ArchitectureBoundaryTests
     [InlineData(typeof(UiInvocationService))]
     [InlineData(typeof(UiCompiler))]
     [InlineData(typeof(UiBuildValidator))]
-    public void NewAssembliesDoNotReferenceLegacyOrPlatformUi(Type marker)
+    public void AssembliesDoNotReferenceGamePlatformUi(Type marker)
     {
         string[] forbidden =
         {
-            "Hatifect.UI.Runtime",
-            "Hatifect.UI.Experience",
             "Hatifect.UI.Stardew",
             "StardewModdingAPI",
             "Stardew Valley",

@@ -51,6 +51,11 @@ Runtime-диагностика: [capability preflight](CAPABILITY_PREFLIGHT.md),
 
 GitHub Actions запускает текущую статическую проверку, build и автоматически полученную из solution матрицу .NET тестов без игры. Финальный обязательный check — `Hatifect CI / CI Gate`; любой неуспешный или пропущенный prerequisite блокирует его. После публикации новой истории настрой branch protection на этот check и удали старые required checks, которых больше нет в workflow.
 
+Основной workflow остаётся быстрым PR-gate на Ubuntu. Отдельный `Compatibility` workflow
+еженедельно и вручную выполняет полный `./tools/hatifect-check` на актуальных macOS и Windows;
+он расширяет проверяемую матрицу, не задерживая каждое изменение. Все сторонние Actions
+закреплены полными commit SHA. Dependabot еженедельно предлагает обновления GitHub Actions.
+
 Игровые assemblies не скачиваются из личной установки в GitHub Actions. Проверка `--platform`, изоляция CA и runtime acceptance выполняются в среде с установленной игрой и прикладываются как отдельные результаты. Зелёный host-free CI сам по себе не доказывает работоспособность игрового адаптера.
 
 Работай небольшими сквозными PR от `develop`: контракт, owning implementation, affected consumer и проверки входят вместе. До обновления task branch сохрани собственные изменения обычным commit. Worktree других задач не изменяй. Новая история этой базы независима от старой; старые ветки нельзя слепо вливать merge-коммитом. Незавершённые изменения переносятся осмысленным diff поверх новой базы с повторной проверкой.
@@ -80,11 +85,13 @@ test projects в `Hatifect.slnx`, разрешённые зависимости 
 правила — в локальный AGENTS или маршрут только при необходимости. UI consumer получает изменения
 через явный application boundary; Flow Core/Persistence не зависит от UI или игровых API.
 
-## Переименование Hatifect
+## Идентичность Hatifect
 
-Текущие идентификаторы, сохранённые wire/persistence значения и порядок обновления установки
-описаны в [руководстве миграции](HATIFECT_MIGRATION.md). Старые и новые модули одновременно не
-устанавливаются; compiled consumers пересобираются с пакетами Hatifect.
+Проекты, assemblies, namespaces, package IDs, SMAPI UniqueID, команды и harness environment
+используют только идентичность Hatifect. Автор — `ihatectf`, официальный GitHub URL —
+`ihatectf/Hatifect`, переменные конфигурации — `HATIFECT_*`. Локальный файл создаётся из
+`tools/hatifect.env.example` как `tools/hatifect.env` и не коммитится. Альтернативные
+брендовые идентификаторы и compatibility aliases не поддерживаются.
 
 ## Runtime harness
 

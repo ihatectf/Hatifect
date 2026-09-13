@@ -8,12 +8,10 @@ namespace Hatifect.UI.DevTools.Tests;
 public sealed class DevToolsArchitectureTests
 {
     [Fact]
-    public void CleanSlateDevToolsDoNotReferenceLegacyOrPlatformAssemblies()
+    public void DevToolsDoNotReferenceGamePlatformAssemblies()
     {
         string[] forbidden =
         {
-            "Hatifect.UI.Experience",
-            "Hatifect.UI.Runtime",
             "Hatifect.UI.Stardew",
             "StardewModdingAPI",
             "Stardew Valley",
@@ -24,11 +22,6 @@ public sealed class DevToolsArchitectureTests
             .ToArray();
 
         Assert.DoesNotContain(references, reference => forbidden.Contains(reference, StringComparer.Ordinal));
-        Assert.DoesNotContain(
-            typeof(UiInspector).Assembly.GetTypes(),
-            type => type.Name.Contains("UiNode", StringComparison.Ordinal) ||
-                    type.Name.Contains("Css", StringComparison.Ordinal) ||
-                    type.Name.Contains("SurfaceHost", StringComparison.Ordinal));
     }
 
     [Fact]

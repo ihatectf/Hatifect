@@ -29,7 +29,6 @@ class CandidateFingerprintTests(unittest.TestCase):
         self.assertEqual(1, len(configs))
         self.assertEqual(19, len(paths))
         self.assertEqual(4, sum(path.startswith("Hatifect Flow/") for path in paths))
-        self.assertFalse(any("Hatifect" in path for path in paths))
 
     def test_mutating_each_runtime_file_changes_candidate_digest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

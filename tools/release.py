@@ -18,8 +18,6 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / 'Hatifect.Release.json'
 MODULE_IDS = {'Hatifect.UI', 'Hatifect.ChestsAnywhereOverlay', 'Hatifect.Flow'}
-RETIRED_ASSEMBLIES = {'Hatifect.UI.Runtime', 'Hatifect.UI.Experience', 'Hatifect.UI',
-                      'Hatifect.UI.Experience', 'Hatifect', 'Hatifect.Flow'}
 
 
 class ReleaseError(RuntimeError):
@@ -139,8 +137,6 @@ def validate_contract(contract: dict) -> None:
             item = _relative(name)
             if len(item.parts) != 1 or (item.suffix not in {'.dll', '.json'} and name != 'LICENSE'):
                 raise ReleaseError(f'unsupported module-root file: {name}')
-            if item.stem.casefold() in {assembly.casefold() for assembly in RETIRED_ASSEMBLIES}:
-                raise ReleaseError(f'retired runtime assembly: {name}')
             if name.casefold().startswith('hatifect.ui.') and module['UniqueID'] != 'Hatifect.UI':
                 raise ReleaseError('UI runtime assemblies have exactly one owner: Hatifect.UI')
         for name in runtime_files:
@@ -358,12 +354,10 @@ def verify_package(contract: dict, package_root: Path) -> None:
                     data = path.read_bytes()
                     if not _managed_image(data):
                         errors.append(f'invalid managed PE image: {path.relative_to(package_root)}')
-                    tokens = RETIRED_ASSEMBLIES | {'UiStyleParser', 'FlowObject'}
-                    if module['UniqueID'] == 'Hatifect.ChestsAnywhereOverlay':
-                        tokens = tokens | {'Hatifect.Flow'}
-                    for token in sorted(tokens):
+                    tokens = {'Hatifect.Flow'} if module['UniqueID'] == 'Hatifect.ChestsAnywhereOverlay' else set()
+                    for token in tokens:
                         if any((token + '\0').encode(encoding) in data for encoding in ('utf-8', 'utf-16-le')):
-                            errors.append(f'retired binary dependency/type {token}: {path.relative_to(package_root)}')
+                            errors.append(f'forbidden binary dependency/type {token}: {path.relative_to(package_root)}')
                 elif path.suffix == '.json':
                     _json(path)
         except ReleaseError as error:
