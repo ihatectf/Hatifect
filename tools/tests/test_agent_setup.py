@@ -29,7 +29,13 @@ class AgentSetupTests(unittest.TestCase):
         self.write("AGENTS.md", "root instructions\n")
         self.write("tools/AGENTS.md", "tool instructions\n")
         self.write("docs/flow.txt", "flow instructions\n")
-        self.write(agent_setup.SKILL, "repository skill fixture\n")
+        self.write(
+            agent_setup.SKILL,
+            "---\n"
+            "name: hatifect-development\n"
+            "description: Route work in the Hatifect repository.\n"
+            "---\n",
+        )
         self.write_config()
         self.roles = {
             "explorer": {"name": "hatifect_explorer", "description": "Explore assigned ownership",
@@ -230,6 +236,53 @@ class AgentSetupTests(unittest.TestCase):
                     self.write_registry({"version": 1, "routes": [original | {field: value}]})
                     self.assert_rejected(lambda: agent_setup.check_repository(self.root))
 
+    def test_repository_owned_route_skills_are_validated(self) -> None:
+        skill_name = "hatifect-diagnostics"
+        relative = f".agents/skills/{skill_name}/SKILL.md"
+        self.write(
+            relative,
+            "---\n"
+            f"name: {skill_name}\n"
+            "description: Diagnose bounded Hatifect harness evidence.\n"
+            "---\n\n"
+            "Read the canonical failure envelope.\n",
+        )
+        route = self.registry["routes"][0] | {
+            "skills": ["code-testing-agent", skill_name]
+        }
+        self.write_registry({"version": 1, "routes": [route]})
+
+        result = agent_setup.check_repository(self.root)
+
+        self.assertEqual(
+            {
+                "hatifect-development": agent_setup.SKILL,
+                skill_name: relative,
+            },
+            result["projectSkills"],
+        )
+
+    def test_repository_owned_route_skill_rejects_missing_or_mismatched_frontmatter(self) -> None:
+        skill_name = "hatifect-diagnostics"
+        route = self.registry["routes"][0] | {"skills": [skill_name]}
+        self.write_registry({"version": 1, "routes": [route]})
+        self.assert_rejected(
+            lambda: agent_setup.check_repository(self.root),
+            contains="missing",
+        )
+
+        self.write(
+            f".agents/skills/{skill_name}/SKILL.md",
+            "---\n"
+            "name: hatifect-wrong-skill\n"
+            "description: Wrong project skill identity.\n"
+            "---\n",
+        )
+        self.assert_rejected(
+            lambda: agent_setup.check_repository(self.root),
+            contains="frontmatter",
+        )
+
     def test_missing_absolute_and_escaping_instruction_paths_are_rejected(self) -> None:
         outside = self.base / "outside.txt"
         outside.write_text("outside fixture", encoding="utf-8")
@@ -347,6 +400,43 @@ class AgentSetupTests(unittest.TestCase):
                 else:
                     entries[0]["path"] = str(self.base / "other" / agent_setup.SKILL)
                 self.assert_rejected(lambda: agent_setup.audit_host(self.root, config, skills), status="BLOCKED")
+
+    def test_host_requires_every_repository_owned_route_skill_at_own_path(self) -> None:
+        skill_name = "hatifect-diagnostics"
+        relative = f".agents/skills/{skill_name}/SKILL.md"
+        self.write(
+            relative,
+            "---\n"
+            f"name: {skill_name}\n"
+            "description: Diagnose bounded Hatifect harness evidence.\n"
+            "---\n",
+        )
+        route = self.registry["routes"][0] | {"skills": [skill_name]}
+        self.write_registry({"version": 1, "routes": [route]})
+
+        for state in ("missing", "disabled", "ambiguous", "wrong-path"):
+            with self.subTest(skill=state):
+                config, skills = self.responses()
+                entry = {"name": skill_name, "path": str(self.root / relative), "enabled": True}
+                if state != "missing":
+                    skills["data"][0]["skills"].append(entry)
+                if state == "disabled":
+                    entry["enabled"] = False
+                elif state == "ambiguous":
+                    skills["data"][0]["skills"].append(deepcopy(entry))
+                elif state == "wrong-path":
+                    entry["path"] = str(self.base / "other" / relative)
+                self.assert_rejected(
+                    lambda: agent_setup.audit_host(self.root, config, skills),
+                    status="BLOCKED",
+                    contains=skill_name,
+                )
+
+        config, skills = self.responses()
+        skills["data"][0]["skills"].append(
+            {"name": skill_name, "path": str(self.root / relative), "enabled": True}
+        )
+        self.assertEqual("PASS", agent_setup.audit_host(self.root, config, skills)["status"])
 
     def test_internal_skill_symlink_is_valid_in_portable_and_host_checks(self) -> None:
         skill = self.root / agent_setup.SKILL

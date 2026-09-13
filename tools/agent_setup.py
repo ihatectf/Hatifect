@@ -21,6 +21,8 @@ except ModuleNotFoundError:
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ".agents/skills/hatifect-development/SKILL.md"
 ROUTING = ".agents/skills/hatifect-development/routing.json"
+PROJECT_SKILL_ROOT = ".agents/skills"
+PROJECT_SKILL_PREFIX = "hatifect-"
 SUBAGENT_MODELS = ("gpt-5.6-luna", "gpt-5.6-sol")
 SUBAGENT_EFFORTS = ("none", "low", "medium", "high", "xhigh")
 
@@ -53,6 +55,37 @@ def string_list(value: object, field: str) -> list[str]:
             or len(value) != len(set(value))):
         raise AgentSetupError(f"{field} must contain unique nonempty strings")
     return value
+
+
+def repository_skill(root: Path, name: str) -> tuple[str, Path]:
+    if not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name):
+        raise AgentSetupError("invalid repository skill name")
+    relative = f"{PROJECT_SKILL_ROOT}/{name}/SKILL.md"
+    path = repository_file(root, relative)
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        raise AgentSetupError(f"invalid repository skill: {name}") from error
+    if not lines or lines[0] != "---":
+        raise AgentSetupError(f"invalid repository skill frontmatter: {name}")
+    try:
+        closing = lines.index("---", 1)
+    except ValueError as error:
+        raise AgentSetupError(f"invalid repository skill frontmatter: {name}") from error
+    header = lines[1:closing]
+    declared_names = [
+        match.group(1)
+        for line in header
+        if (match := re.fullmatch(r"name:\s*[\"']?([a-z][a-z0-9-]{0,63})[\"']?\s*", line))
+    ]
+    descriptions = [
+        match.group(1).strip().strip("\"'")
+        for line in header
+        if (match := re.fullmatch(r"description:\s*(.+)", line))
+    ]
+    if declared_names != [name] or len(descriptions) != 1 or not descriptions[0]:
+        raise AgentSetupError(f"invalid repository skill frontmatter: {name}")
+    return relative, path
 
 
 def check_repository(root: Path = ROOT) -> dict:
@@ -101,6 +134,7 @@ def check_repository(root: Path = ROOT) -> dict:
             or not isinstance(registry["routes"], list) or not registry["routes"]):
         raise AgentSetupError("routing registry must contain version 1 and nonempty routes")
     ids = set()
+    project_skill_names = {"hatifect-development"}
     instruction_bytes = {}
     root_instructions = repository_file(root, "AGENTS.md")
     for route in registry["routes"]:
@@ -112,6 +146,9 @@ def check_repository(root: Path = ROOT) -> dict:
             raise AgentSetupError(f"duplicate route: {route['id']}")
         ids.add(route["id"])
         string_list(route["skills"], "route skills")
+        project_skill_names.update(
+            name for name in route["skills"] if name.startswith(PROJECT_SKILL_PREFIX)
+        )
         paths = {root_instructions}
         for relative in string_list(route["instructions"], "route instructions"):
             path = repository_file(root, relative)
@@ -127,8 +164,13 @@ def check_repository(root: Path = ROOT) -> dict:
         if size > budget:
             raise AgentSetupError(f"instruction budget exceeded for route {route['id']}: {size} > {budget}")
         instruction_bytes[route["id"]] = size
+    project_skills = {}
+    for name in sorted(project_skill_names):
+        relative, _ = repository_skill(root, name)
+        project_skills[name] = relative
     return {"status": "PASS", "roles": roles, "routes": registry["routes"],
-            "projectSkill": SKILL, "instructionBytes": instruction_bytes,
+            "projectSkill": SKILL, "projectSkills": project_skills,
+            "instructionBytes": instruction_bytes,
             "subagentPolicy": {"defaultModel": agents["default_subagent_model"],
                                "defaultReasoningEffort": agents["default_subagent_reasoning_effort"],
                                "allowedModels": list(SUBAGENT_MODELS), "maxReasoningEffort": "xhigh",
@@ -170,10 +212,14 @@ def audit_host(root: Path, config: dict, skills: dict, route: str | None = None)
                     or type(entry["enabled"]) is not bool):
                 raise TypeError("invalid skill metadata")
             by_name.setdefault(entry["name"], []).append(entry)
-        own = by_name.get("hatifect-development", [])
-        if (len(own) != 1 or not own[0]["enabled"]
-                or Path(own[0]["path"]).resolve() != (root / SKILL).resolve()):
-            raise AgentSetupError("repository skill is missing, disabled, ambiguous or from another checkout", "BLOCKED")
+        for name, relative in repository["projectSkills"].items():
+            own = by_name.get(name, [])
+            if (len(own) != 1 or not own[0]["enabled"]
+                    or Path(own[0]["path"]).resolve() != (root / relative).resolve()):
+                raise AgentSetupError(
+                    f"repository skill {name} is missing, disabled, ambiguous or from another checkout",
+                    "BLOCKED",
+                )
         availability = {}
         for item in routes:
             unavailable = [name for name in item["skills"]

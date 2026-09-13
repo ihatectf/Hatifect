@@ -57,6 +57,8 @@ GitHub Actions запускает текущую статическую пров
 [`routing.json`](../.agents/skills/hatifect-development/routing.json) помогают выбрать только
 относящиеся к задаче инструкции и skills. Модели, reasoning и порядок делегации определяет
 корневой `AGENTS.md`; личные model, permissions, sandbox и MCP не переопределяются проектом.
+Отдельные project skills покрывают bounded diagnostics, runtime acceptance и выбор тестов; они
+лежат в `.agents/skills/` и загружаются только для соответствующей задачи.
 
 `./tools/hatifect-agent-check` проверяет project config, роли, маршруты и instruction budget;
 `--host` — их фактическую загрузку Codex, не создавая задачу и не вызывая модель. Для нового
