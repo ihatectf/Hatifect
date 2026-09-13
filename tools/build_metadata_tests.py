@@ -45,9 +45,9 @@ class BuildMetadataTests(unittest.TestCase):
         self.calls = self.directory / "calls.jsonl"
         executables = self.directory / "executables"
         executables.mkdir()
-        stub = executables / "git"
+        stub = executables / ("git.py" if os.name == "nt" else "git")
         stub.write_text(
-            f"#!{sys.executable}\n"
+            ("" if os.name == "nt" else f"#!{sys.executable}\n") +
             "import json, os, pathlib, sys\n"
             "with open(os.environ['HATIFECT_TEST_GIT_CALLS'], 'a') as log:\n"
             "    log.write(json.dumps({'args': sys.argv[1:], 'cwd': os.getcwd()}) + '\\n')\n"
@@ -66,7 +66,13 @@ class BuildMetadataTests(unittest.TestCase):
             "    sys.exit(24)\n",
             encoding="utf-8",
         )
-        stub.chmod(0o755)
+        if os.name == "nt":
+            (executables / "git.cmd").write_text(
+                f'@"{sys.executable}" "%~dp0git.py" %*\r\n',
+                encoding="utf-8",
+            )
+        else:
+            stub.chmod(0o755)
         self.environment = os.environ | {
             "PATH": str(executables) + os.pathsep + os.environ.get("PATH", ""),
             "HATIFECT_TEST_GIT_CALLS": str(self.calls),
@@ -92,11 +98,11 @@ class BuildMetadataTests(unittest.TestCase):
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <EnableDefaultItems>false</EnableDefaultItems>
     <IntermediateOutputPath>{escape(str(self.intermediate))}/</IntermediateOutputPath>
-    <PathMap>{escape(str(self.worktree))}/=/_/Hatifect/</PathMap>
+    <PathMap>{escape(str(self.worktree) + os.sep)}=/_/Hatifect/</PathMap>
   </PropertyGroup>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
   <ItemGroup Condition="'$(FixtureAdditionalRoot)' == 'true'">
-    <SourceRoot Include="{escape(str(self.package_cache))}/" />
+    <SourceRoot Include="{escape(str(self.package_cache) + os.sep)}" />
   </ItemGroup>
   <!-- Only discovery is simulated. Assembly metadata, URL translation and
        source-path mapping continue through the real SDK targets. -->
@@ -107,7 +113,7 @@ class BuildMetadataTests(unittest.TestCase):
       <SourceRevisionId Condition="'$(FixtureState)' == 'healthy' and '$(SourceRevisionId)' == ''">{REVISION}</SourceRevisionId>
     </PropertyGroup>
     <ItemGroup Condition="'$(FixtureState)' == 'healthy' or '$(FixtureState)' == 'explicit-root'">
-      <SourceRoot Include="{escape(str(self.worktree))}/" SourceControl="git"
+      <SourceRoot Include="{escape(str(self.worktree) + os.sep)}" SourceControl="git"
                   RevisionId="{REVISION}" ScmRepositoryUrl="{URL}" />
     </ItemGroup>
   </Target>
@@ -132,12 +138,16 @@ class BuildMetadataTests(unittest.TestCase):
     def git_calls(self) -> list[dict]:
         return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
 
+    @staticmethod
+    def normalized_path(path: str) -> str:
+        return os.path.normcase(os.path.normpath(path.replace("\\", os.sep).replace("/", os.sep)))
+
     def assert_root(self, result: dict, *, expected_count: int = 1) -> None:
         all_roots = result["Items"]["SourceRoot"]
         self.assertEqual(len(all_roots), expected_count)
         roots = [root for root in all_roots if root.get("SourceControl") == "git"]
         self.assertEqual(len(roots), 1)
-        self.assertEqual(roots[0]["Identity"], str(self.worktree) + "/")
+        self.assertEqual(self.normalized_path(roots[0]["Identity"]), self.normalized_path(str(self.worktree)))
         self.assertEqual(roots[0]["RevisionId"], REVISION)
         self.assertEqual(roots[0]["SourceControl"], "git")
         self.assertEqual(roots[0]["ScmRepositoryUrl"], URL)
@@ -149,7 +159,9 @@ class BuildMetadataTests(unittest.TestCase):
             source_link = self.project_directory / source_link
         self.assertEqual(json.loads(source_link.read_text()), {"documents": {"/_/*": source_url}})
         self.assertEqual(roots[0]["MappedPath"], "/_/")
-        self.assertIn(str(self.worktree) + "/=/_/", result["Properties"]["PathMap"].split(","))
+        mappings = [entry.rsplit("=", 1) for entry in result["Properties"]["PathMap"].split(",")]
+        self.assertTrue(any(self.normalized_path(source) == self.normalized_path(str(self.worktree)) and target == "/_/"
+                            for source, target in mappings))
 
     def test_missing_sdk_metadata_restores_revision_and_deterministic_source_root(self) -> None:
         result = self.result(self.query())
@@ -177,7 +189,7 @@ class BuildMetadataTests(unittest.TestCase):
         self.assert_root(result, expected_count=2)
         package_roots = [root for root in result["Items"]["SourceRoot"] if not root.get("SourceControl")]
         self.assertEqual(len(package_roots), 1)
-        self.assertEqual(package_roots[0]["Identity"], str(self.package_cache) + "/")
+        self.assertEqual(self.normalized_path(package_roots[0]["Identity"]), self.normalized_path(str(self.package_cache)))
         self.assertEqual(package_roots[0]["MappedPath"], "/_1/")
 
     def test_healthy_and_recovered_metadata_produce_identical_dll_and_pdb(self) -> None:

@@ -30,6 +30,7 @@ python3 "$TOOLS_DIR/ui_packages.py" verify-contract
 dotnet_bin="$(resolve_build_dotnet)"
 
 while IFS= read -r project; do
+  project="${project%$'\r'}"
   say "Packing UI project: $project"
   # Share the normal Release compiler profile with its bin/obj outputs. Symbol
   # packaging is controlled by IncludeSymbols, not by disabling debug generation.

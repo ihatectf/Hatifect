@@ -230,6 +230,7 @@ class ValidationTests(unittest.TestCase):
             if name == "restore":
                 solution = Path(arguments[2])
                 self.assertTrue(solution.is_file())
+                self.assertTrue(solution.is_relative_to(run.directory))
                 self.assertIn("Hatifect.Flow.Tests", solution.read_text())
             if name == selected[0].identifier:
                 output = Path(arguments[arguments.index("--results-directory") + 1]) / "tests.trx"

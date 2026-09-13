@@ -230,11 +230,20 @@ class Run:
         for project in projects:
             visit(project.path)
         if any(package.startswith("Hatifect.UI.") for relative in closure for package in inventory.projects[relative].packages):
-            self.command("ui-packages", [str(self.root / "tools/hatifect-pack-ui"), "--host-free"])
+            pack_command = [str(self.root / "tools/hatifect-pack-ui"), "--host-free"]
+            if os.name == "nt":
+                bash = shutil.which("bash")
+                if not bash:
+                    raise ValidationError("Git Bash is required to package UI dependencies on Windows")
+                pack_command.insert(0, bash)
+            self.command("ui-packages", pack_command)
         properties = list(BUILD_PROPERTIES)
         if os.environ.get("HATIFECT_GAME_PATH"):
             properties.append("-p:GamePath=" + os.environ["HATIFECT_GAME_PATH"])
-        with tempfile.TemporaryDirectory(prefix="hatifect-build-") as temporary:
+        # Keep the generated solution on the repository's volume. Windows
+        # cannot calculate relative paths when TEMP and the checkout use
+        # different drive letters (for example C: and D: on GitHub runners).
+        with tempfile.TemporaryDirectory(prefix="hatifect-build-", dir=self.directory) as temporary:
             solution = Path(temporary) / "Hatifect.sln"
             materialize_solution(self.root, projects, solution)
             self.command("restore", [dotnet, "restore", str(solution), "--disable-parallel", "--verbosity", "minimal", *properties])
