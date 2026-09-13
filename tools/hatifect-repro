@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+reproduction="$script_dir/live-harness/reproduction.py"
+source_run_id="${1:-}"
+requested_phase="preflight"
+if [[ $# -eq 1 && ( "$source_run_id" == "--help" || "$source_run_id" == "-h" ) ]]; then
+  printf '%s\n' "Usage: ./tools/hatifect-repro <source-run-id> [--from <preflight>]"
+  exit 0
+fi
+if [[ $# -eq 3 && "$2" == "--from" ]]; then
+  requested_phase="$3"
+elif [[ $# -ne 1 ]]; then
+  printf '%s\n' "ERROR: Usage: ./tools/hatifect-repro <source-run-id> [--from <preflight>]" >&2
+  exit 2
+fi
+
+selection="$(python3 "$reproduction" select "$source_run_id" --field execution --from "$requested_phase")"
+IFS=$'\t' read -r kind scenario <<< "$selection"
+
+export HATIFECT_REPRO_SOURCE_RUN_ID="$source_run_id"
+export HATIFECT_REPRO_FROM_PHASE="$requested_phase"
+
+if [[ "$kind" == "smoke" ]]; then
+  exec "$script_dir/hatifect-smoke" "$scenario"
+else
+  exec "$script_dir/hatifect-ui-test" "$scenario"
+fi

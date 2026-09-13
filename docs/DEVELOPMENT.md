@@ -3,7 +3,8 @@
 UI authoring: [подключение language server, экспорт метаданных, операции редактора и ограничения](UI_AUTHORING.md).
 
 Runtime-диагностика: [capability preflight](CAPABILITY_PREFLIGHT.md),
-[failure envelope](FAILURE_ENVELOPE.md), [semantic events](SEMANTIC_EVENTS.md).
+[failure envelope](FAILURE_ENVELOPE.md), [semantic events](SEMANTIC_EVENTS.md),
+[targeted reproduction](TARGETED_REPRODUCTION.md).
 
 Последовательность развития и acceptance criteria — в [утверждённой roadmap](ROADMAP.md). После каждого среза обновляются его статус, commit/evidence и следующий готовый шаг; переходы в рамках утверждённой задачи не требуют повторного согласования.
 
@@ -27,6 +28,7 @@ Runtime-диагностика: [capability preflight](CAPABILITY_PREFLIGHT.md),
 | `./tools/hatifect-agent-check` | Переносимая проверка config, roles, skill routing и instruction budget |
 | `./tools/hatifect-agent-check --host` | Реальная загрузка проекта и доступность skills в локальном Codex |
 | `./tools/hatifect-agent-check --route flowline` | Та же проверка с обязательной доступностью skills выбранного маршрута |
+| `./tools/hatifect-repro <run-id>` | Проверяет bounded failure evidence и повторяет только выбранный сценарий с нового `preflight` |
 | `./tools/hatifect-pack-ui` | Точные локальные UI packages из текущих исходников |
 | `./tools/hatifect-isolated-ui-ca` | Сборка consumer из UI packages без исходников framework |
 | `./release.sh` | Локальная сборка и проверка runtime-архива без установки и публикации |
@@ -85,5 +87,6 @@ test projects в `Hatifect.slnx`, разрешённые зависимости 
 Сценарии и transport schemas находятся в `tools/live-harness/`; канонические статусы —
 PASS/FAIL/BLOCKED/NOT_APPLICABLE. `result.json` protocol v1 остаётся авторитетным, raw evidence —
 отдельным. Non-PASS диагностика описана в [failure envelope](FAILURE_ENVELOPE.md) и
-[semantic events](SEMANTIC_EVENTS.md). Подготовка, singleton/Ready, владение executor и безопасное
+[semantic events](SEMANTIC_EVENTS.md). Безопасный повтор одного FAIL-run описан в
+[targeted reproduction](TARGETED_REPRODUCTION.md). Подготовка, singleton/Ready, владение executor и безопасное
 завершение — в [руководстве runtime-тестов](RUNTIME.md).

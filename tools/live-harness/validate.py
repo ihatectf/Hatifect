@@ -128,6 +128,19 @@ FAILURE_RECORD_TYPES = {
     "CLEANUP_FAILURE",
     "ADDITIONAL_FAILURE",
 }
+# Newly generated failure envelopes use this closed phase vocabulary.  The
+# reader also accepts the three phase names emitted by the historical v2/v3
+# writers below; keeping those values readable is required for old artifacts,
+# but they must never be emitted by the current generator.
+FAILURE_PHASES = frozenset({
+    "preflight",
+    "prepare",
+    "runtime",
+    "validation",
+    "cleanup",
+})
+LEGACY_FAILURE_PHASES = frozenset({"input", "scenario", "executor"})
+READABLE_FAILURE_PHASES = FAILURE_PHASES | LEGACY_FAILURE_PHASES
 MAX_FAILURE_TEXT = 2048
 MAX_FAILURE_ENVELOPE_BYTES = 256 * 1024
 MAX_FAILURE_RECORD_CONTEXT_TEXT = 128
@@ -1046,6 +1059,7 @@ def resolve_scenario(
         "requiresSave": any(item["requiresSave"] for item in ordered),
         "timeoutSeconds": root.get("timeoutSeconds", DEFAULT_TIMEOUT_SECONDS),
         "checks": checks,
+        "checkOwners": dict(check_owners),
         "performance": performances[0] if performances else None,
         "flowPerformance": flow_performances[0] if flow_performances else None,
         "flowResources": flow_resources[0] if flow_resources else None,
@@ -1456,6 +1470,8 @@ def collect_artifacts(root: Path | None) -> list[dict[str, str]]:
             artifact_type = "semantic-events"
         elif relative == PREFLIGHT_FILE_NAME:
             artifact_type = "preflight"
+        elif relative == "reproduction.json":
+            artifact_type = "reproduction"
         else:
             artifact_type = "diagnostic"
         artifacts.append({"type": artifact_type, "path": relative})
@@ -1529,14 +1545,28 @@ def _failure_context(
     failure_class: str | None = None,
     causal_component: str | None = None,
 ) -> tuple[str, str, str]:
+    if phase is not None and (
+        not isinstance(phase, str) or phase not in FAILURE_PHASES
+    ):
+        raise HarnessError(
+            f"Generated failure phase must be one of: {', '.join(sorted(FAILURE_PHASES))}."
+        )
     upper = assertion_id.upper()
     if assertion_id in HARNESS_CLEANUP_ASSERTION_IDS:
         defaults = ("cleanup", "CLEANUP_FAILURE", "runtime-cleanup")
     elif upper == "HARNESS-SEMANTIC-TEST-AGENT":
-        defaults = ("input", "AUTOMATION_DRIVER_FAILURE", "semantic-test-agent")
+        defaults = ("runtime", "AUTOMATION_DRIVER_FAILURE", "semantic-test-agent")
     elif upper == "HARNESS-PREPARE":
         defaults = ("prepare", "PREPARATION_FAILURE", "deployment-preparer")
-    elif upper.startswith(("HARNESS-ENV-", "HARNESS-SCENARIO", "HARNESS-SAVE-")):
+    elif upper == "HARNESS-REPRODUCTION-CHECKPOINT":
+        defaults = ("preflight", "PREFLIGHT_FAILURE", "reproduction-planner")
+    elif upper.startswith("HARNESS-SAVE-"):
+        defaults = ("prepare", "PREPARATION_FAILURE", "save-provisioner")
+    elif upper.startswith((
+        "HARNESS-ENV-",
+        "HARNESS-PREFLIGHT-",
+        "HARNESS-SCENARIO",
+    )):
         defaults = ("preflight", "PREFLIGHT_FAILURE", "harness-preflight")
     elif upper.startswith(("HARNESS-PROCESS-", "HARNESS-DIRECT-", "HARNESS-EXECUTOR-",
                            "HARNESS-CRASH-", "HARNESS-LOCAL-INFRA-")):
@@ -1546,7 +1576,7 @@ def _failure_context(
         defaults = ("validation", "EVIDENCE_FAILURE", "harness-validator")
     else:
         defaults = (
-            "scenario",
+            "runtime",
             "INFRASTRUCTURE_BLOCK" if status == "BLOCKED" else "ASSERTION_FAILURE",
             "scenario",
         )
@@ -1627,6 +1657,8 @@ def _relevant_artifacts(
     candidates = {"result.json"}
     if (artifact_root / PREFLIGHT_FILE_NAME).is_file():
         candidates.add(PREFLIGHT_FILE_NAME)
+    if (artifact_root / "reproduction.json").is_file():
+        candidates.add("reproduction.json")
     if (artifact_root / SEMANTIC_EVENT_FILE_NAME).is_file():
         candidates.add(SEMANTIC_EVENT_FILE_NAME)
     if (artifact_root / SEMANTIC_EVENT_ERROR_PATH).is_file():
@@ -1638,17 +1670,18 @@ def _relevant_artifacts(
     priority = {
         "result.json": 0,
         PREFLIGHT_FILE_NAME: 1,
-        SEMANTIC_EVENT_FILE_NAME: 2,
-        SEMANTIC_EVENT_ERROR_PATH: 3,
-        "host-acceptance-report.json": 4,
-        "diagnostics/runtime.json": 5,
-        "diagnostics/semantic-test-agent.json": 6,
-        "diagnostics/executor-failure.json": 7,
-        "diagnostics/worker-failure.json": 8,
-        "diagnostics/transport-result.json": 9,
-        "semantic-test-agent.log": 10,
-        "smapi.log": 11,
-        "harness.log": 12,
+        "reproduction.json": 2,
+        SEMANTIC_EVENT_FILE_NAME: 3,
+        SEMANTIC_EVENT_ERROR_PATH: 4,
+        "host-acceptance-report.json": 5,
+        "diagnostics/runtime.json": 6,
+        "diagnostics/semantic-test-agent.json": 7,
+        "diagnostics/executor-failure.json": 8,
+        "diagnostics/worker-failure.json": 9,
+        "diagnostics/transport-result.json": 10,
+        "semantic-test-agent.log": 11,
+        "smapi.log": 12,
+        "harness.log": 13,
     }
     contained: list[str] = []
     for relative in candidates:
@@ -1745,6 +1778,7 @@ def _failure_remainder(
         ),
         classification,
         root_failure_id=root_failure_id,
+        phase="cleanup" if classification == "CLEANUP_FAILURE" else "runtime",
     )
 
 
@@ -1880,6 +1914,12 @@ def build_failure_envelope(
     cascade_dependencies: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     validate_result(result)
+    if phase is not None and (
+        not isinstance(phase, str) or phase not in FAILURE_PHASES
+    ):
+        raise HarnessError(
+            f"Generated failure phase must be one of: {', '.join(sorted(FAILURE_PHASES))}."
+        )
     if result["status"] == "PASS":
         return None
     if cleanup_failures is not None and len(cleanup_failures) > MAX_CLEANUP_FAILURES:
@@ -1936,7 +1976,7 @@ def build_failure_envelope(
     if root["id"] in {"HARNESS-RESULT-MISSING", "HARNESS-RESULT-INVALID", "HARNESS-RESULT-CONFLICT"}:
         executor_context = _executor_failure_context(artifact_root)
         if executor_context is not None:
-            root["phase"] = "executor"
+            root["phase"] = "runtime"
             root["failure_class"] = "RUNTIME_EXECUTOR_FAILURE"
             root["causal_component"], root["actual"] = executor_context
             root["message"] = root["actual"]
@@ -1986,6 +2026,14 @@ def build_failure_envelope(
     ]
     extra_artifacts: list[str] = []
     for index, failure in enumerate(cleanup_failures or []):
+        supplied_phase = failure.get("phase")
+        if supplied_phase is not None and (
+            not isinstance(supplied_phase, str)
+            or supplied_phase not in FAILURE_PHASES
+        ):
+            raise HarnessError(
+                "Generated cleanup failure phase is outside the closed vocabulary."
+            )
         assertion = _assertion(
             failure.get("id") or f"HARNESS-CLEANUP-{index + 1}",
             failure.get("status") or "FAIL",
@@ -2082,6 +2130,8 @@ def validate_failure_envelope(envelope: Any) -> None:
         "actual", "message", "causal_component",
     ):
         _validate_failure_text(envelope[field], f"Failure envelope {field}")
+    if envelope["phase"] not in READABLE_FAILURE_PHASES:
+        raise HarnessError("Failure envelope phase is not in the supported vocabulary.")
     _parse_timestamp(envelope["timestamp"])
     fingerprint = envelope["result_fingerprint"]
     if (
@@ -2103,6 +2153,8 @@ def validate_failure_envelope(envelope: Any) -> None:
         root_failure_id=None,
         allow_timestamp=False,
     )
+    if root["phase"] not in READABLE_FAILURE_PHASES:
+        raise HarnessError("Failure envelope root phase is not in the supported vocabulary.")
     if root["original_status"] not in {"FAIL", "BLOCKED"}:
         raise HarnessError("Failure envelope root classification is invalid.")
     for field in (
@@ -2141,6 +2193,10 @@ def validate_failure_envelope(envelope: Any) -> None:
                 root_failure_id=root["id"] if requires_root_reference else None,
                 allow_timestamp=collection_name == "cleanup_failures",
             )
+            if record["phase"] not in READABLE_FAILURE_PHASES:
+                raise HarnessError(
+                    "Failure envelope record phase is not in the supported vocabulary."
+                )
     if format_version == FAILURE_ENVELOPE_FORMAT_VERSION:
         event_tail = envelope["semantic_event_tail"]
         if (
@@ -2611,6 +2667,13 @@ def write_result(
 ) -> None:
     if status not in STATUSES:
         raise HarnessError(f"Invalid harness result status '{status}'.")
+    if failure_phase is not None and (
+        not isinstance(failure_phase, str)
+        or failure_phase not in FAILURE_PHASES
+    ):
+        raise HarnessError(
+            f"Generated failure phase must be one of: {', '.join(sorted(FAILURE_PHASES))}."
+        )
     if not _is_scenario_identifier(scenario):
         raise HarnessError(f"Invalid harness scenario identifier '{scenario}'.")
     if duration_ms < 0:

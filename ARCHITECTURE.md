@@ -75,4 +75,6 @@ Planning также принимает `UiPlanningInput`: immutable owner, уп�
 
 Live harness capability preflight runs before save, semantic and game work. `validate.py` owns requirements/reporting; `user_session_runtime.py` owns environment probes. Missing required capabilities map to existing result, failure and semantic-event contracts; see [the focused contract](docs/CAPABILITY_PREFLIGHT.md).
 
+Targeted reproduction restarts one verified owning scenario from `preflight` without reusing runtime state; see [the contract](docs/TARGETED_REPRODUCTION.md).
+
 `Hatifect.Release.json` задаёт три runtime-модуля: UI, Flowline, CA Overlay. Пакет содержит 14 DLL: 8 UI, 4 Flowline и 2 CA. Сборка архива проверяет состав, manifest, зависимости и единственного владельца UI DLL. Это не публикация и не runtime acceptance.

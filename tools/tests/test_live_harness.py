@@ -81,6 +81,12 @@ class LiveHarnessTests(unittest.TestCase):
                 owners[check_id] = scenario_id
         self.assertEqual(list(owners), resolved["checks"])
         self.assertEqual(len(owners), len(resolved["checks"]))
+        self.assertEqual(resolved["checkOwners"], owners)
+        self.assertEqual(set(resolved["checkOwners"]), set(resolved["checks"]))
+        self.assertEqual(
+            len(resolved["checkOwners"]),
+            len(set(resolved["checkOwners"])),
+        )
         declared_checks = [
             check_id
             for scenario_id, scenario in self.scenarios.items()

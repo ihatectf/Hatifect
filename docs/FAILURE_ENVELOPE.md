@@ -23,6 +23,22 @@ result also writes:
 - `preflight.json`: when capability preflight ran; it is included in relevant artifacts when causal;
 - existing logs, screenshots, reports and transport diagnostics remain unchanged.
 
+## Execution phases
+
+Newly generated failure envelopes use the closed five-phase vocabulary `preflight`, `prepare`,
+`runtime`, `validation` and `cleanup`. Harness capability and scenario admission failures
+are `preflight`; `HARNESS-REPRODUCTION-CHECKPOINT` uses the `reproduction-planner` component in
+that phase; build/deployment and save provisioning are `prepare`; process, executor, direct-runtime, semantic-agent,
+product/host assertion and crash failures are `runtime`; report, result and runtime-evidence
+reconciliation is `validation`; and the owned cleanup IDs are `cleanup`. Executor diagnostics
+found while a result is missing or invalid remain `runtime` failures.
+
+The strict reader remains compatible with historical format v2 and v3 envelopes, including their
+legacy `input`, `scenario` and `executor` phase values. Those legacy values are read-only
+compatibility values: generation and explicit phase overrides accept only the five current phase
+names. This does not change result protocol v1, the failure format versions, semantic events or
+transport schemas.
+
 The envelope selects the first non-cleanup failed assertion in canonical assertion order as the
 single `ROOT_FAILURE`. A `CASCADE_SKIPPED` record requires explicit `cascade_dependencies`
 provenance that references that root. Later failures without that evidence are bounded

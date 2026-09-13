@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import copy
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,138 @@ class FailureEnvelopeTests(unittest.TestCase):
         self.assertEqual(envelope["cascade_records"], [])
         self.assertEqual(envelope["cleanup_failures"], [])
 
+    def test_new_generation_uses_closed_phase_mapping(self) -> None:
+        cases = (
+            ("HARNESS-ENV-SMAPI", "preflight"),
+            ("HARNESS-PREFLIGHT-SMAPI-RUNTIME", "preflight"),
+            ("HARNESS-REPRODUCTION-CHECKPOINT", "preflight"),
+            ("HARNESS-PREPARE", "prepare"),
+            ("HARNESS-SAVE-BOOTSTRAP-INVALID", "prepare"),
+            ("HARNESS-SEMANTIC-TEST-AGENT", "runtime"),
+            ("HARNESS-PROCESS-BOOT", "runtime"),
+            ("HARNESS-REPORT-VALIDATION", "validation"),
+            ("HARNESS-OPTIONS-RESTORE", "cleanup"),
+            ("product.host.assertion", "runtime"),
+        )
+        for assertion_id, expected_phase in cases:
+            with self.subTest(assertion_id=assertion_id):
+                with tempfile.TemporaryDirectory() as directory:
+                    result_path = Path(directory) / "result.json"
+                    HARNESS.write_result(
+                        result_path,
+                        "BLOCKED" if assertion_id.startswith("HARNESS-") else "FAIL",
+                        "runtime.boot",
+                        "observed failure",
+                        run_id="phase-run",
+                        assertions=[self._assertion(
+                            assertion_id,
+                            "BLOCKED" if assertion_id.startswith("HARNESS-") else "FAIL",
+                            "expected",
+                            "observed failure",
+                        )],
+                        failure_timestamp=TIMESTAMP,
+                    )
+                    envelope = self._read_envelope(result_path)
+
+                self.assertEqual(envelope["phase"], expected_phase)
+                self.assertEqual(envelope["root_failure"]["phase"], expected_phase)
+                for collection in (
+                    "cascade_records",
+                    "additional_failures",
+                    "cleanup_failures",
+                ):
+                    self.assertTrue(all(
+                        record["phase"] in HARNESS.FAILURE_PHASES
+                        for record in envelope[collection]
+                    ))
+
+    def test_generation_rejects_legacy_or_unknown_phase_override(self) -> None:
+        for invalid_phase in ("input", "scenario", "executor", "unknown"):
+            with self.subTest(invalid_phase=invalid_phase):
+                with tempfile.TemporaryDirectory() as directory:
+                    with self.assertRaisesRegex(
+                        HARNESS.HarnessError,
+                        "Generated failure phase",
+                    ):
+                        HARNESS.write_result(
+                            Path(directory) / "result.json",
+                            "FAIL",
+                            "runtime.boot",
+                            "observed failure",
+                            failure_phase=invalid_phase,
+                        )
+
+    def test_historical_v2_and_v3_phase_names_remain_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = self._write_failed_result(Path(directory))
+            current = self._read_envelope(result_path)
+
+        for format_version in (
+            HARNESS.LEGACY_FAILURE_ENVELOPE_FORMAT_VERSION,
+            HARNESS.FAILURE_ENVELOPE_FORMAT_VERSION,
+        ):
+            for legacy_phase in sorted(HARNESS.LEGACY_FAILURE_PHASES):
+                with self.subTest(format_version=format_version, phase=legacy_phase):
+                    historical = copy.deepcopy(current)
+                    historical["format_version"] = format_version
+                    if format_version == HARNESS.LEGACY_FAILURE_ENVELOPE_FORMAT_VERSION:
+                        historical.pop("semantic_event_tail", None)
+                    historical["phase"] = legacy_phase
+                    historical["root_failure"]["phase"] = legacy_phase
+                    for collection in (
+                        "cascade_records",
+                        "additional_failures",
+                        "cleanup_failures",
+                    ):
+                        for record in historical[collection]:
+                            record["phase"] = legacy_phase
+                    HARNESS.validate_failure_envelope(historical)
+
+    def test_generated_supplementary_records_keep_closed_phases(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = Path(directory) / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "FAIL",
+                "runtime.boot",
+                "multiple failures",
+                run_id="phase-record-run",
+                assertions=[
+                    self._assertion("runtime.boot.root", "FAIL", "root", "failed"),
+                    self._assertion("runtime.boot.dependent", "FAIL", "dependent", "skipped"),
+                ],
+                failure_timestamp=TIMESTAMP,
+                cascade_dependencies={"runtime.boot.dependent": "runtime.boot.root"},
+                cleanup_failures=[{
+                    "id": "HARNESS-SAVE-CLEANUP",
+                    "status": "FAIL",
+                    "actual": "cleanup failed",
+                }],
+            )
+            envelope = self._read_envelope(result_path)
+
+        records = [
+            envelope["root_failure"],
+            *envelope["cascade_records"],
+            *envelope["additional_failures"],
+            *envelope["cleanup_failures"],
+        ]
+        self.assertTrue(records)
+        self.assertTrue(all(record["phase"] in HARNESS.FAILURE_PHASES for record in records))
+
+    def test_reproduction_artifact_is_typed_and_prioritized_after_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("result.json", "preflight.json", "reproduction.json"):
+                (root / name).write_text("{}\n", encoding="utf-8")
+
+            artifacts = HARNESS.collect_artifacts(root)
+            relevant = HARNESS._relevant_artifacts({"artifacts": []}, root)
+
+        by_path = {artifact["path"]: artifact["type"] for artifact in artifacts}
+        self.assertEqual(by_path["reproduction.json"], "reproduction")
+        self.assertLess(relevant.index("preflight.json"), relevant.index("reproduction.json"))
+
     def test_runtime_executor_failure_is_classified_without_reading_raw_log(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -82,7 +215,7 @@ class FailureEnvelopeTests(unittest.TestCase):
             envelope = self._read_envelope(result_path)
             summary = (root / "failure-summary.txt").read_text(encoding="utf-8")
 
-        self.assertEqual(envelope["phase"], "executor")
+        self.assertEqual(envelope["phase"], "runtime")
         self.assertEqual(envelope["failure_class"], "RUNTIME_EXECUTOR_FAILURE")
         self.assertEqual(envelope["causal_component"], "runtime-executor")
         self.assertEqual(envelope["actual"], "RuntimeError: worker transport failed")
@@ -398,7 +531,7 @@ class FailureEnvelopeTests(unittest.TestCase):
                     run_id=text,
                     assertions=[self._assertion(text, "FAIL", text, text)],
                     failure_timestamp=TIMESTAMP,
-                    failure_phase=text,
+                    failure_phase="runtime",
                     failure_class=text,
                     causal_component=text,
                 )
@@ -586,7 +719,7 @@ class FailureEnvelopeTests(unittest.TestCase):
                     run_id=text,
                     assertions=assertions,
                     failure_timestamp=TIMESTAMP,
-                    failure_phase=text,
+                    failure_phase="runtime",
                     failure_class=text,
                     causal_component=text,
                     cleanup_failures=cleanup_failures,

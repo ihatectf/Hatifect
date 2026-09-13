@@ -1,8 +1,9 @@
 # Deterministic capability preflight
 
 Status: Phase 3 implemented. This is an additive live-harness diagnostic contract outside the
-numbered product roadmap. It does not start Phase 4 reproduction, checkpoints, AI diagnostic
-packets or progressive regression.
+numbered product roadmap. Phase 4 targeted reproduction is documented separately in
+[Targeted reproduction](TARGETED_REPRODUCTION.md); this contract does not define Phase 5 AI
+diagnostic packets or Phase 6 progressive regression.
 
 ## Ownership and execution boundary
 
