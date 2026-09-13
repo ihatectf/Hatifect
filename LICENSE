@@ -1,0 +1,334 @@
+HATIFECT PERSONAL USE LICENSE
+Version 2.0, 14 September 2026
+
+Copyright (c) 2026 ihatectf. All rights reserved.
+
+This is a source-available license. It is not an open-source license.
+
+1. Definitions
+
+"Licensor" means ihatectf, the copyright holder granting this License.
+
+"Individual" means a natural person acting solely in that person's personal
+capacity and not on behalf of, at the direction of, or for the benefit of any
+company, employer, client, partnership, association, government, school,
+university, laboratory, nonprofit, or other organization.
+
+"Official Repository" means the public GitHub repository that the Licensor
+identifies as the canonical repository for Hatifect.
+
+"Software" means the copyrightable source code, object code, binaries, assets,
+documentation, and other materials contained in the Official Repository, and
+builds and Modifications of those materials, but only to the extent owned by or
+licensable by the Licensor. Software does not include Third-Party Components or
+User Materials.
+
+"Third-Party Component" means any material identified as being governed by a
+license or rights holder other than the Licensor. Third-Party Components remain
+subject exclusively to their applicable terms.
+
+"User Materials" means an Individual's original configurations, save data,
+logs, reports, recordings, and other content created through use of the
+Software, except for any Software or copyrightable Hatifect material included
+in them.
+
+"Modification" means any adaptation, alteration, translation, arrangement, or
+other derivative work of the Software that requires copyright permission.
+
+"Private Use" means use solely by one Individual, on that Individual's own
+devices or through an Authorized Service Provider, without access by any other
+person except the provider's systems and personnel to the minimum extent
+necessary to provide the authorized service, and without any Commercial,
+Professional, or Organizational Use.
+
+"Commercial Use" means use intended for or directed toward commercial
+advantage, monetary compensation, revenue generation, sale, licensing, or the
+provision of paid goods or services. Creation and ordinary monetization of
+Permitted Media under Section 5 is not Commercial Use of the Software.
+
+"Professional Use" means use in carrying out employment, contract work,
+consulting, a trade, or a profession, whether or not compensation is received
+for the particular use.
+
+"Organizational Use" means use by, for, at the direction of, or for the benefit
+of any legal entity, group, institution, employer, client, school, university,
+laboratory, nonprofit, government, or other organization.
+
+"Authorized Service Provider" means a storage, backup, build, or artificial-
+intelligence service used only as a technical processor on behalf of the
+Individual, with access restricted to what is reasonably necessary to provide
+that service. An artificial-intelligence service qualifies only if its terms or
+applicable settings prohibit use of the submitted Software to train, retrain,
+fine-tune, evaluate, or improve any model other than transient processing
+strictly necessary to respond to the Individual.
+
+"Contribution" means code, documentation, assets, or another Modification
+intentionally submitted to the Official Repository through an Issue, feature
+branch, or pull request under Section 6.
+
+"Accepted Contribution" means a Contribution merged into a branch of the
+Official Repository by the Licensor or by a person expressly authorized by the
+Licensor to perform that merge.
+
+"Permitted Media" means screenshots, video, livestreams, reviews, commentary,
+and demonstrations depicting the Software or its operation, but not material
+that contains substantial source code or makes protected Hatifect assets
+available for extraction or reuse other than as incidental to the depiction.
+
+2. Limited personal-use permission
+
+Subject to every term of this License, the Licensor grants an Individual a
+limited, worldwide, royalty-free, non-exclusive, non-transferable, and non-
+sublicensable permission, for the duration of copyright unless terminated, to:
+
+- view the Software in the Official Repository;
+- download the Software and keep private copies on the Individual's own
+  devices;
+- keep access-controlled copies with an Authorized Service Provider solely for
+  private storage or backup;
+- privately reproduce, modify, commit, compile, test, and run the Software for
+  the Individual's personal, non-commercial purposes, including personal
+  learning, research, and benchmarking; and
+- provide only the portions reasonably necessary to an Authorized Service
+  Provider for those permitted purposes.
+
+An Authorized Service Provider receives no independent license or right in the
+Software. The Individual is responsible for the provider's compliance and must
+remove provider-held copies when they are no longer reasonably needed.
+
+3. GitHub platform and contribution permission
+
+GitHub's terms for public repositories may grant Users rights to view and fork
+public repository content through GitHub's functionality. Nothing in this
+License restricts rights granted directly by GitHub or by applicable law.
+
+In addition, an Individual may use GitHub to create a fork, feature branch,
+commits, and a pull request containing Modifications, solely and reasonably as
+necessary to propose a Contribution to the Official Repository. This permission
+includes the public display and reproduction inherent in that GitHub workflow.
+It does not permit releases, packages, mirrors, GitHub Pages deployments,
+standalone patch archives, binary distributions, or publication on another
+service or repository.
+
+The Individual may not commit directly to a protected primary branch of the
+Official Repository unless the Licensor has expressly granted that access.
+Granting branch access does not grant authority to merge a pull request.
+
+4. Issues and technical discussion
+
+An Individual may open and participate in Issues in the Official Repository and
+may include descriptions, reasonably limited diagnostic logs, screenshots, and
+the minimum source-code excerpts necessary to explain a problem. Secrets,
+credentials, personal data, and unrelated confidential information must be
+removed. Full modified files, complete patches, and substantial portions of the
+Software must be submitted through the contribution workflow in Section 3, not
+through an Issue.
+
+Security vulnerabilities are governed by Section 9 and must not be reported in
+a public Issue before coordinated disclosure is permitted.
+
+5. Permitted Media and attribution
+
+An Individual may create, publish, and monetize Permitted Media. Monetization
+may include platform advertising, sponsorships, subscriptions, and donations,
+provided that the Permitted Media is not used to sell the Software, provide
+paid access to the Software, or distribute any copy or Modification.
+Notwithstanding the definitions and restrictions concerning Commercial Use and
+Professional Use, creating and monetizing Permitted Media in compliance with
+this Section is expressly permitted. This exception does not authorize
+Organizational Use of the Software.
+
+Every publication of Permitted Media must include, in a reasonably prominent
+location such as its description or credits:
+
+- the name "Hatifect";
+- the name "ihatectf" as the project author; and
+- a working link to the Official Repository, where the format supports links.
+
+This permission does not grant any right to imply sponsorship, endorsement, or
+affiliation with the Licensor.
+
+6. Contributions
+
+6.1 Submission and review
+
+By intentionally submitting a Contribution, the contributor represents that
+the contributor has the legal right to submit it, that it does not knowingly
+contain another person's confidential information, and that all included
+Third-Party Components and applicable license terms have been clearly
+identified.
+
+Until a Contribution is accepted, the contributor grants the Licensor a
+worldwide, royalty-free, non-exclusive license to host, reproduce, display,
+test, analyze, comment on, and modify the Contribution solely for review and
+evaluation. The contributor may withdraw an unaccepted Contribution by closing
+the pull request and clearly notifying the Licensor before merge. Withdrawal
+ends this review license prospectively, but does not require deletion of GitHub
+records, backups, discussions, or copies that GitHub may lawfully retain under
+its terms.
+
+6.2 Accepted Contributions
+
+Upon merge, the contributor retains copyright in the contributor's original
+material and grants the Licensor a perpetual, worldwide, royalty-free, fully
+paid-up, non-exclusive, irrevocable, transferable, and sublicensable copyright
+license to use, reproduce, modify, prepare derivative works of, combine,
+publicly display, publicly perform, distribute, make available, commercialize,
+and license or relicense the Accepted Contribution, in source or object form,
+under any terms chosen by the Licensor.
+
+The contributor also grants the Licensor and recipients of software authorized
+by the Licensor a perpetual, worldwide, royalty-free, fully paid-up, non-
+exclusive, irrevocable patent license to make, have made, use, offer to sell,
+sell, import, and otherwise transfer the Accepted Contribution, but only under
+patent claims controlled by the contributor that are necessarily infringed by
+the Accepted Contribution alone or by its combination with the Software to
+which it was submitted. This patent license terminates for a contributor who
+initiates patent litigation alleging that the Software or the Accepted
+Contribution infringes a patent.
+
+The Licensor will use reasonable efforts to preserve contributor authorship in
+Git commit metadata. The Licensor may squash, rebase, edit, combine, or
+relicense commits and is not required to provide attribution elsewhere.
+
+6.3 Acceptance control
+
+The Licensor alone decides whether, when, and in what form to accept, modify,
+reject, or close a Contribution. Submission creates no obligation to respond,
+provide reasons, merge the Contribution, or continue development.
+
+If a Contribution is withdrawn or rejected, the contributor retains rights in
+the contributor's original material. The contributor receives no additional
+right to distribute, publish, or use Hatifect-derived material outside the
+permissions of this License.
+
+7. Restrictions
+
+Except where this License expressly permits otherwise, and without the
+Licensor's prior written permission, you may not:
+
+- share, distribute, publish, mirror, re-upload, transmit, sublicense, sell,
+  rent, lend, or otherwise make any part of the Software available to another
+  person, organization, service, or repository, publicly or privately;
+- distribute source code, binaries, packages, archives, Modifications,
+  derivative works, or standalone patch or diff files;
+- copy or incorporate any part of the Software into another project, product,
+  service, library, mod, dataset, publication, or training corpus;
+- engage in Commercial, Professional, Organizational, hosted, service-
+  provision, or paid-access use of the Software;
+- use the Software to train, retrain, fine-tune, evaluate, benchmark, validate,
+  or improve an artificial-intelligence or machine-learning model, or include
+  it in a dataset for those purposes;
+- use an artificial-intelligence service whose terms or settings allow the
+  Software to be retained or used for model training or improvement;
+- reverse engineer, decompile, or disassemble distributed binaries, except to
+  the extent such a restriction is prohibited by applicable law;
+- remove, conceal, or alter a copyright, attribution, license, or Third-Party
+  Component notice; or
+- claim ownership or authorship of Hatifect, or represent that the Licensor
+  sponsors, endorses, or is affiliated with you.
+
+No permission is granted by implication, estoppel, exhaustion, or otherwise.
+Any non-waivable right or exception under applicable law remains unaffected.
+
+8. Ownership and third-party rights
+
+The Software is licensed, not sold. The Licensor retains all copyright and
+other intellectual-property rights in the Software that are not expressly
+granted by this License. Hatifect names, logos, and branding are not licensed
+except for nominative identification and the attribution required by Section 5.
+
+The Licensor claims no ownership of User Materials. To the extent User Materials
+contain Software or protected Hatifect elements, those elements remain governed
+by this License, including the Permitted Media exception where applicable.
+
+Third-Party Components are excluded from this License and remain governed by
+their own licenses and notices. If this License conflicts with a Third-Party
+Component's license, the third-party license controls for that component. A
+listing or omission in THIRD_PARTY_NOTICES does not replace the applicable
+third-party terms.
+
+9. Coordinated security disclosure
+
+An Individual may privately investigate the Software for security
+vulnerabilities within the permissions of this License. A vulnerability must be
+reported through the private security-reporting channel identified in the
+Official Repository, or through another private contact method designated by
+the Licensor.
+
+Public disclosure is permitted on the earlier of:
+
+- the Licensor's public release of a fix;
+- the Licensor's written authorization; or
+- 90 days after the Licensor receives a sufficiently detailed private report
+  that reasonably enables investigation of the vulnerability.
+
+Disclosure must be limited to what is reasonably necessary to explain and
+verify the vulnerability and must not include unrelated or excessive portions
+of the Software. Nothing in this Section restricts a disclosure required by
+applicable law, but advance notice to the Licensor must be given when legally
+permitted.
+
+10. Version-specific terms
+
+The version of this License included with a particular release of the Software
+continues to govern that release. A later license version does not apply to an
+earlier release unless the Licensor expressly grants that option in writing.
+
+11. Termination and reinstatement
+
+The permissions granted by this License terminate automatically and immediately
+upon breach.
+
+For the Individual's first breach of this License, the permissions are
+automatically reinstated if the Individual fully ceases and cures the breach
+within 30 days after first becoming aware of it, including through notice from
+the Licensor. This automatic reinstatement is available only once. A later
+breach terminates the permissions permanently unless the Licensor expressly
+reinstates them in writing.
+
+Upon an effective termination, the Individual must stop using the Software and
+delete copies under the Individual's control, except for records retained by
+GitHub under its terms, material that applicable law requires to be retained,
+and Accepted Contributions already licensed under Section 6.2. Any retained
+material may not be used except as applicable law permits.
+
+12. No warranty, support, or updates
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITHOUT WARRANTY OF ANY
+KIND, EXPRESS, IMPLIED, OR STATUTORY, INCLUDING WARRANTIES OF TITLE, NON-
+INFRINGEMENT, MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY,
+SECURITY, OR ERROR-FREE OPERATION. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE
+INDIVIDUAL ASSUMES ALL RISK ARISING FROM POSSESSION, BUILDING, MODIFICATION, OR
+USE OF THE SOFTWARE.
+
+THE LICENSOR HAS NO OBLIGATION TO PROVIDE SUPPORT, MAINTENANCE, DOCUMENTATION,
+UPDATES, SECURITY FIXES, COMPATIBILITY, OR CONTINUED AVAILABILITY.
+
+13. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE LICENSOR IS NOT LIABLE UNDER ANY
+LEGAL THEORY FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR LOSS OF DATA, PROFITS, REVENUE,
+GOODWILL, BUSINESS, OR USE, ARISING FROM OR RELATED TO THE SOFTWARE, THIS
+LICENSE, OR THE INABILITY TO USE THE SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGES.
+
+14. Additional permission
+
+Permission beyond this License must be granted expressly and in writing by the
+Licensor. A signed electronic document or a specific electronic message clearly
+identifying the permission and its recipient may qualify. A separate written
+agreement or permission controls to the extent it expressly conflicts with this
+License.
+
+15. General terms
+
+If any provision of this License is held unenforceable, it will be limited or
+removed only to the minimum extent necessary, and the remaining provisions will
+remain effective. Failure to enforce a provision is not a waiver. Headings are
+for convenience and do not affect interpretation.
+
+This License and any applicable written permission under Section 14 state the
+entire permission granted by the Licensor for the Software. Exercise of a
+permission granted by this License constitutes acceptance of its conditions.

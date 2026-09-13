@@ -1,0 +1,28 @@
+<Solution>
+  <Project Path="Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/Hatifect.ChestsAnywhereOverlay.UI.Semantic/Hatifect.ChestsAnywhereOverlay.UI.Semantic.csproj" />
+  <Project Path="Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/Hatifect.ChestsAnywhereOverlay.csproj" />
+  <Project Path="Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/tests/Hatifect.ChestsAnywhereOverlay.Tests/Hatifect.ChestsAnywhereOverlay.Tests.csproj" />
+  <Project Path="Hatifect Flow/Hatifect.Flow.Core/Hatifect.Flow.Core.csproj" />
+  <Project Path="Hatifect Flow/Hatifect.Flow.Persistence/Hatifect.Flow.Persistence.csproj" />
+  <Project Path="Hatifect Flow/Hatifect.Flow.UI.Semantic/Hatifect.Flow.UI.Semantic.csproj" />
+  <Project Path="Hatifect Flow/Hatifect.Flow.csproj" />
+  <Project Path="Hatifect Flow/tests/Hatifect.Flow.Tests/Hatifect.Flow.Tests.csproj" />
+  <Project Path="Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/Hatifect.Flow.Stardew.Tests.csproj" />
+  <Project Path="Hatifect UI/Hatifect.UI.DevTools/Hatifect.UI.DevTools.csproj" />
+  <Project Path="Hatifect UI/Hatifect.UI.Experience/Hatifect.UI.Experience.csproj" />
+  <Project Path="Hatifect UI/Hatifect.UI.Language/Hatifect.UI.Language.csproj" />
+  <Project Path="Hatifect UI/Hatifect.UI.Planning/Hatifect.UI.Planning.csproj" />
+  <Project Path="Hatifect UI/Hatifect.UI.Runtime/Hatifect.UI.Runtime.csproj" />
+  <Project Path="Hatifect UI/Hatifect.UI.Semantics/Hatifect.UI.Semantics.csproj" />
+  <Project Path="Hatifect UI/Hatifect.UI.Stardew/Hatifect.UI.Stardew.csproj" />
+  <Project Path="Hatifect UI/Hatifect.UI.Tooling.Server/Hatifect.UI.Tooling.Server.csproj" />
+  <Project Path="Hatifect UI/Hatifect.UI.Tooling/Hatifect.UI.Tooling.csproj" />
+  <Project Path="Hatifect UI/examples/Hatifect.UI.Examples/Hatifect.UI.Examples.csproj" />
+  <Project Path="Hatifect UI/tests/Hatifect.UI.DevTools.Tests/Hatifect.UI.DevTools.Tests.csproj" />
+  <Project Path="Hatifect UI/tests/Hatifect.UI.Planning.Tests/Hatifect.UI.Planning.Tests.csproj" />
+  <Project Path="Hatifect UI/tests/Hatifect.UI.Stardew.Tests/Hatifect.UI.Stardew.Tests.csproj" />
+  <Project Path="Hatifect UI/tests/Hatifect.UI.Runtime.Tests/Hatifect.UI.Runtime.Tests.csproj" />
+  <Project Path="Hatifect UI/tests/Hatifect.UI.Semantics.Tests/Hatifect.UI.Semantics.Tests.csproj" />
+  <Project Path="Hatifect UI/tests/Hatifect.UI.Tooling.Server.Tests/Hatifect.UI.Tooling.Server.Tests.csproj" />
+  <Project Path="Hatifect UI/tests/Hatifect.UI.Tooling.Tests/Hatifect.UI.Tooling.Tests.csproj" />
+</Solution>

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+
+build_dotnet="$(resolve_build_dotnet)"
+test_dotnet="$(resolve_test_dotnet)"
+
+exec python3 "$TOOLS_DIR/ui_ca_isolation.py" run \
+  --build-dotnet "$build_dotnet" \
+  --test-dotnet "$test_dotnet" \
+  "$@"

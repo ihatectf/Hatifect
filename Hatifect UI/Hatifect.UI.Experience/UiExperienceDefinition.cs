@@ -1,0 +1,103 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using Hatifect.UI.Semantics;
+
+namespace Hatifect.UI.Experience;
+
+public sealed record UiSemanticElementDefinition(
+    UiSymbolId Id,
+    string Name,
+    IUiSemanticSource Source,
+    IReadOnlyList<UiCapability> Capabilities)
+{
+    public string Alias { get; init; } = Name;
+    public string Label => Name;
+    public UiDataType? DataType { get; init; }
+    public IReadOnlyList<UiProjectionInput> Inputs { get; init; } = Array.Empty<UiProjectionInput>();
+}
+
+public sealed record UiVisualRoleDefinition(UiSymbolId Id, string Name);
+
+public sealed class UiExperienceDefinition
+{
+    internal UiExperienceDefinition(
+        UiSymbolId id,
+        string displayName,
+        UiSemanticElementDefinition[] elements,
+        UiActionDefinition[] actions,
+        UiVisualRoleDefinition[] visualRoles,
+        UiSemanticElementDefinition[] sources,
+        UiSemanticGraph graph,
+        UiLocalizedText? localizedDisplayName,
+        IDictionary<UiSymbolId, UiLocalizedText> localizedElementLabels,
+        IDictionary<UiSymbolId, UiLocalizedText> localizedActionTitles,
+        IDictionary<UiSymbolId, UiLocalizedText> tooltips,
+        IDictionary<UiSymbolId, IUiTextFormatter> textFormatters)
+    {
+        Id = id;
+        DisplayName = displayName;
+        Elements = Array.AsReadOnly(elements);
+        Actions = Array.AsReadOnly(actions);
+        VisualRoles = Array.AsReadOnly(visualRoles);
+        Sources = Array.AsReadOnly(sources);
+        Graph = graph;
+        LocalizedDisplayName = localizedDisplayName;
+        LocalizedElementLabels = new ReadOnlyDictionary<UiSymbolId, UiLocalizedText>(new Dictionary<UiSymbolId, UiLocalizedText>(localizedElementLabels));
+        LocalizedActionTitles = new ReadOnlyDictionary<UiSymbolId, UiLocalizedText>(new Dictionary<UiSymbolId, UiLocalizedText>(localizedActionTitles));
+        Tooltips = new ReadOnlyDictionary<UiSymbolId, UiLocalizedText>(new Dictionary<UiSymbolId, UiLocalizedText>(tooltips));
+        _textFormatters = new Dictionary<UiSymbolId, IUiTextFormatter>(textFormatters);
+    }
+
+    public UiSymbolId Id { get; }
+    public string DisplayName { get; }
+    public IReadOnlyList<UiSemanticElementDefinition> Elements { get; }
+    public IReadOnlyList<UiActionDefinition> Actions { get; }
+    public IReadOnlyList<UiVisualRoleDefinition> VisualRoles { get; }
+    public IReadOnlyList<UiSemanticElementDefinition> Sources { get; }
+    public UiSemanticGraph Graph { get; }
+    public UiLocalizedText? LocalizedDisplayName { get; }
+    public IReadOnlyDictionary<UiSymbolId, UiLocalizedText> LocalizedElementLabels { get; }
+    public IReadOnlyDictionary<UiSymbolId, UiLocalizedText> LocalizedActionTitles { get; }
+    public IReadOnlyDictionary<UiSymbolId, UiLocalizedText> Tooltips { get; }
+    private readonly Dictionary<UiSymbolId, IUiTextFormatter> _textFormatters;
+
+    internal string DisplayNameFor(string locale) => LocalizedDisplayName?.Resolve(locale) ?? DisplayName;
+    internal string ElementLabelFor(UiSemanticElementDefinition element, string locale)
+        => LocalizedElementLabels.TryGetValue(element.Id, out var text) ? text.Resolve(locale) : element.Label;
+    internal string ActionTitleFor(UiActionDefinition action, string locale)
+        => LocalizedActionTitles.TryGetValue(action.Id, out var text) ? text.Resolve(locale) : action.Title;
+    internal string? TooltipFor(UiSymbolId target, string locale)
+        => Tooltips.TryGetValue(target, out var text) ? text.Resolve(locale) : null;
+    internal bool HasTextFormatter(UiSymbolId element) => _textFormatters.ContainsKey(element);
+    internal string? FormatText(UiSymbolId element, object? capturedValue, string capturedLocale)
+    {
+        if (!_textFormatters.TryGetValue(element, out var formatter)) return null;
+        try
+        {
+            return formatter.Format(capturedValue, capturedLocale)
+                ?? throw new InvalidOperationException("The formatter returned null.");
+        }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException($"Text formatting failed for element '{element}' in locale '{capturedLocale}'.", error);
+        }
+    }
+
+    public UiBindingContext CreateBindingContext()
+    {
+        // V1 can express this exact independent legacy graph without losing information.
+        bool legacy = Graph.Relations.Count == 0 && Graph.Nodes.Count == Elements.Count
+            && Elements.All(element => element.DataType is null && element.Inputs.Count == 0
+                && element.Alias == element.Label && element.Id == Id.Child("element/" + element.Alias))
+            && VisualRoles.All(role => role.Id == Id.Child("role/" + role.Name));
+        if (!legacy) return new UiBindingContext(Graph);
+        var context = new UiBindingContext(Id);
+        foreach (UiSemanticElementDefinition element in Elements)
+            context.DeclareElement(element.Alias, element.Capabilities.Select(capability => capability.Id).ToArray());
+        foreach (UiVisualRoleDefinition role in VisualRoles)
+            context.DeclareRole(role.Name);
+        return context;
+    }
+}

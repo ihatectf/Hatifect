@@ -1,0 +1,22 @@
+{
+  "Name": "Hatifect Chests Anywhere Overlay",
+  "Author": "ihatectf",
+  "Version": "1.0.0-alpha.1",
+  "Description": "Optional Hatifect UI overlay for Chests Anywhere categories, favorites, recent storages, and native storage handoff.",
+  "UniqueID": "Hatifect.ChestsAnywhereOverlay",
+  "EntryDll": "Hatifect.ChestsAnywhereOverlay.dll",
+  "MinimumApiVersion": "4.5.2",
+  "MinimumGameVersion": "1.6.15",
+  "Dependencies": [
+    {
+      "UniqueID": "Hatifect.UI",
+      "IsRequired": true,
+      "MinimumVersion": "1.0.0-alpha.47"
+    },
+    {
+      "UniqueID": "Pathoschild.ChestsAnywhere",
+      "IsRequired": false,
+      "MinimumVersion": "1.30.1"
+    }
+  ]
+}

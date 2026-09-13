@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+
+test_root="$(resolve_smapi_test_root)"
+mods_dir="$test_root/Mods"
+config_root="$test_root/config"
+deployment_marker="$test_root/deployment.json"
+deployment_identity_marker="$test_root/deployment.identity.json"
+deployment_identity="$TOOLS_DIR/live-harness/deployment_identity.py"
+release_contract="$REPO_ROOT/Hatifect.Release.json"
+staging_root="$(mktemp -d "${TMPDIR:-/tmp}/hatifect-live-release.XXXXXX")"
+release_base="$staging_root/release"
+trap 'rm -rf "$staging_root"' EXIT
+build_dotnet="${HATIFECT_LIVE_DOTNET:-$(resolve_build_dotnet)}"
+test_dotnet="${HATIFECT_LIVE_TEST_DOTNET:-$(resolve_test_dotnet)}"
+run_tests="${HATIFECT_LIVE_RUN_HOST_FREE_TESTS:-0}"
+
+[[ -x "$build_dotnet" ]] || die "HATIFECT_LIVE_DOTNET is not executable: $build_dotnet"
+[[ -x "$test_dotnet" ]] || die "HATIFECT_LIVE_TEST_DOTNET is not executable: $test_dotnet"
+has_supported_test_toolchain "$build_dotnet" || \
+  die "HATIFECT_LIVE_DOTNET must provide .NET 8 SDK plus .NET 6 runtime."
+has_supported_test_toolchain "$test_dotnet" || \
+  die "HATIFECT_LIVE_TEST_DOTNET must provide .NET 8 SDK plus .NET 6 runtime."
+[[ "$run_tests" == "0" || "$run_tests" == "1" ]] || \
+  die "HATIFECT_LIVE_RUN_HOST_FREE_TESTS must be 0 or 1."
+
+mkdir -p "$mods_dir" "$config_root"
+rm -f -- "$deployment_marker" "$deployment_identity_marker"
+say "Preparing isolated semantic live deployment under $test_root"
+
+HATIFECT_DOTNET="$build_dotnet" \
+HATIFECT_TEST_DOTNET="$test_dotnet" \
+HATIFECT_MODS_DIR="$mods_dir" \
+HATIFECT_RELEASE_BASE="$release_base" \
+HATIFECT_SKIP_TESTS="$((1 - run_tests))" \
+HATIFECT_SKIP_DEPLOY="0" \
+"$REPO_ROOT/release.sh"
+repository_head="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+python3 "$deployment_identity" write "$deployment_identity_marker" \
+  --repository-head "$repository_head" \
+  --mods-root "$mods_dir" \
+  --contract "$release_contract"
+python3 "$TOOLS_DIR/live-harness/validate.py" write-deployment "$deployment_marker"
+
+say "Isolated deployment prepared."
+say "If no compatible isolated golden save exists, run ./tools/hatifect-smoke save.bootstrap."
+say "The harness never imports a real save and cleans only request-owned working copies."

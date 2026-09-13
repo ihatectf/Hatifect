@@ -1,0 +1,25 @@
+# U04/F12: отсутствующие глифы направления и многоточия
+
+Актуальный статус на 2026-09-08: **U04 owner DONE** на source `04def9e`; [итоговая приёмка](U04_ACCEPTANCE.md) подтверждена независимым GQ review восстановленных raw evidence. Общая alpha47 acceptance и полный F12 учитываются отдельно. Ниже сохранены исторические результаты GQ и владельца, включая прежние FAIL и утраченные временные артефакты; их IN_PROGRESS/PENDING не задают текущий статус U04.
+
+Ограниченное исправление прошло owner source/static/native acceptance; общая интеграция alpha.47 и полные U04/F12 — **IN_PROGRESS**. Actual Flow native ce8c996, request70bef1d0-6323-4ed1-811a-f00ecd42bcca выполнил15 automatic checks и19 observations; pixel review обнаружил route U+2192 как crossed/default glyph. Logical submitted Texts сохраняли стрелку и потому сами не доказывали правильную отрисовку. Заголовки/подписи из b8b97eb видимы, этот новый дефект находится в native text adapter.
+
+`UiSemanticSpriteBatchBridge.BuildLines` теперь проверяет наличие правой стрелки в выбранном SpriteFont. Если её нет, текст для drawing заменяет U+2192 на `->` до width measurement, wrapping и clipping. Если нет и ASCII-представления, adapter выдаёт capability error вместо несвязанного glyph. Если стрелка поддерживается, исходный glyph сохраняется. Ellipsis использует `…`, либо `...` при отсутствии glyph; отсутствие обоих вариантов становится ошибкой только когда truncation действительно нужна.
+
+Measure и DrawText используют существующий общий bounded512 text-layout cache. Преобразование происходит на cache miss; новые source reads, subscriptions, public contracts или consumer strings отсутствуют. Logical snapshot/accessibility и semantics направления не меняются. Это ограниченная fallback policy для right arrow и ellipsis, не обещание универсальной поддержки Unicode.
+
+## Проверки
+
+Тесты вызывают существующий private BuildLines через reflection и используют реальные SpriteFont glyph metrics с in-memory glyph tables; GraphicsDevice не требуется. Runtime internals/public API не расширялись. Первый fixture build run-l2fws667 выявил недоступный internal Runtime enum; тестовый вызов исправлен без изменений visibility. Actual RED run-nl8usht2 — **FAIL4/57**: отсутствующая стрелка, неправильная ширина переноса, отсутствующее многоточие и молчаливый fallback при невозможности передать направление. GREEN `./tools/hatifect-test ui --platform --project 'Hatifect UI/tests/Hatifect.UI.Stardew.Tests/Hatifect.UI.Stardew.Tests.csproj'`, run-v4_cllaw — **PASS59**,0fail/skip.
+
+Восемь новых cases проверяют missing/supported arrow, expanded-width Wrap, missing/supported ellipsis и нужную ширину, явный отказ для отсутствующего направления, отсутствие ellipsis fallback только при реальном truncation. Независимый review всех четырёх owner diff files — PASS. GQ проверил C `run-9yo9ww1z` — **PASS1548 .NET +373 Python** и G `run-o092r0zo` — **PASS1830 .NET +373 Python**, 17 actual TRX, восемь новых platform cases и два exact source postimages. UI package boundary не меняется; isolatedP90 предыдущего b8b97eb относится к неизменным UI package sources, новый native adapter проверяется G и свежим Flow runtime.
+
+## Свежая native-проверка и общая интеграция
+
+Source `04def9e302c89eb948219db99206b8733ce59f16` принят FLOWLINE как `5a404242e61d98853b7ce1f98b94fba5bca626ed`. Request `246b8118-e08e-4b47-bab8-9aa449cc7c79` — **PASS15**, process7304 exit0, 19 observations, шесть UI instances, четыре application owners, три load и два title. GQ просмотрел все 19 composed PNG: заголовки, пять подписей и значения видимы; в EN/RU и scale75/100/125/150 направление маршрута отображается как `->`. Snapshot сохраняет logical U+2192.
+
+Независимый аудит сверил все owner source postimages, 12 producer/deployed DLL, 38 PNG hashes и остальные request artifacts, accepted/rendered stamps, retirement, восстановленные options, удаление обеих owned save copies и неизменный golden. Fingerprint: `24cbc3cfe835f11d2c8157686c65a21bc3e69e00b90dc6f3fddf0cbb2f47cdf9`. Evidence GQ: `artifacts/alpha47-observation-preflight/glyph-source-review.json`, `glyph-c-audit.json`, `glyph-g-audit.json`, `artifacts/alpha47-flow-lifecycle-preflight/owner-glyph-native-audit.json`. Исторический visual FAIL на `70bef1d0` сохранён отдельно.
+
+Общий candidate поверх `e355323` получает exact два source/test postimages через `5a40424`; alpha.47 authorities сохраняются. Owner PASS не заменяет финальные общие C/G/P, native matrix и PERF. Результат не подтверждает физический контроллер, product persistence или универсальную поддержку Unicode.
+
+Проверка сохранности 2026-09-08: временные owner worktree исчезли. В постоянном worktree GQ сохранились выполненные audit JSON и hash inventories, но исходные owner C/G TRX и 19 native PNG сейчас недоступны. Приведённые выше PASS описывают фактически проверенный исторический прогон; они не заменяют свежую общую приёмку. Проверка наличия записана в `artifacts/alpha47-observation-preflight/glyph-evidence-retention-20260908.json`. Root raw C failure evidence сохранён.

@@ -1,0 +1,126 @@
+name: Hatifect CI
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hatifect-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+  DOTNET_NOLOGO: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  architecture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.inventory.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Validate current graph and tooling
+        run: python3 tools/validation.py static
+      - name: Generate complete host-free test matrix
+        id: inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          matrix="$(python3 tools/ci_contract.py matrix)"
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up pinned SDK and target runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: |
+            8.0.x
+            6.0.x
+      - name: Cache external NuGet dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('global.json', '**/*.csproj', '**/*.props', '**/*.targets', '**/packages.lock.json', '**/NuGet.config', '**/nuget.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+      - name: Build every current host-free project
+        run: python3 tools/validation.py build
+      - name: Preserve build evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: host-free-build
+          path: artifacts/validation/
+          if-no-files-found: error
+          retention-days: 14
+
+  tests:
+    name: test / ${{ matrix.id }}
+    needs: architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJSON(needs.architecture.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up pinned SDK and target runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: |
+            8.0.x
+            6.0.x
+      - name: Cache external NuGet dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('global.json', '**/*.csproj', '**/*.props', '**/*.targets', '**/packages.lock.json', '**/NuGet.config', '**/nuget.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+      - name: Run the registered test project and validate TRX
+        env:
+          TEST_PROJECT: ${{ matrix.project }}
+        run: ./tools/hatifect-test --project "$TEST_PROJECT"
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tests-${{ matrix.id }}
+          path: artifacts/validation/
+          if-no-files-found: error
+          retention-days: 14
+
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs: [architecture, build, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Require every job to succeed
+        env:
+          ARCHITECTURE_RESULT: ${{ needs.architecture.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+        run: >-
+          python3 tools/ci_contract.py gate
+          --architecture "$ARCHITECTURE_RESULT"
+          --build "$BUILD_RESULT"
+          --tests "$TESTS_RESULT"

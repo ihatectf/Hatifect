@@ -1,0 +1,65 @@
+{
+  "FormatVersion": 1,
+  "FormAuthoring": {
+    "Assembly": "Hatifect.UI.Experience",
+    "PublicTypes": [
+      "UiSemanticFormField",
+      "UiFormState"
+    ],
+    "Files": [
+      {
+        "Path": "State/UiSemanticFormSource.cs",
+        "Sha256": "c1d24638cd95c17cec49008ec922dddd6d7896b83cc1bd8c95cfb09147250fbf"
+      },
+      {
+        "Path": "UiExperienceBuilder.cs",
+        "Sha256": "d54db075c84bae6603977c74e7fe8aa499734d4e743766ceb626634398b7e90f"
+      }
+    ]
+  },
+  "SemanticSurface": {
+    "Assembly": "Hatifect.UI.Experience",
+    "ContractVersion": "1.0.0-alpha.47",
+    "ApiVersion": 1,
+    "Policy": "consumer-source-freeze",
+    "PublicTypes": [
+      "UiSemanticSurfaceOptions",
+      "IUiSemanticSurfaceSession",
+      "IUiSemanticSurfaceApi",
+      "UiSemanticSurfaceCancelInput",
+      "IUiAutomatedAcceptanceContext",
+      "UiAutomatedAcceptanceScenario",
+      "IUiSemanticSurfaceAutomation"
+    ],
+    "Files": [
+      {
+        "Path": "Hosting/UiSemanticSurfaceContracts.cs",
+        "Sha256": "943f221dd12aff37cb585badde178f98c82f7e0788072182d3d5ec297c5717e3"
+      }
+    ]
+  },
+  "SurfaceObservation": {
+    "Assembly": "Hatifect.UI.Experience",
+    "Policy": "optional-exact-harness-facet",
+    "PublicTypes": [
+      "IUiSemanticSurfaceObservationApi",
+      "IUiSemanticSurfaceObservation",
+      "UiSemanticSurfaceFrame",
+      "UiSemanticSurfaceElement",
+      "UiSemanticSurfaceText",
+      "UiSemanticSurfaceSnapshot",
+      "IUiSemanticSurfaceActionAutomationApi",
+      "IUiSemanticSurfaceActionAutomation"
+    ],
+    "Files": [
+      {
+        "Path": "Hosting/UiSemanticSurfaceObservation.cs",
+        "Sha256": "39c106399db08d96cb32dbe6ec4756cd938853ee3f29a03cd53a4035293bb1cc"
+      },
+      {
+        "Path": "Hosting/UiSemanticSurfaceActionAutomation.cs",
+        "Sha256": "db508259ea92f4f9076fbd4dcc318f5bca0ea44d99facee59a03a0f8515d3da4"
+      }
+    ]
+  }
+}

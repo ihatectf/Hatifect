@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>Hatifect.UI.Runtime.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Hatifect.UI.Experience/Hatifect.UI.Experience.csproj" />
+    <ProjectReference Include="../../Hatifect.UI.Planning/Hatifect.UI.Planning.csproj" />
+    <ProjectReference Include="../../Hatifect.UI.Runtime/Hatifect.UI.Runtime.csproj" />
+    <ProjectReference Include="../../Hatifect.UI.Semantics/Hatifect.UI.Semantics.csproj" />
+    <ProjectReference Include="../../Hatifect.UI.Tooling/Hatifect.UI.Tooling.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiAutomatedAcceptanceCheckLedger.cs"
+             Link="Stardew/UiAutomatedAcceptanceCheckLedger.cs" />
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiAutomatedAcceptanceScenarioRegistry.cs"
+             Link="Stardew/UiAutomatedAcceptanceScenarioRegistry.cs" />
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiRuntimeFingerprint.cs"
+             Link="Stardew/UiRuntimeFingerprint.cs" />
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiRenderedStateGate.cs"
+             Link="Stardew/UiRenderedStateGate.cs" />
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiNativePresentationGate.cs"
+             Link="Stardew/UiNativePresentationGate.cs" />
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiNativeInputGate.cs"
+             Link="Stardew/UiNativeInputGate.cs" />
+  </ItemGroup>
+</Project>

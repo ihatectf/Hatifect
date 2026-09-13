@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.Flow.Core</AssemblyName>
+    <RootNamespace>Hatifect.Flow</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hatifect.Flow" />
+    <InternalsVisibleTo Include="Hatifect.Flow.Persistence" />
+    <InternalsVisibleTo Include="Hatifect.Flow.Tests" />
+    <InternalsVisibleTo Include="Hatifect.Flow.Stardew.Tests" />
+    <InternalsVisibleTo Include="Hatifect.Flow.UI.Semantic" />
+  </ItemGroup>
+</Project>

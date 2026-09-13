@@ -1,0 +1,57 @@
+<Project>
+  <!-- Shared build/deploy contract for first-party Hatifect modules in the common source tree. -->
+  <PropertyGroup>
+    <!-- This file is explicitly imported in each mod project body, before SDK targets.
+         Match ModBuildConfig's embedded mode before the SDK infers standalone PDB outputs. -->
+    <DebugType>embedded</DebugType>
+    <HatifectInstallRootName Condition="'$(HatifectInstallRootName)' == ''">Hatifect</HatifectInstallRootName>
+    <HatifectModuleContentRoot Condition="'$(HatifectModuleContentRoot)' == ''">$(MSBuildProjectDirectory)</HatifectModuleContentRoot>
+  </PropertyGroup>
+
+  <Target Name="DeployHatifectModule">
+    <Error Condition="'$(HatifectInstallRelativePath)' == ''" Text="HatifectInstallRelativePath is required for DeployHatifectModule in $(MSBuildProjectName)." />
+    <Error Condition="'$(HatifectDeployRoot)' == ''" Text="HatifectDeployRoot is required for DeployHatifectModule in $(MSBuildProjectName)." />
+
+    <PropertyGroup>
+      <_HatifectModuleDeployDir>$(HatifectDeployRoot)/$(HatifectInstallRelativePath)</_HatifectModuleDeployDir>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(_HatifectModuleDeployDir)" />
+
+    <!-- Refresh source-owned runtime files without deleting config/data/exports. -->
+    <RemoveDir Directories="$(_HatifectModuleDeployDir)/assets" Condition="Exists('$(_HatifectModuleDeployDir)/assets')" />
+    <RemoveDir Directories="$(_HatifectModuleDeployDir)/i18n" Condition="Exists('$(_HatifectModuleDeployDir)/i18n')" />
+
+    <ItemGroup>
+      <_HatifectModuleRootFile Include="$(HatifectModuleContentRoot)/manifest.json" Condition="Exists('$(HatifectModuleContentRoot)/manifest.json')" />
+      <_HatifectModuleRootFile Include="$(HatifectModuleContentRoot)/README.md" Condition="Exists('$(HatifectModuleContentRoot)/README.md')" />
+      <_HatifectModuleRootFile Include="$(HatifectModuleContentRoot)/LICENSE" Condition="Exists('$(HatifectModuleContentRoot)/LICENSE')" />
+      <_HatifectModuleAsset Include="$(HatifectModuleContentRoot)/assets/**/*"
+                       Exclude="$(HatifectModuleContentRoot)/assets/**/README.md;$(HatifectModuleContentRoot)/assets/**/.DS_Store"
+                       Condition="Exists('$(HatifectModuleContentRoot)/assets')" />
+      <_HatifectModuleI18n Include="$(HatifectModuleContentRoot)/i18n/**/*"
+                      Exclude="$(HatifectModuleContentRoot)/i18n/**/README.md;$(HatifectModuleContentRoot)/i18n/**/.DS_Store"
+                      Condition="Exists('$(HatifectModuleContentRoot)/i18n')" />
+    </ItemGroup>
+
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(_HatifectModuleDeployDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(HatifectRuntimeFile)" DestinationFolder="$(_HatifectModuleDeployDir)" SkipUnchangedFiles="true" Condition="'@(HatifectRuntimeFile)' != ''" />
+    <Copy SourceFiles="@(_HatifectModuleRootFile)" DestinationFolder="$(_HatifectModuleDeployDir)" SkipUnchangedFiles="true" Condition="'@(_HatifectModuleRootFile)' != ''" />
+    <Copy SourceFiles="@(_HatifectModuleAsset)"
+          DestinationFiles="@(_HatifectModuleAsset->'$(_HatifectModuleDeployDir)/assets/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_HatifectModuleAsset)' != ''" />
+    <Copy SourceFiles="@(_HatifectModuleI18n)"
+          DestinationFiles="@(_HatifectModuleI18n->'$(_HatifectModuleDeployDir)/i18n/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_HatifectModuleI18n)' != ''" />
+
+    <!-- Seed defaults only on a clean install; never overwrite the user's live config. -->
+    <Copy SourceFiles="$(HatifectModuleContentRoot)/config.json"
+          DestinationFiles="$(_HatifectModuleDeployDir)/config.json"
+          Condition="Exists('$(HatifectModuleContentRoot)/config.json') and !Exists('$(_HatifectModuleDeployDir)/config.json')" />
+
+
+    <Message Importance="high" Text="Hatifect deploy: $(MSBuildProjectName) -> $(_HatifectModuleDeployDir)" />
+  </Target>
+</Project>

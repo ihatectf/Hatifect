@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+scenario="${1:-}"
+if [[ $# -eq 1 && ( "$scenario" == "--help" || "$scenario" == "-h" ) ]]; then
+  printf '%s\n' "Usage: ./tools/hatifect-ui-test <scenario-id|all>"
+  exit 0
+fi
+if [[ $# -ne 1 || -z "$scenario" || "$scenario" == -* ]]; then
+  printf '%s\n' "ERROR: Usage: ./tools/hatifect-ui-test <scenario-id|all>" >&2
+  exit 2
+fi
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+need_cmd python3
+
+run_dir="$(new_runtime_run_dir)"
+result="$run_dir/result.json"
+validator="$TOOLS_DIR/live-harness/validate.py"
+
+say "Hatifect UI TEST"
+say "Scenario: $scenario"
+say "Artifacts: $run_dir"
+
+if ! python3 "$validator" check-scenario ui "$scenario" >/dev/null; then
+  python3 "$validator" write-result FAIL "$scenario" "$result" \
+    "Unknown or invalid UI scenario." \
+    --run-id "$(basename "$run_dir")" \
+    --assertion-id HARNESS-SCENARIO \
+    --artifact-root "$run_dir"
+  exit 1
+fi
+
+say "Preparing required isolated build and deployment..."
+set +e
+"$TOOLS_DIR/hatifect-live-prepare" >"$run_dir/prepare.log" 2>&1
+prepare_rc=$?
+set -e
+if [[ $prepare_rc -ne 0 ]]; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "Isolated build/deployment preparation exited $prepare_rc; inspect prepare.log." \
+    --run-id "$(basename "$run_dir")" \
+    --assertion-id HARNESS-PREPARE \
+    --exception-type ProcessExit \
+    --artifact-root "$run_dir"
+  say "RESULT: BLOCKED (preparation exited $prepare_rc)"
+  exit 2
+fi
+
+set +e
+"$TOOLS_DIR/hatifect-live-runner" ui "$scenario" "$result" "$run_dir"
+runner_rc=$?
+set -e
+
+if [[ ! -f "$result" ]]; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "UI runner exited $runner_rc and produced no result.json." \
+    --run-id "$(basename "$run_dir")" \
+    --assertion-id HARNESS-RESULT-MISSING \
+    --exception-type ProcessExit \
+    --artifact-root "$run_dir"
+  exit 2
+fi
+
+if ! validate_result_json "$result" "$scenario"; then
+  mv "$result" "$run_dir/runner-result.invalid.json"
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "UI runner produced malformed or mismatched result evidence." \
+    --run-id "$(basename "$run_dir")" \
+    --assertion-id HARNESS-RESULT-INVALID \
+    --artifact-root "$run_dir"
+  exit 2
+fi
+status="$(python3 "$validator" validate-result "$result" "$scenario" --field status)"
+case "$status" in
+  PASS)
+    if [[ $runner_rc -ne 0 ]]; then
+      mv "$result" "$run_dir/runner-result.conflicting.json"
+      python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+        "UI runner exited $runner_rc despite reporting PASS." \
+        --run-id "$(basename "$run_dir")" \
+        --assertion-id HARNESS-RESULT-CONFLICT \
+        --exception-type ProcessExit \
+        --artifact-root "$run_dir"
+      say "RESULT: BLOCKED (runner exit $runner_rc conflicts with PASS evidence)"
+      exit 2
+    fi
+    say "RESULT: PASS"
+    ;;
+  FAIL)
+    say "RESULT: FAIL"
+    exit 1
+    ;;
+  BLOCKED)
+    say "RESULT: BLOCKED"
+    exit 2
+    ;;
+esac

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.ChestsAnywhereOverlay.UI.Semantic</AssemblyName>
+    <RootNamespace>Hatifect.ChestsAnywhereOverlay.UI.Semantic</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0-alpha.1</Version>
+    <HatifectUiPackageConsumer>true</HatifectUiPackageConsumer>
+  </PropertyGroup>
+  <Import Project="../../../../Hatifect.UI.Packages.props" />
+  <ItemGroup>
+    <PackageReference Include="Hatifect.UI.Experience"
+                      Version="[$(HatifectUiPackageVersion)]"
+                      IncludeAssets="compile"
+                      PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hatifect.ChestsAnywhereOverlay" />
+    <InternalsVisibleTo Include="Hatifect.ChestsAnywhereOverlay.Tests" />
+  </ItemGroup>
+</Project>

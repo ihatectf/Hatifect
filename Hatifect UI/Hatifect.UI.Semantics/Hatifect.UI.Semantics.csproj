@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.UI.Semantics</AssemblyName>
+    <RootNamespace>Hatifect.UI.Semantics</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0-alpha.47</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Hatifect.UI.Language/Hatifect.UI.Language.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hatifect.UI.Tooling" />
+  </ItemGroup>
+  <PropertyGroup><HatifectUiPackageProducer>true</HatifectUiPackageProducer></PropertyGroup>
+  <Import Project="../../Hatifect.UI.Packages.props" />
+</Project>

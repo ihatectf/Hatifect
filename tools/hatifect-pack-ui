@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+
+host_free=0
+if [[ "${1:-}" == "--host-free" ]]; then
+  host_free=1
+  shift
+fi
+[[ $# -le 1 ]] || die "Usage: hatifect-pack-ui [--host-free] [new-feed-directory]"
+feed="${1:-$REPO_ROOT/artifacts/ui-packages}"
+feed="$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$feed")"
+default_feed="$REPO_ROOT/artifacts/ui-packages"
+project_command=(python3 "$TOOLS_DIR/ui_packages.py" list-projects)
+verify_command=(python3 "$TOOLS_DIR/ui_packages.py" verify-feed "$feed")
+if [[ "$host_free" == "1" ]]; then
+  project_command+=(--host-free)
+  verify_command+=(--host-free)
+fi
+
+if [[ "$feed" == "$default_feed" ]]; then
+  rm -rf -- "$feed"
+  rm -rf -- "$REPO_ROOT/artifacts/ui-consumer-packages"
+elif [[ -e "$feed" ]]; then
+  die "Custom UI feed must not already exist: $feed"
+fi
+mkdir -p "$feed"
+
+python3 "$TOOLS_DIR/ui_packages.py" verify-contract
+dotnet_bin="$(resolve_build_dotnet)"
+
+while IFS= read -r project; do
+  project="${project%$'\r'}"
+  say "Packing UI project: $project"
+  # Share the normal Release compiler profile with its bin/obj outputs. Symbol
+  # packaging is controlled by IncludeSymbols, not by disabling debug generation.
+  "$dotnet_bin" pack "$REPO_ROOT/$project" \
+    -c Release \
+    --output "$feed" \
+    --disable-build-servers \
+    --verbosity minimal \
+    -m:1 \
+    -warnaserror \
+    -p:NuGetAudit=false
+done < <("${project_command[@]}")
+
+"${verify_command[@]}"
+say "Hatifect UI local package feed: PASS ($feed)"

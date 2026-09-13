@@ -1,0 +1,261 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Hatifect.Flow.Application;
+using Hatifect.Flow.Domain.Shipments;
+using Hatifect.Flow.UI.Semantic;
+using Hatifect.UI;
+using Hatifect.UI.Experience;
+using Hatifect.UI.Runtime.Tests;
+using Xunit;
+
+namespace Hatifect.Flow.Tests;
+
+[Trait("Category", "flow")]
+public sealed class ParcelPublicationTests
+{
+    [Fact]
+    public void CommandResultAndCompleteReadModelAppearInOnePublicationBeforeEveryObserver()
+    {
+        using var app = new ObservedApplication();
+        using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
+        UiPublicationView before = view.Publication.Capture();
+        var observations = new List<(string State, string Result, bool Nested)>();
+        foreach (var element in view.Experience.Elements)
+            element.Source.Changed += () => observations.Add((Value(view, "State"), Value(view, "Result"),
+                actionHost.Invoke(view.Experience.Actions[1])));
+
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
+        Assert.Equal(before.Version, view.Publication.Version);
+        Assert.Empty(observations);
+        Assert.True(view.Pump());
+
+        Assert.NotEmpty(observations);
+        Assert.All(observations, value =>
+        {
+            Assert.Equal("Scheduled", value.State);
+            Assert.Equal("Command completed", value.Result);
+            Assert.False(value.Nested);
+        });
+        Assert.Equal(1, app.Commands);
+        Assert.Equal(before.Version + 1, view.Publication.Version);
+        Assert.Equal("Ready to dispatch", Read(before, Source(view, "State")));
+        Assert.Equal(string.Empty, Read(before, Source(view, "Result")));
+        Assert.True(actionHost.CanInvoke(view.Experience.Actions[1]));
+        Assert.Empty(view.Publication.LastResult.ObserverErrors);
+        Assert.False(view.Pump());
+    }
+
+    [Fact]
+    public void FailedPreparationKeepsEveryOldSourceAndPendingCommandResultForRetry()
+    {
+        using var app = new ObservedApplication();
+        bool fail = false;
+        using var view = Create(app, stationName: _ => fail ? throw new InvalidOperationException("station unavailable") : "Station");
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
+        UiPublicationView before = view.Publication.Capture();
+        object?[] values = view.Experience.Elements.Select(element => element.Source.UntypedValue).ToArray();
+        int notifications = 0;
+        view.Publication.Changed += () => notifications++;
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
+        fail = true;
+
+        Assert.Throws<InvalidOperationException>(() => view.Pump());
+
+        Assert.Equal(before.Version, view.Publication.Version);
+        Assert.Equal(values, view.Experience.Elements.Select(element => element.Source.UntypedValue).ToArray());
+        Assert.Equal(0, notifications);
+        Assert.Equal(ParcelState.Reserved, app.Inner.ReadSnapshot().Parcels.Single().State);
+        fail = false;
+        Assert.True(view.Pump());
+        Assert.Equal("Scheduled", Value(view, "State"));
+        Assert.Equal("Command completed", Value(view, "Result"));
+        Assert.Equal(1, notifications);
+        Assert.Equal(1, app.Commands);
+        Assert.False(view.Pump());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OwnerReadAndCommandCallbacksCannotReenterBeforeTheEffect(bool duringExecute)
+    {
+        using var app = new ObservedApplication();
+        using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
+        bool? nested = null;
+        Action callback = () => nested = actionHost.Invoke(view.Experience.Actions[0]);
+        if (duringExecute) app.BeforeExecute = callback;
+        else app.AfterRead = callback;
+
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
+
+        Assert.False(nested);
+        Assert.Equal(1, app.Commands);
+        Assert.True(view.Pump());
+        Assert.Equal("Scheduled", Value(view, "State"));
+    }
+
+    [Fact]
+    public void ProjectionFormattingCannotDispatchEvenAnOtherwiseAvailableAction()
+    {
+        using var app = new ObservedApplication();
+        ParcelExperience? current = null;
+        ExperienceTextProbe? actionHost = null;
+        bool? nested = null;
+        using var view = Create(app, itemName: key =>
+        {
+            if (current is not null) nested = actionHost!.Invoke(current.Experience.Actions[1]);
+            return key;
+        });
+        using var actionHostOwner = actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
+        current = view;
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
+
+        Assert.True(view.Pump());
+
+        Assert.False(nested);
+        Assert.Equal(1, app.Commands);
+        Assert.Equal("Scheduled", Value(view, "State"));
+        Assert.True(actionHost.CanInvoke(view.Experience.Actions[1]));
+    }
+
+    [Fact]
+    public void CloseDuringCommittedCommandRetainsTheDomainEffectWithoutPublishingLateUiResult()
+    {
+        using var app = new ObservedApplication();
+        using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
+        UiPublicationView before = view.Publication.Capture();
+        app.AfterExecute = view.Dispose;
+
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
+
+        Assert.Equal(ParcelState.Reserved, app.Inner.ReadSnapshot().Parcels.Single().State);
+        Assert.Equal(1, app.Commands);
+        Assert.False(view.IsActive);
+        Assert.False(view.Pump());
+        Assert.Equal(before.Version, view.Publication.Version);
+        Assert.Equal(string.Empty, Value(view, "Result"));
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
+    }
+
+    [Fact]
+    public void RetiringThePublicationDirectlyPreventsProviderReadsAndCommands()
+    {
+        using var app = new ObservedApplication();
+        using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
+        int reads = app.Reads;
+        view.Publication.Dispose();
+
+        Assert.All(view.Experience.Actions, action => Assert.False(actionHost.Invoke(action)));
+        Assert.False(view.IsActive);
+        Assert.False(view.Pump());
+        Assert.Equal(reads, app.Reads);
+        Assert.Equal(0, app.Commands);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    [InlineData(3, true)]
+    public void RetirementDuringReadOrFormattingStopsRemainingCallbacksAndPublication(int phase, bool publicationOnly)
+    {
+        using var app = new ObservedApplication();
+        Action? retire = null;
+        int calls = 0;
+        string Format(string value)
+        {
+            if (retire is not null && ++calls == phase) retire();
+            return value;
+        }
+        using var view = Create(app, stationName: _ => Format("Station"), itemName: Format);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
+        UiPublicationView before = view.Publication.Capture();
+        Assert.True(actionHost.Invoke(view.Experience.Actions[0]));
+        retire = publicationOnly ? view.Publication.Dispose : view.Dispose;
+        if (phase == 0) app.AfterRead = retire;
+
+        Assert.False(view.Pump());
+
+        Assert.Equal(phase, calls);
+        Assert.Equal(before.Version, view.Publication.Version);
+        Assert.Equal("Ready to dispatch", Value(view, "State"));
+        Assert.Equal(string.Empty, Value(view, "Result"));
+        Assert.False(view.IsActive);
+        Assert.False(view.Pump());
+        Assert.Equal(1, app.Commands);
+        Assert.Equal(ParcelState.Reserved, app.Inner.ReadSnapshot().Parcels.Single().State);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NotificationWithinActionReadCannotDispatchTheReturnedStaleSnapshot(bool secondRead)
+    {
+        using var app = new ObservedApplication();
+        using var view = Create(app);
+        using var actionHost = new ExperienceTextProbe(view.Experience);
+        actionHost.Compose("en");
+        Action invalidate = () => app.Inner.Refresh(force: true);
+        app.AfterRead = secondRead ? () => app.AfterRead = invalidate : invalidate;
+
+        Assert.Equal(secondRead, actionHost.Invoke(view.Experience.Actions[0]));
+
+        Assert.Equal(0, app.Commands);
+        Assert.True(view.Pump());
+        Assert.Equal("Ready to dispatch", Value(view, "State"));
+    }
+
+    private static ParcelExperience Create(ObservedApplication app, Func<Guid, string>? stationName = null,
+        Func<string, string>? itemName = null)
+        => new(new UiSymbolId("Hatifect.Flow", "parcel"), app, CheckpointFixture.Parcel.Value,
+            stationName: stationName, itemName: itemName);
+    private static UiPublishedState<ParcelTextValue> Source(ParcelExperience view, string name)
+        => Assert.IsType<UiPublishedState<ParcelTextValue>>(view.Experience.Elements.Single(element => element.Name == name).Source);
+    private static string Value(ParcelExperience view, string name) => Source(view, name).Value.ToString();
+    private static string Read(UiPublicationView view, UiPublishedState<ParcelTextValue> source)
+        => Assert.IsAssignableFrom<IUiSemanticSource<ParcelTextValue>>(view.Read(source)).Value.ToString();
+
+    private sealed class ObservedApplication : IFlowApplication, IDisposable
+    {
+        internal readonly CheckpointFixture Fixture = new();
+        internal readonly FlowApplication Inner;
+        internal int Reads, Commands;
+        internal Action? AfterRead, BeforeExecute, AfterExecute;
+        internal ObservedApplication() => Inner = new(Fixture.Runtime, action => action(Fixture.Runtime), _ => { });
+        public event Action<long>? RevisionChanged { add => Inner.RevisionChanged += value; remove => Inner.RevisionChanged -= value; }
+        public FlowSnapshot ReadSnapshot()
+        {
+            Reads++;
+            FlowSnapshot snapshot = Inner.ReadSnapshot();
+            Action? callback = AfterRead;
+            AfterRead = null;
+            callback?.Invoke();
+            return snapshot;
+        }
+        public FlowCommandResult Execute(FlowParcelCommand command)
+        {
+            Commands++;
+            BeforeExecute?.Invoke();
+            FlowCommandResult result = Inner.Execute(command);
+            AfterExecute?.Invoke();
+            return result;
+        }
+        public void Dispose() => Inner.Dispose();
+    }
+}

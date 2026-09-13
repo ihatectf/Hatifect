@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.ChestsAnywhereOverlay</AssemblyName>
+    <RootNamespace>Hatifect.ChestsAnywhereOverlay</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableModDeploy Condition="Exists('../../../Hatifect.Build.targets')">false</EnableModDeploy>
+    <EnableModDeploy Condition="!Exists('../../../Hatifect.Build.targets')">true</EnableModDeploy>
+    <EnableModZip>false</EnableModZip>
+    <ModFolderName>Hatifect Chests Anywhere Overlay</ModFolderName>
+    <HatifectInstallRelativePath>Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay</HatifectInstallRelativePath>
+    <Version>1.0.0-alpha.1</Version>
+    <HatifectUiPackageConsumer>true</HatifectUiPackageConsumer>
+  </PropertyGroup>
+  <Import Project="../../../Hatifect.UI.Packages.props" />
+  <ItemGroup>
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.2" />
+    <PackageReference Include="Hatifect.UI.Experience"
+                      Version="[$(HatifectUiPackageVersion)]"
+                      IncludeAssets="compile"
+                      PrivateAssets="all" />
+    <ProjectReference Include="Hatifect.ChestsAnywhereOverlay.UI.Semantic/Hatifect.ChestsAnywhereOverlay.UI.Semantic.csproj"><Private>true</Private></ProjectReference>
+  </ItemGroup>
+  <Target Name="CollectChestsAnywhereOverlaySemanticRuntime" BeforeTargets="DeployHatifectModule">
+    <ItemGroup>
+      <HatifectRuntimeFile Include="$(TargetDir)Hatifect.ChestsAnywhereOverlay.UI.Semantic.dll"
+                          Condition="Exists('$(TargetDir)Hatifect.ChestsAnywhereOverlay.UI.Semantic.dll')" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+    <Compile Remove="Hatifect.ChestsAnywhereOverlay.UI.Semantic/**/*.cs" />
+    <Compile Remove="tests/**/*.cs" />
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Hatifect.ChestsAnywhereOverlay.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+  <Import Project="../../../Hatifect.Build.targets" Condition="Exists('../../../Hatifect.Build.targets')" />
+</Project>

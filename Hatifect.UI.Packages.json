@@ -1,0 +1,46 @@
+{
+  "FormatVersion": 1,
+  "Version": "1.0.0-alpha.47",
+  "Packages": [
+    {
+      "Id": "Hatifect.UI.Language",
+      "Project": "Hatifect UI/Hatifect.UI.Language/Hatifect.UI.Language.csproj",
+      "Dependencies": []
+    },
+    {
+      "Id": "Hatifect.UI.Semantics",
+      "Project": "Hatifect UI/Hatifect.UI.Semantics/Hatifect.UI.Semantics.csproj",
+      "Dependencies": ["Hatifect.UI.Language"]
+    },
+    {
+      "Id": "Hatifect.UI.Experience",
+      "Project": "Hatifect UI/Hatifect.UI.Experience/Hatifect.UI.Experience.csproj",
+      "Dependencies": ["Hatifect.UI.Semantics"]
+    },
+    {
+      "Id": "Hatifect.UI.Planning",
+      "Project": "Hatifect UI/Hatifect.UI.Planning/Hatifect.UI.Planning.csproj",
+      "Dependencies": ["Hatifect.UI.Experience", "Hatifect.UI.Semantics"]
+    },
+    {
+      "Id": "Hatifect.UI.Runtime",
+      "Project": "Hatifect UI/Hatifect.UI.Runtime/Hatifect.UI.Runtime.csproj",
+      "Dependencies": ["Hatifect.UI.Experience", "Hatifect.UI.Planning", "Hatifect.UI.Semantics"]
+    },
+    {
+      "Id": "Hatifect.UI.Tooling",
+      "Project": "Hatifect UI/Hatifect.UI.Tooling/Hatifect.UI.Tooling.csproj",
+      "Dependencies": ["Hatifect.UI.Language", "Hatifect.UI.Semantics"]
+    },
+    {
+      "Id": "Hatifect.UI.DevTools",
+      "Project": "Hatifect UI/Hatifect.UI.DevTools/Hatifect.UI.DevTools.csproj",
+      "Dependencies": ["Hatifect.UI.Experience", "Hatifect.UI.Planning", "Hatifect.UI.Runtime", "Hatifect.UI.Semantics", "Hatifect.UI.Tooling"]
+    },
+    {
+      "Id": "Hatifect.UI.Stardew",
+      "Project": "Hatifect UI/Hatifect.UI.Stardew/Hatifect.UI.Stardew.csproj",
+      "Dependencies": ["Hatifect.UI.DevTools", "Hatifect.UI.Runtime"]
+    }
+  ]
+}

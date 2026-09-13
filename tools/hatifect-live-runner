@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+set -euo pipefail
+kind="${1:-}"
+scenario="${2:-}"
+result="${3:-}"
+artifact_dir="${4:-}"
+if [[ $# -eq 1 && ( "$kind" == "--help" || "$kind" == "-h" ) ]]; then
+  printf '%s\n' "Usage: hatifect-live-runner <smoke|ui> <scenario> <result-json> <artifact-dir>"
+  exit 0
+fi
+if [[ $# -ne 4 || ( "$kind" != "smoke" && "$kind" != "ui" ) || -z "$scenario" || "$scenario" == -* || -z "$result" || -z "$artifact_dir" ]]; then
+  printf '%s\n' "ERROR: Usage: hatifect-live-runner <smoke|ui> <scenario> <result-json> <artifact-dir>" >&2
+  exit 2
+fi
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+validator="$TOOLS_DIR/live-harness/validate.py"
+deployment_identity="$TOOLS_DIR/live-harness/deployment_identity.py"
+release_contract="$REPO_ROOT/Hatifect.Release.json"
+user_session_runtime="$TOOLS_DIR/live-harness/user_session_runtime.py"
+save_provisioner="$TOOLS_DIR/live-harness/save_provisioning.py"
+semantic_test_driver="$TOOLS_DIR/live-harness/semantic-test-driver.py"
+semantic_tests_root="$TOOLS_DIR/live-harness/semantic-tests"
+semantic_spec="$semantic_tests_root/$scenario.json"
+native_input_backend="$TOOLS_DIR/live-harness/macos_native_input_driver.py"
+isolated_root="$(resolve_smapi_test_root)"
+deployment_marker="$isolated_root/deployment.json"
+deployment_identity_marker="$isolated_root/deployment.identity.json"
+artifact_root="$REPO_ROOT/artifacts/runtime"
+
+need_cmd python3
+smapi="${HATIFECT_SMAPI_PATH:-}"
+
+artifact_dir="$(python3 "$validator" assert-contained "$artifact_root" "$artifact_dir")"
+result="$(python3 "$validator" assert-contained "$artifact_dir" "$result")"
+
+if ! python3 "$validator" check-scenario "$kind" "$scenario" >/dev/null; then
+  python3 "$validator" write-result FAIL "$scenario" "$result" \
+    "Unknown or invalid live scenario." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-SCENARIO \
+    --artifact-root "$artifact_dir"
+  exit 1
+fi
+
+mkdir -p "$artifact_dir"
+if [[ -z "$smapi" || ! -x "$smapi" ]]; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "Configure executable HATIFECT_SMAPI_PATH in tools/hatifect.env." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-SMAPI \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+if [[ ! -f "$deployment_marker" || ! -f "$deployment_identity_marker" || ! -f "$isolated_root/Mods/Hatifect/Hatifect UI/manifest.json" ]]; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "No exact prepared isolated deployment exists. Run ./tools/hatifect-live-prepare successfully first." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-DEPLOYMENT \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+if ! python3 "$validator" validate-deployment "$deployment_marker" >/dev/null; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "The isolated deployment marker is malformed. Run ./tools/hatifect-live-prepare successfully." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-DEPLOYMENT \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+repository_head="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+deployment_identity_error=""
+if ! deployment_identity_error="$(python3 "$deployment_identity" validate "$deployment_identity_marker" \
+  --repository-head "$repository_head" \
+  --mods-root "$isolated_root/Mods" \
+  --contract "$release_contract" 2>&1)"; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "$deployment_identity_error Run ./tools/hatifect-live-prepare successfully for this checkout." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-DEPLOYMENT \
+    --expected "The isolated Hatifect deployment matches the exact current checkout and prepared release-file fingerprint." \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+required_mod_error=""
+if ! required_mod_error="$(python3 "$validator" validate-required-mods "$kind" "$scenario" "$isolated_root/Mods" 2>&1)"; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "$required_mod_error" \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-MODS \
+    --expected "Every scenario-required mod is present in the isolated deployment." \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+
+requires_save="$(python3 "$validator" check-scenario "$kind" "$scenario" --field requiresSave)"
+save_path=""
+run_id="$(basename "$artifact_dir")"
+if [[ "$scenario" == "save.bootstrap" ]]; then
+  bootstrap_preflight_result="$(python3 "$save_provisioner" bootstrap-preflight \
+    --isolated-root "$isolated_root" \
+    --smapi-path "$smapi" \
+    --run-id "$run_id" \
+    --scenario "$scenario" \
+    --artifact-directory "$artifact_dir" \
+    --result "$result")" || exit $?
+  if [[ "$bootstrap_preflight_result" == "HARNESS-SAVE-FIXTURE-EXISTS" ]]; then
+    say "HARNESS-SAVE-FIXTURE-EXISTS: compatible verified fixture reuse PASS"
+    exit 0
+  fi
+fi
+if [[ "$requires_save" == "true" ]]; then
+  save_path="$(python3 "$save_provisioner" plan \
+    --isolated-root "$isolated_root" \
+    --smapi-path "$smapi" \
+    --run-id "$run_id" \
+    --scenario "$scenario" \
+    --artifact-directory "$artifact_dir" \
+    --result "$result")" || exit $?
+fi
+
+scenario_timeout="$(python3 "$validator" check-scenario "$kind" "$scenario" --field timeoutSeconds)"
+timeout_seconds="${HATIFECT_TEST_TIMEOUT_SECONDS:-$scenario_timeout}"
+if ! [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || (( timeout_seconds > scenario_timeout )); then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "HATIFECT_TEST_TIMEOUT_SECONDS must be positive and cannot exceed the allowlisted scenario timeout." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-TIMEOUT \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+test_seed="${HATIFECT_TEST_SEED:-0}"
+if ! [[ "$test_seed" =~ ^-?[0-9]+$ ]]; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "HATIFECT_TEST_SEED must be an integer." \
+    --run-id "$(basename "$artifact_dir")" \
+    --assertion-id HARNESS-ENV-SEED \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+
+python3 "$validator" check-scenario "$kind" "$scenario" > "$artifact_dir/instructions.txt"
+say "Hatifect automated live harness"
+say "Scenario: $scenario"
+say "Transport: worktree runtime executor -> canonical owned direct process"
+say "Isolated root: $isolated_root"
+say "Artifacts: $artifact_dir"
+say "Timeout: $timeout_seconds seconds"
+
+arguments=(
+  submit
+  --repository-root "$REPO_ROOT"
+  --kind "$kind"
+  --scenario "$scenario"
+  --isolated-root "$isolated_root"
+  --artifact-directory "$artifact_dir"
+  --result "$result"
+  --timeout-seconds "$timeout_seconds"
+  --seed "$test_seed"
+)
+if [[ -n "$save_path" ]]; then
+  arguments+=(--save-path "$save_path")
+fi
+
+# A checked-in semantic spec is the only opt-in to an external GUI companion.
+# Scenarios without one retain the exact historical one-process client handoff.
+if [[ ! -f "$semantic_spec" ]]; then
+  exec python3 "$user_session_runtime" "${arguments[@]}"
+fi
+
+if [[ "$(uname -s)" != "Darwin" || ! -f "$semantic_test_driver" || ! -f "$native_input_backend" ]]; then
+  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+    "The checked-in semantic workflow requires its macOS Quartz semantic-test driver and native input backend." \
+    --run-id "$run_id" \
+    --assertion-id HARNESS-SEMANTIC-TEST-DRIVER \
+    --artifact-root "$artifact_dir"
+  exit 2
+fi
+
+semantic_driver_pid=""
+semantic_driver_exit=""
+cleanup_semantic_driver() {
+  if [[ -z "$semantic_driver_pid" ]]; then
+    return
+  fi
+  if kill -0 "$semantic_driver_pid" 2>/dev/null; then
+    kill "$semantic_driver_pid" 2>/dev/null || true
+  fi
+  set +e
+  wait "$semantic_driver_pid"
+  semantic_driver_exit=$?
+  set -e
+  semantic_driver_pid=""
+}
+trap cleanup_semantic_driver EXIT INT TERM
+
+say "Semantic input: checked-in workflow -> state-driven macOS Quartz driver"
+(
+  set +e
+  python3 "$semantic_test_driver" \
+    --spec "$semantic_spec" \
+    --artifact-directory "$artifact_dir" \
+    --request-id "$run_id" \
+    --scenario-id "$scenario" \
+    --timeout-seconds "$timeout_seconds" \
+    > "$artifact_dir/semantic-test-driver.log" 2>&1
+  driver_exit=$?
+  if (( driver_exit != 0 )); then
+    printf '%s\n' "semantic-test-driver-failed" > "$artifact_dir/.cancel-requested.tmp"
+    mv -f "$artifact_dir/.cancel-requested.tmp" "$artifact_dir/.cancel-requested"
+  fi
+  exit "$driver_exit"
+) &
+semantic_driver_pid=$!
+
+set +e
+python3 "$user_session_runtime" "${arguments[@]}"
+runtime_exit=$?
+set -e
+
+if (( runtime_exit == 0 )); then
+  for _ in {1..200}; do
+    kill -0 "$semantic_driver_pid" 2>/dev/null || break
+    sleep 0.05
+  done
+fi
+cleanup_semantic_driver
+trap - EXIT INT TERM
+
+semantic_failure_marker=false
+if [[ -f "$artifact_dir/.cancel-requested" ]] \
+  && grep -qx "semantic-test-driver-failed" "$artifact_dir/.cancel-requested" 2>/dev/null; then
+  semantic_failure_marker=true
+fi
+
+if [[ "$semantic_failure_marker" == "true" ]]; then
+  printf '%s\n' "ERROR: semantic test companion failed (exit ${semantic_driver_exit:-unknown}); the runtime cancellation is secondary." >&2
+  if [[ -f "$artifact_dir/semantic-test-driver.log" ]]; then
+    printf '%s\n' "--- semantic-test-driver.log (tail) ---" >&2
+    tail -n 120 "$artifact_dir/semantic-test-driver.log" >&2
+  fi
+  if [[ -f "$artifact_dir/diagnostics/semantic-test-driver.json" ]]; then
+    printf '%s\n' "--- diagnostics/semantic-test-driver.json ---" >&2
+    cat "$artifact_dir/diagnostics/semantic-test-driver.json" >&2
+  fi
+  exit 2
+fi
+
+if (( runtime_exit == 0 )) && [[ "$semantic_driver_exit" != "0" ]]; then
+  printf '%s\n' "ERROR: semantic test companion did not complete successfully (exit ${semantic_driver_exit:-unknown})." >&2
+  exit 2
+fi
+exit "$runtime_exit"

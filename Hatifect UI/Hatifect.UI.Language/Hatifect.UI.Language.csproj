@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.UI.Language</AssemblyName>
+    <RootNamespace>Hatifect.UI.Language</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0-alpha.47</Version>
+  </PropertyGroup>
+  <PropertyGroup><HatifectUiPackageProducer>true</HatifectUiPackageProducer></PropertyGroup>
+  <Import Project="../../Hatifect.UI.Packages.props" />
+</Project>

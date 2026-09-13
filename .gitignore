@@ -1,0 +1,78 @@
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+!.vscode/
+.vscode/*
+!.vscode/tasks.json
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# Hatifect local validation
+.smapi-test/
+
+# Machine-local Hatifect configuration
+/tools/hatifect.env
+
+# Runtime/logs
+*.log
+logs/
+
+# Local test evidence and package outputs
+/release/
+/artifacts/
+
+# Local development assistants
+/.testagent/
+/.agents/
+/.ai/
+/.claude/
+/.codex/
+/.cursor/
+/.continue/
+/.junie/
+/.prompts/
+/.roo/
+/.windsurf/
+/ai-notes/
+/chat-logs/
+/prompts/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.aider*
+.cursorrules
+.windsurfrules
+copilot-instructions.md
+*.prompt.md
+/.github/instructions/
+/tools/agent_setup.py
+/tools/hatifect-agent-check
+/tools/tests/test_agent_setup.py
+TestResults/
+
+# NuGet/build caches
+packages/
+.nuget/
+
+# Build diagnostics
+*.binlog
+
+# Temporary/editor files
+*.tmp
+*.bak
+*.orig
+*.swp
+*~

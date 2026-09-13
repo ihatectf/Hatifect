@@ -1,0 +1,1177 @@
+{
+  "formatVersion": 1,
+  "scenarios": [
+    {
+      "id": "runtime.boot",
+      "kind": "smoke",
+      "requiresSave": false,
+      "timeoutSeconds": 600,
+      "checks": [
+        "runtime.boot.loaded"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "save.bootstrap",
+      "kind": "smoke",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "save.bootstrap.reload"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "runtime.return-to-title",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "runtime.return-to-title.reset"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.route.basic",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.route.basic.loaded",
+        "flow.route.basic.delivery",
+        "flow.route.basic.pause",
+        "flow.route.basic.idle",
+        "flow.route.basic.lifecycle",
+        "flow.route.basic.reload"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.names",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 600,
+      "includeInAll": false,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.names.loaded",
+        "flow.ui.names.english",
+        "flow.ui.names.russian",
+        "flow.ui.names.capture-state",
+        "flow.ui.names.retained",
+        "flow.ui.names.restored",
+        "flow.ui.names.read-only"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.save.isolation",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.save.isolation.loaded",
+        "flow.save.isolation.delivery",
+        "flow.save.isolation.pause",
+        "flow.save.isolation.idle",
+        "flow.save.isolation.lifecycle",
+        "flow.save.isolation.reload",
+        "flow.save.isolation.save-isolation"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.roundtrip",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.roundtrip.loaded",
+        "flow.chest.roundtrip.custody",
+        "flow.chest.roundtrip.saving",
+        "flow.chest.roundtrip.saved",
+        "flow.chest.roundtrip.delivery",
+        "flow.chest.roundtrip.lifecycle",
+        "flow.chest.roundtrip.reload",
+        "flow.chest.roundtrip.no-duplication"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.crash-after-save",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.crash-after-save.loaded",
+        "flow.chest.crash-after-save.custody",
+        "flow.chest.crash-after-save.saving",
+        "flow.chest.crash-after-save.saved",
+        "flow.chest.crash-after-save.delivery",
+        "flow.chest.crash-after-save.lifecycle",
+        "flow.chest.crash-after-save.reload",
+        "flow.chest.crash-after-save.no-duplication",
+        "flow.chest.crash-after-save.process-restart"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.crash-after-delivery",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.crash-after-delivery.loaded",
+        "flow.chest.crash-after-delivery.custody",
+        "flow.chest.crash-after-delivery.saving",
+        "flow.chest.crash-after-delivery.saved",
+        "flow.chest.crash-after-delivery.delivery",
+        "flow.chest.crash-after-delivery.lifecycle",
+        "flow.chest.crash-after-delivery.reload",
+        "flow.chest.crash-after-delivery.no-duplication",
+        "flow.chest.crash-after-delivery.process-restart"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.crash-after-unsaved-extraction",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.crash-after-unsaved-extraction.loaded",
+        "flow.chest.crash-after-unsaved-extraction.custody",
+        "flow.chest.crash-after-unsaved-extraction.saving",
+        "flow.chest.crash-after-unsaved-extraction.saved",
+        "flow.chest.crash-after-unsaved-extraction.delivery",
+        "flow.chest.crash-after-unsaved-extraction.lifecycle",
+        "flow.chest.crash-after-unsaved-extraction.reload",
+        "flow.chest.crash-after-unsaved-extraction.no-duplication",
+        "flow.chest.crash-after-unsaved-extraction.process-restart",
+        "flow.chest.crash-after-unsaved-extraction.unsaved-rollback"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.crash-after-unsaved-delivery",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.crash-after-unsaved-delivery.loaded",
+        "flow.chest.crash-after-unsaved-delivery.custody",
+        "flow.chest.crash-after-unsaved-delivery.saving",
+        "flow.chest.crash-after-unsaved-delivery.saved",
+        "flow.chest.crash-after-unsaved-delivery.delivery",
+        "flow.chest.crash-after-unsaved-delivery.lifecycle",
+        "flow.chest.crash-after-unsaved-delivery.reload",
+        "flow.chest.crash-after-unsaved-delivery.no-duplication",
+        "flow.chest.crash-after-unsaved-delivery.process-restart",
+        "flow.chest.crash-after-unsaved-delivery.unsaved-rollback"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.cancellation",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.cancellation.loaded",
+        "flow.chest.cancellation.duplicate-admission",
+        "flow.chest.cancellation.cancellation",
+        "flow.chest.cancellation.source-conflict",
+        "flow.chest.cancellation.saving",
+        "flow.chest.cancellation.saved",
+        "flow.chest.cancellation.lifecycle",
+        "flow.chest.cancellation.reload",
+        "flow.chest.cancellation.re-admission",
+        "flow.chest.cancellation.no-late-effect"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.return",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.return.loaded",
+        "flow.chest.return.custody",
+        "flow.chest.return.capacity",
+        "flow.chest.return.delivery-retry",
+        "flow.chest.return.return-requested",
+        "flow.chest.return.return-rejected",
+        "flow.chest.return.returned",
+        "flow.chest.return.saving",
+        "flow.chest.return.saved",
+        "flow.chest.return.lifecycle",
+        "flow.chest.return.reload",
+        "flow.chest.return.no-auto-retry",
+        "flow.chest.return.no-duplication",
+        "flow.chest.return.taken-items"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.crash-after-return",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.crash-after-return.loaded",
+        "flow.chest.crash-after-return.custody",
+        "flow.chest.crash-after-return.capacity",
+        "flow.chest.crash-after-return.delivery-retry",
+        "flow.chest.crash-after-return.return-requested",
+        "flow.chest.crash-after-return.return-rejected",
+        "flow.chest.crash-after-return.returned",
+        "flow.chest.crash-after-return.saving",
+        "flow.chest.crash-after-return.saved",
+        "flow.chest.crash-after-return.lifecycle",
+        "flow.chest.crash-after-return.reload",
+        "flow.chest.crash-after-return.no-auto-retry",
+        "flow.chest.crash-after-return.no-duplication",
+        "flow.chest.crash-after-return.taken-items",
+        "flow.chest.crash-after-return.process-restart"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.isolation",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.chest.isolation.loaded",
+        "flow.chest.isolation.custody",
+        "flow.chest.isolation.saving",
+        "flow.chest.isolation.saved",
+        "flow.chest.isolation.lifecycle",
+        "flow.chest.isolation.save-isolation",
+        "flow.chest.isolation.session-fencing",
+        "flow.chest.isolation.reload",
+        "flow.chest.isolation.delivery",
+        "flow.chest.isolation.item-fidelity",
+        "flow.chest.isolation.no-duplication",
+        "flow.chest.isolation.inactive-files"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.chest.performance",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "includeInAll": false,
+      "checks": [
+        "flow.chest.performance.loaded",
+        "flow.chest.performance.saving",
+        "flow.chest.performance.saved",
+        "flow.chest.performance.paused",
+        "flow.chest.performance.due-work",
+        "flow.chest.performance.idle",
+        "flow.chest.performance.item-fidelity",
+        "flow.chest.performance.unchanged-files"
+      ],
+      "flowPerformance": {
+        "scenarioId": "flow.chest.performance",
+        "warmupFrames": 120,
+        "measurementFrames": 600,
+        "shipments": 80,
+        "routes": 3,
+        "maxOperationsPerTick": 64,
+        "maximumP95TickMs": 0.25,
+        "maximumP99TickMs": 1.0,
+        "maximumAllocatedBytesPerTick": 0
+      },
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      },
+      "requiredMods": [
+        "Hatifect.Flow"
+      ]
+    },
+    {
+      "id": "flow.chest.resources",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 600,
+      "includeInAll": false,
+      "checks": [
+        "flow.chest.resources.loaded",
+        "flow.chest.resources.routing",
+        "flow.chest.resources.queues",
+        "flow.chest.resources.saving",
+        "flow.chest.resources.saved",
+        "flow.chest.resources.receipt-growth",
+        "flow.chest.resources.limits",
+        "flow.chest.resources.reload",
+        "flow.chest.resources.item-fidelity",
+        "flow.chest.resources.idle",
+        "flow.chest.resources.unchanged-files"
+      ],
+      "flowResources": {
+        "scenarioId": "flow.chest.resources",
+        "shipments": 256,
+        "stations": 32,
+        "sourceChests": 8,
+        "routingQueries": 75,
+        "loads": 7,
+        "saves": 6,
+        "attempts": 16,
+        "warmupFrames": 120,
+        "measurementFrames": 600,
+        "maxOperationsPerTick": 64,
+        "maximumP95TickMs": 0.25,
+        "maximumP99TickMs": 1.0,
+        "maximumAllocatedBytesPerTick": 0
+      },
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      },
+      "requiredMods": [
+        "Hatifect.Flow"
+      ]
+    },
+    {
+      "id": "semantic.lifecycle",
+      "kind": "ui",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.lifecycle.visual",
+        "semantic.lifecycle.focus",
+        "semantic.lifecycle.close-reopen"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.inspector",
+      "kind": "ui",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.inspector.capture",
+        "semantic.inspector.reveal",
+        "semantic.inspector.close"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.overlay",
+      "kind": "ui",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.overlay.visual",
+        "semantic.overlay.context",
+        "semantic.overlay.dismiss"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.input",
+      "kind": "ui",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.input.pointer",
+        "semantic.input.keyboard",
+        "semantic.input.controller",
+        "semantic.input.text"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.input.native",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.input.native.pointer",
+        "semantic.input.native.keyboard",
+        "semantic.input.native.text",
+        "semantic.input.native.backspace"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.input.retired-overlay",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.input.retired-overlay.keyboard",
+        "semantic.input.retired-overlay.retry"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.environment",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.environment.window.facets",
+        "semantic.environment.window.rejection",
+        "semantic.environment.window.reentry",
+        "semantic.environment.window.idle",
+        "semantic.environment.window.delivery",
+        "semantic.environment.window.automatic",
+        "semantic.environment.terminal.facets",
+        "semantic.environment.terminal.rejection",
+        "semantic.environment.terminal.reentry",
+        "semantic.environment.terminal.idle",
+        "semantic.environment.terminal.delivery",
+        "semantic.environment.terminal.automatic",
+        "semantic.environment.hud.facets",
+        "semantic.environment.hud.rejection",
+        "semantic.environment.hud.reentry",
+        "semantic.environment.hud.idle",
+        "semantic.environment.hud.delivery",
+        "semantic.environment.hud.automatic",
+        "semantic.environment.active-menu.facets",
+        "semantic.environment.active-menu.rejection",
+        "semantic.environment.active-menu.reentry",
+        "semantic.environment.active-menu.idle",
+        "semantic.environment.active-menu.delivery",
+        "semantic.environment.active-menu.automatic",
+        "semantic.environment.active-menu.show-owner"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.actions.reload",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.actions.reload.window.publication",
+        "semantic.actions.reload.window.generation",
+        "semantic.actions.reload.window.retirement",
+        "semantic.actions.reload.terminal.publication",
+        "semantic.actions.reload.terminal.generation",
+        "semantic.actions.reload.terminal.retirement",
+        "semantic.actions.reload.hud.publication",
+        "semantic.actions.reload.hud.generation",
+        "semantic.actions.reload.hud.retirement",
+        "semantic.actions.reload.active-menu.publication",
+        "semantic.actions.reload.active-menu.generation",
+        "semantic.actions.reload.active-menu.retirement",
+        "semantic.actions.reload.hud-hide.failed-cleanup",
+        "semantic.actions.reload.hud-hide.retry",
+        "semantic.actions.reload.hud-dispose.failed-cleanup",
+        "semantic.actions.reload.hud-dispose.retry",
+        "semantic.actions.reload.active-menu-hide.failed-cleanup",
+        "semantic.actions.reload.active-menu-hide.retry"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.actions.terminal",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.actions.terminal.same.transition",
+        "semantic.actions.terminal.same.delivery",
+        "semantic.actions.terminal.route.transition",
+        "semantic.actions.terminal.route.delivery",
+        "semantic.actions.terminal.failed-open.transition",
+        "semantic.actions.terminal.failed-open.delivery",
+        "semantic.actions.terminal.failed-route.transition",
+        "semantic.actions.terminal.failed-route.delivery"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.actions.save-switch",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.actions.save-switch.copies",
+        "semantic.actions.save-switch.window.pending",
+        "semantic.actions.save-switch.window.retirement",
+        "semantic.actions.save-switch.window.late",
+        "semantic.actions.save-switch.window.delivery",
+        "semantic.actions.save-switch.terminal.pending",
+        "semantic.actions.save-switch.terminal.retirement",
+        "semantic.actions.save-switch.terminal.late",
+        "semantic.actions.save-switch.terminal.delivery",
+        "semantic.actions.save-switch.hud.pending",
+        "semantic.actions.save-switch.hud.retirement",
+        "semantic.actions.save-switch.hud.late",
+        "semantic.actions.save-switch.hud.delivery",
+        "semantic.actions.save-switch.active-menu.pending",
+        "semantic.actions.save-switch.active-menu.retirement",
+        "semantic.actions.save-switch.active-menu.late",
+        "semantic.actions.save-switch.active-menu.delivery",
+        "semantic.actions.save-switch.lifecycle"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.actions.pump",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.actions.pump.menu",
+        "semantic.actions.pump.reopen",
+        "semantic.actions.pump.hud",
+        "semantic.actions.pump.context"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.locale-scale-theme",
+      "kind": "ui",
+      "requiresSave": true,
+      "timeoutSeconds": 3600,
+      "checks": [
+        "semantic.locale.en",
+        "semantic.locale.ru",
+        "semantic.scale.75",
+        "semantic.scale.100",
+        "semantic.scale.125",
+        "semantic.scale.150",
+        "semantic.viewport.reflow",
+        "semantic.theme.matrix"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.chests-anywhere-overlay",
+      "kind": "ui",
+      "requiresSave": true,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Pathoschild.ChestsAnywhere"
+      ],
+      "checks": [
+        "semantic.chests-anywhere-overlay.open",
+        "semantic.chests-anywhere-overlay.views",
+        "semantic.chests-anywhere-overlay.handoff",
+        "semantic.chests-anywhere-overlay.restoration",
+        "semantic.chests-anywhere-overlay.lifecycle"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.chests-anywhere-overlay.absent",
+      "kind": "ui",
+      "requiresSave": false,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.chests-anywhere-overlay.absent.fail-closed"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.chests-anywhere-overlay.incompatible",
+      "kind": "ui",
+      "requiresSave": false,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Pathoschild.ChestsAnywhere"
+      ],
+      "checks": [
+        "semantic.chests-anywhere-overlay.incompatible.fail-closed"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.chests-anywhere-overlay.capture-exception",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Pathoschild.ChestsAnywhere"
+      ],
+      "checks": [
+        "semantic.chests-anywhere-overlay.capture-exception.fail-closed"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.chests-anywhere-overlay.return-to-title",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "requiredMods": [
+        "Pathoschild.ChestsAnywhere"
+      ],
+      "checks": [
+        "semantic.chests-anywhere-overlay.return-to-title.open",
+        "semantic.chests-anywhere-overlay.return-to-title.restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.performance",
+      "kind": "ui",
+      "requiresSave": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.performance.steady"
+      ],
+      "performance": {
+        "scenarioId": "semantic.performance",
+        "minimumFrames": 600,
+        "surfaceKinds": [
+          "semantic-terminal-menu"
+        ],
+        "maximumP95UiThreadMs": 2.0,
+        "maximumP99UiThreadMs": 4.0,
+        "maximumAllocatedBytesPerFrame": 16384,
+        "maximumLayoutCacheMissRatio": 0.2
+      },
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "all",
+      "kind": "ui",
+      "requiresSave": true,
+      "timeoutSeconds": 7200,
+      "includes": [
+        "semantic.lifecycle",
+        "semantic.inspector",
+        "semantic.overlay",
+        "semantic.input",
+        "semantic.locale-scale-theme",
+        "semantic.chests-anywhere-overlay",
+        "semantic.performance"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "semantic.observation",
+      "kind": "ui",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1800,
+      "checks": [
+        "semantic.observation.api",
+        "semantic.observation.initial",
+        "semantic.observation.inert",
+        "semantic.observation.updated",
+        "semantic.observation.reentrant",
+        "semantic.observation.environment",
+        "semantic.observation.retirement",
+        "semantic.observation.reopen",
+        "semantic.observation.native-owner",
+        "semantic.observation.restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.isolation",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 420,
+      "includeInAll": false,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.isolation.loaded",
+        "flow.ui.isolation.empty",
+        "flow.ui.isolation.missing",
+        "flow.ui.isolation.publication",
+        "flow.ui.isolation.locale",
+        "flow.ui.isolation.scale",
+        "flow.ui.isolation.controller-profile",
+        "flow.ui.isolation.unavailable",
+        "flow.ui.isolation.faulted",
+        "flow.ui.isolation.close",
+        "flow.ui.isolation.unsubscribe-retry",
+        "flow.ui.isolation.save-isolation",
+        "flow.ui.isolation.retired-handles",
+        "flow.ui.isolation.restored",
+        "flow.ui.isolation.read-only"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.actions",
+      "kind": "smoke",
+      "requiresSave": true,
+      "timeoutSeconds": 420,
+      "includeInAll": false,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.actions.loaded",
+        "flow.ui.actions.create",
+        "flow.ui.actions.repeated",
+        "flow.ui.actions.domain-rejection",
+        "flow.ui.actions.dispatch",
+        "flow.ui.actions.cancel",
+        "flow.ui.actions.retry",
+        "flow.ui.actions.stale",
+        "flow.ui.actions.retired",
+        "flow.ui.actions.restored",
+        "flow.ui.actions.read-only"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.loaded",
+        "flow.ui.player.custody",
+        "flow.ui.player.saving",
+        "flow.ui.player.saved",
+        "flow.ui.player.delivery",
+        "flow.ui.player.lifecycle",
+        "flow.ui.player.reload",
+        "flow.ui.player.no-duplication",
+        "flow.ui.player.window-actions",
+        "flow.ui.player.visible-results",
+        "flow.ui.player.window-reopen"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.input",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 1200,
+      "requiredMods": ["Hatifect.UI", "Hatifect.Flow"],
+      "checks": [
+        "flow.ui.player.input.loaded", "flow.ui.player.input.custody", "flow.ui.player.input.saving",
+        "flow.ui.player.input.saved", "flow.ui.player.input.delivery", "flow.ui.player.input.lifecycle",
+        "flow.ui.player.input.reload", "flow.ui.player.input.no-duplication",
+        "flow.ui.player.input.ordinary-entry", "flow.ui.player.input.native-input",
+        "flow.ui.player.input.window-actions", "flow.ui.player.input.visible-results",
+        "flow.ui.player.input.window-reopen"
+      ],
+      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
+    },
+    {
+      "id": "flow.ui.player.en-075",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.en-075.loaded",
+        "flow.ui.player.en-075.custody",
+        "flow.ui.player.en-075.saving",
+        "flow.ui.player.en-075.saved",
+        "flow.ui.player.en-075.delivery",
+        "flow.ui.player.en-075.lifecycle",
+        "flow.ui.player.en-075.reload",
+        "flow.ui.player.en-075.no-duplication",
+        "flow.ui.player.en-075.window-actions",
+        "flow.ui.player.en-075.visible-results",
+        "flow.ui.player.en-075.window-reopen",
+        "flow.ui.player.en-075.profile-applied",
+        "flow.ui.player.en-075.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.ru-075",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.ru-075.loaded",
+        "flow.ui.player.ru-075.custody",
+        "flow.ui.player.ru-075.saving",
+        "flow.ui.player.ru-075.saved",
+        "flow.ui.player.ru-075.delivery",
+        "flow.ui.player.ru-075.lifecycle",
+        "flow.ui.player.ru-075.reload",
+        "flow.ui.player.ru-075.no-duplication",
+        "flow.ui.player.ru-075.window-actions",
+        "flow.ui.player.ru-075.visible-results",
+        "flow.ui.player.ru-075.window-reopen",
+        "flow.ui.player.ru-075.profile-applied",
+        "flow.ui.player.ru-075.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.en-100",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.en-100.loaded",
+        "flow.ui.player.en-100.custody",
+        "flow.ui.player.en-100.saving",
+        "flow.ui.player.en-100.saved",
+        "flow.ui.player.en-100.delivery",
+        "flow.ui.player.en-100.lifecycle",
+        "flow.ui.player.en-100.reload",
+        "flow.ui.player.en-100.no-duplication",
+        "flow.ui.player.en-100.window-actions",
+        "flow.ui.player.en-100.visible-results",
+        "flow.ui.player.en-100.window-reopen",
+        "flow.ui.player.en-100.profile-applied",
+        "flow.ui.player.en-100.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.ru-100",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.ru-100.loaded",
+        "flow.ui.player.ru-100.custody",
+        "flow.ui.player.ru-100.saving",
+        "flow.ui.player.ru-100.saved",
+        "flow.ui.player.ru-100.delivery",
+        "flow.ui.player.ru-100.lifecycle",
+        "flow.ui.player.ru-100.reload",
+        "flow.ui.player.ru-100.no-duplication",
+        "flow.ui.player.ru-100.window-actions",
+        "flow.ui.player.ru-100.visible-results",
+        "flow.ui.player.ru-100.window-reopen",
+        "flow.ui.player.ru-100.profile-applied",
+        "flow.ui.player.ru-100.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.en-125",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.en-125.loaded",
+        "flow.ui.player.en-125.custody",
+        "flow.ui.player.en-125.saving",
+        "flow.ui.player.en-125.saved",
+        "flow.ui.player.en-125.delivery",
+        "flow.ui.player.en-125.lifecycle",
+        "flow.ui.player.en-125.reload",
+        "flow.ui.player.en-125.no-duplication",
+        "flow.ui.player.en-125.window-actions",
+        "flow.ui.player.en-125.visible-results",
+        "flow.ui.player.en-125.window-reopen",
+        "flow.ui.player.en-125.profile-applied",
+        "flow.ui.player.en-125.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.ru-125",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.ru-125.loaded",
+        "flow.ui.player.ru-125.custody",
+        "flow.ui.player.ru-125.saving",
+        "flow.ui.player.ru-125.saved",
+        "flow.ui.player.ru-125.delivery",
+        "flow.ui.player.ru-125.lifecycle",
+        "flow.ui.player.ru-125.reload",
+        "flow.ui.player.ru-125.no-duplication",
+        "flow.ui.player.ru-125.window-actions",
+        "flow.ui.player.ru-125.visible-results",
+        "flow.ui.player.ru-125.window-reopen",
+        "flow.ui.player.ru-125.profile-applied",
+        "flow.ui.player.ru-125.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.en-150",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.en-150.loaded",
+        "flow.ui.player.en-150.custody",
+        "flow.ui.player.en-150.saving",
+        "flow.ui.player.en-150.saved",
+        "flow.ui.player.en-150.delivery",
+        "flow.ui.player.en-150.lifecycle",
+        "flow.ui.player.en-150.reload",
+        "flow.ui.player.en-150.no-duplication",
+        "flow.ui.player.en-150.window-actions",
+        "flow.ui.player.en-150.visible-results",
+        "flow.ui.player.en-150.window-reopen",
+        "flow.ui.player.en-150.profile-applied",
+        "flow.ui.player.en-150.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    },
+    {
+      "id": "flow.ui.player.ru-150",
+      "kind": "smoke",
+      "requiresSave": true,
+      "includeInAll": false,
+      "timeoutSeconds": 600,
+      "requiredMods": [
+        "Hatifect.UI",
+        "Hatifect.Flow"
+      ],
+      "checks": [
+        "flow.ui.player.ru-150.loaded",
+        "flow.ui.player.ru-150.custody",
+        "flow.ui.player.ru-150.saving",
+        "flow.ui.player.ru-150.saved",
+        "flow.ui.player.ru-150.delivery",
+        "flow.ui.player.ru-150.lifecycle",
+        "flow.ui.player.ru-150.reload",
+        "flow.ui.player.ru-150.no-duplication",
+        "flow.ui.player.ru-150.window-actions",
+        "flow.ui.player.ru-150.visible-results",
+        "flow.ui.player.ru-150.window-reopen",
+        "flow.ui.player.ru-150.profile-applied",
+        "flow.ui.player.ru-150.profile-restored"
+      ],
+      "automation": {
+        "protocolVersion": 1,
+        "driver": "Hatifect.TestHarness"
+      }
+    }
+  ]
+}

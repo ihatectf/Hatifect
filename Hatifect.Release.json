@@ -1,0 +1,125 @@
+{
+  "FormatVersion": 1,
+  "ReleaseId": "hatifect-clean-baseline",
+  "PackageRoot": "Hatifect",
+  "ArtifactName": "Hatifect-clean-baseline.zip",
+  "MinimumApiVersion": "4.5.2",
+  "Modules": [
+    {
+      "Key": "hatifect-ui",
+      "Name": "Hatifect UI",
+      "Path": "Hatifect UI",
+      "Project": "Hatifect UI/Hatifect.UI.Stardew/Hatifect.UI.Stardew.csproj",
+      "Manifest": "Hatifect UI/manifest.json",
+      "UniqueID": "Hatifect.UI",
+      "Version": "1.0.0-alpha.47",
+      "EntryDll": "Hatifect.UI.Stardew.dll",
+      "AllowedRootFiles": [
+        "Hatifect.UI.Stardew.dll",
+        "Hatifect.UI.Experience.dll",
+        "Hatifect.UI.Language.dll",
+        "Hatifect.UI.Planning.dll",
+        "Hatifect.UI.Runtime.dll",
+        "Hatifect.UI.Semantics.dll",
+        "Hatifect.UI.Tooling.dll",
+        "Hatifect.UI.DevTools.dll",
+        "manifest.json"
+      ],
+      "AllowedDirectories": [],
+      "AllowedRuntimeFiles": [],
+      "Dependencies": []
+    },
+    {
+      "Key": "chests-anywhere-overlay",
+      "Name": "Hatifect Chests Anywhere Overlay",
+      "Path": "Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay",
+      "Project": "Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/Hatifect.ChestsAnywhereOverlay.csproj",
+      "Manifest": "Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/manifest.json",
+      "UniqueID": "Hatifect.ChestsAnywhereOverlay",
+      "Version": "1.0.0-alpha.1",
+      "EntryDll": "Hatifect.ChestsAnywhereOverlay.dll",
+      "AllowedRootFiles": [
+        "Hatifect.ChestsAnywhereOverlay.dll",
+        "Hatifect.ChestsAnywhereOverlay.UI.Semantic.dll",
+        "manifest.json",
+        "config.json"
+      ],
+      "AllowedDirectories": [
+        "i18n"
+      ],
+      "AllowedRuntimeFiles": [
+        "i18n/default.json",
+        "i18n/ru.json"
+      ],
+      "Dependencies": [
+        {
+          "UniqueID": "Hatifect.UI",
+          "IsRequired": true,
+          "MinimumVersion": "1.0.0-alpha.47"
+        },
+        {
+          "UniqueID": "Pathoschild.ChestsAnywhere",
+          "IsRequired": false,
+          "MinimumVersion": "1.30.1"
+        }
+      ],
+      "MinimumGameVersion": "1.6.15"
+    },
+    {
+      "Key": "flowline",
+      "Name": "Hatifect Flowline",
+      "Path": "Hatifect Flow",
+      "Project": "Hatifect Flow/Hatifect.Flow.csproj",
+      "Manifest": "Hatifect Flow/manifest.json",
+      "UniqueID": "Hatifect.Flow",
+      "Version": "3.0.0-rc.89",
+      "EntryDll": "Hatifect.Flow.dll",
+      "AllowedRootFiles": [
+        "Hatifect.Flow.dll",
+        "Hatifect.Flow.Core.dll",
+        "Hatifect.Flow.Persistence.dll",
+        "Hatifect.Flow.UI.Semantic.dll",
+        "manifest.json",
+        "LICENSE"
+      ],
+      "AllowedDirectories": [],
+      "AllowedRuntimeFiles": [],
+      "Dependencies": [{ "UniqueID": "Hatifect.UI", "IsRequired": true, "MinimumVersion": "1.0.0-alpha.47" }]
+    }
+  ],
+  "VersionFollowers": [
+    {
+      "Project": "Hatifect UI/Hatifect.UI.DevTools/Hatifect.UI.DevTools.csproj",
+      "Module": "hatifect-ui"
+    },
+    {
+      "Project": "Hatifect UI/Hatifect.UI.Experience/Hatifect.UI.Experience.csproj",
+      "Module": "hatifect-ui"
+    },
+    {
+      "Project": "Hatifect UI/Hatifect.UI.Language/Hatifect.UI.Language.csproj",
+      "Module": "hatifect-ui"
+    },
+    {
+      "Project": "Hatifect UI/Hatifect.UI.Planning/Hatifect.UI.Planning.csproj",
+      "Module": "hatifect-ui"
+    },
+    {
+      "Project": "Hatifect UI/Hatifect.UI.Runtime/Hatifect.UI.Runtime.csproj",
+      "Module": "hatifect-ui"
+    },
+    {
+      "Project": "Hatifect UI/Hatifect.UI.Semantics/Hatifect.UI.Semantics.csproj",
+      "Module": "hatifect-ui"
+    },
+    {
+      "Project": "Hatifect UI/Hatifect.UI.Tooling/Hatifect.UI.Tooling.csproj",
+      "Module": "hatifect-ui"
+    },
+    {
+      "Project": "Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/Hatifect.ChestsAnywhereOverlay.UI.Semantic/Hatifect.ChestsAnywhereOverlay.UI.Semantic.csproj",
+      "Module": "chests-anywhere-overlay"
+    }
+  ],
+  "TargetFramework": "net6.0"
+}

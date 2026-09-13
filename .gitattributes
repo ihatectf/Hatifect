@@ -1,0 +1,48 @@
+# Let Git detect text files by default.
+* text=auto
+
+# C# / .NET / MSBuild
+*.cs       text eol=lf
+*.csproj   text eol=lf
+*.props    text eol=lf
+*.targets  text eol=lf
+*.sln      text eol=lf
+*.slnx     text eol=lf
+
+# Configuration / structured text
+*.json     text eol=lf
+*.jsonc    text eol=lf
+*.xml      text eol=lf
+*.yaml     text eol=lf
+*.yml      text eol=lf
+*.toml     text eol=lf
+*.css      text eol=lf
+
+# Documentation
+*.md       text eol=lf
+*.txt      text eol=lf
+
+# Scripts
+*.sh       text eol=lf
+*.py       text eol=lf
+
+# Game / image assets
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.xnb      binary
+
+# Compiled binaries / archives
+*.dll      binary
+*.exe      binary
+*.pdb      binary
+*.zip      binary
+*.7z       binary
+
+# Fonts
+*.ttf      binary
+*.otf      binary
+*.woff     binary
+*.woff2    binary

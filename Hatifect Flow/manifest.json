@@ -1,0 +1,10 @@
+{
+  "Name": "Hatifect Flowline",
+  "Author": "ihatectf",
+  "Version": "3.0.0-rc.89",
+  "Description": "Flowline single-player chest transport with save-owned cargo and live shipment controls.",
+  "UniqueID": "Hatifect.Flow",
+  "EntryDll": "Hatifect.Flow.dll",
+  "MinimumApiVersion": "4.5.2",
+  "Dependencies": [{ "UniqueID": "Hatifect.UI", "IsRequired": true, "MinimumVersion": "1.0.0-alpha.47" }]
+}

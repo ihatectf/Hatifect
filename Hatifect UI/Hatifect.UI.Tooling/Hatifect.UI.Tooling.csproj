@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Hatifect.UI.Tooling</AssemblyName>
+    <RootNamespace>Hatifect.UI.Tooling</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0-alpha.47</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Hatifect.UI.Language/Hatifect.UI.Language.csproj" />
+    <ProjectReference Include="../Hatifect.UI.Semantics/Hatifect.UI.Semantics.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hatifect.UI.Tooling.Tests" />
+    <InternalsVisibleTo Include="Hatifect.UI.Tooling.Server" />
+    <InternalsVisibleTo Include="Hatifect.UI.Tooling.Server.Tests" />
+  </ItemGroup>
+  <PropertyGroup><HatifectUiPackageProducer>true</HatifectUiPackageProducer></PropertyGroup>
+  <Import Project="../../Hatifect.UI.Packages.props" />
+</Project>

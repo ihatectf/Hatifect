@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "user-session-result.schema.json",
+  "title": "Hatifect user-session runtime result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "resultType",
+    "requestId",
+    "scenarioId",
+    "checkoutSha",
+    "state",
+    "status",
+    "exitCode",
+    "message",
+    "directTransportResultPath",
+    "completedAtUtc"
+  ],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "resultType": { "const": "directRuntimeExecutionResult" },
+    "requestId": { "type": "string", "format": "uuid" },
+    "scenarioId": { "type": "string", "minLength": 1 },
+    "checkoutSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "state": { "enum": ["Completed", "Failed", "TimedOut", "Cancelled", "Rejected"] },
+    "status": { "enum": ["PASS", "FAIL", "BLOCKED"] },
+    "exitCode": { "enum": [0, 1, 2] },
+    "message": { "type": "string", "maxLength": 2048 },
+    "directTransportResultPath": { "type": ["string", "null"] },
+    "completedAtUtc": { "type": "string", "format": "date-time" }
+  }
+}

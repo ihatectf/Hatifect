@@ -1,0 +1,68 @@
+name: Hatifect Compatibility
+
+on:
+  schedule:
+    - cron: "37 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hatifect-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+  DOTNET_NOLOGO: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  compatibility:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Set up .NET SDK and target runtime
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: |
+            8.0.x
+            6.0.x
+      - name: Cache external NuGet dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('global.json', '**/*.csproj', '**/*.props', '**/*.targets', '**/packages.lock.json', '**/NuGet.config', '**/nuget.config') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+      - name: Run the canonical host-free validation
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash ./tools/hatifect-check
+      - name: Build and test every host-free project on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python tools/validation.py build
+          python tools/validation.py test --no-build
+      - name: Preserve compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: compatibility-${{ runner.os }}
+          path: artifacts/validation/
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,14 @@
+{
+  "FormatVersion": 3,
+  "MeasurementFrames": 600,
+  "Budgets": {
+    "MaxP95UiThreadMs": 2.0,
+    "MaxP99UiThreadMs": 4.0,
+    "MaxSteadyStateAllocatedBytesPerFrame": 16384,
+    "MaxMeasureCacheMissRatio": 0.2,
+    "MaxArrangeCacheMissRatio": 0.2
+  },
+  "RequiredScenarios": [
+    "semantic.performance"
+  ]
+}

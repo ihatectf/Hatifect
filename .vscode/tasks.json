@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Hatifect: User-session runtime executor",
+      "type": "process",
+      "command": "${workspaceFolder}/tools/hatifect-runtime-executor",
+      "args": ["serve"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": {
+        "owner": "hatifect-runtime-executor",
+        "pattern": {
+          "regexp": "^(?!)$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^Hatifect user-session runtime executor starting$",
+          "endsPattern": "^Hatifect user-session runtime executor ready$"
+        }
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "dedicated",
+        "close": false,
+        "clear": false,
+        "showReuseMessage": false
+      }
+    }
+  ]
+}
