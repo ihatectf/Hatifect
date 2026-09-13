@@ -80,10 +80,9 @@ UI consumer читает контракт своего subsystem; изменен
 
 Runtime transport и JSON schemas сохранены для дальнейшей acceptance-проверки. Каталог сценариев — `tools/live-harness/scenarios.json`; результаты имеют статусы PASS/FAIL/BLOCKED/NOT_APPLICABLE. Сценарии `flow.route.basic` и `flow.save.isolation` проверяют диагностический fake-provider маршрут и lifecycle Flowline. Отдельный `flow.chest.roundtrip` проверяет production-сессию и настоящую запись/загрузку request-owned сейва. `flow.chest.crash-after-save` завершает принадлежащий executor процесс через SIGKILL после подтверждённого Saved и запускает новый SMAPI с той же копией; это одна фиксированная crash/reload граница, а не вся failure matrix. Оба chest-сценария запускаются отдельно от aggregate. UI aggregate `all` проверяет текущие семантические поверхности и совместимый CA Overlay; отрицательные конфигурации CA запускаются отдельно.
 
-`result.json` protocol v1 остаётся каноническим совместимым результатом. Неуспешный запуск
-дополнительно создаёт bounded `failure.json` и короткий `failure-summary.txt`: один
-`ROOT_FAILURE`, детерминированные `CASCADE_SKIPPED` со ссылкой на него и отдельные
-`CLEANUP_FAILURE`. Raw logs и прежние evidence сохраняются. Контракт, границы и исходный замер
-описаны в [решении Phase 1](FAILURE_ENVELOPE.md).
+`result.json` protocol v1 остаётся совместимым результатом. Non-PASS запуск дополнительно пишет
+bounded `failure.json` и `failure-summary.txt`: один `ROOT_FAILURE`, доказанные
+`CASCADE_SKIPPED`, видимые `ADDITIONAL_FAILURE` и отдельные `CLEANUP_FAILURE`. Raw evidence
+сохраняется. Контракт и границы: [решение Phase 1](FAILURE_ENVELOPE.md).
 
 Когда задача или выбранный срез roadmap требует runtime-проверки, Codex самостоятельно запускает канонический executor в терминале текущего worktree без повторного вопроса о разрешении. Порядок подготовки, проверки singleton/Ready, владения терминалом и завершения процесса описан в [руководстве runtime-тестов](RUNTIME.md). Там же указаны узкое проектное правило Codex для команды `serve`, его проверка и условия загрузки.

@@ -108,6 +108,10 @@ class FailureEnvelopeTests(unittest.TestCase):
                     self._assertion("semantic.lifecycle.close-reopen", "FAIL", "reopened", "not attempted"),
                 ],
                 failure_timestamp=TIMESTAMP,
+                cascade_dependencies={
+                    "semantic.lifecycle.focus": "semantic.lifecycle.visual",
+                    "semantic.lifecycle.close-reopen": "semantic.lifecycle.visual",
+                },
             )
 
             envelope = self._read_envelope(result_path)
@@ -123,6 +127,88 @@ class FailureEnvelopeTests(unittest.TestCase):
             and record["original_status"] == "FAIL"
             for record in envelope["cascade_records"]
         ))
+
+    def test_product_restoration_assertions_are_not_harness_cleanup(self) -> None:
+        cases = (
+            ("semantic.observation", "semantic.observation.restored"),
+            ("flow.ui.names", "flow.ui.names.restored"),
+            ("flow.ui.player.en-075", "flow.ui.player.en-075.profile-restored"),
+        )
+        for scenario, assertion_id in cases:
+            with self.subTest(assertion_id=assertion_id), tempfile.TemporaryDirectory() as directory:
+                result_path = Path(directory) / "result.json"
+                HARNESS.write_result(
+                    result_path,
+                    "FAIL",
+                    scenario,
+                    "restoration observation failed",
+                    run_id="test-run",
+                    assertions=[self._assertion(
+                        assertion_id,
+                        "FAIL",
+                        "owners retire",
+                        "source retained",
+                    )],
+                    failure_timestamp=TIMESTAMP,
+                )
+                envelope = self._read_envelope(result_path)
+
+                self.assertEqual(envelope["root_failure"]["id"], assertion_id)
+                self.assertEqual(envelope["failure_class"], "ASSERTION_FAILURE")
+                self.assertEqual(envelope["cleanup_failures"], [])
+
+    def test_product_failed_cleanup_assertion_is_not_harness_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = Path(directory) / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "FAIL",
+                "semantic.actions.reload",
+                "reload cleanup observation failed",
+                run_id="test-run",
+                assertions=[self._assertion(
+                    "semantic.actions.reload.hud-hide.failed-cleanup",
+                    "FAIL",
+                    "surface retired",
+                    "surface remained visible",
+                )],
+                failure_timestamp=TIMESTAMP,
+            )
+            envelope = self._read_envelope(result_path)
+
+        self.assertEqual(
+            envelope["root_failure"]["id"],
+            "semantic.actions.reload.hud-hide.failed-cleanup",
+        )
+        self.assertEqual(envelope["failure_class"], "ASSERTION_FAILURE")
+        self.assertEqual(envelope["cleanup_failures"], [])
+
+    def test_independent_failures_remain_visible_without_cascade_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = Path(directory) / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "FAIL",
+                "semantic.lifecycle",
+                "independent checks failed",
+                run_id="test-run",
+                assertions=[
+                    self._assertion("semantic.lifecycle.visual", "FAIL", "visible", "missing"),
+                    self._assertion("semantic.lifecycle.focus", "FAIL", "focused", "unavailable"),
+                ],
+                failure_timestamp=TIMESTAMP,
+            )
+            envelope = self._read_envelope(result_path)
+
+        self.assertEqual(envelope["cascade_records"], [])
+        self.assertEqual(
+            [record["id"] for record in envelope["additional_failures"]],
+            ["semantic.lifecycle.focus"],
+        )
+        self.assertEqual(
+            envelope["additional_failures"][0]["classification"],
+            "ADDITIONAL_FAILURE",
+        )
 
     def test_cleanup_failure_after_root_remains_separate_and_subordinate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -256,7 +342,7 @@ class FailureEnvelopeTests(unittest.TestCase):
         self.assertEqual(payloads[0], payloads[1])
         self.assertEqual(summaries[0], summaries[1])
 
-    def test_cascade_context_is_bounded_without_changing_legacy_evidence(self) -> None:
+    def test_explicit_cascade_context_is_bounded_without_changing_legacy_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result_path = Path(directory) / "result.json"
             assertions = [
@@ -271,6 +357,10 @@ class FailureEnvelopeTests(unittest.TestCase):
                 run_id="bounded-run",
                 assertions=assertions,
                 failure_timestamp=TIMESTAMP,
+                cascade_dependencies={
+                    assertion["id"]: assertions[0]["id"]
+                    for assertion in assertions[1:]
+                },
             )
 
             envelope = self._read_envelope(result_path)
@@ -283,6 +373,86 @@ class FailureEnvelopeTests(unittest.TestCase):
         )
         self.assertIn("8 additional", envelope["cascade_records"][-1]["actual"])
         self.assertEqual(len(result["assertions"]), 40)
+
+    def test_strict_validator_rejects_stale_sidecar_with_changed_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = Path(directory) / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "FAIL",
+                "runtime.boot",
+                "first root",
+                run_id="test-run",
+                assertions=[self._assertion(
+                    "runtime.boot.loaded",
+                    "FAIL",
+                    "loaded",
+                    "missing",
+                )],
+                failure_timestamp=TIMESTAMP,
+            )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            result["assertions"] = [self._assertion(
+                "runtime.boot.ready",
+                "FAIL",
+                "ready",
+                "not ready",
+            )]
+            result_path.write_text(json.dumps(result), encoding="utf-8")
+            strict = subprocess.run(
+                [
+                    sys.executable,
+                    str(VALIDATOR_PATH),
+                    "validate-result",
+                    str(result_path),
+                    "runtime.boot",
+                    "--require-failure-envelope",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(strict.returncode, 2)
+        self.assertIn("fingerprint conflicts", strict.stderr)
+
+    def test_top_level_root_contradiction_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = self._write_failed_result(Path(directory))
+            envelope = self._read_envelope(result_path)
+            envelope["message"] = "contradictory message"
+
+        with self.assertRaisesRegex(HARNESS.HarnessError, "conflicts with its root"):
+            HARNESS.validate_failure_envelope(envelope)
+
+    def test_text_field_longer_than_bound_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = self._write_failed_result(Path(directory))
+            envelope = self._read_envelope(result_path)
+            oversized = "x" * (HARNESS.MAX_FAILURE_TEXT + 1)
+            envelope["actual"] = oversized
+            envelope["message"] = oversized
+            envelope["root_failure"]["actual"] = oversized
+            envelope["root_failure"]["message"] = oversized
+
+        with self.assertRaisesRegex(HARNESS.HarnessError, "no longer than"):
+            HARNESS.validate_failure_envelope(envelope)
+
+    def test_unknown_or_oversized_environment_summary_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = self._write_failed_result(Path(directory))
+            envelope = self._read_envelope(result_path)
+            unknown = json.loads(json.dumps(envelope))
+            unknown["environment_summary"]["unapproved"] = "value"
+            oversized = json.loads(json.dumps(envelope))
+            oversized["environment_summary"]["platform"] = "x" * (
+                HARNESS.MAX_FAILURE_TEXT + 1
+            )
+
+        with self.assertRaisesRegex(HARNESS.HarnessError, "unsupported fields"):
+            HARNESS.validate_failure_envelope(unknown)
+        with self.assertRaisesRegex(HARNESS.HarnessError, "environment_summary platform"):
+            HARNESS.validate_failure_envelope(oversized)
 
     def test_standalone_v1_failure_validation_remains_backward_compatible(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -342,6 +512,24 @@ class FailureEnvelopeTests(unittest.TestCase):
             "expected": expected,
             "actual": actual,
         }
+
+    def _write_failed_result(self, root: Path) -> Path:
+        result_path = root / "result.json"
+        HARNESS.write_result(
+            result_path,
+            "FAIL",
+            "runtime.boot",
+            "missing",
+            run_id="test-run",
+            assertions=[self._assertion(
+                "runtime.boot.loaded",
+                "FAIL",
+                "loaded",
+                "missing",
+            )],
+            failure_timestamp=TIMESTAMP,
+        )
+        return result_path
 
     @staticmethod
     def _read_envelope(result_path: Path):

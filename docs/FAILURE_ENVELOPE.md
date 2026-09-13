@@ -15,26 +15,31 @@ direct runtime → TestHarness acceptance report → validator.
 `result.json` remains protocol v1 and authoritative for existing consumers. Every new non-PASS
 result also writes:
 
-- `failure.json`: bounded machine-readable format v1;
+- `failure.json`: bounded machine-readable format v2;
 - `failure-summary.txt`: an eight-line first-pass diagnosis;
 - existing logs, screenshots, reports and transport diagnostics remain unchanged.
 
 The envelope selects the first non-cleanup failed assertion in canonical assertion order as the
-single `ROOT_FAILURE`. Later non-cleanup failures are retained as `CASCADE_SKIPPED` records with
-their original FAIL/BLOCKED status and a reference to that root; they are not silently converted
-into successful skips. Cleanup and restoration errors are `CLEANUP_FAILURE` records referencing
-the root. If cleanup is the only failure, it becomes the single root and changes an otherwise
-successful run to BLOCKED, matching the existing fail-closed runtime behavior.
+single `ROOT_FAILURE`. A `CASCADE_SKIPPED` record requires explicit `cascade_dependencies`
+provenance that references that root. Later failures without that evidence are bounded
+`ADDITIONAL_FAILURE` records, preserving their original FAIL/BLOCKED status without claiming they
+were skipped. Cleanup and restoration errors are `CLEANUP_FAILURE` records referencing the root
+only when they use one of the strict harness-owned cleanup IDs: `HARNESS-SAVE-CLEANUP`,
+`HARNESS-OPTIONS-RESTORE` or `HARNESS-PROCESS-TEARDOWN`. Product assertions are never classified
+from ID substrings. If cleanup is the only failure, it becomes the single root and changes an
+otherwise successful run to BLOCKED, matching the existing fail-closed runtime behavior.
 
 The top level contains `scenario`, `run_id`, `phase`, `timestamp`, `status`, `failure_class`,
 `root_failure`, `expected`, `actual`, `message`, `causal_component`, `relevant_artifacts` and
 `environment_summary`. Text fields are limited to 2,048 characters, cascade context to 32 records,
-cleanup context to 8 records, artifact references to 12 sorted request-relative paths, and the
-summary to 8,192 characters. Any overflow of result-backed cascades is represented by one bounded
-remainder record while the unchanged `result.json` retains every original assertion. Environment
-data is an allowlist of platform/runtime identity values; paths, environment variables and log
-bodies are not copied. JSON keys and record order are deterministic for identical evidence and
-timestamp.
+additional-failure context to 32 records, cleanup context to 8 records, artifact references to 12
+sorted request-relative paths, and the summary to 8,192 characters. Any overflow of result-backed
+cascades or additional failures is represented by one bounded remainder record while the unchanged
+`result.json` retains every original assertion. Environment data is a typed allowlist of
+platform/runtime identity values; paths, environment variables and log bodies are not copied.
+`result_fingerprint` is a SHA-256 digest of canonical authoritative `result.json`, so strict
+validation rejects stale sidecars even when scenario, run ID and status are unchanged. JSON keys
+and record order are deterministic for identical evidence and timestamp.
 
 `tools/live-harness/direct_runtime.py` remains responsible for process, game-option and owned-save
 cleanup. It supplies cleanup outcomes to the validator so cleanup still runs and remains visible
