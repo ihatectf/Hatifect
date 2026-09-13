@@ -143,7 +143,7 @@ class BuildMetadataTests(unittest.TestCase):
         self.assertEqual(len(all_roots), expected_count)
         roots = [root for root in all_roots if root.get("SourceControl") == "git"]
         self.assertEqual(len(roots), 1)
-        self.assertEqual(roots[0]["Identity"], str(self.worktree) + "/")
+        self.assertEqual(roots[0]["Identity"], str(self.worktree) + os.sep)
         self.assertEqual(roots[0]["RevisionId"], REVISION)
         self.assertEqual(roots[0]["SourceControl"], "git")
         self.assertEqual(roots[0]["ScmRepositoryUrl"], URL)
