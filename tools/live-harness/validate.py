@@ -27,7 +27,94 @@ DEFAULT_TIMEOUT_SECONDS = 1800
 DEFAULT_MANIFEST = Path(__file__).with_name("scenarios.json")
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+$")
 MOD_UNIQUE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+MAX_REQUIRED_MODS = 8
+MAX_MOD_UNIQUE_ID = 48
 STATUSES = {"PASS", "FAIL", "BLOCKED"}
+PREFLIGHT_FORMAT_VERSION = 1
+PREFLIGHT_FILE_NAME = "preflight.json"
+MAX_PREFLIGHT_BYTES = 64 * 1024
+MAX_PREFLIGHT_CAPABILITIES = 16
+MAX_PREFLIGHT_EXPLANATION = 512
+PREFLIGHT_STATUSES = {"PASS", "BLOCKED"}
+CAPABILITY_STATUSES = {"available", "missing", "unsupported", "error"}
+CAPABILITY_CLASSIFICATIONS = {
+    "available",
+    "environment-failure",
+    "unsupported-capability",
+    "misconfiguration",
+}
+CAPABILITY_REQUIREMENTS = {"required", "optional"}
+PREFLIGHT_REASON_CODES = {
+    "AVAILABLE",
+    "PROBE_NOT_RUN",
+    "ARTIFACT_NOT_WRITABLE",
+    "REQUEST_PARAMETERS_INVALID",
+    "SMAPI_UNAVAILABLE",
+    "DEPLOYMENT_UNAVAILABLE",
+    "DEPLOYMENT_INVALID",
+    "REQUIRED_MOD_MISSING",
+    "REQUIRED_MOD_PROBE_INVALID",
+    "SAVE_FIXTURE_UNAVAILABLE",
+    "SAVE_FIXTURE_INVALID",
+    "EXECUTOR_UNAVAILABLE",
+    "SEMANTIC_WORKFLOW_INVALID",
+    "PLATFORM_UNSUPPORTED",
+    "GUI_SESSION_UNAVAILABLE",
+    "QUARTZ_ACCESSIBILITY_DENIED",
+    "USER_SESSION_PROBE_FAILED",
+}
+CAPABILITY_DEFINITIONS = {
+    "artifact-writable": {
+        "owner": "live-harness",
+        "probeLayer": "request-artifact",
+        "assertionId": "HARNESS-PREFLIGHT-ARTIFACT-WRITABLE",
+    },
+    "request-parameters": {
+        "owner": "live-harness",
+        "probeLayer": "request-validation",
+        "assertionId": "HARNESS-PREFLIGHT-REQUEST-PARAMETERS",
+    },
+    "smapi-runtime": {
+        "owner": "runtime-environment",
+        "probeLayer": "user-session-preflight",
+        "assertionId": "HARNESS-PREFLIGHT-SMAPI-RUNTIME",
+    },
+    "isolated-deployment": {
+        "owner": "deployment-preparer",
+        "probeLayer": "isolated-deployment",
+        "assertionId": "HARNESS-PREFLIGHT-ISOLATED-DEPLOYMENT",
+    },
+    "required-mods": {
+        "owner": "scenario-manifest",
+        "probeLayer": "isolated-mods",
+        "assertionId": "HARNESS-PREFLIGHT-REQUIRED-MODS",
+    },
+    "isolated-save-fixture": {
+        "owner": "save-provisioning",
+        "probeLayer": "isolated-save-fixture",
+        "assertionId": "HARNESS-PREFLIGHT-SAVE-FIXTURE",
+    },
+    "user-session-executor": {
+        "owner": "user-session-runtime",
+        "probeLayer": "executor-state",
+        "assertionId": "HARNESS-PREFLIGHT-USER-SESSION-EXECUTOR",
+    },
+    "semantic-workflow": {
+        "owner": "semantic-test-agent",
+        "probeLayer": "checked-in-workflow",
+        "assertionId": "HARNESS-PREFLIGHT-SEMANTIC-WORKFLOW",
+    },
+    "user-session-gui": {
+        "owner": "user-session-runtime",
+        "probeLayer": "macos-window-server",
+        "assertionId": "HARNESS-PREFLIGHT-USER-SESSION-GUI",
+    },
+    "quartz-post-events": {
+        "owner": "native-input-driver",
+        "probeLayer": "macos-quartz",
+        "assertionId": "HARNESS-PREFLIGHT-QUARTZ-POST-EVENTS",
+    },
+}
 FAILURE_ENVELOPE_FORMAT_VERSION = 3
 LEGACY_FAILURE_ENVELOPE_FORMAT_VERSION = 2
 FAILURE_RECORD_TYPES = {
@@ -702,6 +789,47 @@ def _is_scenario_identifier(value: Any) -> bool:
     )
 
 
+def _derived_capability_ids(scenario: dict[str, Any]) -> tuple[str, ...]:
+    capabilities = [
+        "artifact-writable",
+        "request-parameters",
+        "smapi-runtime",
+        "isolated-deployment",
+        "user-session-executor",
+    ]
+    if scenario.get("requiredMods"):
+        capabilities.append("required-mods")
+    if scenario.get("requiresSave"):
+        capabilities.append("isolated-save-fixture")
+    return tuple(capabilities)
+
+
+def _validate_capability_declarations(scenario: dict[str, Any]) -> None:
+    scenario_id = scenario["id"]
+    declarations = scenario.get("capabilities", [])
+    if not isinstance(declarations, list) or len(declarations) > MAX_PREFLIGHT_CAPABILITIES:
+        raise HarnessError(f"Scenario '{scenario_id}' has invalid capabilities.")
+    seen: set[str] = set()
+    derived = set(_derived_capability_ids(scenario))
+    for declaration in declarations:
+        if (
+            not isinstance(declaration, dict)
+            or set(declaration) != {"id", "required"}
+            or not isinstance(declaration.get("id"), str)
+            or declaration["id"] not in CAPABILITY_DEFINITIONS
+            or not isinstance(declaration["required"], bool)
+            or declaration["id"] in seen
+        ):
+            raise HarnessError(f"Scenario '{scenario_id}' has invalid capabilities.")
+        capability_id = declaration["id"]
+        if capability_id in derived and declaration["required"] is False:
+            raise HarnessError(
+                f"Scenario '{scenario_id}' cannot downgrade derived capability "
+                f"'{capability_id}'."
+            )
+        seen.add(capability_id)
+
+
 def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, dict[str, Any]]:
     with path.open("r", encoding="utf-8") as stream:
         document = json.load(stream)
@@ -730,6 +858,7 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, dict[str, Any]]:
             "automation",
             "requiredMods",
             "includeInAll",
+            "capabilities",
         }
         if not set(scenario).issubset(allowed_fields):
             raise HarnessError("A live-harness scenario has an invalid field set.")
@@ -780,12 +909,16 @@ def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, dict[str, Any]]:
         if (
             not isinstance(required_mods, list)
             or any(
-                not isinstance(mod_id, str) or not MOD_UNIQUE_ID.fullmatch(mod_id)
+                not isinstance(mod_id, str)
+                or len(mod_id) > MAX_MOD_UNIQUE_ID
+                or not MOD_UNIQUE_ID.fullmatch(mod_id)
                 for mod_id in required_mods
             )
+            or len(required_mods) > MAX_REQUIRED_MODS
             or len(required_mods) != len(set(required_mods))
         ):
             raise HarnessError(f"Scenario '{scenario_id}' has invalid requiredMods.")
+        _validate_capability_declarations(scenario)
         flow_performance = scenario.get("flowPerformance")
         if scenario_id == FLOW_PERFORMANCE["scenarioId"] or "flowPerformance" in scenario:
             if (scenario_id != FLOW_PERFORMANCE["scenarioId"] or kind != "smoke"
@@ -882,6 +1015,26 @@ def resolve_scenario(
             if mod_id not in seen_required_mods:
                 seen_required_mods.add(mod_id)
                 required_mods.append(mod_id)
+    capability_requirements: dict[str, bool] = {}
+    for item in ordered:
+        for capability_id in _derived_capability_ids(item):
+            capability_requirements[capability_id] = True
+        for declaration in item.get("capabilities", []):
+            capability_id = declaration["id"]
+            capability_requirements[capability_id] = (
+                capability_requirements.get(capability_id, False)
+                or declaration["required"]
+            )
+    capabilities = [
+        {
+            "id": capability_id,
+            "requirement": (
+                "required" if capability_requirements[capability_id] else "optional"
+            ),
+        }
+        for capability_id in CAPABILITY_DEFINITIONS
+        if capability_id in capability_requirements
+    ]
     return {
         "id": scenario_id,
         "kind": kind,
@@ -893,7 +1046,315 @@ def resolve_scenario(
         "flowResources": flow_resources[0] if flow_resources else None,
         "automation": root["automation"],
         "requiredMods": required_mods,
+        "capabilities": capabilities,
     }
+
+
+def _validate_preflight_explanation(value: Any) -> None:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > MAX_PREFLIGHT_EXPLANATION
+        or "\n" in value
+        or "\r" in value
+        or "\0" in value
+        or re.search(r"(?:^|\s)/(?:Users|home|private|tmp|var)/", value)
+    ):
+        raise HarnessError("Capability preflight explanation is invalid or unbounded.")
+
+
+def build_preflight_report(
+    resolved: dict[str, Any],
+    run_id: str,
+    outcomes: dict[str, dict[str, str]],
+    *,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
+    if not isinstance(run_id, str) or not run_id or len(run_id) > MAX_FAILURE_TEXT:
+        raise HarnessError("Capability preflight run ID is invalid.")
+    created_at = _semantic_timestamp(timestamp)
+    reports: list[dict[str, Any]] = []
+    for requirement in resolved.get("capabilities", []):
+        capability_id = requirement.get("id") if isinstance(requirement, dict) else None
+        requirement_level = (
+            requirement.get("requirement") if isinstance(requirement, dict) else None
+        )
+        if (
+            capability_id not in CAPABILITY_DEFINITIONS
+            or requirement_level not in CAPABILITY_REQUIREMENTS
+        ):
+            raise HarnessError("Resolved scenario contains an invalid capability requirement.")
+        outcome = outcomes.get(capability_id)
+        if outcome is None:
+            outcome = {
+                "status": "error",
+                "classification": "misconfiguration",
+                "reasonCode": "PROBE_NOT_RUN",
+                "explanation": (
+                    f"Capability '{capability_id}' has no owner-layer probe result."
+                ),
+            }
+        if not isinstance(outcome, dict) or set(outcome) != {
+            "status",
+            "classification",
+            "reasonCode",
+            "explanation",
+        }:
+            raise HarnessError(
+                f"Capability '{capability_id}' has a malformed probe outcome."
+            )
+        definition = CAPABILITY_DEFINITIONS[capability_id]
+        reports.append(
+            {
+                "id": capability_id,
+                "requirement": requirement_level,
+                "status": outcome["status"],
+                "classification": outcome["classification"],
+                "reasonCode": outcome["reasonCode"],
+                "explanation": outcome["explanation"],
+                "owner": definition["owner"],
+                "probeLayer": definition["probeLayer"],
+                "observedAtUtc": created_at,
+            }
+        )
+    if len(reports) > MAX_PREFLIGHT_CAPABILITIES:
+        raise HarnessError("Capability preflight exceeds its report-count bound.")
+    required_unavailable = sum(
+        report["requirement"] == "required" and report["status"] != "available"
+        for report in reports
+    )
+    optional_unavailable = sum(
+        report["requirement"] == "optional" and report["status"] != "available"
+        for report in reports
+    )
+    report = {
+        "formatVersion": PREFLIGHT_FORMAT_VERSION,
+        "scenario": resolved["id"],
+        "runId": run_id,
+        "status": "BLOCKED" if required_unavailable else "PASS",
+        "createdAtUtc": created_at,
+        "counts": {
+            "total": len(reports),
+            "available": sum(item["status"] == "available" for item in reports),
+            "requiredUnavailable": required_unavailable,
+            "optionalUnavailable": optional_unavailable,
+        },
+        "capabilities": reports,
+    }
+    validate_preflight_report(
+        report,
+        expected_scenario=resolved["id"],
+        expected_run_id=run_id,
+        expected_requirements=resolved["capabilities"],
+    )
+    return report
+
+
+def validate_preflight_report(
+    report: Any,
+    *,
+    expected_scenario: str | None = None,
+    expected_run_id: str | None = None,
+    expected_requirements: list[dict[str, str]] | None = None,
+) -> str:
+    if not isinstance(report, dict) or set(report) != {
+        "formatVersion",
+        "scenario",
+        "runId",
+        "status",
+        "createdAtUtc",
+        "counts",
+        "capabilities",
+    }:
+        raise HarnessError("Capability preflight report has an invalid field set.")
+    if report["formatVersion"] != PREFLIGHT_FORMAT_VERSION:
+        raise HarnessError("Capability preflight report has an unsupported format.")
+    if not _is_scenario_identifier(report["scenario"]):
+        raise HarnessError("Capability preflight report has an invalid scenario.")
+    if expected_scenario is not None and report["scenario"] != expected_scenario:
+        raise HarnessError("Capability preflight report scenario identity mismatches.")
+    if (
+        not isinstance(report["runId"], str)
+        or not report["runId"]
+        or len(report["runId"]) > MAX_FAILURE_TEXT
+        or (expected_run_id is not None and report["runId"] != expected_run_id)
+    ):
+        raise HarnessError("Capability preflight report run identity mismatches.")
+    if not isinstance(report["status"], str) or report["status"] not in PREFLIGHT_STATUSES:
+        raise HarnessError("Capability preflight report has an invalid status.")
+    _parse_timestamp(report["createdAtUtc"])
+    capabilities = report["capabilities"]
+    if (
+        not isinstance(capabilities, list)
+        or not capabilities
+        or len(capabilities) > MAX_PREFLIGHT_CAPABILITIES
+    ):
+        raise HarnessError("Capability preflight report has an invalid capability count.")
+    expected_fields = {
+        "id",
+        "requirement",
+        "status",
+        "classification",
+        "reasonCode",
+        "explanation",
+        "owner",
+        "probeLayer",
+        "observedAtUtc",
+    }
+    seen: set[str] = set()
+    observed_requirements: list[dict[str, str]] = []
+    last_order = -1
+    for capability in capabilities:
+        if not isinstance(capability, dict) or set(capability) != expected_fields:
+            raise HarnessError("Capability preflight report contains a malformed entry.")
+        capability_id = capability["id"]
+        if (
+            not isinstance(capability_id, str)
+            or capability_id not in CAPABILITY_DEFINITIONS
+            or capability_id in seen
+        ):
+            raise HarnessError("Capability preflight report contains an unknown or duplicate capability.")
+        order = list(CAPABILITY_DEFINITIONS).index(capability_id)
+        if order <= last_order:
+            raise HarnessError("Capability preflight report order is not deterministic.")
+        last_order = order
+        seen.add(capability_id)
+        requirement = capability["requirement"]
+        status = capability["status"]
+        classification = capability["classification"]
+        if not isinstance(requirement, str) or requirement not in CAPABILITY_REQUIREMENTS:
+            raise HarnessError("Capability preflight requirement is invalid.")
+        if not isinstance(status, str) or status not in CAPABILITY_STATUSES:
+            raise HarnessError("Capability preflight status is invalid.")
+        if (
+            not isinstance(classification, str)
+            or classification not in CAPABILITY_CLASSIFICATIONS
+        ):
+            raise HarnessError("Capability preflight classification is invalid.")
+        if (status == "available") != (classification == "available"):
+            raise HarnessError("Capability preflight availability classification conflicts.")
+        reason_code = capability["reasonCode"]
+        if (
+            not isinstance(reason_code, str)
+            or reason_code not in PREFLIGHT_REASON_CODES
+            or (status == "available") != (reason_code == "AVAILABLE")
+        ):
+            raise HarnessError("Capability preflight reason code is invalid.")
+        _validate_preflight_explanation(capability["explanation"])
+        definition = CAPABILITY_DEFINITIONS[capability_id]
+        if (
+            capability["owner"] != definition["owner"]
+            or capability["probeLayer"] != definition["probeLayer"]
+        ):
+            raise HarnessError("Capability preflight owner or probe layer is invalid.")
+        _parse_timestamp(capability["observedAtUtc"])
+        observed_requirements.append(
+            {"id": capability_id, "requirement": requirement}
+        )
+    if expected_requirements is not None and observed_requirements != expected_requirements:
+        raise HarnessError("Capability preflight requirements mismatch the resolved scenario.")
+    counts = report["counts"]
+    expected_counts = {
+        "total": len(capabilities),
+        "available": sum(item["status"] == "available" for item in capabilities),
+        "requiredUnavailable": sum(
+            item["requirement"] == "required" and item["status"] != "available"
+            for item in capabilities
+        ),
+        "optionalUnavailable": sum(
+            item["requirement"] == "optional" and item["status"] != "available"
+            for item in capabilities
+        ),
+    }
+    if counts != expected_counts:
+        raise HarnessError("Capability preflight counts conflict with its reports.")
+    expected_status = "BLOCKED" if counts["requiredUnavailable"] else "PASS"
+    if report["status"] != expected_status:
+        raise HarnessError("Capability preflight status conflicts with required reports.")
+    if len(_serialized_json(report)) > MAX_PREFLIGHT_BYTES:
+        raise HarnessError("Capability preflight report exceeds its byte bound.")
+    return report["status"]
+
+
+def write_preflight_report(path: Path, report: dict[str, Any]) -> None:
+    validate_preflight_report(report)
+    _atomic_write_json(path, report)
+
+
+def read_preflight_report(
+    path: Path,
+    *,
+    expected_scenario: str | None = None,
+    expected_run_id: str | None = None,
+    expected_requirements: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    report = _read_bounded_json(path, maximum_bytes=MAX_PREFLIGHT_BYTES)
+    if report is None:
+        raise HarnessError("Capability preflight report is missing or exceeds its byte bound.")
+    validate_preflight_report(
+        report,
+        expected_scenario=expected_scenario,
+        expected_run_id=expected_run_id,
+        expected_requirements=expected_requirements,
+    )
+    return report
+
+
+def publish_preflight(
+    artifact_root: Path,
+    result_path: Path,
+    resolved: dict[str, Any],
+    run_id: str,
+    outcomes: dict[str, dict[str, str]],
+    *,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
+    report = build_preflight_report(
+        resolved,
+        run_id,
+        outcomes,
+        timestamp=timestamp,
+    )
+    write_preflight_report(artifact_root / PREFLIGHT_FILE_NAME, report)
+    unavailable = [
+        item
+        for item in report["capabilities"]
+        if item["requirement"] == "required" and item["status"] != "available"
+    ]
+    if unavailable:
+        assertions = [
+            _assertion(
+                CAPABILITY_DEFINITIONS[item["id"]]["assertionId"],
+                "BLOCKED",
+                resolved["id"],
+                f"Required capability '{item['id']}' is available.",
+                (
+                    f"Required capability '{item['id']}' is unavailable "
+                    f"({item['reasonCode']}): {item['explanation']}"
+                ),
+            )
+            for item in unavailable
+        ]
+        first = unavailable[0]
+        failure_classes = {
+            "environment-failure": "PREFLIGHT_ENVIRONMENT_FAILURE",
+            "unsupported-capability": "PREFLIGHT_UNSUPPORTED_CAPABILITY",
+            "misconfiguration": "PREFLIGHT_MISCONFIGURATION",
+        }
+        write_result(
+            result_path,
+            "BLOCKED",
+            resolved["id"],
+            assertions[0]["actual"],
+            run_id=run_id,
+            assertions=assertions,
+            artifacts=collect_artifacts(artifact_root),
+            failure_timestamp=report["createdAtUtc"],
+            failure_phase="preflight",
+            failure_class=failure_classes[first["classification"]],
+            causal_component=first["owner"],
+        )
+    return report
 
 
 def validate_required_mods(resolved: dict[str, Any], mods_root: Path) -> list[str]:
@@ -966,6 +1427,8 @@ def collect_artifacts(root: Path | None) -> list[dict[str, str]]:
             artifact_type = "instructions"
         elif relative == SEMANTIC_EVENT_FILE_NAME:
             artifact_type = "semantic-events"
+        elif relative == PREFLIGHT_FILE_NAME:
+            artifact_type = "preflight"
         else:
             artifact_type = "diagnostic"
         artifacts.append({"type": artifact_type, "path": relative})
@@ -1135,6 +1598,8 @@ def _relevant_artifacts(
     additions: list[str] | None = None,
 ) -> list[str]:
     candidates = {"result.json"}
+    if (artifact_root / PREFLIGHT_FILE_NAME).is_file():
+        candidates.add(PREFLIGHT_FILE_NAME)
     if (artifact_root / SEMANTIC_EVENT_FILE_NAME).is_file():
         candidates.add(SEMANTIC_EVENT_FILE_NAME)
     if (artifact_root / SEMANTIC_EVENT_ERROR_PATH).is_file():
@@ -1145,17 +1610,18 @@ def _relevant_artifacts(
     candidates.update(additions or [])
     priority = {
         "result.json": 0,
-        SEMANTIC_EVENT_FILE_NAME: 1,
-        SEMANTIC_EVENT_ERROR_PATH: 2,
-        "host-acceptance-report.json": 3,
-        "diagnostics/runtime.json": 4,
-        "diagnostics/semantic-test-agent.json": 5,
-        "diagnostics/executor-failure.json": 6,
-        "diagnostics/worker-failure.json": 7,
-        "diagnostics/transport-result.json": 8,
-        "semantic-test-agent.log": 9,
-        "smapi.log": 10,
-        "harness.log": 11,
+        PREFLIGHT_FILE_NAME: 1,
+        SEMANTIC_EVENT_FILE_NAME: 2,
+        SEMANTIC_EVENT_ERROR_PATH: 3,
+        "host-acceptance-report.json": 4,
+        "diagnostics/runtime.json": 5,
+        "diagnostics/semantic-test-agent.json": 6,
+        "diagnostics/executor-failure.json": 7,
+        "diagnostics/worker-failure.json": 8,
+        "diagnostics/transport-result.json": 9,
+        "semantic-test-agent.log": 10,
+        "smapi.log": 11,
+        "harness.log": 12,
     }
     contained: list[str] = []
     for relative in candidates:
@@ -1809,6 +2275,18 @@ def validate_failure_artifacts(
     if envelope["result_fingerprint"] != _result_fingerprint(result):
         raise HarnessError("Failure envelope fingerprint conflicts with result.json.")
     _validate_root_result_evidence(envelope["root_failure"], result)
+    preflight_path = result_path.parent / PREFLIGHT_FILE_NAME
+    if preflight_path.exists():
+        preflight = read_preflight_report(
+            preflight_path,
+            expected_scenario=result["scenario"],
+            expected_run_id=result["runId"],
+        )
+        if (
+            envelope["root_failure"]["id"].startswith("HARNESS-PREFLIGHT-")
+            and preflight["status"] != "BLOCKED"
+        ):
+            raise HarnessError("Failure envelope conflicts with capability preflight status.")
     summary = _read_bounded_text(summary_path, MAX_FAILURE_SUMMARY_CHARACTERS)
     if summary is None:
         raise HarnessError(
@@ -2933,6 +3411,13 @@ def command_validate_result(args: argparse.Namespace) -> int:
         with Path(args.result).open("r", encoding="utf-8") as stream:
             document = json.load(stream)
         status = validate_result(document, args.scenario)
+        preflight_path = Path(args.result).parent / PREFLIGHT_FILE_NAME
+        if preflight_path.exists():
+            read_preflight_report(
+                preflight_path,
+                expected_scenario=document["scenario"],
+                expected_run_id=document["runId"],
+            )
         if args.require_failure_envelope:
             validate_failure_artifacts(Path(args.result), document)
     except (HarnessError, OSError, json.JSONDecodeError) as error:
@@ -2943,19 +3428,24 @@ def command_validate_result(args: argparse.Namespace) -> int:
     return 0
 
 
+def validate_deployment_marker(marker: Path) -> dict[str, Any]:
+    with marker.open("r", encoding="utf-8") as stream:
+        document = json.load(stream)
+    if not isinstance(document, dict) or set(document) != {
+        "formatVersion",
+        "preparedAtUtc",
+        "status",
+    }:
+        raise HarnessError("Deployment marker does not match format v1 fields.")
+    if document["formatVersion"] != 1 or document["status"] != "prepared":
+        raise HarnessError("Deployment marker does not identify a prepared deployment.")
+    _parse_timestamp(document["preparedAtUtc"])
+    return document
+
+
 def command_validate_deployment(args: argparse.Namespace) -> int:
     try:
-        with Path(args.marker).open("r", encoding="utf-8") as stream:
-            document = json.load(stream)
-        if not isinstance(document, dict) or set(document) != {
-            "formatVersion",
-            "preparedAtUtc",
-            "status",
-        }:
-            raise HarnessError("Deployment marker does not match format v1 fields.")
-        if document["formatVersion"] != 1 or document["status"] != "prepared":
-            raise HarnessError("Deployment marker does not identify a prepared deployment.")
-        _parse_timestamp(document["preparedAtUtc"])
+        validate_deployment_marker(Path(args.marker))
     except (HarnessError, OSError, json.JSONDecodeError) as error:
         print(f"Invalid isolated deployment marker: {error}", file=sys.stderr)
         return 2

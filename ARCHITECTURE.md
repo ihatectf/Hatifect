@@ -73,4 +73,6 @@ Planning также принимает `UiPlanningInput`: immutable owner, уп�
 
 Общая логика CI и локальных проверок находится в `tools/validation.py`; GitHub Actions вызывает её. Проверяются замкнутость графа, направление зависимостей, отсутствие старых подсистем, публичная UI-граница, Python tooling tests и все выбранные .NET suites. Успешный exit code без выполненных тестов не принимается.
 
+Live harness capability preflight runs before save, semantic and game work. `validate.py` owns requirements/reporting; `user_session_runtime.py` owns environment probes. Missing required capabilities map to existing result, failure and semantic-event contracts; see [the focused contract](docs/CAPABILITY_PREFLIGHT.md).
+
 `Hatifect.Release.json` задаёт три runtime-модуля: UI, Flowline, CA Overlay. Пакет содержит 14 DLL: 8 UI, 4 Flowline и 2 CA. Сборка архива проверяет состав, manifest, зависимости и единственного владельца UI DLL. Это не публикация и не runtime acceptance.

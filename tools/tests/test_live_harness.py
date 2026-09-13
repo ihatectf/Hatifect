@@ -1094,11 +1094,17 @@ class LiveHarnessTests(unittest.TestCase):
         self.assertIn('--isolated-root "$isolated_root"', runner)
         self.assertIn('--artifact-directory "$artifact_dir"', runner)
         self.assertIn('--result "$result"', runner)
-        self.assertIn('deployment_marker="$isolated_root/deployment.json"', runner)
         self.assertIn('save_provisioner="$TOOLS_DIR/live-harness/save_provisioning.py"', runner)
-        self.assertIn('validate-required-mods "$kind" "$scenario" "$isolated_root/Mods"', runner)
-        self.assertIn("HARNESS-ENV-MODS", runner)
+        self.assertIn('python3 "$user_session_runtime" preflight', runner)
         self.assertIn('"$save_provisioner" plan', runner)
+        self.assertLess(
+            runner.index('python3 "$user_session_runtime" preflight'),
+            runner.index('"$save_provisioner" plan'),
+        )
+        self.assertLess(
+            runner.index('python3 "$user_session_runtime" preflight'),
+            runner.index('semantic_validator record-event'),
+        )
         self.assertNotIn('HATIFECT_SMAPI_TEST_SAVE', runner)
         self.assertIn('submit', runner)
         self.assertIn('exec python3 "$user_session_runtime"', runner)

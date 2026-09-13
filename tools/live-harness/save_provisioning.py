@@ -346,6 +346,35 @@ def validate_fixture(isolated_root: Path, smapi_path: Path) -> tuple[dict[str, A
     return _validate_fixture_for_runtime(isolated_root, fingerprint["runtimeId"], fingerprint)
 
 
+def probe_fixture(isolated_root: Path, smapi_path: Path) -> tuple[dict[str, Any], Path]:
+    """Validate an existing fixture without creating any save-related directory."""
+    fingerprint = _runtime_fingerprint(smapi_path)
+    parent = (
+        isolated_root.resolve(strict=True)
+        / "fixtures"
+        / "saves"
+        / f"v{FIXTURE_SCHEMA_VERSION}"
+    )
+    if not parent.is_dir():
+        raise SaveProvisioningError(
+            "HARNESS-SAVE-MISSING",
+            "No compatible versioned golden save fixture is available.",
+        )
+    fixture = parent / f"{FIXTURE_ID}-{fingerprint['runtimeId']}"
+    if not fixture.exists():
+        other = list(parent.glob(f"{FIXTURE_ID}-*"))
+        code = "HARNESS-SAVE-VERSION-MISMATCH" if other else "HARNESS-SAVE-MISSING"
+        raise SaveProvisioningError(
+            code,
+            "No compatible versioned golden save fixture is available.",
+        )
+    return _validate_fixture_for_runtime(
+        isolated_root,
+        fingerprint["runtimeId"],
+        fingerprint,
+    )
+
+
 def _synthetic_identity() -> dict[str, Any]:
     return {
         "playerName": SYNTHETIC_PLAYER_NAME,
@@ -870,6 +899,13 @@ def _write_existing_fixture_pass(args: argparse.Namespace) -> None:
     message = (
         "A compatible checksum-valid, reload-verified golden save fixture already exists; "
         "idempotent bootstrap reuse passed without modifying it."
+    )
+    validator.try_record_semantic_event(
+        artifact,
+        scenario=args.scenario,
+        run_id=args.run_id,
+        event="Preflight.Completed",
+        fields={"status": "PASS"},
     )
     validator.write_result(
         Path(args.result),

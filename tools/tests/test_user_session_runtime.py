@@ -106,6 +106,15 @@ class UserSessionRuntimeTests(unittest.TestCase):
             "kind": "ui",
             "requiresSave": False,
             "timeoutSeconds": 1800,
+            "capabilities": [
+                {"id": "artifact-writable", "requirement": "required"},
+            ],
+        }
+        self.validator.PREFLIGHT_FILE_NAME = "preflight.json"
+        self.validator.MAX_PREFLIGHT_BYTES = 64 * 1024
+        self.validator.read_preflight_report.return_value = {
+            "status": "PASS",
+            "createdAtUtc": self.request["createdAtUtc"],
         }
         self.direct_patch = mock.patch.object(
             RUNTIME, "_direct_runtime", return_value=self.direct
@@ -129,6 +138,66 @@ class UserSessionRuntimeTests(unittest.TestCase):
         self.assertEqual(validated["requestId"], self.request_id)
         self.assertEqual(validated["scenarioId"], "semantic.lifecycle")
         self.assertEqual(validated["checkoutSha"], self.checkout_sha)
+
+    def test_artifact_writability_probe_removes_its_request_owned_file(self) -> None:
+        self.assertTrue(RUNTIME._artifact_writable(self.artifact))
+        self.assertEqual(list(self.artifact.glob(".preflight-write-probe-*.tmp")), [])
+
+    def test_macos_gui_and_quartz_probes_run_at_user_session_boundary(self) -> None:
+        resolved = {
+            "id": "flow.ui.player.input",
+            "capabilities": [
+                {"id": "user-session-gui", "requirement": "required"},
+                {"id": "quartz-post-events", "requirement": "required"},
+            ],
+        }
+        with (
+            mock.patch.object(RUNTIME.sys, "platform", "darwin"),
+            mock.patch.object(
+                RUNTIME, "_macos_gui_available", return_value=False
+            ) as gui_probe,
+            mock.patch.object(
+                RUNTIME, "_quartz_post_events_available", return_value=False
+            ) as quartz_probe,
+        ):
+            outcomes = RUNTIME._probe_capabilities(
+                self.repository,
+                resolved,
+                self.isolated,
+                self.artifact,
+                "",
+                "1200",
+                "0",
+            )
+
+        gui_probe.assert_called_once_with()
+        quartz_probe.assert_called_once_with()
+        self.assertEqual(outcomes["user-session-gui"]["status"], "missing")
+        self.assertEqual(
+            outcomes["quartz-post-events"]["reasonCode"],
+            "QUARTZ_ACCESSIBILITY_DENIED",
+        )
+
+    def test_blocked_gui_preflight_never_enters_direct_runtime(self) -> None:
+        self.validator.read_preflight_report.return_value = {
+            "status": "BLOCKED",
+            "createdAtUtc": self.request["createdAtUtc"],
+        }
+        self.direct._direct_metadata = mock.Mock()
+        self.direct.direct = mock.Mock()
+
+        with self.assertRaisesRegex(
+            RUNTIME.UserSessionRuntimeError,
+            "capability preflight did not pass",
+        ):
+            RUNTIME._process_request(
+                self.request,
+                self.repository,
+                Path("/game/StardewModdingAPI"),
+            )
+
+        self.direct._direct_metadata.assert_not_called()
+        self.direct.direct.assert_not_called()
 
     def test_request_identity_mismatches_fail_closed(self) -> None:
         mutations = {

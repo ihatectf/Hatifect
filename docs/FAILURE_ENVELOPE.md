@@ -2,6 +2,8 @@
 
 Status: Phase 1 implemented; Phase 2 adds the bounded semantic tail described below. These changes
 are outside the numbered product roadmap and do not start or define later diagnostics phases.
+Phase 3 adds the causal bounded `preflight.json` described in
+[Deterministic capability preflight](CAPABILITY_PREFLIGHT.md) without changing this envelope format.
 
 ## Decision and ownership
 
@@ -18,6 +20,7 @@ result also writes:
 - `failure.json`: bounded machine-readable format v3 for new runs; strict reading remains backward
   compatible with Phase 1 format v2;
 - `failure-summary.txt`: an eight-line first-pass diagnosis;
+- `preflight.json`: when capability preflight ran; it is included in relevant artifacts when causal;
 - existing logs, screenshots, reports and transport diagnostics remain unchanged.
 
 The envelope selects the first non-cleanup failed assertion in canonical assertion order as the

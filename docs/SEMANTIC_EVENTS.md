@@ -62,6 +62,11 @@ screenshots и прочие исходные доказательства ост
 heartbeat, каждая строка лога и каждый отдельный semantic UI step намеренно не становятся
 событиями: их существующие bounded artifacts сохраняются, а поток остаётся маленьким.
 
+Phase 3 capability preflight сохраняет этот vocabulary без новых событий. Run получает не более
+одного terminal preflight event: `Preflight.Failed` при блокировке до downstream path либо
+`Preflight.Completed` после проверки PASS и принятия direct request. Полный ordered capability
+report остаётся в bounded `preflight.json`; event содержит только scalar summary.
+
 ## Границы и конкурентная запись
 
 - не более 128 сохранённых событий;

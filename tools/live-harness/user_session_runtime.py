@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import ctypes
 import datetime as dt
 import fcntl
 import hashlib
@@ -627,6 +628,38 @@ def _exclusive_lock(path: Path, message: str):
 
 def _process_request(request: dict[str, Any], repository: Path, smapi_path: Path) -> dict[str, Any]:
     request = _validate_request(request, repository)
+    validator = _load_module(
+        "hatifect_user_session_preflight_validator",
+        repository / "tools" / "live-harness" / "validate.py",
+    )
+    resolved = validator.resolve_scenario(
+        validator.load_manifest(
+            repository / "tools" / "live-harness" / "scenarios.json"
+        ),
+        request["scenarioId"],
+        request["kind"],
+    )
+    preflight_path = Path(request["artifactDirectory"]) / validator.PREFLIGHT_FILE_NAME
+    preflight = validator.read_preflight_report(
+        preflight_path,
+        expected_scenario=request["scenarioId"],
+        expected_run_id=request["requestId"],
+        expected_requirements=resolved["capabilities"],
+    )
+    if preflight["status"] != "PASS":
+        raise UserSessionRuntimeError(
+            "Accepted request capability preflight did not pass."
+        )
+    preflight_at = _parse_timestamp(preflight["createdAtUtc"])
+    request_created_at = _parse_timestamp(request["createdAtUtc"])
+    if (
+        preflight_at > request_created_at + dt.timedelta(seconds=5)
+        or request_created_at - preflight_at
+        > dt.timedelta(seconds=REQUEST_TTL_SECONDS)
+    ):
+        raise UserSessionRuntimeError(
+            "Accepted request capability preflight is stale."
+        )
     direct = _direct_runtime(repository)
     metadata = direct._direct_metadata(repository, Path(request["isolatedRoot"]), smapi_path)
     if metadata["repositoryHead"] != request["checkoutSha"]:
@@ -985,6 +1018,389 @@ def _ready_state(repository: Path, state_path: Path) -> dict[str, Any]:
     return state
 
 
+def _preflight_outcome(
+    status: str,
+    classification: str,
+    reason_code: str,
+    explanation: str,
+) -> dict[str, str]:
+    return {
+        "status": status,
+        "classification": classification,
+        "reasonCode": reason_code,
+        "explanation": explanation,
+    }
+
+
+def _available(explanation: str) -> dict[str, str]:
+    return _preflight_outcome(
+        "available",
+        "available",
+        "AVAILABLE",
+        explanation,
+    )
+
+
+def _artifact_writable(artifact: Path) -> bool:
+    info = artifact.lstat()
+    if (
+        stat.S_ISLNK(info.st_mode)
+        or not stat.S_ISDIR(info.st_mode)
+        or info.st_uid != os.getuid()
+    ):
+        return False
+    probe = artifact / f".preflight-write-probe-{uuid.uuid4().hex}.tmp"
+    descriptor = -1
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(probe, flags, PRIVATE_FILE_MODE)
+        os.write(descriptor, b"hatifect-preflight\n")
+        os.fsync(descriptor)
+        return True
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        with contextlib.suppress(FileNotFoundError):
+            probe.unlink()
+
+
+def _macos_gui_available() -> bool:
+    application_services = ctypes.CDLL(
+        "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+    )
+    application_services.CGMainDisplayID.restype = ctypes.c_uint32
+    return application_services.CGMainDisplayID() != 0
+
+
+def _quartz_post_events_available() -> bool:
+    application_services = ctypes.CDLL(
+        "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+    )
+    if not hasattr(application_services, "CGPreflightPostEventAccess"):
+        return False
+    application_services.CGPreflightPostEventAccess.restype = ctypes.c_bool
+    return bool(application_services.CGPreflightPostEventAccess())
+
+
+def _probe_capabilities(
+    repository: Path,
+    resolved: dict[str, Any],
+    isolated: Path,
+    artifact: Path,
+    smapi_value: str,
+    timeout_value: str,
+    seed_value: str,
+) -> dict[str, dict[str, str]]:
+    outcomes: dict[str, dict[str, str]] = {}
+    capability_ids = {item["id"] for item in resolved["capabilities"]}
+
+    if "artifact-writable" in capability_ids:
+        try:
+            writable = _artifact_writable(artifact)
+        except OSError:
+            writable = False
+        outcomes["artifact-writable"] = (
+            _available("The request-owned artifact directory accepted and removed a private probe file.")
+            if writable
+            else _preflight_outcome(
+                "missing",
+                "environment-failure",
+                "ARTIFACT_NOT_WRITABLE",
+                "The request-owned artifact directory is not safely writable.",
+            )
+        )
+
+    if "request-parameters" in capability_ids:
+        try:
+            timeout = int(timeout_value)
+            seed = int(seed_value)
+            valid = (
+                re.fullmatch(r"[1-9][0-9]*", timeout_value) is not None
+                and re.fullmatch(r"-?[0-9]+", seed_value) is not None
+                and timeout > 0
+                and timeout <= resolved["timeoutSeconds"]
+                and abs(seed) <= 2_147_483_647
+            )
+        except (TypeError, ValueError):
+            valid = False
+        outcomes["request-parameters"] = (
+            _available("The timeout and deterministic seed satisfy scenario bounds.")
+            if valid
+            else _preflight_outcome(
+                "error",
+                "misconfiguration",
+                "REQUEST_PARAMETERS_INVALID",
+                "The timeout or deterministic seed violates the scenario contract.",
+            )
+        )
+
+    smapi = Path(smapi_value) if smapi_value else None
+    smapi_available = bool(
+        smapi is not None
+        and smapi.is_file()
+        and os.access(smapi, os.X_OK)
+    )
+    if "smapi-runtime" in capability_ids:
+        outcomes["smapi-runtime"] = (
+            _available("The configured SMAPI executable is a real executable file.")
+            if smapi_available
+            else _preflight_outcome(
+                "missing",
+                "environment-failure",
+                "SMAPI_UNAVAILABLE",
+                "No executable SMAPI runtime is configured for this worktree.",
+            )
+        )
+
+    validator = _load_module(
+        "hatifect_capability_preflight_validator",
+        repository / "tools" / "live-harness" / "validate.py",
+    )
+    if "isolated-deployment" in capability_ids:
+        try:
+            marker = isolated / "deployment.json"
+            identity_marker = isolated / "deployment.identity.json"
+            ui_manifest = (
+                isolated
+                / "Mods"
+                / "Hatifect"
+                / "Hatifect UI"
+                / "manifest.json"
+            )
+            if not marker.is_file() or not identity_marker.is_file() or not ui_manifest.is_file():
+                raise FileNotFoundError
+            validator.validate_deployment_marker(marker)
+            deployment_identity = _load_module(
+                "hatifect_capability_deployment_identity",
+                repository / "tools" / "live-harness" / "deployment_identity.py",
+            )
+            direct = _direct_runtime(repository)
+            deployment_identity.validate_identity(
+                identity_marker,
+                direct._repository_head(repository),
+                isolated / "Mods",
+                repository / "Hatifect.Release.json",
+            )
+            outcomes["isolated-deployment"] = _available(
+                "The isolated deployment matches the exact checkout and release inventory."
+            )
+        except FileNotFoundError:
+            outcomes["isolated-deployment"] = _preflight_outcome(
+                "missing",
+                "environment-failure",
+                "DEPLOYMENT_UNAVAILABLE",
+                "No complete prepared isolated deployment is available.",
+            )
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            outcomes["isolated-deployment"] = _preflight_outcome(
+                "error",
+                "misconfiguration",
+                "DEPLOYMENT_INVALID",
+                "The prepared isolated deployment failed identity validation.",
+            )
+
+    if "required-mods" in capability_ids:
+        try:
+            missing = validator.validate_required_mods(resolved, isolated / "Mods")
+            outcomes["required-mods"] = (
+                _available("Every scenario-required mod is present in the isolated deployment.")
+                if not missing
+                else _preflight_outcome(
+                    "missing",
+                    "environment-failure",
+                    "REQUIRED_MOD_MISSING",
+                    "Missing required isolated mod IDs: " + ", ".join(missing),
+                )
+            )
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            outcomes["required-mods"] = _preflight_outcome(
+                "error",
+                "misconfiguration",
+                "REQUIRED_MOD_PROBE_INVALID",
+                "Required mods could not be validated from the isolated deployment.",
+            )
+
+    if "isolated-save-fixture" in capability_ids:
+        try:
+            if not smapi_available:
+                raise FileNotFoundError
+            provisioner = _load_module(
+                "hatifect_capability_save_provisioning",
+                repository / "tools" / "live-harness" / "save_provisioning.py",
+            )
+            provisioner.probe_fixture(isolated, smapi)
+            outcomes["isolated-save-fixture"] = _available(
+                "A compatible checksum-valid isolated save fixture is available."
+            )
+        except FileNotFoundError:
+            outcomes["isolated-save-fixture"] = _preflight_outcome(
+                "missing",
+                "environment-failure",
+                "SAVE_FIXTURE_UNAVAILABLE",
+                "No compatible isolated save fixture can be used by this scenario.",
+            )
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            reason = getattr(error, "assertion_id", "")
+            classification = (
+                "environment-failure"
+                if reason in {"HARNESS-SAVE-MISSING", "HARNESS-SAVE-VERSION-MISMATCH"}
+                else "misconfiguration"
+            )
+            outcomes["isolated-save-fixture"] = _preflight_outcome(
+                "missing" if classification == "environment-failure" else "error",
+                classification,
+                (
+                    "SAVE_FIXTURE_UNAVAILABLE"
+                    if classification == "environment-failure"
+                    else "SAVE_FIXTURE_INVALID"
+                ),
+                (
+                    "No compatible isolated save fixture can be used by this scenario."
+                    if classification == "environment-failure"
+                    else "The isolated save fixture failed bounded identity validation."
+                ),
+            )
+
+    if "user-session-executor" in capability_ids:
+        try:
+            _ready_state(
+                repository,
+                _state_root(repository, create=False) / "state.json",
+            )
+            outcomes["user-session-executor"] = _available(
+                "The existing worktree executor is live and Ready."
+            )
+        except (FileNotFoundError, OSError, TypeError, ValueError, json.JSONDecodeError):
+            outcomes["user-session-executor"] = _preflight_outcome(
+                "missing",
+                "environment-failure",
+                "EXECUTOR_UNAVAILABLE",
+                "No matching Ready user-session executor is available for this worktree.",
+            )
+
+    if "semantic-workflow" in capability_ids:
+        spec = repository / "tools" / "live-harness" / "semantic-tests" / f"{resolved['id']}.json"
+        agent = repository / "tools" / "live-harness" / "semantic-test-agent.py"
+        backend = repository / "tools" / "live-harness" / "macos_native_input_driver.py"
+        outcomes["semantic-workflow"] = (
+            _available("The checked-in semantic workflow and native input components are present.")
+            if spec.is_file() and agent.is_file() and backend.is_file()
+            else _preflight_outcome(
+                "error",
+                "misconfiguration",
+                "SEMANTIC_WORKFLOW_INVALID",
+                "The declared semantic workflow or native input component is unavailable.",
+            )
+        )
+
+    for capability_id, probe, denied_reason, explanation in (
+        (
+            "user-session-gui",
+            _macos_gui_available,
+            "GUI_SESSION_UNAVAILABLE",
+            "The macOS WindowServer GUI session is unavailable.",
+        ),
+        (
+            "quartz-post-events",
+            _quartz_post_events_available,
+            "QUARTZ_ACCESSIBILITY_DENIED",
+            "macOS has not granted Quartz post-event Accessibility permission.",
+        ),
+    ):
+        if capability_id not in capability_ids:
+            continue
+        if sys.platform != "darwin":
+            outcomes[capability_id] = _preflight_outcome(
+                "unsupported",
+                "unsupported-capability",
+                "PLATFORM_UNSUPPORTED",
+                "This capability is supported only by the macOS user-session executor.",
+            )
+            continue
+        try:
+            outcomes[capability_id] = (
+                _available(
+                    "The macOS user-session capability is available at the executor boundary."
+                )
+                if probe()
+                else _preflight_outcome(
+                    "missing",
+                    "environment-failure",
+                    denied_reason,
+                    explanation,
+                )
+            )
+        except (AttributeError, OSError):
+            outcomes[capability_id] = _preflight_outcome(
+                "error",
+                "environment-failure",
+                "USER_SESSION_PROBE_FAILED",
+                "The macOS user-session capability probe could not complete.",
+            )
+
+    return outcomes
+
+
+def preflight(args: argparse.Namespace) -> int:
+    repository = Path(args.repository_root).resolve(strict=True)
+    direct = _direct_runtime(repository)
+    artifact_candidate = Path(args.artifact_directory)
+    artifact_info = artifact_candidate.lstat()
+    if stat.S_ISLNK(artifact_info.st_mode):
+        raise UserSessionRuntimeError(
+            "Capability preflight artifact directory must not be a symlink."
+        )
+    artifact = direct._contained(
+        repository / "artifacts" / "runtime",
+        artifact_candidate,
+    )
+    try:
+        parsed_run_id = uuid.UUID(artifact.name)
+    except ValueError as error:
+        raise UserSessionRuntimeError(
+            "Capability preflight artifact directory must use a canonical request UUID."
+        ) from error
+    if str(parsed_run_id) != artifact.name:
+        raise UserSessionRuntimeError(
+            "Capability preflight artifact directory must use a canonical request UUID."
+        )
+    result_path = direct._contained(artifact, Path(args.result))
+    if result_path != artifact / "result.json":
+        raise UserSessionRuntimeError(
+            "Capability preflight result path must be the canonical result.json."
+        )
+    validator = _load_module(
+        "hatifect_user_session_preflight_contract",
+        repository / "tools" / "live-harness" / "validate.py",
+    )
+    scenarios = validator.load_manifest(
+        repository / "tools" / "live-harness" / "scenarios.json"
+    )
+    resolved = validator.resolve_scenario(scenarios, args.scenario, args.kind)
+    outcomes = _probe_capabilities(
+        repository,
+        resolved,
+        Path(args.isolated_root).resolve(strict=False),
+        artifact,
+        args.smapi_path,
+        args.timeout_seconds,
+        args.seed,
+    )
+    report = validator.publish_preflight(
+        artifact,
+        result_path,
+        resolved,
+        artifact.name,
+        outcomes,
+    )
+    print(
+        f"Capability preflight: status={report['status']} "
+        f"requiredUnavailable={report['counts']['requiredUnavailable']} "
+        f"optionalUnavailable={report['counts']['optionalUnavailable']}"
+    )
+    return 0 if report["status"] == "PASS" else 2
+
+
 def submit(args: argparse.Namespace) -> int:
     repository = Path(args.repository_root).resolve(strict=True)
     root = _state_root(repository)
@@ -1117,6 +1533,17 @@ def build_parser() -> argparse.ArgumentParser:
     submit_parser.add_argument("--timeout-seconds", type=int, required=True)
     submit_parser.add_argument("--seed", type=int, default=0)
     submit_parser.set_defaults(handler=submit)
+    preflight_parser = subparsers.add_parser("preflight")
+    preflight_parser.add_argument("--repository-root", required=True)
+    preflight_parser.add_argument("--kind", choices=("smoke", "ui"), required=True)
+    preflight_parser.add_argument("--scenario", required=True)
+    preflight_parser.add_argument("--isolated-root", required=True)
+    preflight_parser.add_argument("--artifact-directory", required=True)
+    preflight_parser.add_argument("--result", required=True)
+    preflight_parser.add_argument("--smapi-path", required=True)
+    preflight_parser.add_argument("--timeout-seconds", required=True)
+    preflight_parser.add_argument("--seed", required=True)
+    preflight_parser.set_defaults(handler=preflight)
     status_parser = subparsers.add_parser("status")
     status_parser.add_argument("--repository-root", required=True)
     status_parser.set_defaults(handler=status)

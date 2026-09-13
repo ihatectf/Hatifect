@@ -14,8 +14,6 @@ if [[ $# -ne 4 || ( "$kind" != "smoke" && "$kind" != "ui" ) || -z "$scenario" ||
 fi
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 validator="$TOOLS_DIR/live-harness/validate.py"
-deployment_identity="$TOOLS_DIR/live-harness/deployment_identity.py"
-release_contract="$REPO_ROOT/Hatifect.Release.json"
 user_session_runtime="$TOOLS_DIR/live-harness/user_session_runtime.py"
 save_provisioner="$TOOLS_DIR/live-harness/save_provisioning.py"
 semantic_test_agent="$TOOLS_DIR/live-harness/semantic-test-agent.py"
@@ -23,8 +21,6 @@ semantic_tests_root="$TOOLS_DIR/live-harness/semantic-tests"
 semantic_spec="$semantic_tests_root/$scenario.json"
 native_input_backend="$TOOLS_DIR/live-harness/macos_native_input_driver.py"
 isolated_root="$(resolve_smapi_test_root)"
-deployment_marker="$isolated_root/deployment.json"
-deployment_identity_marker="$isolated_root/deployment.identity.json"
 artifact_root="$REPO_ROOT/artifacts/runtime"
 
 need_cmd python3
@@ -43,53 +39,24 @@ if ! python3 "$validator" check-scenario "$kind" "$scenario" >/dev/null; then
 fi
 
 mkdir -p "$artifact_dir"
-if [[ -z "$smapi" || ! -x "$smapi" ]]; then
-  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
-    "Configure executable HATIFECT_SMAPI_PATH in tools/hatifect.env." \
-    --run-id "$(basename "$artifact_dir")" \
-    --assertion-id HARNESS-ENV-SMAPI \
-    --artifact-root "$artifact_dir"
-  exit 2
-fi
-if [[ ! -f "$deployment_marker" || ! -f "$deployment_identity_marker" || ! -f "$isolated_root/Mods/Hatifect/Hatifect UI/manifest.json" ]]; then
-  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
-    "No exact prepared isolated deployment exists. Run ./tools/hatifect-live-prepare successfully first." \
-    --run-id "$(basename "$artifact_dir")" \
-    --assertion-id HARNESS-ENV-DEPLOYMENT \
-    --artifact-root "$artifact_dir"
-  exit 2
-fi
-if ! python3 "$validator" validate-deployment "$deployment_marker" >/dev/null; then
-  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
-    "The isolated deployment marker is malformed. Run ./tools/hatifect-live-prepare successfully." \
-    --run-id "$(basename "$artifact_dir")" \
-    --assertion-id HARNESS-ENV-DEPLOYMENT \
-    --artifact-root "$artifact_dir"
-  exit 2
-fi
-repository_head="$(git -C "$REPO_ROOT" rev-parse HEAD)"
-deployment_identity_error=""
-if ! deployment_identity_error="$(python3 "$deployment_identity" validate "$deployment_identity_marker" \
-  --repository-head "$repository_head" \
-  --mods-root "$isolated_root/Mods" \
-  --contract "$release_contract" 2>&1)"; then
-  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
-    "$deployment_identity_error Run ./tools/hatifect-live-prepare successfully for this checkout." \
-    --run-id "$(basename "$artifact_dir")" \
-    --assertion-id HARNESS-ENV-DEPLOYMENT \
-    --expected "The isolated Hatifect deployment matches the exact current checkout and prepared release-file fingerprint." \
-    --artifact-root "$artifact_dir"
-  exit 2
-fi
-required_mod_error=""
-if ! required_mod_error="$(python3 "$validator" validate-required-mods "$kind" "$scenario" "$isolated_root/Mods" 2>&1)"; then
-  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
-    "$required_mod_error" \
-    --run-id "$(basename "$artifact_dir")" \
-    --assertion-id HARNESS-ENV-MODS \
-    --expected "Every scenario-required mod is present in the isolated deployment." \
-    --artifact-root "$artifact_dir"
-  exit 2
+scenario_timeout="$(python3 "$validator" check-scenario "$kind" "$scenario" --field timeoutSeconds)"
+timeout_seconds="${HATIFECT_TEST_TIMEOUT_SECONDS:-$scenario_timeout}"
+test_seed="${HATIFECT_TEST_SEED:-0}"
+set +e
+python3 "$user_session_runtime" preflight \
+  --repository-root "$REPO_ROOT" \
+  --kind "$kind" \
+  --scenario "$scenario" \
+  --isolated-root "$isolated_root" \
+  --artifact-directory "$artifact_dir" \
+  --result "$result" \
+  --smapi-path "$smapi" \
+  --timeout-seconds "$timeout_seconds" \
+  --seed "$test_seed"
+preflight_rc=$?
+set -e
+if (( preflight_rc != 0 )); then
+  exit "$preflight_rc"
 fi
 
 requires_save="$(python3 "$validator" check-scenario "$kind" "$scenario" --field requiresSave)"
@@ -116,26 +83,6 @@ if [[ "$requires_save" == "true" ]]; then
     --scenario "$scenario" \
     --artifact-directory "$artifact_dir" \
     --result "$result")" || exit $?
-fi
-
-scenario_timeout="$(python3 "$validator" check-scenario "$kind" "$scenario" --field timeoutSeconds)"
-timeout_seconds="${HATIFECT_TEST_TIMEOUT_SECONDS:-$scenario_timeout}"
-if ! [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || (( timeout_seconds > scenario_timeout )); then
-  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
-    "HATIFECT_TEST_TIMEOUT_SECONDS must be positive and cannot exceed the allowlisted scenario timeout." \
-    --run-id "$(basename "$artifact_dir")" \
-    --assertion-id HARNESS-ENV-TIMEOUT \
-    --artifact-root "$artifact_dir"
-  exit 2
-fi
-test_seed="${HATIFECT_TEST_SEED:-0}"
-if ! [[ "$test_seed" =~ ^-?[0-9]+$ ]]; then
-  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
-    "HATIFECT_TEST_SEED must be an integer." \
-    --run-id "$(basename "$artifact_dir")" \
-    --assertion-id HARNESS-ENV-SEED \
-    --artifact-root "$artifact_dir"
-  exit 2
 fi
 
 python3 "$validator" check-scenario "$kind" "$scenario" > "$artifact_dir/instructions.txt"
