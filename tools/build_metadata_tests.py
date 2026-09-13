@@ -45,9 +45,9 @@ class BuildMetadataTests(unittest.TestCase):
         self.calls = self.directory / "calls.jsonl"
         executables = self.directory / "executables"
         executables.mkdir()
-        stub = executables / "git"
+        stub = executables / ("git.py" if os.name == "nt" else "git")
         stub.write_text(
-            f"#!{sys.executable}\n"
+            ("" if os.name == "nt" else f"#!{sys.executable}\n") +
             "import json, os, pathlib, sys\n"
             "with open(os.environ['HATIFECT_TEST_GIT_CALLS'], 'a') as log:\n"
             "    log.write(json.dumps({'args': sys.argv[1:], 'cwd': os.getcwd()}) + '\\n')\n"
@@ -66,7 +66,13 @@ class BuildMetadataTests(unittest.TestCase):
             "    sys.exit(24)\n",
             encoding="utf-8",
         )
-        stub.chmod(0o755)
+        if os.name == "nt":
+            (executables / "git.cmd").write_text(
+                f'@"{sys.executable}" "%~dp0git.py" %*\r\n',
+                encoding="utf-8",
+            )
+        else:
+            stub.chmod(0o755)
         self.environment = os.environ | {
             "PATH": str(executables) + os.pathsep + os.environ.get("PATH", ""),
             "HATIFECT_TEST_GIT_CALLS": str(self.calls),
