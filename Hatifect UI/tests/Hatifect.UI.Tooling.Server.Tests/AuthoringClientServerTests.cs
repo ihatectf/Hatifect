@@ -1,4 +1,3 @@
-using System.IO.Pipes;
 using System.Text.Json;
 using Hatifect.UI.Semantics;
 using Hatifect.UI.Tooling.Client;
@@ -16,13 +15,10 @@ public sealed class AuthoringClientServerTests
         var bindings = new UiBindingContext(new UiSymbolId("External.Author", "storage")).DeclareRole("Item");
         using var metadata = JsonDocument.Parse(UiBindingContextJson.Export(bindings));
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        using var serverInput = new AnonymousPipeServerStream(PipeDirection.In);
-        using var clientOutput = new AnonymousPipeClientStream(PipeDirection.Out, serverInput.GetClientHandleAsString());
-        using var serverOutput = new AnonymousPipeServerStream(PipeDirection.Out);
-        using var clientInput = new AnonymousPipeClientStream(PipeDirection.In, serverOutput.GetClientHandleAsString());
+        using var transport = await ToolingTestDuplexPipe.ConnectAsync(deadline.Token);
         using var errors = new StringWriter();
-        Task<int> server = UiToolingServer.RunAsync(serverInput, serverOutput, errors, deadline.Token).AsTask();
-        using var client = new UiToolingClient(clientInput, clientOutput);
+        Task<int> server = UiToolingServer.RunAsync(transport.Server, transport.Server, errors, deadline.Token).AsTask();
+        using var client = new UiToolingClient(transport.Client, transport.Client);
         try
         {
             UiToolingRequestException rejection = await Assert.ThrowsAsync<UiToolingRequestException>(() =>
@@ -47,13 +43,10 @@ public sealed class AuthoringClientServerTests
         var bindings = new UiBindingContext(new UiSymbolId("External.Author", "storage")).DeclareRole("Item");
         using var metadata = JsonDocument.Parse(UiBindingContextJson.Export(bindings));
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        using var serverInput = new AnonymousPipeServerStream(PipeDirection.In);
-        using var clientOutput = new AnonymousPipeClientStream(PipeDirection.Out, serverInput.GetClientHandleAsString());
-        using var serverOutput = new AnonymousPipeServerStream(PipeDirection.Out);
-        using var clientInput = new AnonymousPipeClientStream(PipeDirection.In, serverOutput.GetClientHandleAsString());
+        using var transport = await ToolingTestDuplexPipe.ConnectAsync(deadline.Token);
         using var errors = new StringWriter();
-        Task<int> server = UiToolingServer.RunAsync(serverInput, serverOutput, errors, deadline.Token).AsTask();
-        using var client = new UiToolingClient(clientInput, clientOutput);
+        Task<int> server = UiToolingServer.RunAsync(transport.Server, transport.Server, errors, deadline.Token).AsTask();
+        using var client = new UiToolingClient(transport.Client, transport.Client);
         try
         {
             await client.InitializeAsync(metadata.RootElement, new[] { "compilation", "diagnostics", "plannerTrace" }, 7, deadline.Token);
