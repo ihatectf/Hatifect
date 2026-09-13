@@ -45,12 +45,17 @@ DOTNET_TEST_RE = re.compile(
 )
 HEAD_RE = re.compile(r"^[0-9a-f]{40}$")
 UNITTEST_COUNT_RE = re.compile(r"^Ran (?P<count>[0-9]+) tests?\b", re.MULTILINE)
+UNITTEST_OUTCOME_RE = re.compile(
+    r"(?:^|\n)OK(?: \((?P<details>[^\r\n)]*)\))?[\t ]*(?:\r?\n)?\Z"
+)
 PYTHON_SUITE_COUNT_RE = re.compile(
-    r"^Python tests: (?P<count>[0-9]+); failures: [0-9]+; skipped: [0-9]+$",
+    r"^Python tests: (?P<count>[0-9]+); failures: (?P<failures>[0-9]+); "
+    r"skipped: (?P<skipped>[0-9]+)$",
     re.MULTILINE,
 )
 DOTNET_COUNT_RE = re.compile(
-    r"^[^\r\n:]+: Passed: (?P<count>[0-9]+), Failed: [0-9]+, Skipped: [0-9]+$",
+    r"^[^\r\n:]+: Passed: (?P<count>[0-9]+), Failed: (?P<failures>[0-9]+), "
+    r"Skipped: (?P<skipped>[0-9]+)$",
     re.MULTILINE,
 )
 INTEGRATION_COMMANDS = {
@@ -945,6 +950,26 @@ def _process_group_exists(process_group_id: int) -> bool:
     return True
 
 
+def _stop_process_group(process: subprocess.Popen[bytes], process_group_id: int) -> int:
+    _terminate_process_group(process, force=False)
+    deadline = time.monotonic() + TERMINATION_GRACE_SECONDS
+    while time.monotonic() < deadline:
+        leader_exited = process.poll() is not None
+        if not _process_group_exists(process_group_id):
+            break
+        if leader_exited:
+            _terminate_process_group(process, force=True)
+            break
+        time.sleep(0.01)
+    if _process_group_exists(process_group_id):
+        _terminate_process_group(process, force=True)
+    try:
+        return process.wait(timeout=TERMINATION_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        _terminate_process_group(process, force=True)
+        return process.wait()
+
+
 def _execute(
     command: list[str],
     root: Path,
@@ -954,19 +979,26 @@ def _execute(
 ) -> tuple[int, str]:
     if os.name != "posix":
         return 2, "HATIFECT_REGRESSION_PROCESS_GROUP_UNSUPPORTED\n"
-    process = subprocess.Popen(
-        command,
-        cwd=root,
-        env=environment,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
+    previous_signal_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=root,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except BaseException:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
+        raise
     process_group_id = process.pid
-    assert process.stdout is not None
     tail = bytearray()
+    reader: threading.Thread | None = None
+    reader_started = False
 
     def drain_output() -> None:
+        assert process.stdout is not None
         try:
             while chunk := process.stdout.read(8192):
                 tail.extend(chunk)
@@ -975,31 +1007,32 @@ def _execute(
         except (OSError, ValueError):
             pass
 
-    reader = threading.Thread(target=drain_output, daemon=True)
-    reader.start()
     timed_out = False
     try:
+        # A pending SIGINT is delivered inside this cleanup boundary, never in
+        # the tiny interval between a successful spawn and ownership setup.
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
+        if process.stdout is None:
+            raise RegressionSelectionError("regression stage has no captured output stream")
+        reader = threading.Thread(target=drain_output, daemon=True)
+        reader.start()
+        reader_started = True
         exit_code = process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         timed_out = True
-        _terminate_process_group(process, force=False)
-        deadline = time.monotonic() + TERMINATION_GRACE_SECONDS
-        while time.monotonic() < deadline:
-            leader_exited = process.poll() is not None
-            if not _process_group_exists(process_group_id):
-                break
-            if leader_exited:
-                _terminate_process_group(process, force=True)
-                break
-            time.sleep(0.01)
-        if _process_group_exists(process_group_id):
-            _terminate_process_group(process, force=True)
-        try:
-            exit_code = process.wait(timeout=TERMINATION_GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            _terminate_process_group(process, force=True)
-            exit_code = process.wait()
+        exit_code = _stop_process_group(process, process_group_id)
+    except BaseException:
+        _stop_process_group(process, process_group_id)
+        if reader_started and reader is not None:
+            reader.join(timeout=TERMINATION_GRACE_SECONDS)
+        if reader_started and reader is not None and reader.is_alive():
+            process.stdout.close()
+            reader.join(timeout=TERMINATION_GRACE_SECONDS)
+        else:
+            process.stdout.close()
+        raise
 
+    assert reader is not None
     reader.join(timeout=TERMINATION_GRACE_SECONDS)
     if reader.is_alive():
         _terminate_process_group(process, force=True)
@@ -1018,14 +1051,30 @@ def _execute(
 
 
 def _parsed_test_count(output: str) -> int | None:
-    structured = [
-        *(int(match.group("count")) for match in PYTHON_SUITE_COUNT_RE.finditer(output)),
-        *(int(match.group("count")) for match in DOTNET_COUNT_RE.finditer(output)),
+    structured_matches = [
+        *PYTHON_SUITE_COUNT_RE.finditer(output),
+        *DOTNET_COUNT_RE.finditer(output),
     ]
-    if structured:
-        return sum(structured)
+    if structured_matches:
+        return sum(int(match.group("count")) for match in structured_matches)
     match = UNITTEST_COUNT_RE.search(output)
     return int(match.group("count")) if match is not None else None
+
+
+def _test_output_has_no_omissions(output: str) -> bool:
+    structured_matches = [
+        *PYTHON_SUITE_COUNT_RE.finditer(output),
+        *DOTNET_COUNT_RE.finditer(output),
+    ]
+    if structured_matches:
+        return all(
+            int(match.group("failures")) == 0 and int(match.group("skipped")) == 0
+            for match in structured_matches
+        )
+    if UNITTEST_COUNT_RE.search(output) is None:
+        return False
+    outcome = UNITTEST_OUTCOME_RE.search(output)
+    return outcome is not None and outcome.group("details") is None
 
 
 def _validate_plan(
@@ -1161,12 +1210,20 @@ def execute_plan(
         status = "PASS" if exit_code == 0 else "BLOCKED" if exit_code == 2 else "FAIL"
         is_scenario = stage["scopeId"].startswith("scenario:")
         test_count = None if is_scenario else _parsed_test_count(output)
-        if status == "PASS" and not is_scenario and (test_count is None or test_count <= 0):
+        if status == "PASS" and not is_scenario and (
+            test_count is None or test_count <= 0 or not _test_output_has_no_omissions(output)
+        ):
             status = "FAIL"
         count_complete = is_scenario or (
             test_count is not None
             and test_count > 0
-            and (status == "PASS" or command[:3] == ["python3", "-m", "unittest"])
+            and (
+                (status == "PASS" and _test_output_has_no_omissions(output))
+                or (
+                    exit_code != 0
+                    and command[:3] == ["python3", "-m", "unittest"]
+                )
+            )
         )
         executed = {
             "level": stage["level"],

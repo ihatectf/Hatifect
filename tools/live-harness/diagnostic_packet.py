@@ -242,7 +242,12 @@ def _stat_file_at(
     relative: str,
     description: str,
 ) -> os.stat_result | None:
-    parent, name = _open_parent_at(root_descriptor, relative, description)
+    try:
+        parent, name = _open_parent_at(root_descriptor, relative, description)
+    except DiagnosticPacketError as error:
+        if isinstance(error.__cause__, FileNotFoundError):
+            return None
+        raise
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         try:

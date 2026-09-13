@@ -51,7 +51,9 @@ The packet contains no source-file contents. Raw logs, screenshots, dumps, binlo
 save files and oversized artifacts remain in the source run. Their references are retained with a
 typed reason such as `RAW_LOG_REFERENCE_ONLY`, `BINARY_ARTIFACT_REFERENCE_ONLY` or
 `SIZE_BUDGET_REFERENCE_ONLY`. Missing referenced evidence is represented as
-`MISSING_REFERENCED_ARTIFACT`; it is never silently treated as included.
+`MISSING_REFERENCED_ARTIFACT`, including when an intermediate request-relative directory is absent;
+it is never silently treated as included. Existing intermediate symlinks and ownership violations
+remain fail-closed errors.
 
 ## Context selection
 

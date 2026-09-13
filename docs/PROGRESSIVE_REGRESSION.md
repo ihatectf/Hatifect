@@ -68,11 +68,15 @@ scope/area и никогда не считаются покрытыми host-fre
 - `authoritativeFullGateSelected`/`authoritativeFullGatePassed` — был ли выбран и успешно пройден
   финальный gate.
 
-Для unit/integration scope exit code 0 без машинно распознаваемого ненулевого числа тестов — FAIL,
-а не PASS. Полный stdout не удерживается в памяти: executor сохраняет только bounded 64 KiB tail,
+Для unit/integration scope exit code 0 без машинно распознаваемого ненулевого числа тестов либо
+с terminal evidence о skipped, expected-failure или unexpected-success outcome — FAIL, а не PASS.
+Полный stdout не удерживается в памяти: executor сохраняет только bounded 64 KiB tail,
 а в JSON остаются максимум 12 строк по 512 символов. Каждый stage ограничен 1,200 секундами;
 при timeout executor завершает всю process group, фиксирует `HATIFECT_REGRESSION_TIMEOUT` и
-возвращает `BLOCKED`, не переходя к следующим уровням. Без POSIX process-group semantics
+возвращает `BLOCKED`, не переходя к следующим уровням. Любое Python-прерывание/`BaseException`
+после запуска stage сначала завершает и reap'ит всю process group, затем повторно возбуждает
+исходное исключение; `SIGINT` блокируется на коротком участке передачи ownership после `Popen`.
+Без POSIX process-group semantics
 исполнение fail closed как `BLOCKED`, не запуская stage.
 
 ## Совместимость и авторитетность

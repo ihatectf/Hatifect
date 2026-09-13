@@ -221,6 +221,36 @@ class DiagnosticPacketTests(unittest.TestCase):
         self.assertEqual(by_path["screen.png"]["exclusionReason"], "BINARY_ARTIFACT_REFERENCE_ONLY")
         self.assertEqual(by_path["missing.txt"]["exclusionReason"], "MISSING_REFERENCED_ARTIFACT")
 
+    def test_artifact_below_missing_intermediate_directory_is_reported_missing(self) -> None:
+        artifacts = [{"type": "text", "path": "missing/nested/evidence.txt"}]
+        self._make_run(artifacts=artifacts)
+        shutil.rmtree(self.source / "missing")
+
+        self._packet()
+
+        references = self._files()["artifacts.json"]["artifacts"]
+        item = next(
+            reference for reference in references
+            if reference["path"] == "missing/nested/evidence.txt"
+        )
+        self.assertEqual(item["inclusionStatus"], "excluded")
+        self.assertEqual(item["exclusionReason"], "MISSING_REFERENCED_ARTIFACT")
+
+    def test_artifact_below_intermediate_symlink_remains_ownership_violation(self) -> None:
+        artifacts = [{"type": "text", "path": "linked/evidence.txt"}]
+        self._make_run(artifacts=artifacts)
+        linked = self.source / "linked"
+        shutil.rmtree(linked)
+        real = self.source / "real"
+        real.mkdir()
+        (real / "evidence.txt").write_text("evidence", encoding="utf-8")
+        linked.symlink_to(real, target_is_directory=True)
+
+        with self.assertRaises(PACKET.DiagnosticPacketError) as captured:
+            self._packet()
+
+        self.assertEqual("OWNERSHIP_VIOLATION", captured.exception.reason_code)
+
     def test_preflight_projection_is_typed_and_environment_allowlisted(self) -> None:
         failure = {"environment_summary": {"status": "BLOCKED", "reason": "x"}}
         preflight = {
@@ -420,7 +450,7 @@ class DiagnosticPacketTests(unittest.TestCase):
                 ):
                     PACKET.generate_packet(self.run_id)
 
-    def test_unknown_causal_component_fails_closed(self) -> None:
+    def test_unknown_causal_component_drift_fails_strict_validation(self) -> None:
         self._make_run()
         failure = json.loads((self.source / "failure.json").read_text())
         failure["causal_component"] = "unknown-component"
@@ -432,7 +462,7 @@ class DiagnosticPacketTests(unittest.TestCase):
         (self.source / "failure-summary.txt").write_text(
             VALIDATE._failure_summary(failure), encoding="utf-8"
         )
-        with self.assertRaisesRegex(PACKET.DiagnosticPacketError, "no context owner"):
+        with self.assertRaisesRegex(PACKET.DiagnosticPacketError, "causal records conflict"):
             PACKET.generate_packet(self.run_id)
 
     def test_failure_replacement_between_snapshot_and_publication_is_rejected(self) -> None:
@@ -484,10 +514,23 @@ class DiagnosticPacketTests(unittest.TestCase):
 
     def test_concurrent_generation_is_exclusive_and_atomic(self) -> None:
         self._make_run()
+
         def publish() -> dict:
-            return self._packet()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            results = [future.result() for future in [pool.submit(publish), pool.submit(publish)]]
+            return PACKET.generate_packet(self.run_id)
+
+        # Patch once around both workers. Per-worker patches race while restoring the
+        # same module attribute and can make one worker execute the real selector.
+        with mock.patch.object(
+            PACKET,
+            "_select_reproduction",
+            return_value={
+                "targetScenario": "runtime.boot",
+                "effectivePhase": "preflight",
+            },
+        ):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(publish), pool.submit(publish)]
+                results = [future.result() for future in futures]
         self.assertEqual(sorted(item["status"] for item in results), ["created", "existing"])
         self.assertEqual(len(list(self.source.glob(".diagnostic-packet.json.*.tmp"))), 0)
         self.assertTrue((self.source / PACKET.PACKET_FILE_NAME).is_file())

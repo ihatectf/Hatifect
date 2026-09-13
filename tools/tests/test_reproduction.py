@@ -271,6 +271,32 @@ class ReproductionTests(unittest.TestCase):
             successes[0],
         )
 
+    def test_target_directory_replacement_cannot_redirect_publication(self) -> None:
+        self._source()
+        target = self._target()
+        moved = self.runtime_root / "validated-target"
+        original_write = REPRO._write_json
+        replaced = False
+
+        def replace_after_open(directory_descriptor, name, payload):
+            nonlocal replaced
+            target.rename(moved)
+            target.mkdir(mode=0o700)
+            replaced = True
+            return original_write(directory_descriptor, name, payload)
+
+        with mock.patch.object(REPRO, "_write_json", side_effect=replace_after_open):
+            metadata = REPRO.materialize(
+                self.source_id, target, "smoke", "runtime.boot"
+            )
+
+        self.assertTrue(replaced)
+        self.assertFalse((target / "reproduction.json").exists())
+        self.assertEqual(
+            json.loads((moved / "reproduction.json").read_text(encoding="utf-8")),
+            metadata,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

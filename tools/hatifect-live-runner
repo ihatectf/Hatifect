@@ -214,10 +214,7 @@ if [[ "$semantic_failure_marker" == "true" ]] \
     semantic_failure_message="Semantic test companion exited ${semantic_agent_exit:-unknown} after the runtime completed successfully."
   fi
   printf '%s\n' "ERROR: $semantic_failure_message" >&2
-  if [[ -f "$result" ]]; then
-    mv -f "$result" "$artifact_dir/runtime-result.secondary.json"
-  fi
-  python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+  python3 "$validator" record-secondary-failure "$scenario" "$result" \
     "$semantic_failure_message" \
     --run-id "$run_id" \
     --assertion-id HARNESS-SEMANTIC-TEST-AGENT \
@@ -228,6 +225,9 @@ if [[ "$semantic_failure_marker" == "true" ]] \
   if [[ -f "$artifact_dir/failure-summary.txt" ]]; then
     printf '%s\n' "--- failure-summary.txt ---" >&2
     cat "$artifact_dir/failure-summary.txt" >&2
+  fi
+  if (( runtime_exit != 0 )); then
+    exit "$runtime_exit"
   fi
   exit 2
 fi

@@ -429,51 +429,56 @@ def select_source(source_run_id: str, requested_phase: str = PHASE) -> dict[str,
     return _select(source_run_id, requested_phase)
 
 
-def _target_directory(value: str) -> Path:
+def _target_directory(value: str) -> tuple[str, int]:
     target = Path(value)
     if not target.is_absolute():
         target = ROOT / target
-    target = target.resolve(strict=False)
-    if target.parent != RUNTIME_ROOT.resolve():
+    if target.parent.resolve() != RUNTIME_ROOT.resolve():
         raise _fail("Target run must be a direct child of artifacts/runtime.")
     _canonical_uuid(target.name, "targetRunId")
-    _directory(target, "target run")
-    return target
+    runtime_descriptor = _open_directory(RUNTIME_ROOT, "runtime root")
+    try:
+        target_descriptor = _open_directory(
+            target.name, "target run", dir_fd=runtime_descriptor
+        )
+    finally:
+        os.close(runtime_descriptor)
+    return target.name, target_descriptor
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
+def _write_json(directory_descriptor: int, name: str, payload: dict[str, Any]) -> None:
     encoded = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
     if len(encoded) > MAX_REPRODUCTION_BYTES:
         raise _fail("reproduction.json exceeds its serialized-size bound.")
+    temporary_name = f".reproduction.{uuid.uuid4()}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=".reproduction.", suffix=".tmp", dir=path.parent
-        )
+        descriptor = os.open(temporary_name, flags, 0o600, dir_fd=directory_descriptor)
     except OSError as error:
         raise _fail("Cannot create private reproduction metadata.") from error
-    temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())
         try:
-            os.link(temporary, path)
+            os.link(
+                temporary_name,
+                name,
+                src_dir_fd=directory_descriptor,
+                dst_dir_fd=directory_descriptor,
+                follow_symlinks=False,
+            )
         except FileExistsError as error:
             raise _fail("Target reproduction metadata already exists.") from error
-        directory_descriptor = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_descriptor)
-        finally:
-            os.close(directory_descriptor)
+        os.fsync(directory_descriptor)
     except ReproductionError:
         raise
     except OSError as error:
         raise _fail("Cannot publish reproduction metadata safely.") from error
     finally:
         try:
-            temporary.unlink()
+            os.unlink(temporary_name, dir_fd=directory_descriptor)
         except FileNotFoundError:
             pass
 
@@ -484,17 +489,18 @@ def materialize(source_run_id: str, target_run_dir: str | Path, expected_kind: s
     if not isinstance(expected_scenario, str) or not expected_scenario:
         raise _fail("Expected target scenario is required.")
     selection = _select(source_run_id, requested_phase)
-    target = _target_directory(str(target_run_dir))
-    if selection["targetKind"] != expected_kind or selection["targetScenario"] != expected_scenario:
-        raise _fail("Target kind/scenario does not match the source selection.")
-    if target.name == selection["sourceRunId"]:
-        raise _fail("Target run must have a fresh run ID.")
-    scenarios = _load_scenarios()
+    target_name, target_descriptor = _target_directory(str(target_run_dir))
     try:
-        VALIDATOR.resolve_scenario(scenarios, expected_scenario, expected_kind)
-    except Exception as error:
-        raise _fail(str(error)) from error
-    metadata = {
+        if selection["targetKind"] != expected_kind or selection["targetScenario"] != expected_scenario:
+            raise _fail("Target kind/scenario does not match the source selection.")
+        if target_name == selection["sourceRunId"]:
+            raise _fail("Target run must have a fresh run ID.")
+        scenarios = _load_scenarios()
+        try:
+            VALIDATOR.resolve_scenario(scenarios, expected_scenario, expected_kind)
+        except Exception as error:
+            raise _fail(str(error)) from error
+        metadata = {
         "formatVersion": 1,
         "sourceRunId": selection["sourceRunId"],
         "sourceScenario": selection["sourceScenario"],
@@ -504,7 +510,7 @@ def materialize(source_run_id: str, target_run_dir: str | Path, expected_kind: s
         "sourceResultFingerprint": selection["sourceResultFingerprint"],
         "sourceRepositoryHead": selection["sourceRepositoryHead"],
         "sourceSeed": selection["sourceSeed"],
-        "targetRunId": target.name,
+        "targetRunId": target_name,
         "targetScenario": expected_scenario,
         "targetKind": expected_kind,
         "requestedPhase": selection["requestedPhase"],
@@ -513,11 +519,13 @@ def materialize(source_run_id: str, target_run_dir: str | Path, expected_kind: s
         "checkpointStatus": CHECKPOINT_STATUS,
         "checkpointReason": CHECKPOINT_REASON,
         "createdAtUtc": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
-    }
-    if set(metadata) != REPRODUCTION_FIELDS:
-        raise _fail("Internal reproduction metadata schema drift.")
-    _write_json(target / "reproduction.json", metadata)
-    return metadata
+        }
+        if set(metadata) != REPRODUCTION_FIELDS:
+            raise _fail("Internal reproduction metadata schema drift.")
+        _write_json(target_descriptor, "reproduction.json", metadata)
+        return metadata
+    finally:
+        os.close(target_descriptor)
 
 
 def _print_field(selection: dict[str, Any], field: str) -> None:

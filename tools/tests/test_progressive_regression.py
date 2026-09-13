@@ -381,6 +381,34 @@ class ProgressiveRegressionTests(unittest.TestCase):
             ),
         )
 
+    def test_successful_exit_rejects_omitted_test_outcomes(self) -> None:
+        plan = self.executable_plan(changed_paths=["tools/progressive_regression.py"])
+        outputs = (
+            "Ran 1 test in 0.1s\n\nOK (skipped=1)",
+            "Ran 1 test in 0.1s\n\nOK (expected failures=1)",
+            "Ran 1 test in 0.1s\n\nOK (unexpected successes=1)",
+            "Ran 1 test in 0.1s\n\nFAILED (failures=1)",
+            "OK\nRan 1 test in 0.1s\n\nFAILED (failures=1)",
+            "Python tests: 1; failures: 0; skipped: 1\n",
+            "Python tests: 1; failures: 1; skipped: 0\n",
+            "Runtime.Tests: Passed: 1, Failed: 0, Skipped: 1\n",
+            "Runtime.Tests: Passed: 1, Failed: 1, Skipped: 0\n",
+        )
+        for output in outputs:
+            with self.subTest(output=output):
+                report = regression.execute_plan(
+                    plan,
+                    root=ROOT,
+                    executor=lambda *_: (0, output),
+                    verify_candidate=False,
+                )
+                executed = report["testsExecuted"][0]
+                self.assertEqual("FAIL", report["result"])
+                self.assertEqual("TEST_EVIDENCE_MISSING", report["executionStop"]["code"])
+                self.assertEqual(1, executed["testCount"])
+                self.assertEqual("PARTIAL", executed["evidenceStatus"])
+                self.assertFalse(report["testCountComplete"])
+
     def test_report_publication_is_private_atomic_and_bounded(self) -> None:
         plan = self.executable_plan(changed_paths=["tools/progressive_regression.py"])
         report = regression.execute_plan(
@@ -657,6 +685,85 @@ class ProgressiveRegressionTests(unittest.TestCase):
             self.assertIn("HATIFECT_REGRESSION_TIMEOUT", output)
             self.assertTrue(ready.exists())
             self.assertFalse(marker.exists())
+
+    def test_real_executor_interrupt_terminates_and_reaps_child_process_group(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "leaked-child.txt"
+            ready = Path(directory) / "child-ready.txt"
+            child = (
+                "import pathlib,signal,sys,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "pathlib.Path(sys.argv[2]).write_text('ready', encoding='utf-8'); "
+                "time.sleep(0.5); "
+                "pathlib.Path(sys.argv[1]).write_text('leaked', encoding='utf-8')"
+            )
+            parent = (
+                "import subprocess,sys,time; "
+                "subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2], sys.argv[3]]); "
+                "time.sleep(10)"
+            )
+            real_popen = regression.subprocess.Popen
+            spawned = []
+
+            def interrupted_popen(*args, **kwargs):
+                process = real_popen(*args, **kwargs)
+                spawned.append(process)
+                original_wait = process.wait
+                interrupted = False
+
+                def wait(*, timeout=None):
+                    nonlocal interrupted
+                    if not interrupted:
+                        deadline = time.monotonic() + 2
+                        while not ready.exists() and time.monotonic() < deadline:
+                            time.sleep(0.005)
+                        interrupted = True
+                        raise KeyboardInterrupt
+                    return original_wait(timeout=timeout)
+
+                process.wait = wait
+                return process
+
+            with mock.patch.object(
+                regression.subprocess, "Popen", side_effect=interrupted_popen
+            ), self.assertRaises(KeyboardInterrupt):
+                regression._execute(
+                    [sys.executable, "-c", parent, child, str(marker), str(ready)],
+                    ROOT,
+                    os.environ.copy(),
+                    timeout_seconds=10,
+                )
+
+            time.sleep(0.7)
+            self.assertTrue(ready.exists())
+            self.assertFalse(marker.exists())
+            self.assertIsNotNone(spawned[0].poll())
+            self.assertFalse(regression._process_group_exists(spawned[0].pid))
+
+    def test_real_executor_interrupt_before_reader_start_reaps_spawned_process(self) -> None:
+        spawned = []
+        real_popen = regression.subprocess.Popen
+
+        def capturing_popen(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            spawned.append(process)
+            return process
+
+        with mock.patch.object(
+            regression.subprocess, "Popen", side_effect=capturing_popen
+        ), mock.patch.object(
+            regression.threading.Thread, "start", side_effect=KeyboardInterrupt
+        ), self.assertRaises(KeyboardInterrupt):
+            regression._execute(
+                [sys.executable, "-c", "import time; time.sleep(10)"],
+                ROOT,
+                os.environ.copy(),
+                timeout_seconds=10,
+            )
+
+        self.assertEqual(1, len(spawned))
+        self.assertIsNotNone(spawned[0].poll())
+        self.assertFalse(regression._process_group_exists(spawned[0].pid))
 
     def test_real_executor_fails_closed_without_process_group_support(self) -> None:
         with mock.patch.object(regression.os, "name", "nt"), mock.patch.object(

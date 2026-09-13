@@ -17,6 +17,20 @@ class LiveRunnerSemanticFailureSurfaceTests(unittest.TestCase):
         self.assertIn(marker, script)
         self.assertIn(diagnostic, script)
         self.assertIn(root_failure, script)
+        self.assertIn('record-secondary-failure "$scenario" "$result"', script)
+        self.assertNotIn('runtime-result.secondary.json', script)
+        semantic_branch = script[script.index('if [[ "$semantic_failure_marker" == "true" ]]'):]
+        record_secondary = semantic_branch.index(
+            'record-secondary-failure "$scenario" "$result"'
+        )
+        preserve_runtime_exit = semantic_branch.index(
+            'if (( runtime_exit != 0 )); then\n    exit "$runtime_exit"\n  fi\n  exit 2'
+        )
+        self.assertNotIn(
+            'write-result BLOCKED "$scenario" "$result"',
+            script[script.index("semantic_failure_marker=false"):],
+        )
+        self.assertLess(record_secondary, preserve_runtime_exit)
         self.assertIn(summary, script)
         self.assertIn('(( runtime_exit == 0 )) && [[ "$semantic_agent_exit" != "0" ]]', script)
         self.assertNotIn('tail -n 120 "$artifact_dir/semantic-test-agent.log"', script)

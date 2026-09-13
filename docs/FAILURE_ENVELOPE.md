@@ -36,19 +36,29 @@ found while a result is missing or invalid remain `runtime` failures.
 
 The strict reader remains compatible with historical format v2 and v3 envelopes, including their
 legacy `input`, `scenario` and `executor` phase values. Those legacy values are read-only
-compatibility values: generation and explicit phase overrides accept only the five current phase
-names. This does not change result protocol v1, the failure format versions, semantic events or
-transport schemas.
+compatibility values. Generation accepts only the five current phase names, and explicit
+phase/class/component arguments may confirm—but cannot redefine—the canonical assertion mapping;
+typed preflight context remains derived from `preflight.json`. This makes the writer's output
+strictly reproducible from authoritative evidence without changing result protocol v1, failure
+format versions, semantic events or transport schemas.
 
 The envelope selects the first non-cleanup failed assertion in canonical assertion order as the
-single `ROOT_FAILURE`. A `CASCADE_SKIPPED` record requires explicit `cascade_dependencies`
-provenance that references that root. Later failures without that evidence are bounded
-`ADDITIONAL_FAILURE` records, preserving their original FAIL/BLOCKED status without claiming they
-were skipped. Cleanup and restoration errors are `CLEANUP_FAILURE` records referencing the root
+single `ROOT_FAILURE`. A later non-preflight `BLOCKED` assertion deterministically becomes
+`CASCADE_SKIPPED`; when callers also supply `cascade_dependencies`, that declaration must exactly
+match the status-derived projection and reference the root. Later independent `FAIL` assertions and
+typed preflight capability failures are bounded `ADDITIONAL_FAILURE` records, preserving their
+original status without claiming they were skipped. Assertion IDs are unique. Cleanup and
+restoration errors are `CLEANUP_FAILURE` records referencing the root
 only when they use one of the strict harness-owned cleanup IDs: `HARNESS-SAVE-CLEANUP`,
 `HARNESS-OPTIONS-RESTORE` or `HARNESS-PROCESS-TEARDOWN`. Product assertions are never classified
 from ID substrings. If cleanup is the only failure, it becomes the single root and changes an
 otherwise successful run to BLOCKED, matching the existing fail-closed runtime behavior.
+
+Cleanup provenance is deterministic and does not depend on the best-effort semantic stream. The
+closed mapping is `HARNESS-SAVE-CLEANUP` → `save-provisioning`,
+`HARNESS-OPTIONS-RESTORE` → `runtime-options`, and `HARNESS-PROCESS-TEARDOWN` →
+`runtime-process`. A conflicting caller-supplied component is rejected before `result.json`,
+semantic events, or failure sidecars are changed.
 
 The top level contains `scenario`, `run_id`, `phase`, `timestamp`, `status`, `failure_class`,
 `root_failure`, `expected`, `actual`, `message`, `causal_component`, `relevant_artifacts` and
@@ -64,6 +74,12 @@ platform/runtime identity values; paths, environment variables and log bodies ar
 `result_fingerprint` is a SHA-256 digest of canonical authoritative `result.json`, so strict
 validation rejects stale sidecars even when scenario, run ID and status are unchanged. JSON keys
 and record order are deterministic for identical evidence and timestamp.
+
+Strict validation also reconstructs the complete ordered causal projection from authoritative
+failed assertions. It rejects a later assertion promoted to root, fabricated, omitted or duplicate
+supplementary records, and evidence/classification drift. When the semantic companion fails beside
+an independent runtime `FAIL`, the runtime assertion remains the root and the semantic failure is
+appended as `ADDITIONAL_FAILURE`; a semantic-only failure remains canonical `BLOCKED`.
 
 `failure.json` has one shared serialized-size budget of 256 KiB for generation, persistence and
 strict reading. If field/count bounds would exceed it, the generator first truncates deterministic

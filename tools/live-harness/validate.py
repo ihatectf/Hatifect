@@ -194,6 +194,11 @@ HARNESS_CLEANUP_ASSERTION_IDS = frozenset({
     "HARNESS-PROCESS-TEARDOWN",
     "HARNESS-SAVE-CLEANUP",
 })
+CLEANUP_CAUSAL_COMPONENTS = {
+    "HARNESS-OPTIONS-RESTORE": "runtime-options",
+    "HARNESS-PROCESS-TEARDOWN": "runtime-process",
+    "HARNESS-SAVE-CLEANUP": "save-provisioning",
+}
 ENVIRONMENT_SUMMARY_TYPES = {
     "platform": str,
     "machine": str,
@@ -1963,13 +1968,30 @@ def build_failure_envelope(
             )
         )
     root_context = preflight_contexts.get(root_assertion["id"], {})
+    derived_phase, derived_class, derived_component = _failure_context(
+        root_assertion["id"], root_assertion["status"]
+    )
+    if not root_context and root_assertion["id"] in CLEANUP_CAUSAL_COMPONENTS:
+        derived_phase = "cleanup"
+        derived_class = "CLEANUP_FAILURE"
+        derived_component = CLEANUP_CAUSAL_COMPONENTS[root_assertion["id"]]
+    if not root_context and any(
+        supplied is not None and supplied != derived
+        for supplied, derived in (
+            (phase, derived_phase),
+            (failure_class, derived_class),
+            (causal_component, derived_component),
+        )
+    ):
+        raise HarnessError(
+            "Generated root failure context must match the canonical assertion mapping."
+        )
     root = _failure_record(
         root_assertion,
         "ROOT_FAILURE",
-        phase=root_context.get("phase") or phase,
-        failure_class=root_context.get("failure_class") or failure_class,
-        causal_component=root_context.get("causal_component")
-        or causal_component,
+        phase=root_context.get("phase") or derived_phase,
+        failure_class=root_context.get("failure_class") or derived_class,
+        causal_component=root_context.get("causal_component") or derived_component,
         expected=root_context.get("expected"),
         actual=root_context.get("actual"),
     )
@@ -1981,22 +2003,30 @@ def build_failure_envelope(
             root["causal_component"], root["actual"] = executor_context
             root["message"] = root["actual"]
     root_id = root["id"]
-    dependencies = cascade_dependencies or {}
-    if not isinstance(dependencies, dict) or any(
+    supplied_dependencies = cascade_dependencies
+    if supplied_dependencies is not None and (
+        not isinstance(supplied_dependencies, dict) or any(
         not isinstance(dependent, str)
         or not isinstance(cause, str)
         or dependent == root_id
-        for dependent, cause in dependencies.items()
+        for dependent, cause in supplied_dependencies.items()
+        )
     ):
         raise HarnessError("Failure envelope cascade dependencies are invalid.")
     known_causal_ids = {assertion["id"] for assertion in causal_assertions}
-    if (
-        not set(dependencies) <= known_causal_ids
-        or any(cause != root_id for cause in dependencies.values())
-    ):
+    derived_dependencies = {
+        assertion["id"]: root_id
+        for assertion in causal_assertions[1:]
+        if assertion["status"] == "BLOCKED"
+        and assertion["id"] not in preflight_contexts
+    }
+    if supplied_dependencies is not None and supplied_dependencies != derived_dependencies:
         raise HarnessError(
-            "Failure envelope cascade dependencies must explicitly reference the root failure."
+            "Failure envelope cascade dependencies conflict with authoritative assertion status."
         )
+    dependencies = derived_dependencies
+    if not set(dependencies) <= known_causal_ids:
+        raise HarnessError("Failure envelope cascade dependencies are not result-backed.")
     cascade_assertions = [
         assertion
         for assertion in causal_assertions[1:]
@@ -2021,7 +2051,12 @@ def build_failure_envelope(
         contexts=preflight_contexts,
     )
     cleanup_records = [
-        _failure_record(assertion, "CLEANUP_FAILURE", root_failure_id=root_id)
+        _failure_record(
+            assertion,
+            "CLEANUP_FAILURE",
+            root_failure_id=root_id,
+            causal_component=CLEANUP_CAUSAL_COMPONENTS[assertion["id"]],
+        )
         for assertion in cleanup_assertions
     ]
     extra_artifacts: list[str] = []
@@ -2034,8 +2069,15 @@ def build_failure_envelope(
             raise HarnessError(
                 "Generated cleanup failure phase is outside the closed vocabulary."
             )
+        cleanup_id = failure.get("id") or f"HARNESS-CLEANUP-{index + 1}"
+        expected_component = CLEANUP_CAUSAL_COMPONENTS.get(cleanup_id)
+        supplied_component = failure.get("causal_component") or expected_component
+        if expected_component is None or supplied_component != expected_component:
+            raise HarnessError(
+                "Generated cleanup failure component conflicts with its canonical ID."
+            )
         assertion = _assertion(
-            failure.get("id") or f"HARNESS-CLEANUP-{index + 1}",
+            cleanup_id,
             failure.get("status") or "FAIL",
             result["scenario"],
             failure.get("expected") or "Cleanup completes without errors.",
@@ -2047,7 +2089,7 @@ def build_failure_envelope(
             root_failure_id=root_id,
             phase=failure.get("phase") or "cleanup",
             failure_class="CLEANUP_FAILURE",
-            causal_component=failure.get("causal_component") or "runtime-cleanup",
+            causal_component=expected_component,
             timestamp=failure.get("timestamp") or captured_at,
         ))
         artifact = failure.get("artifact")
@@ -2443,6 +2485,7 @@ def validate_failure_artifacts(
                 raise HarnessError(
                     "Failure envelope capability evidence conflicts with preflight.json."
                 )
+    _validate_failure_result_projection(envelope, result, result_path.parent)
     summary = _read_bounded_text(summary_path, MAX_FAILURE_SUMMARY_CHARACTERS)
     if summary is None:
         raise HarnessError(
@@ -2517,6 +2560,60 @@ def _validate_root_result_evidence(
     raise HarnessError("Failure envelope root evidence conflicts with result.json.")
 
 
+def _validate_failure_result_projection(
+    envelope: dict[str, Any],
+    result: dict[str, Any],
+    artifact_root: Path,
+) -> None:
+    """Prove the complete causal envelope is the canonical result projection."""
+    failed = [
+        assertion for assertion in result["assertions"]
+        if assertion["status"] != "PASS"
+    ]
+    causal = [
+        assertion for assertion in failed
+        if assertion["id"] not in HARNESS_CLEANUP_ASSERTION_IDS
+    ]
+    if not causal:
+        causal = [
+            assertion for assertion in failed
+            if assertion["id"] in HARNESS_CLEANUP_ASSERTION_IDS
+        ][:1]
+    if causal and envelope["root_failure"]["id"] != causal[0]["id"]:
+        raise HarnessError("Failure envelope root is not the first causal result failure.")
+    _validate_root_result_evidence(envelope["root_failure"], result)
+
+    result_cleanup_ids = {
+        assertion["id"] for assertion in failed
+        if assertion["id"] in HARNESS_CLEANUP_ASSERTION_IDS
+    }
+    external_cleanup = [
+        {
+            "id": record["id"],
+            "status": record["original_status"],
+            "phase": record["phase"],
+            "expected": record["expected"],
+            "actual": record["actual"],
+            "message": record["message"],
+            "causal_component": record["causal_component"],
+            **({"timestamp": record["timestamp"]} if "timestamp" in record else {}),
+        }
+        for record in envelope["cleanup_failures"]
+        if record["id"] not in result_cleanup_ids
+    ]
+    expected = build_failure_envelope(
+        result,
+        artifact_root,
+        timestamp=envelope["timestamp"],
+        cleanup_failures=external_cleanup,
+    )
+    if expected is None or any(
+        envelope[field] != expected[field]
+        for field in ("root_failure", "cascade_records", "additional_failures")
+    ):
+        raise HarnessError("Failure envelope causal records conflict with result.json.")
+
+
 def record_cleanup_failure(
     result_path: Path,
     *,
@@ -2530,6 +2627,13 @@ def record_cleanup_failure(
     if failure_id not in HARNESS_CLEANUP_ASSERTION_IDS:
         raise HarnessError(
             "Cleanup failure must use an explicit harness-owned cleanup ID."
+        )
+    canonical_component = CLEANUP_CAUSAL_COMPONENTS[failure_id]
+    if causal_component == "runtime-cleanup":
+        causal_component = canonical_component
+    elif causal_component != canonical_component:
+        raise HarnessError(
+            "Cleanup failure component conflicts with its canonical ID."
         )
     result = _read_bounded_json(result_path)
     if result is None:
@@ -2547,14 +2651,24 @@ def record_cleanup_failure(
     if artifact is not None:
         cleanup["artifact"] = artifact
     if result["status"] == "PASS":
-        result["status"] = "BLOCKED"
-        result["assertions"].append(_assertion(
+        prospective = json.loads(json.dumps(result))
+        prospective["status"] = "BLOCKED"
+        prospective["assertions"].append(_assertion(
             failure_id,
             "BLOCKED",
-            result["scenario"],
+            prospective["scenario"],
             expected,
             message,
         ))
+        build_failure_envelope(
+            prospective,
+            result_path.parent,
+            timestamp=cleanup["timestamp"],
+            phase="cleanup",
+            failure_class="CLEANUP_FAILURE",
+            causal_component=causal_component,
+        )
+        result = prospective
         _atomic_write_json(result_path, result)
         try_record_semantic_event(
             result_path.parent,
@@ -2697,6 +2811,17 @@ def write_result(
         "artifacts": artifacts or [],
     }
     validate_result(payload, scenario)
+    if payload["status"] != "PASS":
+        build_failure_envelope(
+            payload,
+            path.parent,
+            timestamp=failure_timestamp,
+            phase=failure_phase,
+            failure_class=failure_class,
+            causal_component=causal_component,
+            cleanup_failures=cleanup_failures,
+            cascade_dependencies=cascade_dependencies,
+        )
     previous = _read_bounded_json(path)
     if previous is not None:
         try:
@@ -2780,11 +2905,15 @@ def _validate_assertions(assertions: Any) -> None:
     if not isinstance(assertions, list):
         raise HarnessError("Scenario result assertions must be an array.")
     keys = {"id", "status", "subject", "expected", "actual"}
+    seen_ids: set[str] = set()
     for assertion in assertions:
         if not isinstance(assertion, dict) or set(assertion) != keys:
             raise HarnessError("Scenario result contains a malformed assertion.")
         if not isinstance(assertion["id"], str) or not assertion["id"]:
             raise HarnessError("Scenario result assertion has no stable id.")
+        if assertion["id"] in seen_ids:
+            raise HarnessError("Scenario result assertion IDs must be unique.")
+        seen_ids.add(assertion["id"])
         if assertion["status"] not in STATUSES:
             raise HarnessError("Scenario result assertion has an invalid status.")
         for field in ("subject", "expected", "actual"):
@@ -3433,6 +3562,100 @@ def command_result(args: argparse.Namespace) -> int:
     return 0
 
 
+def record_secondary_failure(
+    result_path: Path,
+    *,
+    scenario: str,
+    run_id: str,
+    assertion_id: str,
+    expected: str,
+    message: str,
+    exception_type: str,
+    artifact_root: Path,
+) -> dict[str, Any]:
+    current = _read_bounded_json(result_path)
+    if current is not None:
+        validate_result(current, scenario)
+    if current is not None and current["runId"] == run_id and current["status"] != "PASS":
+        if any(assertion["id"] == assertion_id for assertion in current["assertions"]):
+            raise HarnessError("Secondary failure assertion is already present.")
+        existing = validate_failure_artifacts(result_path, current)
+        result_cleanup_ids = {
+            assertion["id"] for assertion in current["assertions"]
+            if assertion["id"] in HARNESS_CLEANUP_ASSERTION_IDS
+        }
+        cleanup_failures = [
+            {
+                "id": record["id"],
+                "status": record["original_status"],
+                "phase": record["phase"],
+                "expected": record["expected"],
+                "actual": record["actual"],
+                "message": record["message"],
+                "causal_component": record["causal_component"],
+                **({"timestamp": record["timestamp"]} if "timestamp" in record else {}),
+            }
+            for record in (existing or {}).get("cleanup_failures", [])
+            if record["id"] not in result_cleanup_ids
+        ]
+        current["assertions"].append(
+            _assertion(assertion_id, "FAIL", scenario, expected, message)
+        )
+        current["exceptions"].append({"type": exception_type, "message": message})
+        current["artifacts"] = collect_artifacts(artifact_root)
+        write_result(
+            result_path,
+            current["status"],
+            scenario,
+            message,
+            run_id=run_id,
+            duration_ms=current["durationMs"],
+            assertions=current["assertions"],
+            exceptions=current["exceptions"],
+            artifacts=current["artifacts"],
+            cleanup_failures=cleanup_failures,
+        )
+        published = _read_bounded_json(result_path)
+        if published is None:
+            raise HarnessError("Secondary failure result publication failed.")
+        return published
+
+    write_result(
+        result_path,
+        "BLOCKED",
+        scenario,
+        message,
+        run_id=run_id,
+        assertions=[_assertion(
+            assertion_id,
+            "BLOCKED",
+            scenario,
+            expected,
+            message,
+        )],
+        exceptions=[{"type": exception_type, "message": message}],
+        artifacts=collect_artifacts(artifact_root),
+    )
+    generated = _read_bounded_json(result_path)
+    if generated is None:
+        raise HarnessError("Secondary failure result publication failed.")
+    return generated
+
+
+def command_record_secondary_failure(args: argparse.Namespace) -> int:
+    record_secondary_failure(
+        Path(args.result),
+        scenario=args.scenario,
+        run_id=args.run_id,
+        assertion_id=args.assertion_id,
+        expected=args.expected,
+        message=args.message,
+        exception_type=args.exception_type,
+        artifact_root=Path(args.artifact_root),
+    )
+    return 0
+
+
 def validate_ui_runtime_diagnostics(
     resolved: dict[str, Any], artifact_root: Path, run_id: str, started_at: float
 ) -> None:
@@ -3703,6 +3926,17 @@ def build_parser() -> argparse.ArgumentParser:
     result.add_argument("--exception-type", default=None)
     result.add_argument("--artifact-root", default=None)
     result.set_defaults(function=command_result)
+
+    secondary = subparsers.add_parser("record-secondary-failure")
+    secondary.add_argument("scenario")
+    secondary.add_argument("result")
+    secondary.add_argument("message")
+    secondary.add_argument("--run-id", required=True)
+    secondary.add_argument("--assertion-id", required=True)
+    secondary.add_argument("--expected", required=True)
+    secondary.add_argument("--exception-type", required=True)
+    secondary.add_argument("--artifact-root", required=True)
+    secondary.set_defaults(function=command_record_secondary_failure)
 
     finalize = subparsers.add_parser("finalize")
     finalize.add_argument("kind", choices=("smoke", "ui"))

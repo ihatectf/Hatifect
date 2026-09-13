@@ -43,7 +43,9 @@ python3 tools/live-harness/reproduction.py materialize <source-run-id> <target-r
 `materialize` revalidates a descriptor-stable source snapshot immediately before writing the fresh
 target's `reproduction.json`; the seed used by the normal runner is returned from that same
 snapshot. Metadata publication is exclusive, so concurrent writers cannot replace accepted
-lineage evidence. The metadata has an exact schema v1, deterministic JSON ordering, and
+lineage evidence. The validated target directory descriptor remains open through temporary-file
+creation, exclusive link publication, directory sync and cleanup, so a pathname replacement cannot
+redirect metadata. The metadata has an exact schema v1, deterministic JSON ordering, and
 contains only run/scenario/kind/root identity, result fingerprint, repository
 HEAD, seed, phase, strategy, fixed checkpoint status/reason and a timestamp.
 It contains no absolute path, environment dump, command, log or user save

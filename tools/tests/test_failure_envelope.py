@@ -109,6 +109,53 @@ class FailureEnvelopeTests(unittest.TestCase):
                             failure_phase=invalid_phase,
                         )
 
+    def test_root_context_override_can_confirm_but_not_redefine_mapping(self) -> None:
+        canonical = {
+            "failure_phase": "runtime",
+            "failure_class": "ASSERTION_FAILURE",
+            "causal_component": "scenario",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = Path(directory) / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "FAIL",
+                "runtime.boot",
+                "failed",
+                run_id="canonical-context-run",
+                assertions=[self._assertion("runtime.boot.loaded", "FAIL", "boot", "failed")],
+                failure_timestamp=TIMESTAMP,
+                **canonical,
+            )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            HARNESS.validate_failure_artifacts(result_path, result)
+
+        for field, value in (
+            ("failure_phase", "prepare"),
+            ("failure_class", "PREPARATION_FAILURE"),
+            ("causal_component", "custom-preparer"),
+        ):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                overrides = dict(canonical)
+                overrides[field] = value
+                result_path = Path(directory) / "result.json"
+                with self.assertRaisesRegex(HARNESS.HarnessError, "canonical assertion mapping"):
+                    HARNESS.write_result(
+                        result_path,
+                        "FAIL",
+                        "runtime.boot",
+                        "failed",
+                        assertions=[self._assertion(
+                            "runtime.boot.loaded", "FAIL", "boot", "failed"
+                        )],
+                        **overrides,
+                    )
+                self.assertFalse(result_path.exists())
+                self.assertFalse((result_path.parent / "failure.json").exists())
+                self.assertFalse(
+                    (result_path.parent / HARNESS.SEMANTIC_EVENT_FILE_NAME).exists()
+                )
+
     def test_historical_v2_and_v3_phase_names_remain_readable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result_path = self._write_failed_result(Path(directory))
@@ -146,7 +193,7 @@ class FailureEnvelopeTests(unittest.TestCase):
                 run_id="phase-record-run",
                 assertions=[
                     self._assertion("runtime.boot.root", "FAIL", "root", "failed"),
-                    self._assertion("runtime.boot.dependent", "FAIL", "dependent", "skipped"),
+                    self._assertion("runtime.boot.dependent", "BLOCKED", "dependent", "skipped"),
                 ],
                 failure_timestamp=TIMESTAMP,
                 cascade_dependencies={"runtime.boot.dependent": "runtime.boot.root"},
@@ -238,8 +285,8 @@ class FailureEnvelopeTests(unittest.TestCase):
                 run_id="test-run",
                 assertions=[
                     self._assertion("semantic.lifecycle.visual", "FAIL", "visible", "missing"),
-                    self._assertion("semantic.lifecycle.focus", "FAIL", "focused", "unavailable"),
-                    self._assertion("semantic.lifecycle.close-reopen", "FAIL", "reopened", "not attempted"),
+                    self._assertion("semantic.lifecycle.focus", "BLOCKED", "focused", "unavailable"),
+                    self._assertion("semantic.lifecycle.close-reopen", "BLOCKED", "reopened", "not attempted"),
                 ],
                 failure_timestamp=TIMESTAMP,
                 cascade_dependencies={
@@ -258,7 +305,7 @@ class FailureEnvelopeTests(unittest.TestCase):
         self.assertTrue(all(
             record["classification"] == "CASCADE_SKIPPED"
             and record["root_failure_id"] == "semantic.lifecycle.visual"
-            and record["original_status"] == "FAIL"
+            and record["original_status"] == "BLOCKED"
             for record in envelope["cascade_records"]
         ))
 
@@ -422,6 +469,59 @@ class FailureEnvelopeTests(unittest.TestCase):
             envelope["relevant_artifacts"],
         )
 
+    def test_cleanup_only_failure_does_not_depend_on_best_effort_semantic_events(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = Path(directory) / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "PASS",
+                "runtime.boot",
+                "passed",
+                run_id="cleanup-without-events",
+            )
+            with mock.patch.object(HARNESS, "try_record_semantic_event", return_value=False):
+                envelope = HARNESS.record_cleanup_failure(
+                    result_path,
+                    failure_id="HARNESS-SAVE-CLEANUP",
+                    message="save cleanup failed",
+                    causal_component="save-provisioning",
+                    timestamp=TIMESTAMP,
+                )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            strict = HARNESS.validate_failure_artifacts(result_path, result)
+
+        self.assertEqual("BLOCKED", result["status"])
+        self.assertEqual("save-provisioning", envelope["causal_component"])
+        self.assertEqual(envelope, strict)
+
+    def test_cleanup_component_mismatch_is_rejected_before_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_path = root / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "PASS",
+                "runtime.boot",
+                "passed",
+                run_id="cleanup-component-run",
+            )
+            result_before = result_path.read_bytes()
+            event_path = root / HARNESS.SEMANTIC_EVENT_FILE_NAME
+            events_before = event_path.read_bytes()
+
+            with self.assertRaisesRegex(HARNESS.HarnessError, "canonical ID"):
+                HARNESS.record_cleanup_failure(
+                    result_path,
+                    failure_id="HARNESS-SAVE-CLEANUP",
+                    message="save cleanup failed",
+                    causal_component="x" * (HARNESS.MAX_SEMANTIC_FIELD_TEXT + 1),
+                    timestamp=TIMESTAMP,
+                )
+
+            self.assertEqual(result_before, result_path.read_bytes())
+            self.assertEqual(events_before, event_path.read_bytes())
+            self.assertFalse((root / "failure.json").exists())
+
     def test_successful_scenario_keeps_existing_result_contract_without_failure_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -531,9 +631,6 @@ class FailureEnvelopeTests(unittest.TestCase):
                     run_id=text,
                     assertions=[self._assertion(text, "FAIL", text, text)],
                     failure_timestamp=TIMESTAMP,
-                    failure_phase="runtime",
-                    failure_class=text,
-                    causal_component=text,
                 )
 
                 result = json.loads(result_path.read_text(encoding="utf-8"))
@@ -570,7 +667,7 @@ class FailureEnvelopeTests(unittest.TestCase):
         assertions = [
             self._assertion(root_id, "FAIL", "loaded", "missing"),
             *[
-                self._assertion(assertion_id, "FAIL", text, text)
+                self._assertion(assertion_id, "BLOCKED", text, text)
                 for assertion_id in cascade_ids
             ],
         ]
@@ -618,8 +715,13 @@ class FailureEnvelopeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result_path = Path(directory) / "result.json"
             assertions = [
-                self._assertion(f"runtime.boot.check-{index}", "FAIL", "pass", "failed")
-                for index in range(40)
+                self._assertion("runtime.boot.check-0", "FAIL", "pass", "failed"),
+                *[
+                    self._assertion(
+                        f"runtime.boot.check-{index}", "BLOCKED", "pass", "skipped"
+                    )
+                    for index in range(1, 40)
+                ],
             ]
             HARNESS.write_result(
                 result_path,
@@ -654,7 +756,7 @@ class FailureEnvelopeTests(unittest.TestCase):
                 f"cascade-{index}-" + "c" * (
                     HARNESS.MAX_FAILURE_TEXT - len(f"cascade-{index}-")
                 ),
-                "FAIL",
+                "BLOCKED",
                 text,
                 text,
             )
@@ -676,58 +778,39 @@ class FailureEnvelopeTests(unittest.TestCase):
             *cascade_assertions,
             *additional_assertions,
         ]
-        artifacts = [
-            "artifact-" + str(index) + "-" + "p" * (
-                HARNESS.MAX_FAILURE_TEXT - len(f"artifact-{index}-")
-            )
-            for index in range(HARNESS.MAX_RELEVANT_ARTIFACTS - 1)
-        ]
-        environment = {
-            key: (2_147_483_647 if value is int else text)
-            for key, value in HARNESS.ENVIRONMENT_SUMMARY_TYPES.items()
-        }
         cleanup_failures = [
             {
-                "id": sorted(HARNESS.HARNESS_CLEANUP_ASSERTION_IDS)[
-                    index % len(HARNESS.HARNESS_CLEANUP_ASSERTION_IDS)
-                ],
+                "id": cleanup_id,
                 "expected": text,
                 "actual": text,
                 "message": text,
-                "causal_component": text,
+                "causal_component": HARNESS.CLEANUP_CAUSAL_COMPONENTS[cleanup_id],
                 "timestamp": TIMESTAMP,
             }
             for index in range(HARNESS.MAX_CLEANUP_FAILURES)
+            for cleanup_id in [
+                sorted(HARNESS.HARNESS_CLEANUP_ASSERTION_IDS)[
+                    index % len(HARNESS.HARNESS_CLEANUP_ASSERTION_IDS)
+                ]
+            ]
         ]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             result_path = root / "result.json"
-            with mock.patch.object(
-                HARNESS,
-                "_relevant_artifacts",
-                return_value=["result.json", *artifacts],
-            ), mock.patch.object(
-                HARNESS,
-                "_environment_summary",
-                return_value=environment,
-            ):
-                HARNESS.write_result(
-                    result_path,
-                    "FAIL",
-                    "runtime.boot",
-                    text,
-                    run_id=text,
-                    assertions=assertions,
-                    failure_timestamp=TIMESTAMP,
-                    failure_phase="runtime",
-                    failure_class=text,
-                    causal_component=text,
-                    cleanup_failures=cleanup_failures,
-                    cascade_dependencies={
-                        assertion["id"]: root_id
-                        for assertion in cascade_assertions
-                    },
-                )
+            HARNESS.write_result(
+                result_path,
+                "FAIL",
+                "runtime.boot",
+                text,
+                run_id=text,
+                assertions=assertions,
+                failure_timestamp=TIMESTAMP,
+                cleanup_failures=cleanup_failures,
+                cascade_dependencies={
+                    assertion["id"]: root_id
+                    for assertion in cascade_assertions
+                },
+            )
             result = json.loads(result_path.read_text(encoding="utf-8"))
             failure_path = root / "failure.json"
             envelope = HARNESS.validate_failure_artifacts(result_path, result)
@@ -786,6 +869,279 @@ class FailureEnvelopeTests(unittest.TestCase):
 
         self.assertEqual(strict.returncode, 2)
         self.assertIn("fingerprint conflicts", strict.stderr)
+
+    def test_strict_validator_rejects_reordered_fabricated_omitted_or_duplicate_causal_records(self) -> None:
+        mutations = (
+            "reordered", "fabricated", "omitted", "duplicate", "reclassified",
+            "root-context", "unnecessary-remainder",
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                result_path = Path(directory) / "result.json"
+                HARNESS.write_result(
+                    result_path,
+                    "FAIL",
+                    "runtime.boot",
+                    "multiple failures",
+                    run_id="strict-projection-run",
+                    assertions=[
+                        self._assertion("runtime.boot.first", "FAIL", "first", "failed"),
+                        self._assertion("runtime.boot.second", "FAIL", "second", "failed"),
+                    ],
+                    failure_timestamp=TIMESTAMP,
+                )
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                envelope = json.loads(
+                    (result_path.parent / "failure.json").read_text(encoding="utf-8")
+                )
+                if mutation == "reordered":
+                    old_root = envelope["root_failure"]
+                    new_root = envelope["additional_failures"].pop(0)
+                    new_root["classification"] = "ROOT_FAILURE"
+                    old_root["classification"] = "ADDITIONAL_FAILURE"
+                    envelope["root_failure"] = new_root
+                    envelope["additional_failures"] = [old_root]
+                    for field in (
+                        "phase", "failure_class", "expected", "actual", "message",
+                        "causal_component",
+                    ):
+                        envelope[field] = new_root[field]
+                elif mutation == "fabricated":
+                    invented = copy.deepcopy(envelope["additional_failures"][0])
+                    invented["id"] = "runtime.boot.invented"
+                    envelope["additional_failures"].append(invented)
+                elif mutation == "omitted":
+                    envelope["additional_failures"] = []
+                elif mutation == "reclassified":
+                    reclassified = envelope["additional_failures"].pop(0)
+                    reclassified["classification"] = "CASCADE_SKIPPED"
+                    reclassified["root_failure_id"] = envelope["root_failure"]["id"]
+                    envelope["cascade_records"] = [reclassified]
+                elif mutation == "root-context":
+                    root_record = envelope["root_failure"]
+                    root_record["phase"] = "validation"
+                    root_record["failure_class"] = "EVIDENCE_FAILURE"
+                    root_record["causal_component"] = "fabricated"
+                    for field in ("phase", "failure_class", "causal_component"):
+                        envelope[field] = root_record[field]
+                elif mutation == "unnecessary-remainder":
+                    envelope["additional_failures"] = [HARNESS._failure_remainder(
+                        "ADDITIONAL_FAILURE",
+                        None,
+                        result,
+                        1,
+                    )]
+                else:
+                    envelope["additional_failures"].append(
+                        copy.deepcopy(envelope["additional_failures"][0])
+                    )
+                (result_path.parent / "failure.json").write_text(
+                    json.dumps(envelope), encoding="utf-8"
+                )
+                (result_path.parent / "failure-summary.txt").write_text(
+                    HARNESS._failure_summary(envelope), encoding="utf-8"
+                )
+
+                with self.assertRaisesRegex(
+                    HARNESS.HarnessError,
+                    "first causal|causal records",
+                ):
+                    HARNESS.validate_failure_artifacts(result_path, result)
+
+    def test_strict_validator_reconstructs_compacted_remainders_and_bucket_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result_path = Path(directory) / "result.json"
+            assertions = [
+                self._assertion("runtime.root", "FAIL", "root", "failed"),
+                self._assertion("runtime.early", "FAIL", "early", "failed"),
+                *[
+                    self._assertion(
+                        f"runtime.cascade-{index}", "BLOCKED", "run", "skipped"
+                    )
+                    for index in range(HARNESS.MAX_CASCADE_RECORDS + 3)
+                ],
+                *[
+                    self._assertion(
+                        f"runtime.additional-{index}", "FAIL", "pass", "failed"
+                    )
+                    for index in range(HARNESS.MAX_ADDITIONAL_FAILURES + 3)
+                ],
+            ]
+            HARNESS.write_result(
+                result_path,
+                "FAIL",
+                "runtime.boot",
+                "many failures",
+                run_id="strict-remainder-run",
+                assertions=assertions,
+                failure_timestamp=TIMESTAMP,
+                cascade_dependencies={
+                    assertion["id"]: assertions[0]["id"]
+                    for assertion in assertions
+                    if assertion["status"] == "BLOCKED"
+                },
+            )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            envelope = HARNESS.validate_failure_artifacts(result_path, result)
+            self.assertEqual("runtime.root", envelope["root_failure"]["id"])
+            self.assertEqual("runtime.early", envelope["additional_failures"][0]["id"])
+
+            for mutation in ("omit-retained", "tamper-remainder"):
+                damaged = copy.deepcopy(envelope)
+                if mutation == "omit-retained":
+                    damaged["additional_failures"].pop(0)
+                else:
+                    remainder = damaged["additional_failures"][-1]
+                    remainder["expected"] = "fabricated"
+                    remainder["actual"] = "fabricated"
+                    remainder["message"] = "fabricated"
+                (result_path.parent / "failure.json").write_text(
+                    json.dumps(damaged), encoding="utf-8"
+                )
+                (result_path.parent / "failure-summary.txt").write_text(
+                    HARNESS._failure_summary(damaged), encoding="utf-8"
+                )
+                with self.assertRaisesRegex(HARNESS.HarnessError, "causal records"):
+                    HARNESS.validate_failure_artifacts(result_path, result)
+
+    def test_secondary_semantic_failure_preserves_independent_runtime_fail_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_path = root / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "FAIL",
+                "runtime.boot",
+                "runtime failed",
+                run_id="semantic-merge-run",
+                assertions=[
+                    self._assertion("runtime.boot.first", "FAIL", "boot", "failed"),
+                    self._assertion("runtime.boot.second", "FAIL", "ready", "failed"),
+                ],
+                failure_timestamp=TIMESTAMP,
+            )
+
+            merged = HARNESS.record_secondary_failure(
+                result_path,
+                scenario="runtime.boot",
+                run_id="semantic-merge-run",
+                assertion_id="HARNESS-SEMANTIC-TEST-AGENT",
+                expected="Semantic companion completes.",
+                message="Semantic companion exited 1.",
+                exception_type="ProcessExit",
+                artifact_root=root,
+            )
+            envelope = HARNESS.validate_failure_artifacts(result_path, merged)
+
+        self.assertEqual("FAIL", merged["status"])
+        self.assertEqual("runtime.boot.first", envelope["root_failure"]["id"])
+        self.assertEqual(
+            ["runtime.boot.second", "HARNESS-SEMANTIC-TEST-AGENT"],
+            [record["id"] for record in envelope["additional_failures"]],
+        )
+
+    def test_secondary_semantic_failure_is_blocked_root_without_runtime_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_path = root / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "PASS",
+                "runtime.boot",
+                "runtime passed",
+                run_id="semantic-only-run",
+                assertions=[
+                    self._assertion("runtime.boot.loaded", "PASS", "boot", "loaded"),
+                ],
+                failure_timestamp=TIMESTAMP,
+            )
+
+            merged = HARNESS.record_secondary_failure(
+                result_path,
+                scenario="runtime.boot",
+                run_id="semantic-only-run",
+                assertion_id="HARNESS-SEMANTIC-TEST-AGENT",
+                expected="Semantic companion completes.",
+                message="Semantic companion exited 1.",
+                exception_type="ProcessExit",
+                artifact_root=root,
+            )
+            envelope = HARNESS.validate_failure_artifacts(result_path, merged)
+
+        self.assertEqual("BLOCKED", merged["status"])
+        self.assertEqual("HARNESS-SEMANTIC-TEST-AGENT", envelope["root_failure"]["id"])
+        self.assertEqual([], envelope["additional_failures"])
+
+    def test_secondary_semantic_failure_preserves_blocker_cleanup_and_publishes_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_path = root / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "BLOCKED",
+                "runtime.boot",
+                "runtime blocked",
+                run_id="semantic-preserve-run",
+                assertions=[
+                    self._assertion("HARNESS-PROCESS-BOOT", "BLOCKED", "boot", "blocked"),
+                ],
+                cleanup_failures=[{
+                    "id": "HARNESS-SAVE-CLEANUP",
+                    "status": "FAIL",
+                    "actual": "cleanup failed",
+                    "timestamp": TIMESTAMP,
+                }],
+                failure_timestamp=TIMESTAMP,
+            )
+
+            merged = HARNESS.record_secondary_failure(
+                result_path,
+                scenario="runtime.boot",
+                run_id="semantic-preserve-run",
+                assertion_id="HARNESS-SEMANTIC-TEST-AGENT",
+                expected="Semantic companion completes.",
+                message="Semantic companion exited 1.",
+                exception_type="ProcessExit",
+                artifact_root=root,
+            )
+            envelope = HARNESS.validate_failure_artifacts(result_path, merged)
+            events = HARNESS.read_semantic_events(
+                root,
+                expected_scenario="runtime.boot",
+                expected_run_id="semantic-preserve-run",
+            )
+
+        self.assertEqual("BLOCKED", merged["status"])
+        self.assertEqual("HARNESS-PROCESS-BOOT", envelope["root_failure"]["id"])
+        self.assertEqual(
+            ["HARNESS-SEMANTIC-TEST-AGENT"],
+            [record["id"] for record in envelope["additional_failures"]],
+        )
+        self.assertEqual(
+            ["HARNESS-SAVE-CLEANUP"],
+            [record["id"] for record in envelope["cleanup_failures"]],
+        )
+        published = [event for event in events if event["event"] == "Result.Published"]
+        self.assertEqual(
+            HARNESS._result_fingerprint(merged),
+            published[-1]["fields"]["result_fingerprint"],
+        )
+
+    def test_result_rejects_duplicate_assertion_identity(self) -> None:
+        assertion = self._assertion("runtime.boot.duplicate", "FAIL", "boot", "failed")
+        result = {
+            "protocolVersion": 1,
+            "runId": "duplicate-run",
+            "scenario": "runtime.boot",
+            "status": "FAIL",
+            "durationMs": 1,
+            "assertions": [assertion, copy.deepcopy(assertion)],
+            "exceptions": [],
+            "artifacts": [],
+        }
+
+        with self.assertRaisesRegex(HARNESS.HarnessError, "must be unique"):
+            HARNESS.validate_result(result)
 
     def test_top_level_root_contradiction_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
