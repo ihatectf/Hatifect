@@ -240,7 +240,10 @@ class Run:
         properties = list(BUILD_PROPERTIES)
         if os.environ.get("HATIFECT_GAME_PATH"):
             properties.append("-p:GamePath=" + os.environ["HATIFECT_GAME_PATH"])
-        with tempfile.TemporaryDirectory(prefix="hatifect-build-") as temporary:
+        # Keep the generated solution on the repository's volume. Windows
+        # cannot calculate relative paths when TEMP and the checkout use
+        # different drive letters (for example C: and D: on GitHub runners).
+        with tempfile.TemporaryDirectory(prefix="hatifect-build-", dir=self.directory) as temporary:
             solution = Path(temporary) / "Hatifect.sln"
             materialize_solution(self.root, projects, solution)
             self.command("restore", [dotnet, "restore", str(solution), "--disable-parallel", "--verbosity", "minimal", *properties])
