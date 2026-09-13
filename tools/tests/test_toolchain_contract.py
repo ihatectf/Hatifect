@@ -260,7 +260,7 @@ class ReleasePackageTests(ReleaseFixture):
     def test_package_rejects_unlisted_sources_binaries_and_empty_directories(self) -> None:
         package = self.package()
         for relative in ('Hatifect UI/Source.cs', 'Hatifect Flow/Foreign.dll',
-                         'Hatifect UI/Hatifect.UI.Runtime.dll', 'extra.json', 'README.md'):
+                         'Hatifect UI/Unexpected.Runtime.dll', 'extra.json', 'README.md'):
             path = package / relative
             path.write_text('unexpected', encoding='utf-8')
             with self.subTest(relative=relative), self.assertRaisesRegex(release_tool.ReleaseError, 'unexpected runtime files'):
