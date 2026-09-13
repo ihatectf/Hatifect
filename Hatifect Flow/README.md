@@ -32,12 +32,9 @@ Flowline — транспортная подсистема Hatifect. `Hatifect.F
 
 ## Сохранение и ошибки
 
-Manifest ID изменён с `Hatifect.Flow` на `Hatifect.Flow`. При первой загрузке нового ID host ищет
-старую SMAPI-запись `smapi/mod-data/hatifect.flow/flowline-v1`, побайтно копирует её в новый scope и
-затем использует обычный typed reader. При ошибке чтения новая копия удаляется, а прежняя запись
-остаётся нетронутой. Persisted modData keys `Hatifect.Flow/Station` и `Hatifect.Flow/Cargo` намеренно
-сохранены: это wire-контракт уже записанных сундуков и груза, а не CLR namespace. Подробная карта
-переименования находится в [RENAMING.md](RENAMING.md).
+Host читает и записывает SMAPI aggregate `flowline-v1` через manifest ID `Hatifect.Flow`.
+Persisted modData keys `Hatifect.Flow/Station` и `Hatifect.Flow/Cargo` являются текущим
+wire-контрактом сундуков и груза. Альтернативные брендовые идентификаторы не поддерживаются.
 
 `hatifect_flow diagnostics` показывает текущие counts/limits/remaining: станции, активные и пожизненные связи, retained cargo/shipments/parcels, очередь, route cache, events и transfer capabilities. Отдельно приводятся сохранённые XML-символы и максимум 32 строки custody/receipts по ID станции. Чтение не создаёт checkpoint, не ищет маршрут, не захватывает inventory lease и не выполняет transfer; XML предметов и их metadata не попадают в отчёт. Счётчики отказов admission относятся только к текущей загрузке и не изменяют revision или сейв. Typed-команды Network и Send сохраняют отдельные причины `StationLimit`, `LifetimeLinkLimit` и `RetainedCargoLimit`; UI объясняет исчерпание соответствующего сохраняемого бюджета на EN/RU. Typed Send также различает временно недоступный source provider, изменившийся после выбора стек и стек, уже принадлежащий активной отправке. Typed Network различает занятую физическую цель, изменившуюся topology, некорректные параметры и rebind источника с незавершённым грузом. Diagnostics по-прежнему содержит точные counts/limits/remaining для проверки причины.
 

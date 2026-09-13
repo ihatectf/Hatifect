@@ -16,8 +16,6 @@ internal enum NavigatorMode
 internal sealed class ChestsAnywhereOverlayController
 {
     private const string PlayerStateKey = "Hatifect.ChestsAnywhereOverlay/State";
-    private const string PreviousPlayerStateKey = "Hatifect.ChestsAnywhereOverlay/State";
-    private const string LegacyPlayerStateKey = "Hatifect.Flow.ChestsAnywhere/State";
     private readonly IChestsAnywhereOverlayAdapter _adapter;
     private readonly Func<ChestsAnywhereOverlayConfig> _getConfig;
     private readonly Func<string, object?, string> _translate;
@@ -144,13 +142,7 @@ internal sealed class ChestsAnywhereOverlayController
         ChestsAnywhereOverlayConfig config = _getConfig();
         string? raw = null;
         if (Context.IsWorldReady)
-        {
-            if (!Game1.player.modData.TryGetValue(PlayerStateKey, out raw)
-                && !Game1.player.modData.TryGetValue(PreviousPlayerStateKey, out raw))
-            {
-                Game1.player.modData.TryGetValue(LegacyPlayerStateKey, out raw);
-            }
-        }
+            Game1.player.modData.TryGetValue(PlayerStateKey, out raw);
         _state = NavigatorState.Deserialize(raw, config.RecentLimit);
         _semanticRevision++;
     }

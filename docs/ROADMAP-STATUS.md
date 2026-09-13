@@ -1,9 +1,8 @@
 # Roadmap implementation evidence
 
-> Platform identity Hatifect: **IN_PROGRESS** на локальной integration branch от
-> `30646def`. Это отдельная migration, а не новый roadmap ID. До новой canonical/package/runtime
-> проверки прежние Q01/Q02 evidence относятся только к Hatifect binaries. Точные breaking и
-> compatibility решения перечислены в [HATIFECT_MIGRATION.md](HATIFECT_MIGRATION.md).
+> Hatifect — единственная platform identity. Любые прежние Q01/Q02 evidence относятся
+> только к указанному в них candidate; для нового кандидата требуется повторная
+> canonical/package/runtime проверка.
 
 ## U03-b active reload and U04 host environment checkpoint
 

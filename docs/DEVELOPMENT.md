@@ -42,6 +42,11 @@ UI authoring: [подключение language server, экспорт метад
 
 GitHub Actions запускает текущую статическую проверку, build и автоматически полученную из solution матрицу .NET тестов без игры. Финальный обязательный check — `Hatifect CI / CI Gate`; любой неуспешный или пропущенный prerequisite блокирует его. После публикации новой истории настрой branch protection на этот check и удали старые required checks, которых больше нет в workflow.
 
+Основной workflow остаётся быстрым PR-gate на Ubuntu. Отдельный `Compatibility` workflow
+еженедельно и вручную выполняет полный `./tools/hatifect-check` на актуальных macOS и Windows;
+он расширяет проверяемую матрицу, не задерживая каждое изменение. Все сторонние Actions
+закреплены полными commit SHA. Dependabot еженедельно предлагает обновления GitHub Actions.
+
 Игровые assemblies не скачиваются из личной установки в GitHub Actions. Проверка `--platform`, изоляция CA и runtime acceptance выполняются в среде с установленной игрой и прикладываются как отдельные результаты. Зелёный host-free CI сам по себе не доказывает работоспособность игрового адаптера.
 
 Работай небольшими сквозными PR от `develop`: контракт, owning implementation, affected consumer и проверки входят вместе. До обновления task branch сохрани собственные изменения обычным commit. Worktree других задач не изменяй. Новая история этой базы независима от старой; старые ветки нельзя слепо вливать merge-коммитом. Незавершённые изменения переносятся осмысленным diff поверх новой базы с повторной проверкой.
@@ -70,11 +75,13 @@ GitHub Actions запускает текущую статическую пров
 
 UI consumer читает контракт своего subsystem; изменения application state доходят через явно реализованный boundary. Git/CI обеспечивают согласованное изменение кода и обратную связь о несовместимости. Автоматическое редактирование кода соседней системы после каждого изменения не является механизмом runtime-синхронизации. Flowline использует IFlowApplication: cached snapshots, команды с session/revision и уведомления после commit. IFlowNetworkApplication добавляет управление сетью, fingerprint отправки, возврат, recovery и холодные inventory queries. Semantic DLL входит в Flow runtime; UI assemblies остаются только в UI module.
 
-## Переход на имя Hatifect
+## Идентичность Hatifect
 
-Имена проектов, assemblies/namespaces, package IDs, SMAPI UniqueID, команды и harness environment переведены на Hatifect. Это согласованное переименование всей поставки: старый compiled consumer нужно пересобрать с новыми packages; старые и новые модули не устанавливаются одновременно. Публичные типы/методы семантической границы сохраняют форму, source baseline обновлён после смены namespace. Форматы, имена файлов и версии persistence Flowline сохраняются; доменная логика не меняется от переименования.
-
-Имя автора `ihatectf`, фактический GitHub URL `ihatectf/HATIFECT` и обнаружение уже установленного личного SDK в `.dotnet/hatifect-x64-8` описывают существующие внешние объекты. Они не являются именем продукта. Бинарные signatures `HATFLOWC`, `HATFLOWD`, `HATFLOWP` остаются частью формата сохранений: их смена без отдельной миграции сделала бы существующие checkpoint/provider images нечитаемыми. Перенос/переименование GitHub и замена shared `develop` — отдельный шаг миграции подготовленной базы. Новые переменные конфигурации — `HATIFECT_*`; локальный файл создаётся из `tools/hatifect.env.example` как `tools/hatifect.env` и не коммитится.
+Проекты, assemblies, namespaces, package IDs, SMAPI UniqueID, команды и harness environment
+используют только идентичность Hatifect. Автор — `ihatectf`, официальный GitHub URL —
+`ihatectf/Hatifect`, переменные конфигурации — `HATIFECT_*`. Локальный файл создаётся из
+`tools/hatifect.env.example` как `tools/hatifect.env` и не коммитится. Альтернативные
+брендовые идентификаторы и compatibility aliases не поддерживаются.
 
 ## Runtime harness
 
