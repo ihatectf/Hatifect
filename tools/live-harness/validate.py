@@ -115,6 +115,11 @@ CAPABILITY_DEFINITIONS = {
         "assertionId": "HARNESS-PREFLIGHT-QUARTZ-POST-EVENTS",
     },
 }
+PREFLIGHT_FAILURE_CLASSES = {
+    "environment-failure": "PREFLIGHT_ENVIRONMENT_FAILURE",
+    "unsupported-capability": "PREFLIGHT_UNSUPPORTED_CAPABILITY",
+    "misconfiguration": "PREFLIGHT_MISCONFIGURATION",
+}
 FAILURE_ENVELOPE_FORMAT_VERSION = 3
 LEGACY_FAILURE_ENVELOPE_FORMAT_VERSION = 2
 FAILURE_RECORD_TYPES = {
@@ -1336,11 +1341,6 @@ def publish_preflight(
             for item in unavailable
         ]
         first = unavailable[0]
-        failure_classes = {
-            "environment-failure": "PREFLIGHT_ENVIRONMENT_FAILURE",
-            "unsupported-capability": "PREFLIGHT_UNSUPPORTED_CAPABILITY",
-            "misconfiguration": "PREFLIGHT_MISCONFIGURATION",
-        }
         write_result(
             result_path,
             "BLOCKED",
@@ -1351,10 +1351,37 @@ def publish_preflight(
             artifacts=collect_artifacts(artifact_root),
             failure_timestamp=report["createdAtUtc"],
             failure_phase="preflight",
-            failure_class=failure_classes[first["classification"]],
+            failure_class=PREFLIGHT_FAILURE_CLASSES[first["classification"]],
             causal_component=first["owner"],
         )
     return report
+
+
+def _preflight_failure_contexts(
+    report: dict[str, Any],
+) -> dict[str, dict[str, str]]:
+    contexts: dict[str, dict[str, str]] = {}
+    for capability in report["capabilities"]:
+        if (
+            capability["requirement"] != "required"
+            or capability["status"] == "available"
+        ):
+            continue
+        contexts[CAPABILITY_DEFINITIONS[capability["id"]]["assertionId"]] = {
+            "capability_id": capability["id"],
+            "reason_code": capability["reasonCode"],
+            "phase": "preflight",
+            "failure_class": PREFLIGHT_FAILURE_CLASSES[
+                capability["classification"]
+            ],
+            "causal_component": capability["owner"],
+            "expected": f"Required capability '{capability['id']}' is available.",
+            "actual": (
+                f"Required capability '{capability['id']}' is unavailable "
+                f"({capability['reasonCode']}): {capability['explanation']}"
+            ),
+        }
+    return contexts
 
 
 def validate_required_mods(resolved: dict[str, Any], mods_root: Path) -> list[str]:
@@ -1660,11 +1687,17 @@ def _failure_record(
     phase: str | None = None,
     failure_class: str | None = None,
     causal_component: str | None = None,
+    expected: str | None = None,
+    actual: str | None = None,
     timestamp: str | None = None,
 ) -> dict[str, Any]:
     assertion_id = assertion["id"]
-    expected = _bounded_text(assertion["expected"]) or "not specified"
-    actual = _bounded_text(assertion["actual"]) or "not specified"
+    expected_text = _bounded_text(
+        assertion["expected"] if expected is None else expected
+    ) or "not specified"
+    actual_text = _bounded_text(
+        assertion["actual"] if actual is None else actual
+    ) or "not specified"
     resolved_phase, resolved_class, resolved_component = _failure_context(
         assertion_id,
         assertion["status"],
@@ -1677,9 +1710,9 @@ def _failure_record(
         "id": assertion_id,
         "phase": resolved_phase,
         "failure_class": resolved_class,
-        "expected": expected,
-        "actual": actual,
-        "message": actual,
+        "expected": expected_text,
+        "actual": actual_text,
+        "message": actual_text,
         "causal_component": resolved_component,
         "original_status": assertion["status"],
     }
@@ -1721,20 +1754,28 @@ def _bounded_failure_records(
     result: dict[str, Any],
     *,
     root_failure_id: str | None = None,
+    contexts: dict[str, dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     maximum = (
         MAX_CASCADE_RECORDS
         if classification == "CASCADE_SKIPPED"
         else MAX_ADDITIONAL_FAILURES
     )
-    records = [
-        _failure_record(
-            assertion,
-            classification,
-            root_failure_id=root_failure_id,
+    records = []
+    for assertion in assertions[:maximum]:
+        context = (contexts or {}).get(assertion["id"], {})
+        records.append(
+            _failure_record(
+                assertion,
+                classification,
+                root_failure_id=root_failure_id,
+                phase=context.get("phase"),
+                failure_class=context.get("failure_class"),
+                causal_component=context.get("causal_component"),
+                expected=context.get("expected"),
+                actual=context.get("actual"),
+            )
         )
-        for assertion in assertions[:maximum]
-    ]
     if len(assertions) > maximum:
         omitted = len(assertions) - (maximum - 1)
         records = records[:maximum - 1] + [
@@ -1871,12 +1912,26 @@ def build_failure_envelope(
         assertion for assertion in failed_assertions if assertion not in cleanup_assertions
     ]
     root_assertion = causal_assertions[0] if causal_assertions else cleanup_assertions.pop(0)
+    preflight_contexts: dict[str, dict[str, str]] = {}
+    preflight_path = artifact_root / PREFLIGHT_FILE_NAME
+    if preflight_path.exists():
+        preflight_contexts = _preflight_failure_contexts(
+            read_preflight_report(
+                preflight_path,
+                expected_scenario=result["scenario"],
+                expected_run_id=result["runId"],
+            )
+        )
+    root_context = preflight_contexts.get(root_assertion["id"], {})
     root = _failure_record(
         root_assertion,
         "ROOT_FAILURE",
-        phase=phase,
-        failure_class=failure_class,
-        causal_component=causal_component,
+        phase=root_context.get("phase") or phase,
+        failure_class=root_context.get("failure_class") or failure_class,
+        causal_component=root_context.get("causal_component")
+        or causal_component,
+        expected=root_context.get("expected"),
+        actual=root_context.get("actual"),
     )
     if root["id"] in {"HARNESS-RESULT-MISSING", "HARNESS-RESULT-INVALID", "HARNESS-RESULT-CONFLICT"}:
         executor_context = _executor_failure_context(artifact_root)
@@ -1917,11 +1972,13 @@ def build_failure_envelope(
         "CASCADE_SKIPPED",
         result,
         root_failure_id=root_id,
+        contexts=preflight_contexts,
     )
     additional_failures = _bounded_failure_records(
         additional_assertions,
         "ADDITIONAL_FAILURE",
         result,
+        contexts=preflight_contexts,
     )
     cleanup_records = [
         _failure_record(assertion, "CLEANUP_FAILURE", root_failure_id=root_id)
@@ -2282,11 +2339,54 @@ def validate_failure_artifacts(
             expected_scenario=result["scenario"],
             expected_run_id=result["runId"],
         )
+        preflight_contexts = _preflight_failure_contexts(preflight)
         if (
             envelope["root_failure"]["id"].startswith("HARNESS-PREFLIGHT-")
             and preflight["status"] != "BLOCKED"
         ):
             raise HarnessError("Failure envelope conflicts with capability preflight status.")
+        records = [
+            envelope["root_failure"],
+            *envelope["additional_failures"],
+            *envelope["cascade_records"],
+        ]
+        if preflight["status"] == "BLOCKED":
+            expected_ids = list(preflight_contexts)
+            actual_ids = [
+                envelope["root_failure"]["id"],
+                *(
+                    record["id"]
+                    for record in envelope["additional_failures"]
+                ),
+            ]
+            if (
+                actual_ids != expected_ids
+                or any(
+                    record["id"] in preflight_contexts
+                    for record in envelope["cascade_records"]
+                )
+            ):
+                raise HarnessError(
+                    "Failure envelope capability record set conflicts with preflight.json."
+                )
+        for record in records:
+            context = preflight_contexts.get(record["id"])
+            if context is None:
+                continue
+            if any(
+                record[field] != context[field]
+                for field in ("phase", "failure_class", "causal_component")
+            ):
+                raise HarnessError(
+                    "Failure envelope loses typed capability preflight context."
+                )
+            if (
+                record["expected"] != context["expected"]
+                or record["actual"] != context["actual"]
+            ):
+                raise HarnessError(
+                    "Failure envelope capability evidence conflicts with preflight.json."
+                )
     summary = _read_bounded_text(summary_path, MAX_FAILURE_SUMMARY_CHARACTERS)
     if summary is None:
         raise HarnessError(

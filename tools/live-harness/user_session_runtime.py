@@ -1279,19 +1279,39 @@ def _probe_capabilities(
             )
 
     if "semantic-workflow" in capability_ids:
-        spec = repository / "tools" / "live-harness" / "semantic-tests" / f"{resolved['id']}.json"
-        agent = repository / "tools" / "live-harness" / "semantic-test-agent.py"
-        backend = repository / "tools" / "live-harness" / "macos_native_input_driver.py"
-        outcomes["semantic-workflow"] = (
-            _available("The checked-in semantic workflow and native input components are present.")
-            if spec.is_file() and agent.is_file() and backend.is_file()
-            else _preflight_outcome(
+        try:
+            agent = _load_module(
+                "hatifect_capability_semantic_workflow",
+                repository / "tools" / "live-harness" / "semantic-test-agent.py",
+            )
+            agent.load_spec(
+                repository
+                / "tools"
+                / "live-harness"
+                / "semantic-tests"
+                / f"{resolved['id']}.json",
+                resolved["id"],
+            )
+            outcomes["semantic-workflow"] = _available(
+                "The exact checked-in semantic workflow passed its canonical bounded validation."
+            )
+        except (
+            FileNotFoundError,
+            ImportError,
+            OSError,
+            RuntimeError,
+            SyntaxError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            json.JSONDecodeError,
+        ):
+            outcomes["semantic-workflow"] = _preflight_outcome(
                 "error",
                 "misconfiguration",
                 "SEMANTIC_WORKFLOW_INVALID",
-                "The declared semantic workflow or native input component is unavailable.",
+                "The exact checked-in semantic workflow failed canonical bounded validation.",
             )
-        )
 
     for capability_id, probe, denied_reason, explanation in (
         (

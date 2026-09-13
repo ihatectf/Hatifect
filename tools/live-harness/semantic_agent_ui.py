@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import os
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -24,28 +26,99 @@ for _name in dir(CORE):
         globals()[_name] = getattr(CORE, _name)
 
 EXTRA_OPS = {"focus", "fill", "activate", "select", "reveal", "discover", "fillForm"}
+VARIABLE_PRODUCER_OPS = frozenset({"capture", "discover"})
+EXTRA_STEP_FIELDS = {
+    "focus": ({"selector"}, set()),
+    "fill": ({"selector", "value"}, set()),
+    "activate": ({"selector"}, set()),
+    "select": ({"selector"}, {"collection"}),
+    "reveal": ({"selector"}, set()),
+    "discover": ({"variable"}, set()),
+    "fillForm": ({"fields"}, set()),
+}
+
+
+def _validate_extra_step(step: dict[str, Any]) -> None:
+    operation = step["op"]
+    required, optional = EXTRA_STEP_FIELDS[operation]
+    common = {"id", "op", "timeout"}
+    if not required <= set(step) or not set(step) <= common | required | optional:
+        raise SemanticAgentError(
+            f"Semantic {operation} step has an invalid field set."
+        )
+    if "selector" in step:
+        try:
+            UI.validate_selector(step["selector"])
+        except UI.InteractionError as error:
+            raise SemanticAgentError(str(error)) from error
+    if operation == "fill" and not CORE._bounded_string(
+        step["value"], allow_empty=True
+    ):
+        raise SemanticAgentError(
+            "Semantic field replacement requires a bounded string/template."
+        )
+    if operation == "select" and "collection" in step and not CORE._bounded_string(
+        step["collection"]
+    ):
+        raise SemanticAgentError(
+            "select collection must be an exact semantic ID/template."
+        )
+    if operation == "fillForm":
+        fields = step["fields"]
+        if (
+            not isinstance(fields, dict)
+            or not 1 <= len(fields) <= 32
+            or any(
+                not CORE._bounded_string(key)
+                or not CORE._bounded_string(value, allow_empty=True)
+                for key, value in fields.items()
+            )
+        ):
+            raise SemanticAgentError(
+                "fillForm requires 1-32 exact semantic field IDs and bounded string/template values."
+            )
+    if operation == "discover":
+        CORE._validate_variable_name(step["variable"], operation)
 
 
 def validate_spec(document: dict[str, Any], scenario_id: str) -> dict[str, Any]:
     # Reuse the v1 identity/path/budget validator; new operations are validated here,
     # not enabled by mutating the base module's operation registry or controller class.
     translated = copy.deepcopy(document)
-    for step in translated.get("steps", []):
+    for index, step in enumerate(translated.get("steps", [])):
         if not isinstance(step, dict):
             continue
         op = step.get("op")
-        if op in EXTRA_OPS:
-            step["op"] = "click"
+        if isinstance(op, str) and op in EXTRA_OPS:
+            normalized = {
+                key: value
+                for key, value in step.items()
+                if key in {"id", "timeout"}
+            }
+            normalized["op"] = "click"
             if op in {"discover", "fillForm"}:
-                step["selector"] = {"semantic": "validated-by-ui-contract"}
+                normalized["selector"] = {
+                    "semantic": "validated-by-ui-contract"
+                }
+            else:
+                normalized["selector"] = step.get("selector")
+            translated["steps"][index] = normalized
+            step = normalized
         selector = step.get("selector")
         if isinstance(selector, dict):
             step["selector"] = {k: v for k, v in selector.items() if k not in {"collection", "node"}}
             if not step["selector"]:
                 step["selector"] = {"semantic": "validated-by-ui-contract"}
-    CORE.validate_spec(translated, scenario_id)
+    CORE._validate_spec(
+        translated,
+        scenario_id,
+        None,
+    )
+    variables = CORE._initial_variable_environment(document)
     for step in document["steps"]:
         op = step["op"]
+        if op in EXTRA_OPS:
+            _validate_extra_step(step)
         if op in {"focus", "fill", "activate", "select", "reveal", "click", "replaceText", "waitElement", "waitCapture"}:
             try:
                 UI.validate_selector(step.get("selector"))
@@ -55,30 +128,70 @@ def validate_spec(document: dict[str, Any], scenario_id: str) -> dict[str, Any]:
             selector = step["selector"]
             if "semantic" not in selector or not set(selector) <= {"semantic", "role"}:
                 raise SemanticAgentError("replaceText/fill requires an exact semantic field ID with optional role.")
-            if not isinstance(step.get("value"), str):
-                raise SemanticAgentError("Semantic field replacement requires a string/template.")
-        if op == "select" and "collection" in step and (not isinstance(step["collection"], str) or not step["collection"]):
-            raise SemanticAgentError("select collection must be an exact semantic ID/template.")
-        if op == "fillForm":
-            fields = step.get("fields")
-            if not isinstance(fields, dict) or not 1 <= len(fields) <= 32 or any(
-                not isinstance(k, str) or not k or not isinstance(v, str) for k, v in fields.items()
-            ):
-                raise SemanticAgentError("fillForm requires 1-32 exact semantic field IDs and string/template values.")
-        if op == "discover" and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", str(step.get("variable", ""))):
-            raise SemanticAgentError("discover requires a bounded capture variable name.")
+        CORE._validate_step_variable_environment(
+            step,
+            variables,
+            VARIABLE_PRODUCER_OPS,
+        )
     return document
 
 
+def _reject_json_constant(value: str) -> None:
+    raise SemanticAgentError(
+        f"Semantic spec contains invalid JSON constant: {value}."
+    )
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise SemanticAgentError(
+                f"Semantic spec contains duplicate JSON field: {key}."
+            )
+        value[key] = item
+    return value
+
+
 def load_spec(path: Path, scenario_id: str):
-    root = Path(__file__).resolve().parent / "semantic-tests"
+    root = (Path(__file__).resolve().parent / "semantic-tests").resolve(strict=True)
+    path_info = path.lstat()
+    if (
+        stat.S_ISLNK(path_info.st_mode)
+        or not stat.S_ISREG(path_info.st_mode)
+        or path_info.st_nlink != 1
+    ):
+        raise SemanticAgentError(
+            "Semantic spec must be one checked-in regular file."
+        )
     resolved = path.resolve(strict=True)
-    if resolved.parent != root or resolved.name != f"{scenario_id}.json" or path.is_symlink():
+    if resolved.parent != root or resolved.name != f"{scenario_id}.json":
         raise SemanticAgentError("Semantic spec must be the checked-in exact scenario file.")
-    encoded = resolved.read_bytes()
-    if not 0 < len(encoded) <= MAX_SPEC_BYTES:
+    if not 0 < path_info.st_size <= MAX_SPEC_BYTES:
         raise SemanticAgentError("Semantic spec exceeds its byte budget.")
-    document = json.loads(encoded)
+    descriptor = os.open(
+        resolved,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+    )
+    with os.fdopen(descriptor, "rb") as stream:
+        opened_info = os.fstat(stream.fileno())
+        if (
+            not stat.S_ISREG(opened_info.st_mode)
+            or opened_info.st_nlink != 1
+            or (opened_info.st_dev, opened_info.st_ino)
+            != (path_info.st_dev, path_info.st_ino)
+        ):
+            raise SemanticAgentError(
+                "Semantic spec changed during bounded validation."
+            )
+        encoded = stream.read(MAX_SPEC_BYTES + 1)
+    if len(encoded) != path_info.st_size:
+        raise SemanticAgentError("Semantic spec changed during bounded validation.")
+    document = json.loads(
+        encoded,
+        object_pairs_hook=_unique_json_object,
+        parse_constant=_reject_json_constant,
+    )
     if not isinstance(document, dict):
         raise SemanticAgentError("Semantic test spec root must be an object.")
     return validate_spec(document, scenario_id), hashlib.sha256(encoded).hexdigest()
@@ -188,9 +301,9 @@ class SemanticController(CORE.SemanticController):
                 for semantic, value in resolved["fields"].items():
                     self.controls.fill({"semantic": semantic}, value)
             elif op == "discover":
-                if len(self.variables) >= MAX_VARIABLES:
-                    raise SemanticAgentError("Semantic variable budget exhausted.")
-                self.variables[resolved["variable"]] = self.controls.discover()
+                variable = resolved["variable"]
+                _ensure_variable_capacity(self.variables, variable)
+                self.variables[variable] = self.controls.discover()
             else:
                 if op in {"key", "text"}:
                     self._wait("active game before native keyboard input", self._game_active, seconds=15)

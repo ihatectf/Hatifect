@@ -258,26 +258,43 @@ class CapabilityPreflightTests(unittest.TestCase):
                 [event["event"] for event in events],
             )
 
-    def test_multiple_missing_required_have_one_root_and_stable_additional_failures(self) -> None:
+    def test_mixed_missing_required_preserve_typed_context_for_root_and_additional_failures(self) -> None:
         resolved = HARNESS.resolve_scenario(
-            self.scenarios, "semantic.lifecycle", "ui"
+            self.scenarios, "flow.ui.player.input", "smoke"
         )
         outcomes = self._available_outcomes(resolved)
-        for capability_id, reason in (
-            ("smapi-runtime", "SMAPI_UNAVAILABLE"),
-            ("user-session-executor", "EXECUTOR_UNAVAILABLE"),
+        for capability_id, status, classification, reason in (
+            (
+                "smapi-runtime",
+                "missing",
+                "environment-failure",
+                "SMAPI_UNAVAILABLE",
+            ),
+            (
+                "semantic-workflow",
+                "error",
+                "misconfiguration",
+                "SEMANTIC_WORKFLOW_INVALID",
+            ),
+            (
+                "user-session-gui",
+                "unsupported",
+                "unsupported-capability",
+                "PLATFORM_UNSUPPORTED",
+            ),
         ):
             outcomes[capability_id] = {
-                "status": "missing",
-                "classification": "environment-failure",
+                "status": status,
+                "classification": classification,
                 "reasonCode": reason,
                 "explanation": f"Capability {capability_id} is unavailable.",
             }
         with tempfile.TemporaryDirectory() as directory:
             artifact = Path(directory)
+            result_path = artifact / "result.json"
             HARNESS.publish_preflight(
                 artifact,
-                artifact / "result.json",
+                result_path,
                 resolved,
                 "run-multiple",
                 outcomes,
@@ -286,7 +303,10 @@ class CapabilityPreflightTests(unittest.TestCase):
             failure = json.loads(
                 (artifact / "failure.json").read_text(encoding="utf-8")
             )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            validated = HARNESS.validate_failure_artifacts(result_path, result)
 
+        self.assertEqual(validated, failure)
         self.assertEqual(
             failure["root_failure"]["id"],
             "HARNESS-PREFLIGHT-SMAPI-RUNTIME",
@@ -294,8 +314,56 @@ class CapabilityPreflightTests(unittest.TestCase):
         self.assertEqual(failure["cascade_records"], [])
         self.assertEqual(
             [item["id"] for item in failure["additional_failures"]],
-            ["HARNESS-PREFLIGHT-USER-SESSION-EXECUTOR"],
+            [
+                "HARNESS-PREFLIGHT-SEMANTIC-WORKFLOW",
+                "HARNESS-PREFLIGHT-USER-SESSION-GUI",
+            ],
         )
+        records = [failure["root_failure"], *failure["additional_failures"]]
+        self.assertEqual(
+            [
+                (
+                    item["phase"],
+                    item["failure_class"],
+                    item["causal_component"],
+                )
+                for item in records
+            ],
+            [
+                (
+                    "preflight",
+                    "PREFLIGHT_ENVIRONMENT_FAILURE",
+                    "runtime-environment",
+                ),
+                (
+                    "preflight",
+                    "PREFLIGHT_MISCONFIGURATION",
+                    "semantic-test-agent",
+                ),
+                (
+                    "preflight",
+                    "PREFLIGHT_UNSUPPORTED_CAPABILITY",
+                    "user-session-runtime",
+                ),
+            ],
+        )
+        for record, capability_id, reason_code in zip(
+            records,
+            (
+                "smapi-runtime",
+                "semantic-workflow",
+                "user-session-gui",
+            ),
+            (
+                "SMAPI_UNAVAILABLE",
+                "SEMANTIC_WORKFLOW_INVALID",
+                "PLATFORM_UNSUPPORTED",
+            ),
+            strict=True,
+        ):
+            self.assertIn(capability_id, record["expected"])
+            self.assertIn(capability_id, record["actual"])
+            self.assertIn(reason_code, record["actual"])
 
     def test_report_serialization_and_order_are_deterministic_and_bounded(self) -> None:
         resolved = HARNESS.resolve_scenario(
@@ -320,6 +388,116 @@ class CapabilityPreflightTests(unittest.TestCase):
         self.assertEqual(encoded, HARNESS._serialized_json(second))
         self.assertLessEqual(len(first["capabilities"]), HARNESS.MAX_PREFLIGHT_CAPABILITIES)
         self.assertLessEqual(len(encoded), HARNESS.MAX_PREFLIGHT_BYTES)
+
+    def test_failure_validation_rejects_lost_additional_preflight_context(self) -> None:
+        resolved = HARNESS.resolve_scenario(
+            self.scenarios, "flow.ui.player.input", "smoke"
+        )
+        outcomes = self._available_outcomes(resolved)
+        for capability_id, status, classification, reason in (
+            (
+                "smapi-runtime",
+                "missing",
+                "environment-failure",
+                "SMAPI_UNAVAILABLE",
+            ),
+            (
+                "semantic-workflow",
+                "error",
+                "misconfiguration",
+                "SEMANTIC_WORKFLOW_INVALID",
+            ),
+        ):
+            outcomes[capability_id] = {
+                "status": status,
+                "classification": classification,
+                "reasonCode": reason,
+                "explanation": f"Capability {capability_id} is unavailable.",
+            }
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory)
+            result_path = artifact / "result.json"
+            HARNESS.publish_preflight(
+                artifact,
+                result_path,
+                resolved,
+                "run-context-tamper",
+                outcomes,
+                timestamp=self.timestamp,
+            )
+            failure_path = artifact / "failure.json"
+            failure = json.loads(failure_path.read_text(encoding="utf-8"))
+            failure["additional_failures"][0]["phase"] = "scenario"
+            failure_path.write_text(json.dumps(failure), encoding="utf-8")
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+
+            with self.assertRaisesRegex(
+                HARNESS.HarnessError,
+                "loses typed capability preflight context",
+            ):
+                HARNESS.validate_failure_artifacts(result_path, result)
+
+    def test_failure_validation_rejects_omitted_or_replaced_preflight_failure(self) -> None:
+        resolved = HARNESS.resolve_scenario(
+            self.scenarios, "flow.ui.player.input", "smoke"
+        )
+        outcomes = self._available_outcomes(resolved)
+        for capability_id, classification, reason in (
+            (
+                "smapi-runtime",
+                "environment-failure",
+                "SMAPI_UNAVAILABLE",
+            ),
+            (
+                "semantic-workflow",
+                "misconfiguration",
+                "SEMANTIC_WORKFLOW_INVALID",
+            ),
+        ):
+            outcomes[capability_id] = {
+                "status": "error",
+                "classification": classification,
+                "reasonCode": reason,
+                "explanation": f"Capability {capability_id} is unavailable.",
+            }
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory)
+            result_path = artifact / "result.json"
+            HARNESS.publish_preflight(
+                artifact,
+                result_path,
+                resolved,
+                "run-context-records",
+                outcomes,
+                timestamp=self.timestamp,
+            )
+            failure_path = artifact / "failure.json"
+            original = json.loads(failure_path.read_text(encoding="utf-8"))
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            mutations = []
+            omitted = copy.deepcopy(original)
+            omitted["additional_failures"] = []
+            mutations.append(omitted)
+            replaced = copy.deepcopy(original)
+            replaced["additional_failures"][0]["id"] = "HARNESS-EXECUTION"
+            mutations.append(replaced)
+
+            for failure in mutations:
+                with self.subTest(
+                    additional=failure["additional_failures"]
+                ):
+                    failure_path.write_text(
+                        json.dumps(failure),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(
+                        HARNESS.HarnessError,
+                        "capability record set conflicts",
+                    ):
+                        HARNESS.validate_failure_artifacts(
+                            result_path,
+                            result,
+                        )
 
     def test_report_rejects_unbounded_or_absolute_path_explanations(self) -> None:
         resolved = HARNESS.resolve_scenario(

@@ -42,7 +42,7 @@ vocabulary below. Required wins over optional.
 | `required-mods` | non-empty `requiredMods` | scenario manifest / isolated Mods |
 | `isolated-save-fixture` | `requiresSave=true` | save provisioning / isolated save fixture |
 | `user-session-executor` | every scenario | user-session runtime / executor state |
-| `semantic-workflow` | explicit semantic workflow | semantic test agent / checked-in workflow |
+| `semantic-workflow` | explicit semantic workflow | semantic test agent / canonical checked-in workflow loader |
 | `user-session-gui` | explicit native workflow | user-session runtime / macOS WindowServer |
 | `quartz-post-events` | explicit native workflow | native input driver / macOS Quartz |
 
@@ -50,6 +50,16 @@ vocabulary below. Required wins over optional.
 uses physical Quartz input. The GUI probe calls the real WindowServer-facing CoreGraphics API and
 the input probe calls `CGPreflightPostEventAccess()` in the current user session. Non-macOS hosts
 report these capabilities as unsupported rather than simulating them.
+
+The semantic-workflow probe calls the same canonical loader used again by the semantic companion.
+It accepts only the exact scenario-named regular file below `semantic-tests/`, rejects symlinks and
+files above 256 KiB, parses JSON, checks scenario identity and validates the complete workflow
+schema, operations and selectors. Validation also models the three built-in variables and processes
+steps in execution order: `capture`/`discover` names are bounded to 96 characters, the shared
+128-name budget counts unique names, and every recursively resolved `${name}` reference must name
+an initial or previously defined variable. This preflight load is read-only and does not construct
+the Quartz backend, post GUI events or start a process. Runtime boundary validation remains
+mandatory so source or workflow changes after preflight still fail closed.
 
 ## `preflight.json` format v1
 
@@ -77,7 +87,10 @@ stable `ADDITIONAL_FAILURE` records; no cascade relationship is invented.
 When preflight blocks, the validator writes `preflight.json`, canonical `result.json` protocol v1,
 `failure.json` format v3 and `failure-summary.txt`. `preflight.json` is a relevant artifact, the
 failure phase is `preflight`, and the first unavailable required capability determines the root
-classification. Every unavailable required capability retains its exact capability ID and reason.
+classification. Every unavailable required capability, including each `ADDITIONAL_FAILURE`,
+retains its typed preflight phase, classification-derived failure class, owner, capability ID,
+reason code, expected state and actual observation from the validated report. Classification never
+depends on parsing explanatory text.
 
 The existing event vocabulary is unchanged. A blocked run records exactly one `Preflight.Failed`;
 a request admitted to direct runtime records exactly one `Preflight.Completed`. The event payload

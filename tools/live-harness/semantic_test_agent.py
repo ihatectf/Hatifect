@@ -26,11 +26,46 @@ MAX_SPEC_BYTES = 256 * 1024
 MAX_STEPS = 256
 MAX_STEP_SECONDS = 600.0
 MAX_VARIABLES = 128
+MAX_VARIABLE_NAME_LENGTH = 96
 MAX_TEMPLATE_LENGTH = 4096
+MAX_CONDITIONS = 64
+INITIAL_VARIABLE_NAMES = frozenset({
+    "requestId",
+    "requestHex",
+    "scenarioId",
+})
+CORE_VARIABLE_PRODUCERS = frozenset({"capture"})
 ALLOWED_OPS = {
     "capture", "ensureGameActive", "wait", "assert", "move", "clickPoint", "key", "text",
     "click", "replaceText", "waitElement", "waitCapture", "waitUi",
 }
+TRANSFORMS = {
+    "count",
+    "string",
+    "uuidHex",
+    "uuidCanonical",
+    "lower",
+    "upper",
+}
+STEP_FIELDS = {
+    "capture": ({"source", "variable"}, {"path", "transform"}),
+    "ensureGameActive": (set(), set()),
+    "wait": ({"conditions"}, set()),
+    "assert": ({"conditions"}, set()),
+    "move": ({"source", "path"}, set()),
+    "clickPoint": ({"source", "path"}, set()),
+    "key": ({"key"}, set()),
+    "text": ({"value"}, set()),
+    "click": ({"selector"}, {"requireEnabled"}),
+    "replaceText": ({"selector", "value"}, set()),
+    "waitElement": ({"selector"}, {"conditions", "visible"}),
+    "waitCapture": (
+        {"selector"},
+        {"afterCount", "conditions", "path", "visible"},
+    ),
+    "waitUi": (set(), {"experience", "visible"}),
+}
+SELECTOR_FIELDS = {"semantic", "semanticPrefix", "action", "name", "role"}
 KEYS = {
     "K": 40,
     "Tab": 48,
@@ -38,6 +73,7 @@ KEYS = {
     "Escape": 53,
 }
 _TEMPLATE = re.compile(r"\$\{([A-Za-z][A-Za-z0-9_]*)\}")
+_VARIABLE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _SEGMENT = re.compile(r"^([A-Za-z0-9_-]+)((?:\[-?\d+\])*)$")
 
 
@@ -141,6 +177,72 @@ def _resolve(value: Any, variables: dict[str, Any]) -> Any:
     return value
 
 
+def _validate_variable_name(value: Any, operation: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) > MAX_VARIABLE_NAME_LENGTH
+        or _VARIABLE_NAME.fullmatch(value) is None
+    ):
+        raise SemanticAgentError(
+            f"Semantic {operation} variable is invalid."
+        )
+    return value
+
+
+def _ensure_variable_capacity(
+    variables: dict[str, Any] | set[str],
+    name: str,
+) -> None:
+    if name not in variables and len(variables) >= MAX_VARIABLES:
+        raise SemanticAgentError("Semantic test variable budget exhausted.")
+
+
+def _validate_template_references(
+    value: Any,
+    variables: set[str],
+) -> None:
+    if isinstance(value, str):
+        for match in _TEMPLATE.finditer(value):
+            name = match.group(1)
+            if name not in variables:
+                raise SemanticAgentError(
+                    f"Unknown semantic test variable: {name}"
+                )
+        return
+    if isinstance(value, list):
+        for item in value:
+            _validate_template_references(item, variables)
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            _validate_template_references(item, variables)
+
+
+def _initial_variable_environment(
+    document: dict[str, Any],
+) -> set[str]:
+    variables = set(INITIAL_VARIABLE_NAMES)
+    for declaration in document["evidence"].values():
+        _validate_template_references(
+            declaration["identity"],
+            variables,
+        )
+    return variables
+
+
+def _validate_step_variable_environment(
+    step: dict[str, Any],
+    variables: set[str],
+    producer_operations: frozenset[str],
+) -> None:
+    _validate_template_references(step, variables)
+    if step["op"] not in producer_operations:
+        return
+    name = _validate_variable_name(step["variable"], step["op"])
+    _ensure_variable_capacity(variables, name)
+    variables.add(name)
+
+
 def _transform(value: Any, transform: str | list[str] | None) -> Any:
     transforms = [] if transform is None else ([transform] if isinstance(transform, str) else transform)
     result = value
@@ -171,27 +273,251 @@ def _safe_evidence_path(relative: str) -> Path:
     return path
 
 
-def _validate_condition(condition: Any) -> None:
+def _bounded_string(value: Any, *, allow_empty: bool = False) -> bool:
+    return (
+        isinstance(value, str)
+        and (allow_empty or bool(value))
+        and len(value) <= MAX_TEMPLATE_LENGTH
+    )
+
+
+def _validate_path_expression(value: Any) -> None:
+    if not _bounded_string(value, allow_empty=True):
+        raise SemanticAgentError(
+            "Semantic test path must be a bounded string."
+        )
+    if value and any(_SEGMENT.fullmatch(segment) is None for segment in value.split(".")):
+        raise SemanticAgentError("Semantic test path has an invalid segment.")
+
+
+def _validate_selector(selector: Any) -> None:
+    if (
+        not isinstance(selector, dict)
+        or not selector
+        or not set(selector) <= SELECTOR_FIELDS
+        or any(not _bounded_string(value) for value in selector.values())
+    ):
+        raise SemanticAgentError("Semantic test selector is invalid.")
+
+
+def _validate_source(value: Any) -> None:
+    if not isinstance(value, str) or value not in {"domain", "ui", "latest"}:
+        raise SemanticAgentError("Semantic test source is invalid.")
+
+
+def _validate_transform(value: Any) -> None:
+    transforms = value if isinstance(value, list) else [value]
+    if (
+        not transforms
+        or len(transforms) > 8
+        or any(
+            not isinstance(transform, str) or transform not in TRANSFORMS
+            for transform in transforms
+        )
+    ):
+        raise SemanticAgentError("Semantic test transform is invalid.")
+
+
+def _validate_count_operand(value: Any) -> None:
+    if isinstance(value, bool):
+        raise SemanticAgentError("Semantic count predicate is invalid.")
+    if isinstance(value, int) and value >= 0:
+        return
+    if isinstance(value, str) and _TEMPLATE.fullmatch(value):
+        return
+    raise SemanticAgentError("Semantic count predicate is invalid.")
+
+
+def _validate_condition(
+    condition: Any,
+    *,
+    source_required: bool = True,
+) -> None:
     if not isinstance(condition, dict):
         raise SemanticAgentError("Semantic test conditions must be objects.")
-    if condition.get("source") not in {"domain", "ui", "latest"}:
-        raise SemanticAgentError("Semantic test condition has an unknown source.")
-    if not isinstance(condition.get("path", ""), str):
-        raise SemanticAgentError("Semantic test condition path must be a string.")
+    if source_required:
+        _validate_source(condition.get("source"))
+    elif "source" in condition:
+        raise SemanticAgentError(
+            "Semantic element conditions must not declare an evidence source."
+        )
+    _validate_path_expression(condition.get("path", ""))
     predicates = {
         "equals", "notEquals", "truthy", "falsy", "nonNull", "startsWith", "contains",
         "containsAny", "regex", "countEquals", "countGreaterThan", "countAtLeast", "uuidZero",
         "containsAll",
     }
     present = predicates.intersection(condition)
-    if len(present) != 1:
+    expected_fields = set(present)
+    if source_required:
+        expected_fields.add("source")
+    if "path" in condition:
+        expected_fields.add("path")
+    if (
+        len(present) != 1
+        or set(condition) != expected_fields
+    ):
         raise SemanticAgentError("Each semantic condition must declare exactly one predicate.")
+    predicate = next(iter(present))
+    operand = condition[predicate]
+    if predicate in {"truthy", "falsy", "nonNull", "uuidZero"}:
+        if not isinstance(operand, bool):
+            raise SemanticAgentError(
+                f"Semantic {predicate} predicate must be boolean."
+            )
+    elif predicate in {"startsWith", "contains", "regex"}:
+        if not _bounded_string(operand):
+            raise SemanticAgentError(
+                f"Semantic {predicate} predicate must be a bounded string."
+            )
+        if predicate == "regex" and _TEMPLATE.fullmatch(operand) is None:
+            try:
+                re.compile(operand)
+            except re.error as error:
+                raise SemanticAgentError(
+                    "Semantic regex predicate is invalid."
+                ) from error
+    elif predicate == "containsAny":
+        if (
+            not isinstance(operand, list)
+            or not 1 <= len(operand) <= 32
+            or any(not _bounded_string(item) for item in operand)
+        ):
+            raise SemanticAgentError(
+                "Semantic containsAny predicate is invalid."
+            )
+    elif predicate in {"countEquals", "countGreaterThan", "countAtLeast"}:
+        _validate_count_operand(operand)
+    elif predicate == "containsAll":
+        if not isinstance(operand, dict) or set(operand) != {"path", "values"}:
+            raise SemanticAgentError(
+                "Semantic containsAll predicate is invalid."
+            )
+        _validate_path_expression(operand["path"])
+        values = operand["values"]
+        if (
+            not isinstance(values, list)
+            or not 1 <= len(values) <= 64
+            or any(
+                isinstance(item, (dict, list))
+                or (isinstance(item, str) and len(item) > MAX_TEMPLATE_LENGTH)
+                for item in values
+            )
+        ):
+            raise SemanticAgentError(
+                "Semantic containsAll predicate is invalid."
+            )
+    elif isinstance(operand, (dict, list)) or (
+        isinstance(operand, str) and len(operand) > MAX_TEMPLATE_LENGTH
+    ):
+        raise SemanticAgentError(
+            f"Semantic {predicate} predicate is invalid."
+        )
 
 
-def validate_spec(document: dict[str, Any], scenario_id: str) -> dict[str, Any]:
+def _validate_conditions(
+    value: Any,
+    *,
+    required: bool,
+    source_required: bool,
+) -> None:
+    if (
+        not isinstance(value, list)
+        or len(value) > MAX_CONDITIONS
+        or (required and not value)
+    ):
+        raise SemanticAgentError("Semantic test conditions are invalid.")
+    for condition in value:
+        _validate_condition(condition, source_required=source_required)
+
+
+def _validate_step(step: Any) -> None:
+    if not isinstance(step, dict):
+        raise SemanticAgentError("Semantic test steps must be objects.")
+    operation = step.get("op")
+    if not isinstance(operation, str) or operation not in ALLOWED_OPS:
+        raise SemanticAgentError(
+            f"Unsupported semantic test operation: {operation!r}"
+        )
+    required, optional = STEP_FIELDS[operation]
+    common = {"id", "op", "timeout"}
+    if not required <= set(step) or not set(step) <= common | required | optional:
+        raise SemanticAgentError(
+            f"Semantic {operation} step has an invalid field set."
+        )
+    step_id = step.get("id")
+    if not isinstance(step_id, str) or not step_id or len(step_id) > 96:
+        raise SemanticAgentError(
+            "Semantic test step IDs must be bounded strings."
+        )
+    timeout = step.get("timeout", 45)
+    if (
+        not isinstance(timeout, (int, float))
+        or isinstance(timeout, bool)
+        or not 0 < timeout <= MAX_STEP_SECONDS
+    ):
+        raise SemanticAgentError(
+            f"Semantic test step {step_id} has an invalid timeout."
+        )
+    if "source" in step:
+        _validate_source(step["source"])
+    if "path" in step:
+        _validate_path_expression(step["path"])
+    if "selector" in step:
+        _validate_selector(step["selector"])
+    if "conditions" in step:
+        _validate_conditions(
+            step["conditions"],
+            required=operation in {"wait", "assert"},
+            source_required=operation in {"wait", "assert"},
+        )
+    if "visible" in step and not isinstance(step["visible"], bool):
+        raise SemanticAgentError("Semantic visibility must be boolean.")
+    if "requireEnabled" in step and not isinstance(
+        step["requireEnabled"], bool
+    ):
+        raise SemanticAgentError("Semantic requireEnabled must be boolean.")
+    if operation == "capture":
+        _validate_variable_name(step["variable"], operation)
+        if "transform" in step:
+            _validate_transform(step["transform"])
+    elif operation == "key" and (
+        not isinstance(step["key"], str) or step["key"] not in KEYS
+    ):
+        raise SemanticAgentError(
+            f"Unsupported semantic key: {step['key']!r}"
+        )
+    elif operation in {"text", "replaceText"} and not _bounded_string(
+        step["value"], allow_empty=True
+    ):
+        raise SemanticAgentError(
+            f"Semantic {operation} value must be a bounded string."
+        )
+    elif operation == "waitCapture":
+        if "afterCount" in step:
+            _validate_count_operand(step["afterCount"])
+    elif operation == "waitUi":
+        if "experience" in step and not _bounded_string(step["experience"]):
+            raise SemanticAgentError(
+                "Semantic waitUi experience must be a bounded string."
+            )
+
+
+def _validate_spec(
+    document: dict[str, Any],
+    scenario_id: str,
+    producer_operations: frozenset[str] | None,
+) -> dict[str, Any]:
+    if not isinstance(document, dict):
+        raise SemanticAgentError("Semantic test spec root must be an object.")
     if set(document) != {"schemaVersion", "id", "platform", "evidence", "gameActive", "steps"}:
         raise SemanticAgentError("Semantic test spec has an invalid top-level field set.")
-    if document["schemaVersion"] != SPEC_VERSION or document["id"] != scenario_id:
+    if (
+        type(document["schemaVersion"]) is not int
+        or document["schemaVersion"] != SPEC_VERSION
+        or not isinstance(document["id"], str)
+        or document["id"] != scenario_id
+    ):
         raise SemanticAgentError("Semantic test spec identity/version mismatch.")
     if document["platform"] != "macos-quartz":
         raise SemanticAgentError("Semantic test spec requires an unsupported execution platform.")
@@ -201,52 +527,58 @@ def validate_spec(document: dict[str, Any], scenario_id: str) -> dict[str, Any]:
     for name, declaration in evidence.items():
         if not isinstance(declaration, dict) or set(declaration) != {"path", "identity"}:
             raise SemanticAgentError(f"Semantic {name} evidence declaration is invalid.")
+        if not _bounded_string(declaration["path"]):
+            raise SemanticAgentError(
+                f"Semantic {name} evidence path is invalid."
+            )
         _safe_evidence_path(declaration["path"])
         identity = declaration["identity"]
         if not isinstance(identity, dict) or not identity or len(identity) > 8:
             raise SemanticAgentError(f"Semantic {name} evidence identity is invalid.")
-        if any(not isinstance(key, str) or not isinstance(value, str) for key, value in identity.items()):
+        if any(
+            not _bounded_string(key)
+            or len(key) > 96
+            or not _bounded_string(value)
+            for key, value in identity.items()
+        ):
             raise SemanticAgentError(f"Semantic {name} evidence identity must use string fields/templates.")
     game = document["gameActive"]
     if not isinstance(game, dict) or set(game) != {"source", "path", "activateAppContains"}:
         raise SemanticAgentError("Semantic test gameActive declaration is invalid.")
-    if game["source"] not in {"domain", "ui", "latest"} or not isinstance(game["path"], str):
-        raise SemanticAgentError("Semantic test gameActive source/path is invalid.")
-    if not isinstance(game["activateAppContains"], str) or not game["activateAppContains"]:
+    _validate_source(game["source"])
+    _validate_path_expression(game["path"])
+    if not _bounded_string(game["activateAppContains"]):
         raise SemanticAgentError("Semantic test activation target must be non-empty.")
     steps = document["steps"]
     if not isinstance(steps, list) or not 1 <= len(steps) <= MAX_STEPS:
         raise SemanticAgentError("Semantic test spec has an invalid step count.")
     ids: set[str] = set()
+    variables = (
+        _initial_variable_environment(document)
+        if producer_operations is not None
+        else None
+    )
     for step in steps:
-        if not isinstance(step, dict):
-            raise SemanticAgentError("Semantic test steps must be objects.")
-        if step.get("op") not in ALLOWED_OPS:
-            raise SemanticAgentError(f"Unsupported semantic test operation: {step.get('op')!r}")
-        step_id = step.get("id")
-        if not isinstance(step_id, str) or not step_id or len(step_id) > 96 or step_id in ids:
+        _validate_step(step)
+        step_id = step["id"]
+        if step_id in ids:
             raise SemanticAgentError("Semantic test step IDs must be unique bounded strings.")
         ids.add(step_id)
-        timeout = step.get("timeout", 45)
-        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not 0 < timeout <= MAX_STEP_SECONDS:
-            raise SemanticAgentError(f"Semantic test step {step_id} has an invalid timeout.")
-        if step["op"] in {"wait", "assert"}:
-            conditions = step.get("conditions")
-            if not isinstance(conditions, list) or not conditions:
-                raise SemanticAgentError(f"Semantic {step['op']} step must contain conditions.")
-            for condition in conditions:
-                _validate_condition(condition)
-        if step["op"] in {"click", "replaceText", "waitElement"}:
-            selector = step.get("selector")
-            if not isinstance(selector, dict) or not selector:
-                raise SemanticAgentError(f"Semantic {step['op']} step requires a selector.")
-            if not set(selector).issubset({"semantic", "semanticPrefix", "action", "name", "role"}):
-                raise SemanticAgentError(f"Semantic {step['op']} selector has unknown fields.")
-        if step["op"] == "capture":
-            variable = step.get("variable")
-            if not isinstance(variable, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", variable):
-                raise SemanticAgentError("Semantic capture variable is invalid.")
+        if variables is not None:
+            _validate_step_variable_environment(
+                step,
+                variables,
+                producer_operations,
+            )
     return document
+
+
+def validate_spec(document: dict[str, Any], scenario_id: str) -> dict[str, Any]:
+    return _validate_spec(
+        document,
+        scenario_id,
+        CORE_VARIABLE_PRODUCERS,
+    )
 
 
 def load_spec(path: Path, scenario_id: str) -> tuple[dict[str, Any], str]:
@@ -291,6 +623,10 @@ class SemanticController(NATIVE.Controller):
             "requestHex": uuid.UUID(self.request_id).hex,
             "scenarioId": self.scenario_id,
         }
+        if set(self.variables) != INITIAL_VARIABLE_NAMES:
+            raise SemanticAgentError(
+                "Semantic initial variable environment is inconsistent."
+            )
         evidence = spec["evidence"]
         self.flow_path = self.artifact / _safe_evidence_path(evidence["domain"]["path"])
         self.ui_path = self.artifact / _safe_evidence_path(evidence["ui"]["path"])
@@ -604,12 +940,12 @@ class SemanticController(NATIVE.Controller):
         resolved = _resolve(step, self.variables)
         timeout = float(step.get("timeout", 45))
         if op == "capture":
-            if len(self.variables) >= MAX_VARIABLES:
-                raise SemanticAgentError("Semantic test variable budget exhausted.")
+            variable = resolved["variable"]
+            _ensure_variable_capacity(self.variables, variable)
             value = self.value(resolved["source"], resolved.get("path", ""))
             value = _transform(value, resolved.get("transform"))
-            self.variables[resolved["variable"]] = value
-            self._record("capture", variable=resolved["variable"])
+            self.variables[variable] = value
+            self._record("capture", variable=variable)
         elif op == "ensureGameActive":
             self.ensure_game_active()
             self._record("ensure-game-active")

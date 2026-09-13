@@ -25,6 +25,23 @@ class SemanticTestAgentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.document = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
 
+    def _workflow(self, steps: list[dict]) -> dict:
+        document = copy.deepcopy(self.document)
+        document["steps"] = steps
+        return document
+
+    @staticmethod
+    def _capture_steps(count: int) -> list[dict]:
+        return [
+            {
+                "id": f"capture-{index}",
+                "op": "capture",
+                "source": "domain",
+                "variable": f"captured{index}",
+            }
+            for index in range(count)
+        ]
+
     def test_checked_in_flow_workflow_is_valid_bounded_and_model_driven(self) -> None:
         validated = AGENT.validate_spec(copy.deepcopy(self.document), "flow.ui.player.input")
         self.assertEqual(validated["schemaVersion"], 1)
@@ -138,6 +155,203 @@ class SemanticTestAgentTests(unittest.TestCase):
         parcel = "12345678-1234-4234-8234-123456789abc"
         self.assertEqual(AGENT._transform(parcel, "uuidHex"), "12345678123442348234123456789abc")
         self.assertEqual(AGENT._transform([1, 2, 3], "count"), 3)
+
+    def test_variable_environment_accepts_exact_total_budget(self) -> None:
+        document = self._workflow(
+            self._capture_steps(
+                AGENT.MAX_VARIABLES - len(AGENT.INITIAL_VARIABLE_NAMES)
+            )
+        )
+
+        self.assertIs(
+            AGENT.validate_spec(document, "flow.ui.player.input"),
+            document,
+        )
+
+    def test_variable_environment_rejects_total_budget_plus_one(self) -> None:
+        document = self._workflow(
+            self._capture_steps(
+                AGENT.MAX_VARIABLES
+                - len(AGENT.INITIAL_VARIABLE_NAMES)
+                + 1
+            )
+        )
+
+        with self.assertRaisesRegex(
+            AGENT.SemanticAgentError,
+            "variable budget exhausted",
+        ):
+            AGENT.validate_spec(document, "flow.ui.player.input")
+
+    def test_126_unique_captures_exceed_three_initial_variables(self) -> None:
+        document = self._workflow(self._capture_steps(126))
+
+        with self.assertRaisesRegex(
+            AGENT.SemanticAgentError,
+            "variable budget exhausted",
+        ):
+            AGENT.validate_spec(document, "flow.ui.player.input")
+
+    def test_mixed_capture_and_discover_variables_share_one_budget(self) -> None:
+        steps = self._capture_steps(124)
+        steps.extend(
+            {
+                "id": f"discover-{index}",
+                "op": "discover",
+                "variable": f"discovered{index}",
+            }
+            for index in range(2)
+        )
+
+        with self.assertRaisesRegex(
+            AGENT.SemanticAgentError,
+            "variable budget exhausted",
+        ):
+            AGENT.validate_spec(
+                self._workflow(steps),
+                "flow.ui.player.input",
+            )
+
+    def test_variable_overwrite_does_not_consume_budget_in_validator_or_runtime(self) -> None:
+        steps = self._capture_steps(
+            AGENT.MAX_VARIABLES - len(AGENT.INITIAL_VARIABLE_NAMES)
+        )
+        steps.append(
+            {
+                "id": "overwrite-existing",
+                "op": "capture",
+                "source": "domain",
+                "variable": "captured0",
+            }
+        )
+        document = self._workflow(steps)
+
+        AGENT.validate_spec(document, "flow.ui.player.input")
+
+        for operation in ("capture", "discover"):
+            with self.subTest(operation=operation):
+                controller = object.__new__(AGENT.SemanticController)
+                controller.variables = {
+                    "requestId": "request",
+                    "requestHex": "request-hex",
+                    "scenarioId": "scenario",
+                    "existing": "old",
+                    **{
+                        f"filler{index}": index
+                        for index in range(AGENT.MAX_VARIABLES - 4)
+                    },
+                }
+                controller.value = lambda *_args, **_kwargs: "new"
+                controller._record = lambda *_args, **_kwargs: None
+                controller._controls = SimpleNamespace(
+                    discover=lambda: "new",
+                )
+                step = {
+                    "id": "overwrite-runtime",
+                    "op": operation,
+                    "variable": "existing",
+                }
+                if operation == "capture":
+                    step["source"] = "domain"
+
+                controller.execute(step)
+
+                self.assertEqual(controller.variables["existing"], "new")
+                self.assertEqual(
+                    len(controller.variables),
+                    AGENT.MAX_VARIABLES,
+                )
+
+    def test_capture_variable_name_is_bounded_to_96_characters(self) -> None:
+        document = self._workflow(
+            [
+                {
+                    "id": "capture-long-name",
+                    "op": "capture",
+                    "source": "domain",
+                    "variable": "v" * 97,
+                }
+            ]
+        )
+
+        with self.assertRaisesRegex(
+            AGENT.SemanticAgentError,
+            "capture variable is invalid",
+        ):
+            AGENT.validate_spec(document, "flow.ui.player.input")
+
+    def test_unknown_and_forward_template_references_are_rejected(self) -> None:
+        invalid_steps = (
+            [
+                {
+                    "id": "unknown-template",
+                    "op": "text",
+                    "value": "${missing}",
+                }
+            ],
+            [
+                {
+                    "id": "forward-template",
+                    "op": "text",
+                    "value": "${later}",
+                },
+                {
+                    "id": "capture-later",
+                    "op": "capture",
+                    "source": "domain",
+                    "variable": "later",
+                },
+            ],
+            [
+                {
+                    "id": "forward-discover-template",
+                    "op": "text",
+                    "value": "${discoveredLater}",
+                },
+                {
+                    "id": "discover-later",
+                    "op": "discover",
+                    "variable": "discoveredLater",
+                },
+            ],
+        )
+        for steps in invalid_steps:
+            with self.subTest(first_step=steps[0]["id"]):
+                with self.assertRaisesRegex(
+                    AGENT.SemanticAgentError,
+                    "Unknown semantic test variable",
+                ):
+                    AGENT.validate_spec(
+                        self._workflow(steps),
+                        "flow.ui.player.input",
+                    )
+
+    def test_initial_and_previous_step_template_references_are_accepted(self) -> None:
+        steps = [
+            {
+                "id": "initial-template",
+                "op": "text",
+                "value": "${requestId}",
+            },
+            {
+                "id": "capture-prior",
+                "op": "capture",
+                "source": "domain",
+                "variable": "prior",
+            },
+            {
+                "id": "prior-template",
+                "op": "fill",
+                "selector": {"semantic": "Example/${prior}"},
+                "value": "prefix-${prior}",
+            },
+        ]
+        document = self._workflow(steps)
+
+        self.assertIs(
+            AGENT.validate_spec(document, "flow.ui.player.input"),
+            document,
+        )
 
     def test_predicates_cover_state_counts_identity_and_retained_phases(self) -> None:
         predicate = AGENT.SemanticController._predicate
