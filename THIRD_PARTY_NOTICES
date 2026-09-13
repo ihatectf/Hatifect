@@ -1,0 +1,264 @@
+HATIFECT THIRD-PARTY NOTICES
+
+Inventory date: 14 September 2026
+
+Purpose and scope
+
+This file records the third-party packages and external runtime components
+identified in Hatifect project files, resolved NuGet assets, manifests, and the
+release allowlist as of the inventory date. Third-party components are governed
+by their own terms, not by the Hatifect Personal Use License.
+
+The current Hatifect binary release allowlist contains only Hatifect assemblies,
+manifests, configuration, localization, and the Hatifect license. The NuGet
+build and test packages listed below are not intentionally redistributed in the
+Hatifect binary release. SMAPI, Stardew Valley, and Chests Anywhere are external
+runtime components installed separately by the user and are not bundled.
+
+"Not bundled" does not mean "not relevant." The corresponding license and
+compatibility notes must be rechecked whenever packaging, linking, copying, or
+the dependency graph changes.
+
+-------------------------------------------------------------------------------
+1. Pathoschild.Stardew.ModBuildConfig
+
+Version: 4.3.2
+Package: https://www.nuget.org/packages/Pathoschild.Stardew.ModBuildConfig/4.3.2
+Source: https://github.com/Pathoschild/SMAPI/tree/f665caf2201c7273123f74c3863becdf1cc81dae
+Upstream author/copyright holder: Pathoschild
+SPDX license identifier: MIT (as declared by the exact NuGet package)
+Relationship: direct build dependency for Stardew/SMAPI projects
+Included in source distribution: package reference only
+Included in binary distribution: no; excluded by the release allowlist
+Local modifications: none
+Required notice: preserve the MIT copyright and permission notice if any
+package material is copied or redistributed
+Complete license text: https://licenses.nuget.org/MIT
+Compatibility status: permitted as a build-only MIT dependency on the facts
+recorded above; re-review if package files enter a release
+Package metadata commit: f665caf2201c7273123f74c3863becdf1cc81dae
+
+The package contains build-time copies of SMAPI tooling and Newtonsoft.Json.
+Those files are used by the package during the build and are not listed as
+Hatifect release payload files.
+
+-------------------------------------------------------------------------------
+2. Microsoft Visual Studio Test Platform package family
+
+Packages and exact resolved versions:
+
+- Microsoft.NET.Test.Sdk 17.13.0
+- Microsoft.CodeCoverage 17.13.0
+- Microsoft.TestPlatform.ObjectModel 17.13.0
+- Microsoft.TestPlatform.TestHost 17.13.0
+
+Package: https://www.nuget.org/packages/Microsoft.NET.Test.Sdk/17.13.0
+Source: https://github.com/microsoft/vstest/tree/e8cf3808d0b16dea8d6e1a9b77f1660a5ff45e13
+Copyright holder: Microsoft Corporation
+SPDX license identifier: MIT
+Relationship: direct and transitive test/build dependencies
+Included in source distribution: package references and resolved metadata only
+Included in binary distribution: no; test outputs are not release payloads
+Local modifications: none
+Required notice: preserve the Microsoft MIT notice if redistributed
+Complete license text: https://github.com/microsoft/vstest/blob/e8cf3808d0b16dea8d6e1a9b77f1660a5ff45e13/LICENSE
+Compatibility status: permitted for test-only use on the facts recorded above;
+re-review if any package binary enters a release
+Package metadata commit: e8cf3808d0b16dea8d6e1a9b77f1660a5ff45e13
+
+-------------------------------------------------------------------------------
+3. xUnit.net v2 package family
+
+Packages and exact resolved versions:
+
+- xunit 2.9.3
+- xunit.assert 2.9.3
+- xunit.core 2.9.3
+- xunit.extensibility.core 2.9.3
+- xunit.extensibility.execution 2.9.3
+- xunit.abstractions 2.0.3
+
+Package: https://www.nuget.org/packages/xunit/2.9.3
+Source: https://github.com/xunit/xunit/tree/9712244020d385955d33136b3fe3e87de43539cd
+Copyright notice: Copyright (c) .NET Foundation and Contributors
+SPDX license identifier: Apache-2.0, with the additional MIT-covered imported
+code identified in the exact upstream license file
+Relationship: direct and transitive test dependencies
+Included in source distribution: package references and resolved metadata only
+Included in binary distribution: no; test outputs are not release payloads
+Local modifications: none
+Required notices: retain the .NET Foundation Apache notice and the MIT notice
+for imported PlatformAbstractions/DependencyModel code if redistributed; the
+exact xunit 2.9.3 NuGet package contains no separate NOTICE file
+Complete license and imported-code notices:
+https://github.com/xunit/xunit/blob/9712244020d385955d33136b3fe3e87de43539cd/license.txt
+Apache-2.0 text: https://www.apache.org/licenses/LICENSE-2.0
+Compatibility status: permitted for test-only use on the facts recorded above;
+Apache Section 4 obligations apply if covered files or binaries are distributed
+Package metadata commit: 9712244020d385955d33136b3fe3e87de43539cd
+
+-------------------------------------------------------------------------------
+4. xunit.analyzers
+
+Version: 1.18.0
+Package: https://www.nuget.org/packages/xunit.analyzers/1.18.0
+Source: https://github.com/xunit/xunit.analyzers/tree/2620a4ddabcba16ceb64ea9ad19c566252015fe8
+Copyright notice: Copyright (c) .NET Foundation
+SPDX license identifier: Apache-2.0
+Relationship: transitive build/analyzer dependency of xunit 2.9.3
+Included in source distribution: resolved package metadata only
+Included in binary distribution: no
+Local modifications: none
+Required notice: retain the .NET Foundation notice and Apache-2.0 text if
+redistributed; preserve any upstream NOTICE content present in the exact package
+Complete license text: https://www.apache.org/licenses/LICENSE-2.0
+Compatibility status: permitted for analyzer-only use on the facts recorded
+above; re-review before redistribution
+Package metadata commit: 2620a4ddabcba16ceb64ea9ad19c566252015fe8
+
+-------------------------------------------------------------------------------
+5. xunit.runner.visualstudio
+
+Version: 2.8.2
+Package: https://www.nuget.org/packages/xunit.runner.visualstudio/2.8.2
+Source: https://github.com/xunit/visualstudio.xunit/tree/699d445a1aab46a014bce946edc4995b6b46accf
+Copyright notice: Copyright (c) .NET Foundation and Contributors
+SPDX license identifier: Apache-2.0, with the additional MIT-covered imported
+code identified in the exact upstream license file
+Relationship: direct test runner dependency, marked PrivateAssets=all
+Included in source distribution: package reference and resolved metadata only
+Included in binary distribution: no
+Local modifications: none
+Required notices: retain the .NET Foundation Apache notice and the MIT notice
+for imported PlatformAbstractions/DependencyModel code if redistributed; the
+exact 2.8.2 NuGet package contains no separate NOTICE file
+Complete license and imported-code notices:
+https://github.com/xunit/visualstudio.xunit/blob/699d445a1aab46a014bce946edc4995b6b46accf/License.txt
+Apache-2.0 text: https://www.apache.org/licenses/LICENSE-2.0
+Compatibility status: permitted for test-only use on the facts recorded above;
+re-review before redistribution
+Package metadata commit: 699d445a1aab46a014bce946edc4995b6b46accf
+
+-------------------------------------------------------------------------------
+6. Newtonsoft.Json
+
+Version: 13.0.1
+Package: https://www.nuget.org/packages/Newtonsoft.Json/13.0.1
+Source: https://github.com/JamesNK/Newtonsoft.Json/tree/ae9fe44e1323e91bcbd185ca1a14099fba7c021f
+Copyright notice: Copyright (c) 2007 James Newton-King
+SPDX license identifier: MIT
+Relationship: transitive test dependency and a build-time file inside the
+ModBuildConfig package
+Included in source distribution: resolved package metadata only
+Included in binary distribution: no; not present in the release allowlist
+Local modifications: none
+Required notice: preserve the James Newton-King MIT notice if redistributed
+Complete license text:
+https://github.com/JamesNK/Newtonsoft.Json/blob/ae9fe44e1323e91bcbd185ca1a14099fba7c021f/LICENSE.md
+Compatibility status: permitted for build/test-only use on the facts recorded
+above; re-review before redistribution
+Package metadata commit: ae9fe44e1323e91bcbd185ca1a14099fba7c021f
+
+-------------------------------------------------------------------------------
+7. System.Reflection.Metadata
+
+Version: 1.6.0
+Package: https://www.nuget.org/packages/System.Reflection.Metadata/1.6.0
+Source: https://github.com/dotnet/corefx
+Copyright notice: Copyright (c) Microsoft Corporation
+SPDX license identifier: MIT
+Relationship: transitive test-platform dependency
+Included in source distribution: resolved package metadata only
+Included in binary distribution: no; test outputs are not release payloads
+Local modifications: none
+Required notice: preserve the Microsoft MIT notice if redistributed
+Complete license text recorded by the exact package metadata:
+https://github.com/dotnet/corefx/blob/master/LICENSE.TXT
+Compatibility status: permitted for test-only use on the facts recorded above;
+the old package metadata does not pin a source commit, so confirm its archived
+license again before redistribution
+
+-------------------------------------------------------------------------------
+8. SMAPI (Stardew Modding API)
+
+Minimum runtime version: 4.5.2
+Homepage and source: https://github.com/Pathoschild/SMAPI/tree/4.5.2
+Copyright holder: Pathoschild and contributors
+SPDX license identifier: LGPL-3.0-only (GitHub reports LGPL-3.0; confirm the
+exact upstream version designation before release)
+Relationship: separately installed external runtime/API; Hatifect is built to
+the SMAPI mod API
+Included in source distribution: no SMAPI source; project/build references only
+Included in binary distribution: no; installed separately by the user
+Local modifications: none
+Required notices and complete license text:
+https://github.com/Pathoschild/SMAPI/blob/4.5.2/LICENSE.txt
+Compatibility status: requires legal review of the dynamic-linking and
+reverse-engineering conditions in LGPL-3.0 Section 4 before release; this record
+does not assert final compatibility
+
+-------------------------------------------------------------------------------
+9. Chests Anywhere
+
+Minimum optional runtime version: 1.30.1
+Homepage: https://github.com/Pathoschild/StardewMods/tree/develop/ChestsAnywhere
+Exact reviewed source revision:
+https://github.com/Pathoschild/StardewMods/tree/403dc8aaef69241bdafd3a15248900577a379a83/ChestsAnywhere
+Release record:
+https://github.com/Pathoschild/StardewMods/blob/403dc8aaef69241bdafd3a15248900577a379a83/ChestsAnywhere/docs/release-notes.md
+Copyright notice: Copyright 2016-2025 Jesse Plamondon-Willard (Pathoschild)
+SPDX license identifier: MIT
+Relationship: optional, separately installed runtime dependency used through
+its public integration API
+Included in source distribution: no third-party source
+Included in binary distribution: no; installed separately by the user
+Local modifications: none
+Required notice and complete license text:
+https://github.com/Pathoschild/StardewMods/blob/403dc8aaef69241bdafd3a15248900577a379a83/LICENSE
+Compatibility status: permitted as an optional unbundled MIT dependency on the
+facts recorded above; recheck the pinned source and release artifact before
+redistributing any upstream material
+
+-------------------------------------------------------------------------------
+10. Stardew Valley
+
+Minimum runtime version where declared: 1.6.15
+Homepage: https://www.stardewvalley.net/
+Copyright/trademark owner: ConcernedApe LLC and/or its licensors
+SPDX license identifier: LicenseRef-Stardew-Valley-Proprietary
+Relationship: separately acquired host game and runtime API surface
+Included in source distribution: no
+Included in binary distribution: no
+Local modifications: none
+Required notices: governed by the user's separately acquired game license;
+Stardew Valley names and assets are not licensed by the Hatifect license
+Complete license text: supplied with the user's copy of the game/platform terms
+Compatibility status: external proprietary runtime; no right to redistribute
+game binaries or assets is asserted
+
+-------------------------------------------------------------------------------
+Release compliance rules
+
+1. Recompute PackageReference and resolved package inventories before every
+   release. Include new transitive packages, vendored code, generators, fonts,
+   images, sounds, and other third-party materials.
+2. Compare the release archive with Hatifect.Release.json. If any third-party
+   file enters the archive, preserve its exact license and notices and reassess
+   source and binary distribution duties.
+3. For Apache-2.0 material, provide the license, mark modified files, preserve
+   copyright/patent/trademark/attribution notices, and reproduce applicable
+   NOTICE content as required by Apache License 2.0 Section 4.
+4. Do not combine GPL- or AGPL-covered code into a Hatifect derivative without
+   a separate compatibility review. For LGPL components, document the actual
+   linking model and satisfy relinking, notice, source, and reverse-engineering
+   conditions that apply to the distributed combination.
+5. If a component is incompatible, replace it, keep it as a genuinely separate
+   user-installed component, or change the licensing model after legal review.
+6. Preserve the exact upstream license text from the reviewed revision in the
+   release whenever its terms require distribution of that text. A URL in this
+   source inventory is a verification aid, not a substitute where the license
+   requires an accompanying copy.
+
+This inventory is a technical record, not legal advice. Final compatibility,
+notice, patent, and distribution conclusions must be reviewed by qualified
+counsel before release.
