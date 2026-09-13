@@ -3,7 +3,8 @@
 Status: Phase 1 implemented; Phase 2 adds the bounded semantic tail described below. These changes
 are outside the numbered product roadmap and do not start or define later diagnostics phases.
 Phase 3 adds the causal bounded `preflight.json` described in
-[Deterministic capability preflight](CAPABILITY_PREFLIGHT.md) without changing this envelope format.
+[Deterministic capability preflight](CAPABILITY_PREFLIGHT.md) without changing this envelope format;
+Phase 5 adds a separate [bounded AI packet](AI_DIAGNOSTIC_PACKET.md).
 
 ## Decision and ownership
 
