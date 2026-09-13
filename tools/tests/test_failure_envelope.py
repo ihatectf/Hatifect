@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -373,6 +374,105 @@ class FailureEnvelopeTests(unittest.TestCase):
         )
         self.assertIn("8 additional", envelope["cascade_records"][-1]["actual"])
         self.assertEqual(len(result["assertions"]), 40)
+
+    def test_maximum_envelope_context_round_trips_within_shared_byte_budget(self) -> None:
+        text = "x" * HARNESS.MAX_FAILURE_TEXT
+        root_id = "root-" + "r" * (HARNESS.MAX_FAILURE_TEXT - len("root-"))
+        cascade_assertions = [
+            self._assertion(
+                f"cascade-{index}-" + "c" * (
+                    HARNESS.MAX_FAILURE_TEXT - len(f"cascade-{index}-")
+                ),
+                "FAIL",
+                text,
+                text,
+            )
+            for index in range(HARNESS.MAX_CASCADE_RECORDS)
+        ]
+        additional_assertions = [
+            self._assertion(
+                f"additional-{index}-" + "a" * (
+                    HARNESS.MAX_FAILURE_TEXT - len(f"additional-{index}-")
+                ),
+                "FAIL",
+                text,
+                text,
+            )
+            for index in range(HARNESS.MAX_ADDITIONAL_FAILURES)
+        ]
+        assertions = [
+            self._assertion(root_id, "FAIL", text, text),
+            *cascade_assertions,
+            *additional_assertions,
+        ]
+        artifacts = [
+            "artifact-" + str(index) + "-" + "p" * (
+                HARNESS.MAX_FAILURE_TEXT - len(f"artifact-{index}-")
+            )
+            for index in range(HARNESS.MAX_RELEVANT_ARTIFACTS - 1)
+        ]
+        environment = {
+            key: (2_147_483_647 if value is int else text)
+            for key, value in HARNESS.ENVIRONMENT_SUMMARY_TYPES.items()
+        }
+        cleanup_failures = [
+            {
+                "id": sorted(HARNESS.HARNESS_CLEANUP_ASSERTION_IDS)[
+                    index % len(HARNESS.HARNESS_CLEANUP_ASSERTION_IDS)
+                ],
+                "expected": text,
+                "actual": text,
+                "message": text,
+                "causal_component": text,
+                "timestamp": TIMESTAMP,
+            }
+            for index in range(HARNESS.MAX_CLEANUP_FAILURES)
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_path = root / "result.json"
+            with mock.patch.object(
+                HARNESS,
+                "_relevant_artifacts",
+                return_value=["result.json", *artifacts],
+            ), mock.patch.object(
+                HARNESS,
+                "_environment_summary",
+                return_value=environment,
+            ):
+                HARNESS.write_result(
+                    result_path,
+                    "FAIL",
+                    "runtime.boot",
+                    text,
+                    run_id=text,
+                    assertions=assertions,
+                    failure_timestamp=TIMESTAMP,
+                    failure_phase=text,
+                    failure_class=text,
+                    causal_component=text,
+                    cleanup_failures=cleanup_failures,
+                    cascade_dependencies={
+                        assertion["id"]: root_id
+                        for assertion in cascade_assertions
+                    },
+                )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            failure_path = root / "failure.json"
+            envelope = HARNESS.validate_failure_artifacts(result_path, result)
+            self.assertLessEqual(
+                failure_path.stat().st_size,
+                HARNESS.MAX_FAILURE_ENVELOPE_BYTES,
+            )
+            self.assertEqual(envelope["root_failure"]["id"], root_id)
+            self.assertEqual(
+                envelope["result_fingerprint"],
+                HARNESS._result_fingerprint(result),
+            )
+            self.assertTrue(all(
+                len(record["actual"]) <= HARNESS.MAX_FAILURE_RECORD_CONTEXT_TEXT
+                for record in envelope["cascade_records"]
+            ))
 
     def test_strict_validator_rejects_stale_sidecar_with_changed_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

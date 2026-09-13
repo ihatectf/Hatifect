@@ -41,6 +41,13 @@ platform/runtime identity values; paths, environment variables and log bodies ar
 validation rejects stale sidecars even when scenario, run ID and status are unchanged. JSON keys
 and record order are deterministic for identical evidence and timestamp.
 
+`failure.json` has one shared serialized-size budget of 256 KiB for generation, persistence and
+strict reading. If field/count bounds would exceed it, the generator first truncates deterministic
+non-root record context to 128 characters, then replaces supplementary collections in fixed order
+with their typed remainder record and removes optional environment/artifact context as necessary.
+The root failure, its duplicated top-level fields and the authoritative result fingerprint are
+never reduced.
+
 `tools/live-harness/direct_runtime.py` remains responsible for process, game-option and owned-save
 cleanup. It supplies cleanup outcomes to the validator so cleanup still runs and remains visible
 without replacing an existing scenario root.

@@ -34,6 +34,8 @@ FAILURE_RECORD_TYPES = {
     "ADDITIONAL_FAILURE",
 }
 MAX_FAILURE_TEXT = 2048
+MAX_FAILURE_ENVELOPE_BYTES = 256 * 1024
+MAX_FAILURE_RECORD_CONTEXT_TEXT = 128
 MAX_RELEVANT_ARTIFACTS = 12
 MAX_CASCADE_RECORDS = 32
 MAX_CLEANUP_FAILURES = 8
@@ -348,7 +350,7 @@ def collect_artifacts(root: Path | None) -> list[dict[str, str]]:
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    encoded = _serialized_json(payload)
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
     )
@@ -369,6 +371,10 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
             temporary.unlink()
         except FileNotFoundError:
             pass
+
+
+def _serialized_json(payload: dict[str, Any]) -> bytes:
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -435,9 +441,13 @@ def _failure_context(
     )
 
 
-def _read_bounded_json(path: Path) -> dict[str, Any] | None:
+def _read_bounded_json(
+    path: Path,
+    *,
+    maximum_bytes: int = MAX_FAILURE_ENVELOPE_BYTES,
+) -> dict[str, Any] | None:
     try:
-        if not path.is_file() or path.stat().st_size > 256 * 1024:
+        if not path.is_file() or path.stat().st_size > maximum_bytes:
             return None
         value = json.loads(path.read_text(encoding="utf-8"))
         return value if isinstance(value, dict) else None
@@ -588,7 +598,12 @@ def _failure_remainder(
     result: dict[str, Any],
     omitted: int,
 ) -> dict[str, Any]:
-    label = "cascade" if classification == "CASCADE_SKIPPED" else "additional"
+    labels = {
+        "ADDITIONAL_FAILURE": "additional",
+        "CASCADE_SKIPPED": "cascade",
+        "CLEANUP_FAILURE": "cleanup",
+    }
+    label = labels[classification]
     return _failure_record(
         _assertion(
             f"HARNESS-{label.upper()}-REMAINDER",
@@ -633,6 +648,93 @@ def _bounded_failure_records(
             )
         ]
     return records
+
+
+def _compact_failure_text(value: str) -> str:
+    if len(value) <= MAX_FAILURE_RECORD_CONTEXT_TEXT:
+        return value
+    return value[:MAX_FAILURE_RECORD_CONTEXT_TEXT - 3] + "..."
+
+
+def _compact_record_context(records: list[dict[str, Any]]) -> None:
+    for record in records:
+        for field in (
+            "id",
+            "phase",
+            "failure_class",
+            "expected",
+            "actual",
+            "message",
+            "causal_component",
+        ):
+            record[field] = _compact_failure_text(record[field])
+
+
+def _replace_records_with_budget_remainder(
+    envelope: dict[str, Any],
+    collection_name: str,
+    classification: str,
+) -> None:
+    records = envelope[collection_name]
+    if not records:
+        return
+    root_failure_id = (
+        envelope["root_failure"]["id"]
+        if classification != "ADDITIONAL_FAILURE"
+        else None
+    )
+    records[:] = [
+        _failure_remainder(
+            classification,
+            root_failure_id,
+            {
+                "scenario": envelope["scenario"],
+            },
+            len(records),
+        )
+    ]
+
+
+def _compact_failure_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
+    if len(_serialized_json(envelope)) <= MAX_FAILURE_ENVELOPE_BYTES:
+        return envelope
+    for collection_name in (
+        "additional_failures",
+        "cascade_records",
+        "cleanup_failures",
+    ):
+        _compact_record_context(envelope[collection_name])
+    if len(_serialized_json(envelope)) <= MAX_FAILURE_ENVELOPE_BYTES:
+        return envelope
+    for collection_name, classification in (
+        ("additional_failures", "ADDITIONAL_FAILURE"),
+        ("cascade_records", "CASCADE_SKIPPED"),
+        ("cleanup_failures", "CLEANUP_FAILURE"),
+    ):
+        _replace_records_with_budget_remainder(
+            envelope,
+            collection_name,
+            classification,
+        )
+        if len(_serialized_json(envelope)) <= MAX_FAILURE_ENVELOPE_BYTES:
+            return envelope
+    for key in sorted(
+        set(envelope["environment_summary"])
+        - REQUIRED_ENVIRONMENT_SUMMARY_FIELDS,
+        reverse=True,
+    ):
+        del envelope["environment_summary"][key]
+        if len(_serialized_json(envelope)) <= MAX_FAILURE_ENVELOPE_BYTES:
+            return envelope
+    while len(envelope["relevant_artifacts"]) > 1:
+        envelope["relevant_artifacts"].pop()
+        if len(_serialized_json(envelope)) <= MAX_FAILURE_ENVELOPE_BYTES:
+            return envelope
+    if len(_serialized_json(envelope)) > MAX_FAILURE_ENVELOPE_BYTES:
+        raise HarnessError(
+            "Failure envelope root context exceeds its serialized-size budget."
+        )
+    return envelope
 
 
 def build_failure_envelope(
@@ -791,6 +893,7 @@ def build_failure_envelope(
         "relevant_artifacts": _relevant_artifacts(result, artifact_root, extra_artifacts),
         "environment_summary": _environment_summary(artifact_root),
     }
+    _compact_failure_envelope(envelope)
     validate_failure_envelope(envelope)
     return envelope
 
@@ -805,6 +908,8 @@ def validate_failure_envelope(envelope: Any) -> None:
     }
     if not isinstance(envelope, dict) or set(envelope) != keys:
         raise HarnessError("Failure envelope does not match format v2 fields.")
+    if len(_serialized_json(envelope)) > MAX_FAILURE_ENVELOPE_BYTES:
+        raise HarnessError("Failure envelope exceeds its serialized-size budget.")
     if envelope["format_version"] != FAILURE_ENVELOPE_FORMAT_VERSION:
         raise HarnessError("Failure envelope has an unsupported format_version.")
     if envelope["status"] not in {"FAIL", "BLOCKED"}:
@@ -1010,7 +1115,10 @@ def validate_failure_artifacts(
         return None
     failure_path = result_path.parent / "failure.json"
     summary_path = result_path.parent / "failure-summary.txt"
-    envelope = _read_bounded_json(failure_path)
+    envelope = _read_bounded_json(
+        failure_path,
+        maximum_bytes=MAX_FAILURE_ENVELOPE_BYTES,
+    )
     if envelope is None:
         raise HarnessError("Non-PASS scenario result has no bounded failure.json.")
     validate_failure_envelope(envelope)
