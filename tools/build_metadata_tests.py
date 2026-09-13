@@ -98,11 +98,11 @@ class BuildMetadataTests(unittest.TestCase):
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <EnableDefaultItems>false</EnableDefaultItems>
     <IntermediateOutputPath>{escape(str(self.intermediate))}/</IntermediateOutputPath>
-    <PathMap>{escape(str(self.worktree))}/=/_/Hatifect/</PathMap>
+    <PathMap>{escape(str(self.worktree) + os.sep)}=/_/Hatifect/</PathMap>
   </PropertyGroup>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
   <ItemGroup Condition="'$(FixtureAdditionalRoot)' == 'true'">
-    <SourceRoot Include="{escape(str(self.package_cache))}/" />
+    <SourceRoot Include="{escape(str(self.package_cache) + os.sep)}" />
   </ItemGroup>
   <!-- Only discovery is simulated. Assembly metadata, URL translation and
        source-path mapping continue through the real SDK targets. -->
@@ -113,7 +113,7 @@ class BuildMetadataTests(unittest.TestCase):
       <SourceRevisionId Condition="'$(FixtureState)' == 'healthy' and '$(SourceRevisionId)' == ''">{REVISION}</SourceRevisionId>
     </PropertyGroup>
     <ItemGroup Condition="'$(FixtureState)' == 'healthy' or '$(FixtureState)' == 'explicit-root'">
-      <SourceRoot Include="{escape(str(self.worktree))}/" SourceControl="git"
+      <SourceRoot Include="{escape(str(self.worktree) + os.sep)}" SourceControl="git"
                   RevisionId="{REVISION}" ScmRepositoryUrl="{URL}" />
     </ItemGroup>
   </Target>
