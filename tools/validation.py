@@ -435,8 +435,7 @@ class Run:
 
     def python_tests_isolated(self, expected_count: int, reserved_stage: dict | None = None) -> None:
         try:
-            worker_root = self.directory / "python-worker"
-            worker_root.mkdir()
+            worker_root = (self.directory / "python-worker").resolve()
             started = time.time_ns()
             self.command("python-tests", [
                 sys.executable,
