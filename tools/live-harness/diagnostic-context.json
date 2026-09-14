@@ -10,9 +10,7 @@
       "scenarioTestFiles": [
         "Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/tests/Hatifect.ChestsAnywhereOverlay.Tests/ChestsAnywhereAcceptanceCompletionTests.cs"
       ],
-      "secondaryExpansionCandidates": [
-        "Integrations/AGENTS.md"
-      ]
+      "secondaryExpansionCandidates": []
     },
     "deployment-preparer": {
       "directDependencies": [
@@ -39,9 +37,7 @@
       "scenarioTestFiles": [
         "Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/FlowUiAcceptanceWorldTests.cs"
       ],
-      "secondaryExpansionCandidates": [
-        "Hatifect Flow/AGENTS.md"
-      ]
+      "secondaryExpansionCandidates": []
     },
     "flow-ui": {
       "directDependencies": [
@@ -56,9 +52,7 @@
         "Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/FlowUiAcceptanceNetworkTests.cs",
         "Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/FlowUiAcceptanceArtifactTests.cs"
       ],
-      "secondaryExpansionCandidates": [
-        "Hatifect Flow/AGENTS.md"
-      ]
+      "secondaryExpansionCandidates": []
     },
     "harness-preflight": {
       "directDependencies": [
@@ -100,9 +94,7 @@
       "scenarioTestFiles": [
         "tools/tests/test_live_harness.py"
       ],
-      "secondaryExpansionCandidates": [
-        "tools/AGENTS.md"
-      ]
+      "secondaryExpansionCandidates": []
     },
     "native-input-driver": {
       "directDependencies": [
@@ -285,9 +277,7 @@
         "Hatifect UI/tests/Hatifect.UI.Runtime.Tests/UiAutomatedAcceptanceScenarioContractTests.cs",
         "Hatifect UI/tests/Hatifect.UI.Runtime.Tests/UiAutomatedAcceptanceScenarioRegistryTests.cs"
       ],
-      "secondaryExpansionCandidates": [
-        "Hatifect UI/AGENTS.md"
-      ]
+      "secondaryExpansionCandidates": []
     },
     "user-session-runtime": {
       "directDependencies": [

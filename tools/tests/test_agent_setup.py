@@ -6,6 +6,7 @@ from copy import deepcopy
 import io
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -117,6 +118,36 @@ class AgentSetupTests(unittest.TestCase):
                          result["subagentPolicy"])
         self.assertEqual(before, {path.relative_to(self.root): path.read_bytes()
                                   for path in self.root.rglob("*") if path.is_file()})
+
+    def test_absent_agent_configuration_is_not_applicable_and_skips_host_discovery(self) -> None:
+        (self.root / "AGENTS.md").unlink()
+        shutil.rmtree(self.root / ".agents")
+        shutil.rmtree(self.root / ".codex")
+
+        result = agent_setup.check_repository(self.root)
+
+        self.assertEqual("NOT_APPLICABLE", result["status"])
+        self.assertNotIn("roles", result)
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.object(sys, "argv", ["agent-check", "--root", str(self.root), "--host"]), \
+                patch.object(agent_setup, "read_host") as read_host, \
+                redirect_stdout(stdout), redirect_stderr(stderr):
+            exit_code = agent_setup.main()
+        self.assertEqual(0, exit_code)
+        read_host.assert_not_called()
+        self.assertEqual(
+            "NOT_APPLICABLE",
+            json.loads(stdout.getvalue())["host"]["status"],
+        )
+        self.assertEqual("", stderr.getvalue())
+
+    def test_partial_agent_configuration_remains_fail_closed(self) -> None:
+        shutil.rmtree(self.root / ".codex")
+
+        self.assert_rejected(
+            lambda: agent_setup.check_repository(self.root),
+            contains="invalid TOML",
+        )
 
     def test_invalid_toml_is_rejected_without_disclosing_its_content(self) -> None:
         self.write(".codex/config.toml", f'credential = "{SECRET}\n')

@@ -1248,7 +1248,6 @@ class _RequestFixture:
         base = Path(self.temporary.name)
         self.repository = base / "repository"
         self.repository.mkdir()
-        (self.repository / "AGENTS.md").write_text("test\n", encoding="utf-8")
         harness = self.repository / "tools" / "live-harness"
         harness.mkdir(parents=True)
         (harness / "scenarios.json").write_text("{}\n", encoding="utf-8")
