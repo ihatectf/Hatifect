@@ -365,6 +365,24 @@ class DiagnosticPacketTests(unittest.TestCase):
         }
         self.assertEqual(emitted - set(mapping["components"]), set())
 
+    def test_context_mapping_does_not_require_agent_guidance(self) -> None:
+        descriptor = os.open(ROOT, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        self.addCleanup(os.close, descriptor)
+        mapping = PACKET._load_context_mapping(descriptor)
+
+        context_paths = [
+            path
+            for component in mapping["components"].values()
+            for path in component["secondaryExpansionCandidates"]
+        ] + [
+            path
+            for rule in mapping["scenarioRules"]
+            for path in rule["context"]["secondaryExpansionCandidates"]
+        ]
+
+        self.assertFalse(any(path == "AGENTS.md" or path.endswith("/AGENTS.md")
+                             for path in context_paths))
+
     def test_unknown_and_ambiguous_context_fail_closed(self) -> None:
         with self.assertRaisesRegex(PACKET.DiagnosticPacketError, "no context owner"):
             PACKET._scenario_rule([], "unknown", "smoke")

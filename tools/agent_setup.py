@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Hatifect agent guidance; optionally audit actual local Codex discovery."""
+"""Validate configured Hatifect agent guidance; optionally audit local Codex discovery."""
 from __future__ import annotations
 
 import argparse
@@ -23,6 +23,7 @@ SKILL = ".agents/skills/hatifect-development/SKILL.md"
 ROUTING = ".agents/skills/hatifect-development/routing.json"
 PROJECT_SKILL_ROOT = ".agents/skills"
 PROJECT_SKILL_PREFIX = "hatifect-"
+AGENT_CONFIGURATION_MARKERS = (".codex", ".agents", "AGENTS.md")
 SUBAGENT_MODELS = ("gpt-5.6-luna", "gpt-5.6-sol")
 SUBAGENT_EFFORTS = ("none", "low", "medium", "high", "xhigh")
 
@@ -88,9 +89,20 @@ def repository_skill(root: Path, name: str) -> tuple[str, Path]:
     return relative, path
 
 
+def has_agent_configuration(root: Path) -> bool:
+    return any(os.path.lexists(root / marker) for marker in AGENT_CONFIGURATION_MARKERS)
+
+
 def check_repository(root: Path = ROOT) -> dict:
-    """Portable integrity checks; no Codex binary, credentials or personal skills needed."""
+    """Validate portable agent configuration when the checkout opts into it."""
     root = root.resolve()
+    if not root.is_dir():
+        raise AgentSetupError("repository root must be an existing directory")
+    if not has_agent_configuration(root):
+        return {
+            "status": "NOT_APPLICABLE",
+            "note": "Project agent configuration is absent; no agent guidance to validate.",
+        }
     config = read_toml(root, ".codex/config.toml")
     if set(config) != {"project_doc_max_bytes", "agents"}:
         raise AgentSetupError("project config must declare only instruction budget and agents; inherit personal settings")
@@ -180,6 +192,16 @@ def check_repository(root: Path = ROOT) -> dict:
 def audit_host(root: Path, config: dict, skills: dict, route: str | None = None) -> dict:
     """Project loading and skill availability, never raw effective config or MCP data."""
     repository = check_repository(root)
+    if repository["status"] == "NOT_APPLICABLE":
+        if route is not None:
+            raise AgentSetupError(
+                "selected route requires project agent configuration",
+                "BLOCKED",
+            )
+        return {
+            "status": "NOT_APPLICABLE",
+            "note": "Project agent configuration is absent; no host discovery to audit.",
+        }
     root = root.resolve()
     routes = repository["routes"]
     if route is not None and route not in {item["id"] for item in routes}:
@@ -315,9 +337,25 @@ def main() -> int:
     parser.add_argument("--codex", default="codex", help="Codex executable for optional host audit")
     args = parser.parse_args()
     try:
-        result = {"repository": check_repository(args.root)}
+        repository = check_repository(args.root)
+        result = {"repository": repository}
         if args.host or args.route:
-            result["host"] = audit_host(args.root, *read_host(args.root, args.codex), route=args.route)
+            if repository["status"] == "NOT_APPLICABLE":
+                if args.route:
+                    raise AgentSetupError(
+                        "selected route requires project agent configuration",
+                        "BLOCKED",
+                    )
+                result["host"] = {
+                    "status": "NOT_APPLICABLE",
+                    "note": "Project agent configuration is absent; no host discovery to audit.",
+                }
+            else:
+                result["host"] = audit_host(
+                    args.root,
+                    *read_host(args.root, args.codex),
+                    route=args.route,
+                )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except AgentSetupError as error:
