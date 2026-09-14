@@ -90,12 +90,14 @@ def repository_skill(root: Path, name: str) -> tuple[str, Path]:
 
 
 def has_agent_configuration(root: Path) -> bool:
-    return any((root / marker).exists() for marker in AGENT_CONFIGURATION_MARKERS)
+    return any(os.path.lexists(root / marker) for marker in AGENT_CONFIGURATION_MARKERS)
 
 
 def check_repository(root: Path = ROOT) -> dict:
     """Validate portable agent configuration when the checkout opts into it."""
     root = root.resolve()
+    if not root.is_dir():
+        raise AgentSetupError("repository root must be an existing directory")
     if not has_agent_configuration(root):
         return {
             "status": "NOT_APPLICABLE",

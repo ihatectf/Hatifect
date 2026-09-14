@@ -149,6 +149,27 @@ class AgentSetupTests(unittest.TestCase):
             contains="invalid TOML",
         )
 
+    def test_invalid_root_and_dangling_marker_remain_fail_closed(self) -> None:
+        self.assert_rejected(
+            lambda: agent_setup.check_repository(self.base / "missing"),
+            contains="repository root",
+        )
+        file_root = self.base / "not-a-directory"
+        file_root.write_text("x", encoding="utf-8")
+        self.assert_rejected(
+            lambda: agent_setup.check_repository(file_root),
+            contains="repository root",
+        )
+
+        (self.root / "AGENTS.md").unlink()
+        shutil.rmtree(self.root / ".agents")
+        shutil.rmtree(self.root / ".codex")
+        (self.root / ".codex").symlink_to(self.base / "missing-agent-config")
+        self.assert_rejected(
+            lambda: agent_setup.check_repository(self.root),
+            contains="invalid TOML",
+        )
+
     def test_invalid_toml_is_rejected_without_disclosing_its_content(self) -> None:
         self.write(".codex/config.toml", f'credential = "{SECRET}\n')
         error = self.assert_rejected(lambda: agent_setup.check_repository(self.root), contains="invalid TOML")
