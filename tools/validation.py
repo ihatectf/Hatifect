@@ -900,7 +900,7 @@ class Run:
                         "runtime test shard total changed: "
                         f"expected {runtime_stage['expectedTotal']}, actual {counts['total']}"
                     )
-                elif failure is None:
+                else:
                     runtime_stage["status"] = "PASS"
                     print(
                         f"{sharded_runtime.name}: Passed: {counts['passed']}, Failed: 0, Skipped: 0",
