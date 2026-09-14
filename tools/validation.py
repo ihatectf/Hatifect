@@ -168,7 +168,6 @@ class Run:
             raise ValidationError(f"Python tooling tests failed or skipped; log: {log}")
 
     def static(self) -> None:
-        self.command("agent-setup", [sys.executable, str(self.root / "tools/agent_setup.py")])
         self.command("architecture", [sys.executable, str(self.root / "tools/architecture_check.py")])
         self.command("semantic-public-api", [sys.executable, str(self.root / "Hatifect UI/tools/verify_public_api.py")])
         self.python_tests()
