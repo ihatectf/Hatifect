@@ -14,6 +14,8 @@ UI authoring: [подключение language server, экспорт метад
 
 | Команда | Результат |
 |---|---|
+| `./tools/hatifect-test` | Progressive regression по текущим Git changes; без изменений — полный host-free gate |
+| `./tools/hatifect-test all` | Прямой запуск всех host-free .NET suites, без progressive selection |
 | `./tools/hatifect-check` | Статика, Python tests, build и все .NET suites без игры |
 | `./tools/hatifect-check --platform` | Те же проверки плюс игровые проекты и CA tests |
 | `./tools/hatifect-test ui` | Текущие семантические UI suites |
@@ -34,6 +36,13 @@ UI authoring: [подключение language server, экспорт метад
 После упаковки всего выбранного графа `hatifect-pack-ui` сверяет DLL каждого пакета с итоговым `bin/Release/net6.0` owning project. Отсутствующий output или несовпадение байтов означает FAIL; для расхождения выводятся обе SHA-256. Это же условие действует при отдельном `ui_packages.py verify-feed`: сохранённый feed проверяется относительно текущих producer outputs. Проверка не пересобирает и не заменяет артефакты при отказе. Подробный разбор исходного смешанного feed — в [отчёте проверки идентичности пакетов](Q01_PACKAGE_IDENTITY.md).
 
 Общий `Directory.Build.targets` восстанавливает revision/source-root metadata, если SDK обнаружил Git repository, но потерял metadata в linked worktree с packed refs. Recovery использует только read-only Git queries и завершает сборку ошибкой при их отказе; обычные source archives и CA projection без Git не требуют этих запросов. Канонический build запускает `tools/build_metadata_tests.py` после выбора SDK; статическая стадия остаётся Python-only. [Контракт, регрессии и статус фактической приёмки](BUILD_SOURCE_IDENTITY.md).
+
+Выбор progressive по умолчанию реализован в `tools/validation.py`, а правила scope — в
+`tools/progressive_regression.py` и `tools/regression-selection.json`. Для выбора не нужны
+`AGENTS.md`, `.agents` или `.codex`. Явные scope, `--project`, `--platform`, `--host-free`
+и `--no-build` сохраняют прямой запуск без progressive; `--results-directory` сам по себе
+не отключает progressive. `hatifect-check` остаётся независимым полным gate.
+Подробнее: [progressive regression](PROGRESSIVE_REGRESSION.md).
 
 ## CI и ветки
 

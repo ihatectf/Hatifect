@@ -17,6 +17,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 import architecture_check
+import progressive_regression
 from test_inventory import Inventory, InventoryError, Project
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -300,10 +301,11 @@ class Run:
         print(f"RESULT: {status} — {message}", flush=True)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("check", "static", "build", "test"))
-    parser.add_argument("scope", nargs="?", default="all", choices=("all", "ui", "flow", "ca", "tools"))
+    parser.add_argument("scope", nargs="?", choices=("all", "ui", "flow", "ca", "tools"),
+                        help="explicit test scope; omitted scope uses progressive regression")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--platform", action="store_true", help="also build/test game-linked projects; never deploy")
     modes.add_argument("--host-free", action="store_true", help="explicit default: no game-linked projects")
@@ -314,7 +316,17 @@ def main() -> int:
     )
     parser.add_argument("--no-build", action="store_true", help="test an already built Release candidate without restoring or rebuilding")
     parser.add_argument("--results-directory", type=Path, help="parent directory for a fresh evidence run")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    # Progressive stages call back with an explicit scope or project. Keep those
+    # calls, and the full check gate, on the direct runner to avoid recursion.
+    if (args.command == "test" and args.scope is None and args.project is None
+            and args.test_filter is None and not args.platform
+            and not args.host_free and not args.no_build):
+        arguments = ["run", "--full-if-clean"]
+        if args.results_directory is not None:
+            arguments.extend(("--results-directory", str(args.results_directory)))
+        return progressive_regression.main(arguments)
+    args.scope = args.scope or "all"
     run = Run(ROOT, args.results_directory)
     try:
         if args.no_build and args.command != "test":
