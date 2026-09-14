@@ -370,21 +370,26 @@ class Run:
                     ),
                 )
                 deadline = time.monotonic() + timeout
-                while True:
-                    try:
-                        return_code = process.wait(timeout=.2)
-                        break
-                    except subprocess.TimeoutExpired:
-                        if cancellation is not None and cancellation.is_set():
-                            self.stop_process(process)
-                            stage["exitCode"] = process.returncode
-                            raise ValidationError(f"{name} cancelled by sibling validation", "BLOCKED")
-                        if time.monotonic() >= deadline:
-                            if cancellation is not None:
-                                cancellation.set()
-                            self.stop_process(process)
-                            stage["exitCode"] = process.returncode
-                            raise ValidationError(f"{name} timed out after {timeout} seconds", "BLOCKED")
+                try:
+                    while True:
+                        try:
+                            return_code = process.wait(timeout=.2)
+                            break
+                        except subprocess.TimeoutExpired:
+                            if cancellation is not None and cancellation.is_set():
+                                self.stop_process(process)
+                                stage["exitCode"] = process.returncode
+                                raise ValidationError(f"{name} cancelled by sibling validation", "BLOCKED")
+                            if time.monotonic() >= deadline:
+                                if cancellation is not None:
+                                    cancellation.set()
+                                self.stop_process(process)
+                                stage["exitCode"] = process.returncode
+                                raise ValidationError(f"{name} timed out after {timeout} seconds", "BLOCKED")
+                except BaseException:
+                    if process.poll() is None:
+                        self.stop_process(process)
+                    raise
             stage["exitCode"] = return_code
         except ValidationError:
             raise
