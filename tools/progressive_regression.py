@@ -929,10 +929,15 @@ def _validate_executable_command(
     raise RegressionSelectionError("regression plan contains a non-canonical command")
 
 
-def _terminate_process_group(process: subprocess.Popen[bytes], *, force: bool) -> None:
+def _terminate_process_group(
+    process: subprocess.Popen[bytes],
+    process_group_id: int,
+    *,
+    force: bool,
+) -> None:
     try:
         if os.name == "posix":
-            os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
+            os.killpg(process_group_id, signal.SIGKILL if force else signal.SIGTERM)
         elif force:
             process.kill()
         else:
@@ -952,23 +957,76 @@ def _process_group_exists(process_group_id: int) -> bool:
 
 
 def _stop_process_group(process: subprocess.Popen[bytes], process_group_id: int) -> int:
-    _terminate_process_group(process, force=False)
+    _terminate_process_group(process, process_group_id, force=False)
     deadline = time.monotonic() + TERMINATION_GRACE_SECONDS
     while time.monotonic() < deadline:
         leader_exited = process.poll() is not None
         if not _process_group_exists(process_group_id):
             break
         if leader_exited:
-            _terminate_process_group(process, force=True)
+            _terminate_process_group(process, process_group_id, force=True)
             break
         time.sleep(0.01)
     if _process_group_exists(process_group_id):
-        _terminate_process_group(process, force=True)
+        _terminate_process_group(process, process_group_id, force=True)
     try:
         return process.wait(timeout=TERMINATION_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
-        _terminate_process_group(process, force=True)
+        _terminate_process_group(process, process_group_id, force=True)
         return process.wait()
+
+
+def _abort_process_lifetime(
+    process: subprocess.Popen[bytes],
+    process_group_id: int | None,
+    reader: threading.Thread | None,
+) -> None:
+    if process_group_id is None:
+        try:
+            process_group_id = process.pid
+        except BaseException:
+            pass
+    if process_group_id is not None:
+        try:
+            _stop_process_group(process, process_group_id)
+        except BaseException:
+            try:
+                _stop_process_group(process, process_group_id)
+            except BaseException:
+                pass
+    try:
+        if process.poll() is None:
+            process.kill()
+    except BaseException:
+        pass
+    try:
+        process.wait(timeout=TERMINATION_GRACE_SECONDS)
+    except BaseException:
+        try:
+            process.kill()
+        except BaseException:
+            pass
+        try:
+            process.wait()
+        except BaseException:
+            pass
+    try:
+        stdout = process.stdout
+    except BaseException:
+        stdout = None
+    if stdout is not None:
+        try:
+            stdout.close()
+        except BaseException:
+            pass
+    if reader is not None:
+        try:
+            reader.join(timeout=TERMINATION_GRACE_SECONDS)
+        except BaseException:
+            try:
+                reader.join(timeout=TERMINATION_GRACE_SECONDS)
+            except BaseException:
+                pass
 
 
 def _execute(
@@ -981,6 +1039,11 @@ def _execute(
     if os.name != "posix":
         return 2, "HATIFECT_REGRESSION_PROCESS_GROUP_UNSUPPORTED\n"
     previous_signal_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+    process: subprocess.Popen[bytes] | None = None
+    process_group_id: int | None = None
+    reader: threading.Thread | None = None
+    signal_mask_restored = False
+    execution_failed = False
     try:
         process = subprocess.Popen(
             command,
@@ -990,32 +1053,7 @@ def _execute(
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-    except BaseException:
-        signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
-        raise
-    process_group_id = process.pid
-    reader: threading.Thread | None = None
-    signal_mask_restored = False
-
-    def abort_owned_process() -> None:
-        try:
-            _stop_process_group(process, process_group_id)
-        except BaseException:
-            # Cleanup is best-effort per operation, but one failed operation
-            # must not prevent closing the pipe and joining the reader.
-            pass
-        if process.stdout is not None:
-            try:
-                process.stdout.close()
-            except BaseException:
-                pass
-        if reader is not None:
-            try:
-                reader.join(timeout=TERMINATION_GRACE_SECONDS)
-            except BaseException:
-                pass
-
-    try:
+        process_group_id = process.pid
         tail = bytearray()
 
         def drain_output() -> None:
@@ -1045,7 +1083,7 @@ def _execute(
 
         reader.join(timeout=TERMINATION_GRACE_SECONDS)
         if reader.is_alive():
-            _terminate_process_group(process, force=True)
+            _terminate_process_group(process, process_group_id, force=True)
             process.stdout.close()
             reader.join(timeout=TERMINATION_GRACE_SECONDS)
         else:
@@ -1059,11 +1097,23 @@ def _execute(
             exit_code = 2
         return exit_code, tail.decode("utf-8", errors="replace")
     except BaseException:
-        abort_owned_process()
+        execution_failed = True
         raise
     finally:
+        if execution_failed and process is not None:
+            try:
+                _abort_process_lifetime(process, process_group_id, reader)
+            except BaseException:
+                pass
         if not signal_mask_restored:
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
+            if process is None:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
+            else:
+                try:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
+                except BaseException:
+                    if not execution_failed:
+                        raise
 
 
 def _parsed_test_count(output: str) -> int | None:

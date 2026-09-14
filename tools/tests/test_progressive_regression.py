@@ -798,6 +798,81 @@ class ProgressiveRegressionTests(unittest.TestCase):
         self.assertIsNotNone(spawned[0].poll())
         self.assertFalse(regression._process_group_exists(spawned[0].pid))
 
+    def test_real_executor_memory_error_on_first_post_spawn_access_cleans_lifetime(self) -> None:
+        spawned = []
+        wrapped = []
+        readers = []
+        real_popen = regression.subprocess.Popen
+        real_thread = regression.threading.Thread
+        original_signal_mask = regression.signal.pthread_sigmask(
+            regression.signal.SIG_BLOCK, set()
+        )
+
+        class FailFirstPidAccess:
+            def __init__(self, process):
+                self.process = process
+                self.failure = MemoryError("first post-Popen pid access")
+                self.pid_accesses = 0
+
+            @property
+            def pid(self):
+                self.pid_accesses += 1
+                if self.pid_accesses == 1:
+                    raise self.failure
+                return self.process.pid
+
+            def __getattr__(self, name):
+                return getattr(self.process, name)
+
+        def capturing_popen(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            proxy = FailFirstPidAccess(process)
+            spawned.append(process)
+            wrapped.append(proxy)
+            return proxy
+
+        def capturing_thread(*args, **kwargs):
+            reader = real_thread(*args, **kwargs)
+            readers.append(reader)
+            return reader
+
+        try:
+            with mock.patch.object(
+                regression.subprocess, "Popen", side_effect=capturing_popen
+            ), mock.patch.object(
+                regression.threading, "Thread", side_effect=capturing_thread
+            ), self.assertRaises(MemoryError) as raised:
+                regression._execute(
+                    [sys.executable, "-c", "import time; time.sleep(10)"],
+                    ROOT,
+                    os.environ.copy(),
+                    timeout_seconds=10,
+                )
+
+            self.assertEqual(1, len(spawned))
+            self.assertIs(wrapped[0].failure, raised.exception)
+            self.assertIsNotNone(spawned[0].poll())
+            self.assertFalse(regression._process_group_exists(spawned[0].pid))
+            self.assertTrue(spawned[0].stdout.closed)
+            self.assertFalse(any(reader.is_alive() for reader in readers))
+            self.assertEqual(
+                original_signal_mask,
+                regression.signal.pthread_sigmask(regression.signal.SIG_BLOCK, set()),
+            )
+        finally:
+            for process in spawned:
+                if process.poll() is None:
+                    try:
+                        os.killpg(process.pid, regression.signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
+                if process.stdout is not None and not process.stdout.closed:
+                    process.stdout.close()
+            regression.signal.pthread_sigmask(
+                regression.signal.SIG_SETMASK, original_signal_mask
+            )
+
     def test_real_executor_memory_error_during_reader_join_reaps_process_group(self) -> None:
         spawned = []
         real_popen = regression.subprocess.Popen
