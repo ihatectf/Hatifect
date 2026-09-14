@@ -27,8 +27,11 @@ class ValidationTests(unittest.TestCase):
         quiet_print.start()
         self.addCleanup(quiet_print.stop)
 
-    def project(self, name: str, *, references=(), packages=(), test=False, import_path=None) -> str:
-        path = self.root / f"{name}.csproj"
+    def project(self, name: str, *, references=(), packages=(), test=False, import_path=None,
+                directory: str | None = None) -> str:
+        parent = self.root / directory if directory is not None else self.root
+        parent.mkdir(parents=True, exist_ok=True)
+        path = parent / f"{name}.csproj"
         project = ET.Element("Project", Sdk="Microsoft.NET.Sdk")
         group = ET.SubElement(project, "ItemGroup")
         for reference in references:
@@ -38,7 +41,7 @@ class ValidationTests(unittest.TestCase):
         if import_path:
             ET.SubElement(project, "Import", Project=import_path)
         ET.ElementTree(project).write(path)
-        return path.name
+        return path.relative_to(self.root).as_posix()
 
     def solution(self, *projects: str) -> Path:
         path = self.root / "Hatifect.slnx"
@@ -81,6 +84,58 @@ class ValidationTests(unittest.TestCase):
             inventory.select(tests=True, scope="ca")
         with self.assertRaisesRegex(test_inventory.InventoryError, "not in the solution"):
             inventory.select(tests=True, project="Hatifect.Unknown.Tests.csproj")
+        self.assertEqual(
+            ["Hatifect.UI.Tests"],
+            [item.name for item in inventory.affected_tests(("Hatifect.UI.Tests.csproj",))],
+        )
+        self.assertEqual(
+            ["Hatifect.UI.Tests", "Hatifect.Flow.Tests"],
+            [item.name for item in inventory.affected_tests(("Directory.Build.props",))],
+        )
+        runtime = self.project(
+            "Hatifect.UI.Runtime",
+            directory="Hatifect UI/Hatifect.UI.Runtime",
+        )
+        runtime_tests = self.project("Hatifect.UI.Runtime.Tests", references=(runtime,), test=True)
+        nested_inventory = test_inventory.Inventory(
+            self.solution(*inventory.projects, runtime, runtime_tests)
+        )
+        affected = nested_inventory.affected_tests((
+            "Hatifect UI/Hatifect.UI.Runtime/HotReload/UiSemanticLiveAssets.cs",
+        ))
+        self.assertEqual(
+            ["Hatifect.UI.Runtime.Tests"],
+            [item.name for item in affected],
+        )
+        git_results = (
+            Mock(stdout="resolved\n"),
+            Mock(stdout=b"src/B.cs\0src/A.cs\0"),
+            Mock(stdout=b"src/A.cs\0src/C.cs\0"),
+        )
+        with patch.object(validation.subprocess, "run", side_effect=git_results):
+            self.assertEqual(
+                ("src/A.cs", "src/B.cs", "src/C.cs"),
+                validation.changed_paths_from_git(self.root, "HEAD"),
+            )
+        with patch.object(
+            validation.subprocess,
+            "run",
+            side_effect=subprocess.CalledProcessError(128, ["git", "rev-parse"]),
+        ):
+            with self.assertRaisesRegex(validation.ValidationError, "cannot resolve affected-test base") as caught:
+                validation.changed_paths_from_git(self.root, "missing")
+        self.assertEqual("BLOCKED", caught.exception.status)
+        invalid_utf8 = (
+            Mock(stdout="resolved\n"),
+            Mock(stdout=b"src/valid.cs\0"),
+            Mock(stdout=b"src/invalid-\xff.cs\0"),
+        )
+        with patch.object(validation.subprocess, "run", side_effect=invalid_utf8):
+            with self.assertRaisesRegex(validation.ValidationError, "must be UTF-8") as caught:
+                validation.changed_paths_from_git(self.root, "HEAD")
+        self.assertEqual("BLOCKED", caught.exception.status)
+        with self.assertRaisesRegex(test_inventory.InventoryError, "no changed files"):
+            inventory.affected_tests(())
 
     def test_ci_matrix_contains_every_host_free_project_in_solution_order(self) -> None:
         inventory = self.basic_graph()
@@ -218,6 +273,12 @@ class ValidationTests(unittest.TestCase):
                 with self.assertRaises(validation.ValidationError):
                     validation.read_trx(path)
 
+    def test_performance_profiles_preserve_nuget_audit(self) -> None:
+        for name in ("safe", "fast", "diagnostic"):
+            with self.subTest(name=name):
+                profile = validation.resolve_performance_profile(name)
+                self.assertNotIn("-p:NuGetAudit=false", profile.build_properties)
+
     def test_build_and_test_commands_disable_deployment_and_do_not_filter_away_tests(self) -> None:
         tests = self.project("Hatifect.Flow.Tests", test=True)
         inventory = test_inventory.Inventory(self.solution(tests))
@@ -254,8 +315,93 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(2, run.stages[-1]["passed"])
         build_arguments = next(arguments for name, arguments in calls if name == "build")
         self.assertIn("-warnaserror", build_arguments)
+        self.assertIn("-m:1", build_arguments)
+        restore_arguments = next(arguments for name, arguments in calls if name == "restore")
+        self.assertIn("--disable-parallel", restore_arguments)
         self.assertEqual(["-warnNotAsError:NETSDK1138"],
                          [value for value in build_arguments if value.startswith("-warnNotAsError:")])
+
+        second = self.project("Hatifect.UI.Tests", test=True)
+        with patch.object(validation.os, "cpu_count", return_value=9):
+            fast_profile = validation.resolve_performance_profile("fast")
+            diagnostic_profile = validation.resolve_performance_profile("diagnostic")
+        self.assertFalse(fast_profile.diagnostic)
+        self.assertTrue(diagnostic_profile.diagnostic)
+
+        package = self.project("Hatifect.UI.Experience")
+        packaged_tests = self.project(
+            "Hatifect.UI.Packaged.Tests",
+            packages=("Hatifect.UI.Experience",),
+            test=True,
+        )
+        (self.root / "Hatifect.UI.Packages.json").write_text(json.dumps({
+            "Packages": [{"Id": "Hatifect.UI.Experience", "Project": package}],
+        }))
+        fast_inventory = test_inventory.Inventory(
+            self.solution(tests, second, package, packaged_tests)
+        )
+        fast_projects = fast_inventory.select(tests=True)
+        fast_run = validation.Run(self.root, profile=fast_profile)
+        fast_calls: list[tuple[str, list[str], dict[str, str] | None]] = []
+        package_solutions: list[str] = []
+        fixture = self.trx().read_bytes()
+
+        def fast_command(name, arguments, *, environment=None, **_):
+            fast_calls.append((name, arguments, environment))
+            if name == "ui-packages":
+                package_solutions.append(Path(arguments[2]).read_text())
+            if name in {project.identifier for project in fast_projects}:
+                output = Path(arguments[arguments.index("--results-directory") + 1]) / "tests.trx"
+                output.write_bytes(fixture)
+                with fast_run._stages_lock:
+                    fast_run.stages.append({"name": name, "status": "PASS"})
+            return ""
+
+        with patch.object(fast_run, "command", side_effect=fast_command):
+            fast_run.build(fast_inventory, fast_projects, "/sdk/dotnet")
+            fast_run.tests(
+                fast_projects,
+                "/sdk/dotnet",
+                expected_counts={project.identifier: 2 for project in fast_projects},
+            )
+        fast_restore = next(arguments for name, arguments, _ in fast_calls if name == "restore")
+        fast_build = next(arguments for name, arguments, _ in fast_calls if name == "build")
+        self.assertIn("--disable-parallel", fast_restore)
+        self.assertIn("-m:4", fast_build)
+        stage_names = [name for name, _, _ in fast_calls]
+        self.assertLess(stage_names.index("ui-package-contract"), stage_names.index("ui-packages"))
+        self.assertLess(stage_names.index("ui-packages"), stage_names.index("ui-package-feed"))
+        self.assertLess(stage_names.index("ui-package-feed"), stage_names.index("restore"))
+        package_arguments = next(arguments for name, arguments, _ in fast_calls if name == "ui-packages")
+        self.assertIn("Hatifect.UI.Experience.csproj", package_solutions[0])
+        self.assertTrue(any(value.startswith("-p:PackageOutputPath=") for value in package_arguments))
+        feed_arguments = next(arguments for name, arguments, _ in fast_calls if name == "ui-package-feed")
+        self.assertEqual("verify-feed", feed_arguments[2])
+        self.assertIn("--host-free", feed_arguments)
+        self.assertTrue(any(value.startswith("-p:HatifectUiLocalFeed=") for value in fast_restore))
+        self.assertTrue(any(value.startswith("-p:HatifectUiLocalFeed=") for value in fast_build))
+        test_calls = [call for call in fast_calls if call[0] in {project.identifier for project in fast_projects}]
+        self.assertEqual(len(fast_projects), len(test_calls))
+        self.assertTrue(all(environment == {"DOTNET_PROCESSOR_COUNT": "3"} for _, _, environment in test_calls))
+        self.assertEqual(
+            [project.identifier for project in fast_projects],
+            [stage["name"] for stage in fast_run.stages[-len(fast_projects):]],
+        )
+
+        single_run = validation.Run(self.root, profile=fast_profile)
+        single_calls: list[tuple[str, list[str], dict[str, str] | None]] = []
+
+        def single_command(name, arguments, *, environment=None, **_):
+            single_calls.append((name, arguments, environment))
+            output = Path(arguments[arguments.index("--results-directory") + 1]) / "tests.trx"
+            output.write_bytes(fixture)
+            with single_run._stages_lock:
+                single_run.stages.append({"name": name, "status": "PASS"})
+            return ""
+
+        with patch.object(single_run, "command", side_effect=single_command):
+            single_run.tests((fast_projects[0],), "/sdk/dotnet")
+        self.assertIsNone(single_calls[0][2])
 
     def test_failed_metadata_regression_stops_before_package_restore_and_build(self) -> None:
         project = self.project("Hatifect.Flow.Tests", test=True)
@@ -320,6 +466,18 @@ class ValidationTests(unittest.TestCase):
                             "Example.Namespace.Tests.OneCase",
                         )
                 self.assertEqual("FAIL", run.stages[-1]["status"])
+        run = validation.Run(self.root)
+
+        def changed_count(name, arguments, **_):
+            output = Path(arguments[arguments.index("--results-directory") + 1]) / "tests.trx"
+            output.write_bytes(self.trx().read_bytes())
+            run.stages.append({"name": name, "status": "PASS"})
+            return ""
+
+        with patch.object(run, "command", side_effect=changed_count):
+            with self.assertRaisesRegex(validation.ValidationError, "test count changed"):
+                run.tests(selected, "/sdk/dotnet", expected_counts={selected[0].identifier: 3})
+        self.assertEqual("FAIL", run.stages[-1]["status"])
 
     def test_cli_test_filter_requires_project_and_nonempty_exact_fqn(self) -> None:
         cases = (
@@ -327,6 +485,8 @@ class ValidationTests(unittest.TestCase):
             ["test", "all", "--test-filter", "Example.Tests.One"],
             ["build", "all", "--project", "Example.Tests.csproj", "--test-filter", "Example.Tests.One"],
             ["test", "all", "--project", "Example.Tests.csproj", "--test-filter", "Example;rm"],
+            ["test", "flow", "--affected-from", "HEAD"],
+            ["test", "all", "--affected-from", "HEAD", "--platform"],
         )
         for arguments in cases:
             run = Mock()
@@ -400,11 +560,15 @@ class ValidationTests(unittest.TestCase):
             with self.subTest(arguments=arguments), patch.object(validation, "ROOT", self.root), \
                     patch.object(validation, "Run") as run_type, \
                     patch.object(validation, "resolve_dotnet", return_value="/sdk/dotnet"), \
+                    patch.object(validation, "EXPECTED_HOST_FREE_TEST_COUNTS", {
+                        "hatifect-ui-tests": 2,
+                        "hatifect-flow-tests": 2,
+                    }), \
                     patch.object(validation.progressive_regression, "main") as progressive:
                 self.assertEqual(0, validation.main(arguments))
             run = run_type.return_value
             if arguments[0] == "check":
-                run.static.assert_called_once_with()
+                run.static.assert_called_once_with(668)
                 self.assertEqual(1, run.build.call_count)
                 self.assertEqual(["Hatifect.UI.Tests", "Hatifect.Flow.Tests"],
                                  [item.name for item in run.tests.call_args.args[0]])
