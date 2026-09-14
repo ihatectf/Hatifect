@@ -346,8 +346,7 @@ class ValidationTests(unittest.TestCase):
         tests = self.project("Hatifect.Flow.Tests", references=(production,), test=True)
         return test_inventory.Inventory(self.solution(production, tests))
 
-    def test_default_test_routes_to_progressive_without_agent_configuration(self) -> None:
-        # An empty checkout has no AGENTS.md, .agents or .codex to select a runner.
+    def test_default_test_routes_to_progressive(self) -> None:
         for status in (0, 1, 2):
             with self.subTest(status=status), patch.object(validation, "ROOT", self.root), \
                     patch.object(validation.progressive_regression, "main", return_value=status) as progressive, \
@@ -518,7 +517,7 @@ class ValidationTests(unittest.TestCase):
         with patch.object(run, "command", side_effect=lambda name, _: steps.append(name)), \
                 patch.object(run, "python_tests", side_effect=lambda: steps.append("python-tests")):
             run.static()
-        self.assertEqual(["agent-setup", "architecture", "semantic-public-api", "python-tests"], steps)
+        self.assertEqual(["architecture", "semantic-public-api", "python-tests"], steps)
 
 
 if __name__ == "__main__":

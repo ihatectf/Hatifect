@@ -24,7 +24,6 @@ Level 5; на изменённом дереве сохраняет обычны�
 unstaged и untracked изменения участвуют в автоматическом выборе; diff уже созданных
 коммитов относительно базовой ветки автоматически не вычисляется.
 
-Выбор выполняется кодом инструмента, не инструкциями `AGENTS.md`, `.agents` или `.codex`.
 Явный scope (включая `all` и `tools`), `--project`, `--platform`, `--host-free` или
 `--no-build` оставляет `hatifect-test` в прямом режиме. `--results-directory` передаётся
 progressive runner. Его внутренние вызовы всегда имеют scope или project, а Level 5

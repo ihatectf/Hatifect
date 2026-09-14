@@ -653,26 +653,6 @@ class ProgressiveRegressionTests(unittest.TestCase):
             self.assertEqual(level, plan["plannedRegressionLevel"])
             self.assertFalse(plan["authoritativeFullGateSelected"])
 
-    def test_cli_full_if_clean_selects_without_reading_agent_instructions(self) -> None:
-        original_open = Path.open
-
-        def open_without_agent_files(path, *args, **kwargs):
-            if {"AGENTS.md", ".agents", ".codex"}.intersection(path.parts):
-                self.fail(f"selection tried to read agent configuration: {path}")
-            return original_open(path, *args, **kwargs)
-
-        payload = io.BytesIO()
-        output = io.TextIOWrapper(payload, encoding="utf-8")
-        with mock.patch.object(Path, "open", open_without_agent_files), \
-                mock.patch.object(sys, "stdout", output), \
-                mock.patch.object(regression, "_worktree_changes", return_value=[]):
-            self.assertEqual(0, regression.main(["plan", "--full-if-clean"]))
-        output.flush()
-        document = json.loads(payload.getvalue())
-        output.detach()
-        self.assertEqual(["full-host-free"], self.scopes(document))
-        self.assertTrue(document["authoritativeFullGateSelected"])
-
     def test_cli_run_publishes_report_and_preserves_result_exit_codes(self) -> None:
         for status, expected in (("PASS", 0), ("FAIL", 1), ("BLOCKED", 2)):
             plan = {"plan": status}

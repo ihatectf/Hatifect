@@ -34,33 +34,6 @@ logs/
 /release/
 /artifacts/
 
-# Local development assistants
-/.testagent/
-/.agents/
-/.ai/
-/.claude/
-/.codex/
-/.cursor/
-/.continue/
-/.junie/
-/.prompts/
-/.roo/
-/.windsurf/
-/ai-notes/
-/chat-logs/
-/prompts/
-AGENTS.md
-CLAUDE.md
-GEMINI.md
-.aider*
-.cursorrules
-.windsurfrules
-copilot-instructions.md
-*.prompt.md
-/.github/instructions/
-/tools/agent_setup.py
-/tools/hatifect-agent-check
-/tools/tests/test_agent_setup.py
 TestResults/
 
 # NuGet/build caches
