@@ -12,10 +12,26 @@ scope. `tools/regression-selection.json` — проверяемое детерм
 компоненты, direct tests и integration areas. Точка входа:
 
 ```text
+./tools/hatifect-test
 ./tools/hatifect-regression plan [--changed PATH] [--test TEST_ID] [--scenario ID]
 ./tools/hatifect-regression run  [--changed PATH] [--test TEST_ID] [--scenario ID]
 ./tools/hatifect-regression run --final
 ```
+
+Обычный `hatifect-test` теперь вызывает `hatifect-regression run --full-if-clean` через
+общую Python-логику. При отсутствии Git changes и явного контекста этот режим выбирает
+Level 5; на изменённом дереве сохраняет обычный progressive selection. Только staged,
+unstaged и untracked изменения участвуют в автоматическом выборе; diff уже созданных
+коммитов относительно базовой ветки автоматически не вычисляется.
+
+Выбор выполняется кодом инструмента, не инструкциями `AGENTS.md`, `.agents` или `.codex`.
+Явный scope (включая `all` и `tools`), `--project`, `--platform`, `--host-free` или
+`--no-build` оставляет `hatifect-test` в прямом режиме. `--results-directory` передаётся
+progressive runner. Его внутренние вызовы всегда имеют scope или project, а Level 5
+вызывает отдельный `hatifect-check`, поэтому цикл запуска исключён.
+
+`--full-if-clean` доступен также у `plan`/`run`; без этого флага пустой контекст по-прежнему
+отклоняется. CI, release и обычный `hatifect-build` не переключаются на progressive.
 
 `plan` только печатает план. `run` сохраняет новый приватный
 `artifacts/validation/regression-*/regression-report.json`. Публичная команда всегда добавляет
@@ -81,6 +97,9 @@ scope/area и никогда не считаются покрытыми host-fre
 исходное исключение. Единый lifetime guard начинается сразу после успешного `Popen` и включает
 allocations, reader setup, wait, join, pipe close и decode; `SIGINT` блокируется на коротком участке
 передачи ownership после `Popen`.
+Перед исполнением stage отдельный Python launcher восстанавливает исходную signal mask
+и заменяет себя целевой командой через `exec`. Временная блокировка `SIGINT` у родителя
+не передаётся тестам; PID/process group и cleanup boundary при этом сохраняются.
 Без POSIX process-group semantics
 исполнение fail closed как `BLOCKED`, не запуская stage.
 

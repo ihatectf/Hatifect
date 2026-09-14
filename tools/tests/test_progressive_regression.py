@@ -629,6 +629,50 @@ class ProgressiveRegressionTests(unittest.TestCase):
         self.assertEqual([], document["testsExecuted"])
         self.assertFalse(document["authoritativeFullGateSelected"])
 
+    def test_full_if_clean_selects_full_gate_without_weakening_empty_context_guard(self) -> None:
+        with mock.patch.object(regression, "_worktree_changes", return_value=[]):
+            plan = self.plan(discover_worktree=True, full_if_clean=True)
+            with self.assertRaisesRegex(regression.RegressionSelectionError, "provide a changed path"):
+                self.plan(discover_worktree=True)
+        self.assertEqual(["full-host-free"], self.scopes(plan))
+        self.assertTrue(plan["authoritativeFullGateSelected"])
+        self.assertEqual([], plan["worktreePaths"])
+
+    def test_full_if_clean_preserves_changed_and_exact_context(self) -> None:
+        for changes, context, level in (
+            (["tools/progressive_regression.py"], {}, 3),
+            ([], {"changed_paths": ["tools/progressive_regression.py"]}, 3),
+            ([], {"scenario": "runtime.boot"}, 2),
+            ([], {"exact_tests": ["python:tools.tests.test_progressive_regression."
+                                  "ProgressiveRegressionTests.test_level_1_selects_exact_python_test_only"]}, 1),
+        ):
+            with self.subTest(context=context, changes=changes), mock.patch.object(
+                regression, "_worktree_changes", return_value=changes
+            ):
+                plan = self.plan(discover_worktree=True, full_if_clean=True, **context)
+            self.assertEqual(level, plan["plannedRegressionLevel"])
+            self.assertFalse(plan["authoritativeFullGateSelected"])
+
+    def test_cli_full_if_clean_selects_without_reading_agent_instructions(self) -> None:
+        original_open = Path.open
+
+        def open_without_agent_files(path, *args, **kwargs):
+            if {"AGENTS.md", ".agents", ".codex"}.intersection(path.parts):
+                self.fail(f"selection tried to read agent configuration: {path}")
+            return original_open(path, *args, **kwargs)
+
+        payload = io.BytesIO()
+        output = io.TextIOWrapper(payload, encoding="utf-8")
+        with mock.patch.object(Path, "open", open_without_agent_files), \
+                mock.patch.object(sys, "stdout", output), \
+                mock.patch.object(regression, "_worktree_changes", return_value=[]):
+            self.assertEqual(0, regression.main(["plan", "--full-if-clean"]))
+        output.flush()
+        document = json.loads(payload.getvalue())
+        output.detach()
+        self.assertEqual(["full-host-free"], self.scopes(document))
+        self.assertTrue(document["authoritativeFullGateSelected"])
+
     def test_cli_run_publishes_report_and_preserves_result_exit_codes(self) -> None:
         for status, expected in (("PASS", 0), ("FAIL", 1), ("BLOCKED", 2)):
             plan = {"plan": status}
@@ -693,6 +737,38 @@ class ProgressiveRegressionTests(unittest.TestCase):
             self.assertIn("HATIFECT_REGRESSION_TIMEOUT", output)
             self.assertTrue(ready.exists())
             self.assertFalse(marker.exists())
+
+    def test_real_executor_preserves_child_signal_mask_and_sigint_delivery(self) -> None:
+        original_mask = regression.signal.pthread_sigmask(regression.signal.SIG_BLOCK, set())
+        child = (
+            "import json,os,signal; "
+            "print(json.dumps(sorted(int(s) for s in signal.pthread_sigmask(signal.SIG_BLOCK, set()))), flush=True); "
+            "signal.signal(signal.SIGINT, lambda *_: print('interrupt delivered', flush=True)); "
+            "os.kill(os.getpid(), signal.SIGINT)"
+        )
+        try:
+            for mask in (set(), {regression.signal.SIGUSR1}):
+                with self.subTest(mask=mask):
+                    regression.signal.pthread_sigmask(regression.signal.SIG_SETMASK, mask)
+                    exit_code, output = regression._execute(
+                        [sys.executable, "-c", child], ROOT, os.environ.copy(), timeout_seconds=5
+                    )
+                    self.assertEqual(0, exit_code, output)
+                    self.assertEqual(
+                        [json.dumps(sorted(int(s) for s in mask)), "interrupt delivered"],
+                        output.splitlines(),
+                    )
+                    self.assertEqual(mask, regression.signal.pthread_sigmask(regression.signal.SIG_BLOCK, set()))
+        finally:
+            regression.signal.pthread_sigmask(regression.signal.SIG_SETMASK, original_mask)
+
+    def test_real_executor_missing_command_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            exit_code, output = regression._execute(
+                [str(Path(directory) / "missing-runner")], ROOT, os.environ.copy(), timeout_seconds=5
+            )
+        self.assertEqual(2, exit_code)
+        self.assertIn("HATIFECT_REGRESSION_EXEC_BLOCKED", output)
 
     def test_real_executor_interrupt_terminates_and_reaps_child_process_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
