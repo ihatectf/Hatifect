@@ -60,6 +60,13 @@ closed mapping is `HARNESS-SAVE-CLEANUP` → `save-provisioning`,
 `runtime-process`. A conflicting caller-supplied component is rejected before `result.json`,
 semantic events, or failure sidecars are changed.
 
+Every newly generated cleanup failure is also an assertion in authoritative `result.json`.
+Cleanup assertion IDs are unique, retain their original FAIL/BLOCKED status and use the same fixed
+component mapping. Strict validation reconstructs the complete ordered cleanup collection only
+from those assertions; removed, additional, duplicate, reordered, reclassified, provenance-drifted
+or fabricated remainder records are rejected. The checked sidecar is never used as authority for
+its own expected cleanup projection.
+
 The top level contains `scenario`, `run_id`, `phase`, `timestamp`, `status`, `failure_class`,
 `root_failure`, `expected`, `actual`, `message`, `causal_component`, `relevant_artifacts` and
 `environment_summary`. Format v3 additionally contains `semantic_event_tail`: at most 16 newest
@@ -77,7 +84,7 @@ and record order are deterministic for identical evidence and timestamp.
 
 Strict validation also reconstructs the complete ordered causal projection from authoritative
 failed assertions. It rejects a later assertion promoted to root, fabricated, omitted or duplicate
-supplementary records, and evidence/classification drift. When the semantic companion fails beside
+supplementary or cleanup records, and evidence/classification drift. When the semantic companion fails beside
 an independent runtime `FAIL`, the runtime assertion remains the root and the semantic failure is
 appended as `ADDITIONAL_FAILURE`; a semantic-only failure remains canonical `BLOCKED`.
 

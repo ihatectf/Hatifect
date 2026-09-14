@@ -521,7 +521,16 @@ class SemanticEventStreamTests(unittest.TestCase):
             envelope["root_failure"]["id"], original["root_failure"]["id"]
         )
         self.assertEqual(envelope["cleanup_failures"][0]["id"], "HARNESS-PROCESS-TEARDOWN")
-        self.assertEqual(envelope["semantic_event_tail"][-1]["event"], "Cleanup.Failed")
+        event_names = [event["event"] for event in envelope["semantic_event_tail"]]
+        self.assertLess(
+            event_names.index("Cleanup.Failed"),
+            max(
+                index
+                for index, event_name in enumerate(event_names)
+                if event_name == "Result.Published"
+            ),
+        )
+        self.assertEqual(event_names[-1], "Scenario.Completed")
 
     def test_phase_one_failure_envelope_v2_remains_valid(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

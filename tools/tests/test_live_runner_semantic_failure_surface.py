@@ -1,9 +1,23 @@
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "tools" / "hatifect-live-runner"
+VALIDATOR_PATH = ROOT / "tools" / "live-harness" / "validate.py"
+VALIDATOR_SPEC = importlib.util.spec_from_file_location(
+    "hatifect_live_runner_behavior_validate", VALIDATOR_PATH
+)
+assert VALIDATOR_SPEC is not None and VALIDATOR_SPEC.loader is not None
+VALIDATOR = importlib.util.module_from_spec(VALIDATOR_SPEC)
+VALIDATOR_SPEC.loader.exec_module(VALIDATOR)
 
 
 class LiveRunnerSemanticFailureSurfaceTests(unittest.TestCase):
@@ -36,6 +50,35 @@ class LiveRunnerSemanticFailureSurfaceTests(unittest.TestCase):
         self.assertNotIn('tail -n 120 "$artifact_dir/semantic-test-agent.log"', script)
         self.assertNotIn('cat "$artifact_dir/diagnostics/semantic-test-agent.json"', script)
 
+    def test_runtime_and_semantic_failures_preserve_runtime_root_and_exit(self) -> None:
+        completed, result, envelope, events = self._run_semantic_failure(
+            runtime_status="FAIL",
+            runtime_exit=9,
+        )
+
+        self.assertEqual(9, completed.returncode, completed.stderr)
+        self.assertEqual("FAIL", result["status"])
+        self.assertEqual("runtime.stub.failure", envelope["root_failure"]["id"])
+        self.assertIn(
+            "HARNESS-SEMANTIC-TEST-AGENT",
+            [record["id"] for record in envelope["additional_failures"]],
+        )
+        self._assert_final_semantic_evidence(result, events)
+
+    def test_semantic_only_failure_becomes_blocked_root_and_exit_two(self) -> None:
+        completed, result, envelope, events = self._run_semantic_failure(
+            runtime_status="PASS",
+            runtime_exit=0,
+        )
+
+        self.assertEqual(2, completed.returncode, completed.stderr)
+        self.assertEqual("BLOCKED", result["status"])
+        self.assertEqual(
+            "HARNESS-SEMANTIC-TEST-AGENT", envelope["root_failure"]["id"]
+        )
+        self.assertEqual([], envelope["additional_failures"])
+        self._assert_final_semantic_evidence(result, events)
+
     def test_semantic_lifecycle_is_finalized_after_companion_join(self) -> None:
         script = RUNNER.read_text(encoding="utf-8")
         started = script.index("SemanticAgent.Started")
@@ -51,6 +94,116 @@ class LiveRunnerSemanticFailureSurfaceTests(unittest.TestCase):
         self.assertLess(completed, final_completion)
         self.assertLess(failed, final_completion)
         self.assertEqual(script.count('complete-scenario "$result"'), 2)
+
+    def _run_semantic_failure(self, *, runtime_status: str, runtime_exit: int):
+        runtime_root = ROOT / "artifacts" / "runtime"
+        runtime_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=runtime_root) as artifact_directory, \
+                tempfile.TemporaryDirectory() as stub_directory:
+            artifact = Path(artifact_directory)
+            result_path = artifact / "result.json"
+            python_stub = Path(stub_directory) / "python3"
+            python_stub.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!{sys.executable}
+                    import os
+                    import subprocess
+                    import sys
+                    from pathlib import Path
+
+                    real_python = os.environ["HATIFECT_TEST_REAL_PYTHON"]
+                    validator = os.environ["HATIFECT_TEST_VALIDATOR"]
+                    target = Path(sys.argv[1]).name if len(sys.argv) > 1 else ""
+                    if target == "validate.py" or sys.argv[1:2] == ["-c"]:
+                        os.execv(real_python, [real_python, *sys.argv[1:]])
+                    if target == "semantic-test-agent.py":
+                        raise SystemExit(int(os.environ["HATIFECT_TEST_SEMANTIC_EXIT"]))
+                    if target == "save_provisioning.py":
+                        print("/tmp/hatifect-controlled-save")
+                        raise SystemExit(0)
+                    if target == "user_session_runtime.py":
+                        arguments = sys.argv[2:]
+                        if arguments[0] == "preflight":
+                            raise SystemExit(0)
+                        def option(name):
+                            return arguments[arguments.index(name) + 1]
+                        status = os.environ["HATIFECT_TEST_RUNTIME_STATUS"]
+                        command = [
+                            real_python,
+                            validator,
+                            "write-result",
+                            status,
+                            option("--scenario"),
+                            option("--result"),
+                            "controlled runtime outcome",
+                            "--run-id",
+                            Path(option("--artifact-directory")).name,
+                            "--assertion-id",
+                            (
+                                "runtime.stub.failure"
+                                if status == "FAIL"
+                                else "runtime.stub.success"
+                            ),
+                            "--artifact-root",
+                            option("--artifact-directory"),
+                        ]
+                        published = subprocess.run(command, check=False)
+                        if published.returncode != 0:
+                            raise SystemExit(published.returncode)
+                        raise SystemExit(int(os.environ["HATIFECT_TEST_RUNTIME_EXIT"]))
+                    os.execv(real_python, [real_python, *sys.argv[1:]])
+                    """
+                ),
+                encoding="utf-8",
+            )
+            python_stub.chmod(0o700)
+            uname_stub = Path(stub_directory) / "uname"
+            uname_stub.write_text("#!/bin/sh\nprintf 'Darwin\\n'\n", encoding="utf-8")
+            uname_stub.chmod(0o700)
+            environment = os.environ.copy()
+            environment.update({
+                "PATH": f"{stub_directory}{os.pathsep}{environment['PATH']}",
+                "HATIFECT_TEST_REAL_PYTHON": sys.executable,
+                "HATIFECT_TEST_VALIDATOR": str(VALIDATOR_PATH),
+                "HATIFECT_TEST_RUNTIME_STATUS": runtime_status,
+                "HATIFECT_TEST_RUNTIME_EXIT": str(runtime_exit),
+                "HATIFECT_TEST_SEMANTIC_EXIT": "7",
+                "HATIFECT_SMAPI_TEST_ROOT": str(ROOT / ".smapi-test" / "isolated"),
+            })
+            completed = subprocess.run(
+                [
+                    str(RUNNER),
+                    "smoke",
+                    "flow.ui.player.input",
+                    str(result_path),
+                    str(artifact),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=20,
+            )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            envelope = VALIDATOR.validate_failure_artifacts(result_path, result)
+            events = VALIDATOR.read_semantic_events(
+                artifact,
+                expected_scenario="flow.ui.player.input",
+                expected_run_id=artifact.name,
+            )
+            return completed, result, envelope, events
+
+    def _assert_final_semantic_evidence(self, result, events) -> None:
+        event_names = [event["event"] for event in events]
+        self.assertIn("SemanticAgent.Failed", event_names)
+        self.assertEqual("Scenario.Completed", event_names[-1])
+        published = [event for event in events if event["event"] == "Result.Published"]
+        self.assertEqual(
+            VALIDATOR._result_fingerprint(result),
+            published[-1]["fields"]["result_fingerprint"],
+        )
 
 
 class WrapperReproductionHookTests(unittest.TestCase):

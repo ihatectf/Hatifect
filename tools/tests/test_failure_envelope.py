@@ -522,6 +522,177 @@ class FailureEnvelopeTests(unittest.TestCase):
             self.assertEqual(events_before, event_path.read_bytes())
             self.assertFalse((root / "failure.json").exists())
 
+    def test_strict_validator_authenticates_complete_cleanup_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_path = root / "result.json"
+            HARNESS.write_result(
+                result_path,
+                "FAIL",
+                "runtime.boot",
+                "runtime failed",
+                run_id="cleanup-projection-run",
+                assertions=[self._assertion(
+                    "runtime.boot.loaded", "FAIL", "boot", "failed"
+                )],
+                cleanup_failures=[
+                    {
+                        "id": "HARNESS-SAVE-CLEANUP",
+                        "status": "FAIL",
+                        "expected": "save removed",
+                        "actual": "save remained",
+                        "causal_component": "save-provisioning",
+                    },
+                    {
+                        "id": "HARNESS-OPTIONS-RESTORE",
+                        "status": "FAIL",
+                        "expected": "options restored",
+                        "actual": "restore failed",
+                        "causal_component": "runtime-options",
+                    },
+                ],
+                failure_timestamp=TIMESTAMP,
+            )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            envelope = HARNESS.validate_failure_artifacts(result_path, result)
+            self.assertEqual(
+                ["HARNESS-SAVE-CLEANUP", "HARNESS-OPTIONS-RESTORE"],
+                [
+                    assertion["id"]
+                    for assertion in result["assertions"]
+                    if assertion["id"] in HARNESS.HARNESS_CLEANUP_ASSERTION_IDS
+                ],
+            )
+
+            mutations = {}
+            removed = copy.deepcopy(envelope)
+            removed["cleanup_failures"].pop(0)
+            mutations["removed"] = removed
+            duplicated = copy.deepcopy(envelope)
+            duplicated["cleanup_failures"].append(
+                copy.deepcopy(duplicated["cleanup_failures"][0])
+            )
+            mutations["duplicated"] = duplicated
+            reordered = copy.deepcopy(envelope)
+            reordered["cleanup_failures"].reverse()
+            mutations["reordered"] = reordered
+            for field, value in (
+                ("phase", "runtime"),
+                ("failure_class", "ASSERTION_FAILURE"),
+                ("causal_component", "runtime-process"),
+                ("original_status", "BLOCKED"),
+                ("root_failure_id", "fabricated-root"),
+            ):
+                damaged = copy.deepcopy(envelope)
+                damaged["cleanup_failures"][0][field] = value
+                mutations[field] = damaged
+            remainder = copy.deepcopy(envelope)
+            remainder["cleanup_failures"].append(
+                HARNESS._failure_remainder(
+                    "CLEANUP_FAILURE",
+                    envelope["root_failure"]["id"],
+                    result,
+                    1,
+                )
+            )
+            mutations["fabricated-remainder"] = remainder
+
+            for name, damaged in mutations.items():
+                with self.subTest(mutation=name):
+                    (root / "failure.json").write_text(
+                        json.dumps(damaged), encoding="utf-8"
+                    )
+                    (root / "failure-summary.txt").write_text(
+                        HARNESS._failure_summary(damaged), encoding="utf-8"
+                    )
+                    with self.assertRaisesRegex(
+                        HARNESS.HarnessError,
+                        "causal records|does not reference",
+                    ):
+                        HARNESS.validate_failure_artifacts(result_path, result)
+
+    def test_typed_preflight_context_conflict_is_rejected_before_publication(self) -> None:
+        resolved = HARNESS.resolve_scenario(
+            HARNESS.load_manifest(), "runtime.boot", "smoke"
+        )
+        outcomes = {
+            requirement["id"]: {
+                "status": "available",
+                "classification": "available",
+                "reasonCode": "AVAILABLE",
+                "explanation": "Capability is available.",
+            }
+            for requirement in resolved["capabilities"]
+        }
+        unavailable = next(
+            requirement["id"]
+            for requirement in resolved["capabilities"]
+            if requirement["requirement"] == "required"
+        )
+        outcomes[unavailable] = {
+            "status": "error",
+            "classification": "misconfiguration",
+            "reasonCode": "PROBE_NOT_RUN",
+            "explanation": "The required owner probe was not run.",
+        }
+
+        for field in ("failure_phase", "failure_class", "causal_component"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result_path = root / "result.json"
+                HARNESS.publish_preflight(
+                    root,
+                    result_path,
+                    resolved,
+                    "preflight-conflict-run",
+                    outcomes,
+                    timestamp=TIMESTAMP,
+                )
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                envelope = json.loads((root / "failure.json").read_text(encoding="utf-8"))
+                before = {
+                    name: (root / name).read_bytes()
+                    for name in (
+                        "result.json",
+                        "failure.json",
+                        "failure-summary.txt",
+                        HARNESS.SEMANTIC_EVENT_FILE_NAME,
+                    )
+                }
+                canonical = {
+                    "failure_phase": envelope["phase"],
+                    "failure_class": envelope["failure_class"],
+                    "causal_component": envelope["causal_component"],
+                }
+                conflicting = {
+                    "failure_phase": "runtime",
+                    "failure_class": "ASSERTION_FAILURE",
+                    "causal_component": "scenario",
+                }
+                canonical[field] = conflicting[field]
+
+                with self.assertRaisesRegex(
+                    HARNESS.HarnessError, "canonical assertion mapping"
+                ):
+                    HARNESS.write_result(
+                        result_path,
+                        result["status"],
+                        result["scenario"],
+                        "preflight remained blocked",
+                        run_id=result["runId"],
+                        duration_ms=result["durationMs"],
+                        assertions=result["assertions"],
+                        exceptions=result["exceptions"],
+                        artifacts=result["artifacts"],
+                        failure_timestamp=TIMESTAMP,
+                        **canonical,
+                    )
+
+                self.assertEqual(
+                    before,
+                    {name: (root / name).read_bytes() for name in before},
+                )
+
     def test_successful_scenario_keeps_existing_result_contract_without_failure_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -787,7 +958,7 @@ class FailureEnvelopeTests(unittest.TestCase):
                 "causal_component": HARNESS.CLEANUP_CAUSAL_COMPONENTS[cleanup_id],
                 "timestamp": TIMESTAMP,
             }
-            for index in range(HARNESS.MAX_CLEANUP_FAILURES)
+            for index in range(len(HARNESS.HARNESS_CLEANUP_ASSERTION_IDS))
             for cleanup_id in [
                 sorted(HARNESS.HARNESS_CLEANUP_ASSERTION_IDS)[
                     index % len(HARNESS.HARNESS_CLEANUP_ASSERTION_IDS)

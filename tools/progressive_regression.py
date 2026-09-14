@@ -46,7 +46,8 @@ DOTNET_TEST_RE = re.compile(
 HEAD_RE = re.compile(r"^[0-9a-f]{40}$")
 UNITTEST_COUNT_RE = re.compile(r"^Ran (?P<count>[0-9]+) tests?\b", re.MULTILINE)
 UNITTEST_OUTCOME_RE = re.compile(
-    r"(?:^|\n)OK(?: \((?P<details>[^\r\n)]*)\))?[\t ]*(?:\r?\n)?\Z"
+    r"^(?P<status>OK|FAILED)(?: \((?P<details>[^\r\n)]*)\))?[\t ]*$",
+    re.MULTILINE,
 )
 PYTHON_SUITE_COUNT_RE = re.compile(
     r"^Python tests: (?P<count>[0-9]+); failures: (?P<failures>[0-9]+); "
@@ -993,61 +994,76 @@ def _execute(
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
         raise
     process_group_id = process.pid
-    tail = bytearray()
     reader: threading.Thread | None = None
-    reader_started = False
+    signal_mask_restored = False
 
-    def drain_output() -> None:
-        assert process.stdout is not None
+    def abort_owned_process() -> None:
         try:
-            while chunk := process.stdout.read(8192):
-                tail.extend(chunk)
-                if len(tail) > MAX_CAPTURE_BYTES:
-                    del tail[: len(tail) - MAX_CAPTURE_BYTES]
-        except (OSError, ValueError):
+            _stop_process_group(process, process_group_id)
+        except BaseException:
+            # Cleanup is best-effort per operation, but one failed operation
+            # must not prevent closing the pipe and joining the reader.
             pass
+        if process.stdout is not None:
+            try:
+                process.stdout.close()
+            except BaseException:
+                pass
+        if reader is not None:
+            try:
+                reader.join(timeout=TERMINATION_GRACE_SECONDS)
+            except BaseException:
+                pass
 
-    timed_out = False
     try:
+        tail = bytearray()
+
+        def drain_output() -> None:
+            assert process.stdout is not None
+            try:
+                while chunk := process.stdout.read(8192):
+                    tail.extend(chunk)
+                    if len(tail) > MAX_CAPTURE_BYTES:
+                        del tail[: len(tail) - MAX_CAPTURE_BYTES]
+            except (OSError, ValueError):
+                pass
+
         # A pending SIGINT is delivered inside this cleanup boundary, never in
         # the tiny interval between a successful spawn and ownership setup.
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
+        signal_mask_restored = True
         if process.stdout is None:
             raise RegressionSelectionError("regression stage has no captured output stream")
         reader = threading.Thread(target=drain_output, daemon=True)
         reader.start()
-        reader_started = True
-        exit_code = process.wait(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        exit_code = _stop_process_group(process, process_group_id)
-    except BaseException:
-        _stop_process_group(process, process_group_id)
-        if reader_started and reader is not None:
-            reader.join(timeout=TERMINATION_GRACE_SECONDS)
-        if reader_started and reader is not None and reader.is_alive():
+        timed_out = False
+        try:
+            exit_code = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            exit_code = _stop_process_group(process, process_group_id)
+
+        reader.join(timeout=TERMINATION_GRACE_SECONDS)
+        if reader.is_alive():
+            _terminate_process_group(process, force=True)
             process.stdout.close()
             reader.join(timeout=TERMINATION_GRACE_SECONDS)
         else:
             process.stdout.close()
+
+        if timed_out:
+            marker = b"\nHATIFECT_REGRESSION_TIMEOUT\n"
+            tail.extend(marker)
+            if len(tail) > MAX_CAPTURE_BYTES:
+                del tail[: len(tail) - MAX_CAPTURE_BYTES]
+            exit_code = 2
+        return exit_code, tail.decode("utf-8", errors="replace")
+    except BaseException:
+        abort_owned_process()
         raise
-
-    assert reader is not None
-    reader.join(timeout=TERMINATION_GRACE_SECONDS)
-    if reader.is_alive():
-        _terminate_process_group(process, force=True)
-        process.stdout.close()
-        reader.join(timeout=TERMINATION_GRACE_SECONDS)
-    else:
-        process.stdout.close()
-
-    if timed_out:
-        marker = b"\nHATIFECT_REGRESSION_TIMEOUT\n"
-        tail.extend(marker)
-        if len(tail) > MAX_CAPTURE_BYTES:
-            del tail[: len(tail) - MAX_CAPTURE_BYTES]
-        exit_code = 2
-    return exit_code, tail.decode("utf-8", errors="replace")
+    finally:
+        if not signal_mask_restored:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_signal_mask)
 
 
 def _parsed_test_count(output: str) -> int | None:
@@ -1057,24 +1073,48 @@ def _parsed_test_count(output: str) -> int | None:
     ]
     if structured_matches:
         return sum(int(match.group("count")) for match in structured_matches)
-    match = UNITTEST_COUNT_RE.search(output)
-    return int(match.group("count")) if match is not None else None
+    unittest_matches = list(UNITTEST_COUNT_RE.finditer(output))
+    return (
+        sum(int(match.group("count")) for match in unittest_matches)
+        if unittest_matches else None
+    )
+
+
+def _unittest_evidence_is_complete(output: str) -> tuple[bool, int | None]:
+    counts = list(UNITTEST_COUNT_RE.finditer(output))
+    if not counts:
+        return True, None
+    total = 0
+    for index, count in enumerate(counts):
+        total += int(count.group("count"))
+        segment_end = counts[index + 1].start() if index + 1 < len(counts) else len(output)
+        outcomes = list(UNITTEST_OUTCOME_RE.finditer(output, count.end(), segment_end))
+        if (
+            len(outcomes) != 1
+            or outcomes[0].group("status") != "OK"
+            or outcomes[0].group("details") is not None
+        ):
+            return False, total
+    return True, total
 
 
 def _test_output_has_no_omissions(output: str) -> bool:
-    structured_matches = [
-        *PYTHON_SUITE_COUNT_RE.finditer(output),
-        *DOTNET_COUNT_RE.finditer(output),
-    ]
-    if structured_matches:
-        return all(
-            int(match.group("failures")) == 0 and int(match.group("skipped")) == 0
-            for match in structured_matches
-        )
-    if UNITTEST_COUNT_RE.search(output) is None:
+    python_matches = list(PYTHON_SUITE_COUNT_RE.finditer(output))
+    dotnet_matches = list(DOTNET_COUNT_RE.finditer(output))
+    structured_matches = [*python_matches, *dotnet_matches]
+    unittest_valid, unittest_count = _unittest_evidence_is_complete(output)
+    if not unittest_valid:
         return False
-    outcome = UNITTEST_OUTCOME_RE.search(output)
-    return outcome is not None and outcome.group("details") is None
+    if any(
+        int(match.group("failures")) != 0 or int(match.group("skipped")) != 0
+        for match in structured_matches
+    ):
+        return False
+    if unittest_count is not None and python_matches:
+        python_count = sum(int(match.group("count")) for match in python_matches)
+        if unittest_count != python_count:
+            return False
+    return bool(structured_matches) or unittest_count is not None
 
 
 def _validate_plan(

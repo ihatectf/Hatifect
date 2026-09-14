@@ -389,6 +389,14 @@ class ProgressiveRegressionTests(unittest.TestCase):
             "Ran 1 test in 0.1s\n\nOK (unexpected successes=1)",
             "Ran 1 test in 0.1s\n\nFAILED (failures=1)",
             "OK\nRan 1 test in 0.1s\n\nFAILED (failures=1)",
+            (
+                "Ran 1 test in 0.1s\nFAILED (failures=1)\n"
+                "Python tests: 1; failures: 0; skipped: 0\n"
+            ),
+            (
+                "Ran 2 tests in 0.1s\nOK\n"
+                "Python tests: 1; failures: 0; skipped: 0\n"
+            ),
             "Python tests: 1; failures: 0; skipped: 1\n",
             "Python tests: 1; failures: 1; skipped: 0\n",
             "Runtime.Tests: Passed: 1, Failed: 0, Skipped: 1\n",
@@ -764,6 +772,70 @@ class ProgressiveRegressionTests(unittest.TestCase):
         self.assertEqual(1, len(spawned))
         self.assertIsNotNone(spawned[0].poll())
         self.assertFalse(regression._process_group_exists(spawned[0].pid))
+
+    def test_real_executor_memory_error_immediately_after_spawn_reaps_process_group(self) -> None:
+        spawned = []
+        real_popen = regression.subprocess.Popen
+
+        def capturing_popen(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            spawned.append(process)
+            return process
+
+        with mock.patch.object(
+            regression.subprocess, "Popen", side_effect=capturing_popen
+        ), mock.patch.object(
+            regression, "bytearray", side_effect=MemoryError, create=True
+        ), self.assertRaises(MemoryError):
+            regression._execute(
+                [sys.executable, "-c", "import time; time.sleep(10)"],
+                ROOT,
+                os.environ.copy(),
+                timeout_seconds=10,
+            )
+
+        self.assertEqual(1, len(spawned))
+        self.assertIsNotNone(spawned[0].poll())
+        self.assertFalse(regression._process_group_exists(spawned[0].pid))
+
+    def test_real_executor_memory_error_during_reader_join_reaps_process_group(self) -> None:
+        spawned = []
+        real_popen = regression.subprocess.Popen
+        real_join = regression.threading.Thread.join
+        raised = False
+        joined_threads = []
+
+        def capturing_popen(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            spawned.append(process)
+            return process
+
+        def interrupted_join(thread, timeout=None):
+            nonlocal raised
+            joined_threads.append(thread)
+            if not raised:
+                raised = True
+                raise MemoryError
+            return real_join(thread, timeout=timeout)
+
+        with mock.patch.object(
+            regression.subprocess, "Popen", side_effect=capturing_popen
+        ), mock.patch.object(
+            regression.threading.Thread, "join", new=interrupted_join
+        ), self.assertRaises(MemoryError):
+            regression._execute(
+                [sys.executable, "-c", "import time; time.sleep(0.05)"],
+                ROOT,
+                os.environ.copy(),
+                timeout_seconds=10,
+            )
+
+        self.assertTrue(raised)
+        self.assertEqual(1, len(spawned))
+        self.assertIsNotNone(spawned[0].poll())
+        self.assertFalse(regression._process_group_exists(spawned[0].pid))
+        self.assertTrue(joined_threads)
+        self.assertFalse(joined_threads[0].is_alive())
 
     def test_real_executor_fails_closed_without_process_group_support(self) -> None:
         with mock.patch.object(regression.os, "name", "nt"), mock.patch.object(
