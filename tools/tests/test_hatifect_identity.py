@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import unittest
 
@@ -21,15 +22,25 @@ class HatifectIdentityTests(unittest.TestCase):
                 self.assertTrue((ROOT / relative).is_dir())
 
     def test_first_party_manifests_use_hatifect_identity(self) -> None:
-        manifests = tuple(
-            path
-            for path in ROOT.rglob("manifest.json")
-            if "artifacts" not in path.relative_to(ROOT).parts
-        )
+        release = json.loads((ROOT / "Hatifect.Release.json").read_text(encoding="utf-8"))
+        declared = tuple(ROOT / module["Manifest"] for module in release["Modules"])
+        manifests = set(declared)
+        discovered: set[Path] = set()
+        generated_directories = {".git", ".smapi-test", "artifacts", "bin", "obj"}
+        for directory, names, files in os.walk(ROOT):
+            names[:] = [
+                name for name in names
+                if name not in generated_directories and not name.startswith(".")
+            ]
+            if "manifest.json" in files:
+                discovered.add(Path(directory) / "manifest.json")
 
         self.assertGreaterEqual(len(manifests), 2)
+        self.assertEqual(len(declared), len(manifests))
+        self.assertEqual(manifests, discovered)
         for path in manifests:
             with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                self.assertTrue(path.is_file())
                 manifest = json.loads(path.read_text(encoding="utf-8"))
                 self.assertTrue(manifest["UniqueID"].startswith("Hatifect."))
 

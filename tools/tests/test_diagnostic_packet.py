@@ -34,7 +34,9 @@ TIMESTAMP = "2026-09-13T00:00:00Z"
 
 class DiagnosticPacketTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.work = Path(tempfile.mkdtemp(prefix="hatifect-diagnostic-", dir=ROOT))
+        scratch = ROOT / "artifacts" / "test-temp"
+        scratch.mkdir(parents=True, exist_ok=True)
+        self.work = Path(tempfile.mkdtemp(prefix="hatifect-diagnostic-", dir=scratch))
         self.addCleanup(shutil.rmtree, self.work, True)
         self.runtime = self.work / "runtime"
         self.runtime.mkdir(mode=0o700)
@@ -382,7 +384,7 @@ class DiagnosticPacketTests(unittest.TestCase):
         self.addCleanup(os.close, descriptor)
         with self.assertRaises(PACKET.DiagnosticPacketError):
             PACKET._verify_repository_files(descriptor, ["../outside"])
-        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+        with tempfile.TemporaryDirectory(prefix="hatifect-diagnostic-links-") as directory:
             root = Path(directory)
             (root / "real.txt").write_text("x")
             (root / "link.txt").symlink_to(root / "real.txt")
