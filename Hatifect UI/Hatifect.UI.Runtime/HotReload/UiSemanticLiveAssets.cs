@@ -143,6 +143,7 @@ internal sealed class UiSemanticAssetWatches : IDisposable
     }
     private sealed class Watch : IDisposable
     {
+        private const int StampPollInterval = 60;
         private readonly string? _presentation;
         private readonly string? _visual;
         private readonly Action<string?, string?> _reload;
@@ -150,8 +151,11 @@ internal sealed class UiSemanticAssetWatches : IDisposable
         private readonly List<FileSystemWatcher> _watchers = new();
         private int _dirty = 1;
         private int _retryTicks;
+        private int _stampTicks = StampPollInterval;
         private int _retries;
         private bool _disposed;
+        private FileStamp _presentationStamp;
+        private FileStamp _visualStamp;
         internal UiSymbolId Experience { get; }
 
         internal Watch(UiSymbolId experience, string? presentation, string? visual,
@@ -183,8 +187,19 @@ internal sealed class UiSemanticAssetWatches : IDisposable
         internal bool Poll()
         {
             if (_disposed) return false;
-            if (Interlocked.Exchange(ref _dirty, 0) != 0) { _retries = 0; _retryTicks = 0; }
-            else if (_retryTicks == 0 || --_retryTicks > 0) return false;
+            if (Interlocked.Exchange(ref _dirty, 0) != 0)
+            {
+                _retries = 0;
+                _retryTicks = 0;
+                _stampTicks = StampPollInterval;
+                ObserveFileStamps();
+            }
+            else if (_retryTicks > 0)
+            {
+                if (--_retryTicks > 0) return false;
+            }
+            else if (!PollFileStamps()) return false;
+            else _retries = 0;
             string? presentation;
             string? visual;
             try { presentation = Read(_presentation); visual = Read(_visual); }
@@ -198,6 +213,22 @@ internal sealed class UiSemanticAssetWatches : IDisposable
             }
             _retries = 0;
             _reload(presentation, visual);
+            if (ObserveFileStamps()) Interlocked.Exchange(ref _dirty, 1);
+            return true;
+        }
+        private bool PollFileStamps()
+        {
+            if (--_stampTicks > 0) return false;
+            _stampTicks = StampPollInterval;
+            return ObserveFileStamps();
+        }
+        private bool ObserveFileStamps()
+        {
+            FileStamp presentation = FileStamp.Capture(_presentation);
+            FileStamp visual = FileStamp.Capture(_visual);
+            if (presentation == _presentationStamp && visual == _visualStamp) return false;
+            _presentationStamp = presentation;
+            _visualStamp = visual;
             return true;
         }
         private static string? Read(string? path)
@@ -226,6 +257,27 @@ internal sealed class UiSemanticAssetWatches : IDisposable
             _disposed = true;
             foreach (var watcher in _watchers) watcher.Dispose();
             _watchers.Clear();
+        }
+        private readonly record struct FileStamp(bool Exists, long Length, long LastWriteTicks)
+        {
+            internal static FileStamp Capture(string? path)
+            {
+                if (path == null) return default;
+                try
+                {
+                    var file = new FileInfo(path);
+                    file.Refresh();
+                    return file.Exists ? new(true, file.Length, file.LastWriteTimeUtc.Ticks) : default;
+                }
+                catch (IOException)
+                {
+                    return new(true, -1, -1);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return new(true, -1, -1);
+                }
+            }
         }
     }
 }

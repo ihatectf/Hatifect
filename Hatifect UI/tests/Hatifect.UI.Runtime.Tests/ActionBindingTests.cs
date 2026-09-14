@@ -637,7 +637,9 @@ public sealed partial class ActionBindingTests
         try
         {
             if (running) Assert.True(host.Interactions.Submit().ActionInvoked);
-            for (int i = 0; i < 100; i++) host.PumpActions();
+            // Concurrent assemblies can delay background tier promotion past a short warm-up.
+            // Reach steady-state code before measuring the per-frame allocation contract.
+            for (int i = 0; i < 10_000; i++) host.PumpActions();
             var frame = host.Frame;
             var layout = host.Layout;
             var performance = host.Performance;

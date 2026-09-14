@@ -202,13 +202,27 @@ public sealed class LiveSemanticAssetsTests
             using var watches = new UiSemanticAssetWatches();
             int errors = 0;
             int loaded = 0;
-            using var lease = watches.Add(Id("retry"), null, path, (_, _) => loaded++, _ => errors++);
+            string? observed = null;
+            string? rewriteAfterRead = null;
+            using var lease = watches.Add(Id("retry"), null, path, (_, visual) =>
+            {
+                loaded++;
+                observed = visual;
+                if (rewriteAfterRead == null) return;
+                File.WriteAllText(path, rewriteAfterRead);
+                rewriteAfterRead = null;
+            }, _ => errors++);
             using (var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
                 watches.Poll();
             Assert.Equal(1, errors);
             Assert.Equal(0, loaded);
             for (int tick = 0; tick < 30; tick++) watches.Poll();
             Assert.Equal(1, loaded);
+
+            rewriteAfterRead = "visual Latest Replacement";
+            File.WriteAllText(path, "visual Trigger");
+            for (int tick = 0; tick < 120 && observed != "visual Latest Replacement"; tick++) watches.Poll();
+            Assert.Equal("visual Latest Replacement", observed);
 
             using var missing = watches.Add(Id("missing"), null, Path.Combine(directory, "missing.visual"),
                 (_, _) => throw new InvalidOperationException("Missing file was loaded"), _ => errors++);

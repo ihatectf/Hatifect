@@ -225,6 +225,54 @@ class Inventory:
             raise InventoryError("selection contains no runnable projects; use --platform for game-linked tests")
         return selected
 
+    def affected_tests(self, changed_paths: tuple[str, ...], *, platform: bool = False) -> tuple[Project, ...]:
+        """Return tests that consume the projects owning the changed files.
+
+        Unknown repository files conservatively select the full matrix. This
+        keeps the opt-in iteration shortcut useful without allowing it to hide
+        a change that the static project graph cannot classify.
+        """
+        if not changed_paths:
+            raise InventoryError("affected-test selection has no changed files")
+        owners: set[str] = set()
+        project_directories = sorted(
+            ((PurePosixPath(path).parent, path) for path in self.projects),
+            key=lambda item: len(item[0].parts),
+            reverse=True,
+        )
+        for raw_path in changed_paths:
+            path = PurePosixPath(raw_path.replace("\\", "/"))
+            if path.is_absolute() or ".." in path.parts:
+                raise InventoryError(f"changed path escapes the repository: {raw_path!r}")
+            owner = next(
+                (
+                    project
+                    for directory, project in project_directories
+                    if path == PurePosixPath(project) or directory.parts and path.is_relative_to(directory)
+                ),
+                None,
+            )
+            if owner is None:
+                return self.select(tests=True, platform=platform)
+            owners.add(owner)
+
+        def consumes(relative: str, dependency: str, visited: set[str]) -> bool:
+            if relative == dependency:
+                return True
+            if relative in visited:
+                return False
+            visited.add(relative)
+            return any(consumes(item, dependency, visited) for item in self.dependencies[relative])
+
+        selected = tuple(
+            project
+            for project in self.select(tests=True, platform=platform)
+            if any(consumes(project.path, owner, set()) for owner in owners)
+        )
+        if not selected:
+            raise InventoryError("changed projects have no affected runnable tests")
+        return selected
+
     def is_platform(self, project: Project) -> bool:
         return self._platform[project.path]
 
