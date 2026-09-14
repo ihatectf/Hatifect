@@ -923,6 +923,11 @@
       "includeInAll": false,
       "timeoutSeconds": 1200,
       "requiredMods": ["Hatifect.UI", "Hatifect.Flow"],
+      "capabilities": [
+        {"id": "semantic-workflow", "required": true},
+        {"id": "user-session-gui", "required": true},
+        {"id": "quartz-post-events", "required": true}
+      ],
       "checks": [
         "flow.ui.player.input.loaded", "flow.ui.player.input.custody", "flow.ui.player.input.saving",
         "flow.ui.player.input.saved", "flow.ui.player.input.delivery", "flow.ui.player.input.lifecycle",

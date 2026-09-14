@@ -15,6 +15,23 @@ need_cmd python3
 run_dir="$(new_runtime_run_dir)"
 result="$run_dir/result.json"
 validator="$TOOLS_DIR/live-harness/validate.py"
+reproduction="$TOOLS_DIR/live-harness/reproduction.py"
+
+if [[ -n "${HATIFECT_REPRO_SOURCE_RUN_ID:-}" ]]; then
+  reproduction_from_phase="${HATIFECT_REPRO_FROM_PHASE:-preflight}"
+  if ! reproduction_seed="$(python3 "$reproduction" materialize \
+    "$HATIFECT_REPRO_SOURCE_RUN_ID" "$run_dir" ui "$scenario" \
+    --from "$reproduction_from_phase" --field seed)"; then
+    python3 "$validator" write-result BLOCKED "$scenario" "$result" \
+      "Targeted reproduction source evidence is invalid, stale, or unsafe." \
+      --run-id "$(basename "$run_dir")" \
+      --assertion-id HARNESS-REPRODUCTION-CHECKPOINT \
+      --artifact-root "$run_dir"
+    exit 2
+  fi
+  export HATIFECT_TEST_SEED="$reproduction_seed"
+  unset HATIFECT_REPRO_SOURCE_RUN_ID HATIFECT_REPRO_FROM_PHASE
+fi
 
 say "Hatifect UI TEST"
 say "Scenario: $scenario"

@@ -20,7 +20,7 @@ A step succeeds because the requested observable state appeared, not because an 
 
 ## Trust and authority boundaries
 
-The driver is outside Stardew, SMAPI and product assemblies. It receives only checked-in scenario instructions and request-owned detached diagnostics.
+The agent is outside Stardew, SMAPI and product assemblies. It receives only checked-in scenario instructions and request-owned detached diagnostics.
 
 Allowed authority:
 
@@ -39,13 +39,13 @@ Forbidden authority:
 - direct mutation of semantic/accessibility state;
 - synthesizing or weakening product PASS evidence.
 
-The product/harness owns acceptance. The driver owns only navigation and native user input.
+The product/harness owns acceptance. The agent owns only navigation and native user input.
 
 ## Layers
 
 ### Protocol and evidence layer
 
-`semantic_test_driver.py` owns:
+`semantic_test_agent.py` owns:
 
 - checked-in spec identity/version/path validation;
 - evidence path confinement below `diagnostics/`;
@@ -56,7 +56,7 @@ The product/harness owns acceptance. The driver owns only navigation and native 
 
 ### UI composition layer
 
-`semantic_driver_ui.py` composes the protocol with the generic semantic interaction engine. It adds the higher-level UI operations without mutating the base protocol module's operation registry/controller at import time.
+`semantic_agent_ui.py` composes the protocol with the generic semantic interaction engine. It adds the higher-level UI operations without mutating the base protocol module's operation registry/controller at import time.
 
 It is also responsible for ensuring raw native `text` is only possible when exactly one enabled semantic `TextField` reports focus.
 
@@ -74,7 +74,7 @@ It is also responsible for ensuring raw native `text` is only possible when exac
 
 ### Runtime observation layer
 
-The UI runtime publishes a read-only projection built from accessibility, interaction, scene and layout state. The live driver consumes that projection; it does not reconstruct product relationships from naming conventions.
+The UI runtime publishes a read-only projection built from accessibility, interaction, scene and layout state. The live agent consumes that projection; it does not reconstruct product relationships from naming conventions.
 
 ## Observation contract
 
@@ -98,7 +98,7 @@ Root-scroll viewport/clip/current offset/maximum offset is published at frame le
 
 For virtualized collections, the runtime's item node identity is the stable item identity. The projection maps each item node to the owning `UiCollectionLayoutWindow.Collection` using runtime scene/layout relationships and publishes that collection's semantic ID as `collectionId`.
 
-This mapping is architectural: the driver must not infer ownership from semantic-ID string prefixes, list indices, screen position or labels.
+This mapping is architectural: the agent must not infer ownership from semantic-ID string prefixes, list indices, screen position or labels.
 
 ## Deterministic resolution
 
@@ -223,7 +223,7 @@ These are correctness properties, not retry heuristics.
 
 Scenario input and product acceptance are separate concerns.
 
-The semantic driver may navigate to a control and emit exactly the intended native action. The owning scenario/runtime must still publish the domain evidence proving the product result. For example, a successful `activate` on a Send button is not shipment proof; the scenario must observe the shipment/result state it owns.
+The semantic agent may navigate to a control and emit exactly the intended native action. The owning scenario/runtime must still publish the domain evidence proving the product result. For example, a successful `activate` on a Send button is not shipment proof; the scenario must observe the shipment/result state it owns.
 
 The reference `flow.ui.player.input` workflow deliberately exercises:
 

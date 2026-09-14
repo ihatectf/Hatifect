@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
-DRIVER_PATH = ROOT / "tools/live-harness/semantic-test-driver.py"
+AGENT_PATH = ROOT / "tools/live-harness/semantic-test-agent.py"
 SPEC_PATH = ROOT / "tools/live-harness/semantic-tests/flow.ui.player.input.json"
 
 
@@ -18,22 +18,22 @@ def load(name, path):
     return module
 
 
-DRIVER = load("hatifect_semantic_textfield_driver", DRIVER_PATH)
+AGENT = load("hatifect_semantic_textfield_agent", AGENT_PATH)
 FIXTURE = load("semantic_input_fixture", Path(__file__).with_name("test_semantic_interactions.py"))
 
 
 class SemanticTextFieldSelectorTests(unittest.TestCase):
     def test_operation_infers_textfield_from_semantic_id_without_tree_order(self):
-        controller = object.__new__(DRIVER.SemanticController)
+        controller = object.__new__(AGENT.SemanticController)
         elements = [
             FIXTURE.element("group", "Group"),
             FIXTURE.element("label", "StaticText"),
             FIXTURE.element(),
         ]
         controller.latest = lambda **_kwargs: {"visible": True, "elements": elements}
-        with self.assertRaisesRegex(DRIVER.SemanticDriverError, "ambiguous.*TextField"):
+        with self.assertRaisesRegex(AGENT.SemanticAgentError, "ambiguous.*TextField"):
             controller.find_element(semantic="Example/field/name")
-        chosen = DRIVER.UI.resolve(
+        chosen = AGENT.UI.resolve(
             {"elements": elements},
             {"semantic": "Example/field/name"},
             "fill",
@@ -42,7 +42,7 @@ class SemanticTextFieldSelectorTests(unittest.TestCase):
 
     def test_reference_workflow_uses_generic_field_selection_and_reveal_ops(self):
         doc = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
-        DRIVER.validate_spec(copy.deepcopy(doc), "flow.ui.player.input")
+        AGENT.validate_spec(copy.deepcopy(doc), "flow.ui.player.input")
 
         focus = next(s for s in doc["steps"] if s["id"] == "focus-probe-name")
         self.assertEqual(focus["op"], "focus")
@@ -62,15 +62,15 @@ class SemanticTextFieldSelectorTests(unittest.TestCase):
         doc = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
         fill = next(s for s in doc["steps"] if s["op"] == "fill")
         fill["selector"] = {"semanticPrefix": "Example/field/"}
-        with self.assertRaisesRegex(DRIVER.SemanticDriverError, "exact semantic field ID"):
-            DRIVER.validate_spec(doc, "flow.ui.player.input")
+        with self.assertRaisesRegex(AGENT.SemanticAgentError, "exact semantic field ID"):
+            AGENT.validate_spec(doc, "flow.ui.player.input")
 
     def test_shared_engine_fills_without_manual_role_or_private_action_calls(self):
         host = FIXTURE.Host([
             FIXTURE.element("label", "StaticText", value=None),
             FIXTURE.element(value="abc"),
         ])
-        controller = object.__new__(DRIVER.SemanticController)
+        controller = object.__new__(AGENT.SemanticController)
         controller.variables = {}
         controller.backend = host.backend
         controller.latest = host.latest
@@ -90,7 +90,7 @@ class SemanticTextFieldSelectorTests(unittest.TestCase):
         self.assertTrue(host.data["elements"][1]["focused"])
 
     def test_new_operations_are_validated_without_mutating_base_registry(self):
-        original = set(DRIVER.CORE.ALLOWED_OPS)
+        original = set(AGENT.CORE.ALLOWED_OPS)
         for op, extra in (
             ("fill", {"selector": {"semantic": "Example/field/name"}, "value": "value"}),
             ("focus", {"selector": {"semantic": "Example/field/name"}}),
@@ -103,8 +103,8 @@ class SemanticTextFieldSelectorTests(unittest.TestCase):
             with self.subTest(operation=op):
                 doc = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
                 doc["steps"] = [{"id": "example", "op": op, **extra}]
-                self.assertIs(DRIVER.validate_spec(doc, doc["id"]), doc)
-        self.assertEqual(DRIVER.CORE.ALLOWED_OPS, original)
+                self.assertIs(AGENT.validate_spec(doc, doc["id"]), doc)
+        self.assertEqual(AGENT.CORE.ALLOWED_OPS, original)
 
     def test_invalid_new_operation_payloads_fail_before_input(self):
         for op, extra in (
@@ -116,22 +116,22 @@ class SemanticTextFieldSelectorTests(unittest.TestCase):
         ):
             doc = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
             doc["steps"] = [{"id": "bad", "op": op, **extra}]
-            with self.subTest(operation=op), self.assertRaises(DRIVER.SemanticDriverError):
-                DRIVER.validate_spec(doc, doc["id"])
+            with self.subTest(operation=op), self.assertRaises(AGENT.SemanticAgentError):
+                AGENT.validate_spec(doc, doc["id"])
 
     def test_native_pulse_releases_on_interruption(self):
-        backend = object.__new__(DRIVER.SemanticQuartzInput)
+        backend = object.__new__(AGENT.SemanticQuartzInput)
         backend._post = mock.Mock()
-        with mock.patch.object(DRIVER.time, "sleep", side_effect=KeyboardInterrupt):
+        with mock.patch.object(AGENT.time, "sleep", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 backend._pulse(1, 2, 0.1)
         self.assertEqual(backend._post.call_args_list, [mock.call(1), mock.call(2)])
 
     def test_native_pulse_checks_both_events_before_pressing(self):
-        backend = object.__new__(DRIVER.SemanticQuartzInput)
+        backend = object.__new__(AGENT.SemanticQuartzInput)
         backend._post = mock.Mock()
         backend._cf = mock.Mock()
-        with self.assertRaises(DRIVER.NATIVE.DriverError):
+        with self.assertRaises(AGENT.NATIVE.DriverError):
             backend._pulse(1, None, 0.1)
         backend._post.assert_not_called()
         backend._cf.CFRelease.assert_called_once_with(1)
