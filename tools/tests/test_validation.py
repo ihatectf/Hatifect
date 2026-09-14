@@ -978,6 +978,7 @@ class ValidationTests(unittest.TestCase):
             validation.RUNTIME_TEST_PROJECT: 703,
         }
         with patch.object(validation, "ROOT", self.root), \
+                patch.object(validation.os, "cpu_count", return_value=10), \
                 patch.object(validation, "Run") as run_type, \
                 patch.object(validation, "resolve_dotnet", return_value="/sdk/dotnet"), \
                 patch.object(validation, "EXPECTED_HOST_FREE_TEST_COUNTS", counts):
