@@ -1,6 +1,6 @@
-# Semantic live-test driver
+# Semantic live-test agent
 
-`semantic-test-driver.py` is the deterministic external GUI driver for Hatifect semantic acceptance tests. A scenario opts in by adding one checked-in spec:
+`semantic-test-agent.py` is the deterministic external GUI driver for Hatifect semantic acceptance tests. A scenario opts in by adding one checked-in spec:
 
 ```text
 tools/live-harness/semantic-tests/<scenario-id>.json
@@ -10,16 +10,16 @@ tools/live-harness/semantic-tests/<scenario-id>.json
 
 The shared implementation is split intentionally:
 
-- `semantic_test_driver.py` owns the bounded spec/evidence protocol and low-level compatibility operations;
-- `semantic_driver_ui.py` composes that protocol with the semantic UI interaction engine;
+- `semantic_test_agent.py` owns the bounded spec/evidence protocol and low-level compatibility operations;
+- `semantic_agent_ui.py` composes that protocol with the semantic UI interaction engine;
 - `semantic_interactions.py` owns deterministic control resolution and feedback-driven native interactions;
-- `semantic-test-driver.py` is the stable CLI entry point.
+- `semantic-test-agent.py` is the stable CLI entry point.
 
 The design and fail-closed invariants are documented in [`SEMANTIC_MODEL_AUTOTESTS.md`](SEMANTIC_MODEL_AUTOTESTS.md).
 
 ## Authority boundary
 
-The semantic driver may only:
+The semantic agent may only:
 
 - read request-owned detached JSON evidence under `artifacts/runtime/<request>/diagnostics/`;
 - resolve current UI controls from the semantic/accessibility observation;
@@ -161,7 +161,7 @@ Resolves a `Button`, normally by stable `action` identity, reveals and revalidat
 }
 ```
 
-The click is only an input event. Product/domain acceptance must be established by a later evidence predicate; the driver never replays an action merely to manufacture a result.
+The click is only an input event. Product/domain acceptance must be established by a later evidence predicate; the agent never replays an action merely to manufacture a result.
 
 ### `select`
 
@@ -256,7 +256,7 @@ The read-only UI observation exposes the data needed for deterministic input. Re
 - `collectionViewport`, `collectionClip`, `collectionScrollOffset`, `collectionMaximumOffset`;
 - `positionInSet`, `setSize` when available.
 
-The frame also exposes root-scroll viewport/clip/offset/maximum-offset metadata. Collection ownership is projected from runtime scene/layout relationships; the driver does not infer ownership by parsing semantic strings.
+The frame also exposes root-scroll viewport/clip/offset/maximum-offset metadata. Collection ownership is projected from runtime scene/layout relationships; the agent does not infer ownership by parsing semantic strings.
 
 ## Evidence predicates
 
@@ -299,7 +299,7 @@ Every operation that can change layout/input ownership follows these rules:
 5. send at most the intended native input;
 6. wait for an observed semantic/domain postcondition.
 
-The driver must fail or remain pending instead of guessing when:
+The agent must fail or remain pending instead of guessing when:
 
 - multiple valid targets remain;
 - a concrete node identity is duplicated;
@@ -314,7 +314,7 @@ The driver must fail or remain pending instead of guessing when:
 ## Adding a semantic test
 
 1. Keep product scenario and authoritative PASS checks in `scenarios.json`/the owning runtime. The semantic spec must not define product acceptance that belongs elsewhere.
-2. Publish only request-bound read-only evidence for facts the external driver must observe. Do not expose mutable runtime objects or direct command authority.
+2. Publish only request-bound read-only evidence for facts the external agent must observe. Do not expose mutable runtime objects or direct command authority.
 3. Expose stable semantic/action identity and the accessibility state required by the generic resolver.
 4. Add `semantic-tests/<scenario-id>.json` using generic operations rather than scenario-specific Python.
 5. Address UI by semantic/action/stable item identity, not coordinates or localized labels.
@@ -326,7 +326,7 @@ The driver must fail or remain pending instead of guessing when:
 
 ## Validation
 
-Fast semantic-driver regressions:
+Fast semantic-agent regressions:
 
 ```bash
 python3 -m unittest discover -s tools/tests -p 'test_semantic*.py'

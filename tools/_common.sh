@@ -377,5 +377,5 @@ validate_result_json() {
   need_cmd python3
 
   python3 "$TOOLS_DIR/live-harness/validate.py" \
-    validate-result "$path" "$expected_scenario"
+    validate-result "$path" "$expected_scenario" --require-failure-envelope
 }

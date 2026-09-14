@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+run_id="${1:-}"
+if [[ $# -eq 1 && ( "$run_id" == "--help" || "$run_id" == "-h" ) ]]; then
+  printf '%s\n' "Usage: ./tools/hatifect-diagnostic-packet <run-id>"
+  exit 0
+fi
+if [[ $# -ne 1 || -z "$run_id" || "$run_id" == -* ]]; then
+  printf '%s\n' "ERROR: Usage: ./tools/hatifect-diagnostic-packet <run-id>" >&2
+  exit 2
+fi
+
+exec python3 "$script_dir/live-harness/diagnostic_packet.py" "$run_id"

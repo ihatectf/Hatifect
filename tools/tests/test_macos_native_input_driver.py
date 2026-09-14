@@ -6,7 +6,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 DRIVER_PATH = ROOT / "tools" / "live-harness" / "macos_native_input_driver.py"
-SEMANTIC_DRIVER_PATH = ROOT / "tools" / "live-harness" / "semantic-test-driver.py"
+SEMANTIC_AGENT_PATH = ROOT / "tools" / "live-harness" / "semantic-test-agent.py"
 RUNNER_PATH = ROOT / "tools" / "hatifect-live-runner"
 UI_OBSERVER = ROOT / "Hatifect UI" / "Hatifect.UI.Stardew" / "Diagnostics" / "UiWindowInputObserver.cs"
 FLOW_SEQUENCE = ROOT / "Hatifect Flow" / "Diagnostics" / "FlowPlayerNativeSequence.cs"
@@ -30,16 +30,16 @@ class MacOsNativeInputDriverTests(unittest.TestCase):
 
     def test_runner_uses_semantic_spec_discovery_and_keeps_ordinary_exec_path(self) -> None:
         body = RUNNER_PATH.read_text(encoding="utf-8")
-        self.assertIn('semantic_test_driver="$TOOLS_DIR/live-harness/semantic-test-driver.py"', body)
+        self.assertIn('semantic_test_agent="$TOOLS_DIR/live-harness/semantic-test-agent.py"', body)
         self.assertIn('semantic_spec="$semantic_tests_root/$scenario.json"', body)
         self.assertIn('if [[ ! -f "$semantic_spec" ]]; then', body)
         self.assertIn('exec python3 "$user_session_runtime"', body)
         self.assertIn('native_input_backend="$TOOLS_DIR/live-harness/macos_native_input_driver.py"', body)
         self.assertIn('.cancel-requested', body)
-        self.assertIn('semantic_driver_exit', body)
-        self.assertIn('semantic test companion did not complete successfully', body)
+        self.assertIn('semantic_agent_exit', body)
+        self.assertIn('Semantic test companion exited', body)
         self.assertNotIn('[[ "$scenario" != "flow.ui.player.input" ]]', body)
-        self.assertTrue(SEMANTIC_DRIVER_PATH.is_file())
+        self.assertTrue(SEMANTIC_AGENT_PATH.is_file())
 
     def test_observers_publish_only_read_only_geometry_needed_for_pointer_projection(self) -> None:
         ui = UI_OBSERVER.read_text(encoding="utf-8")

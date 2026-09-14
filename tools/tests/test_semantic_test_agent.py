@@ -9,28 +9,45 @@ from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DRIVER_PATH = ROOT / "tools" / "live-harness" / "semantic-test-driver.py"
-ENGINE_PATH = ROOT / "tools" / "live-harness" / "semantic_driver_ui.py"
+AGENT_PATH = ROOT / "tools" / "live-harness" / "semantic-test-agent.py"
+ENGINE_PATH = ROOT / "tools" / "live-harness" / "semantic_agent_ui.py"
 INTERACTIONS_PATH = ROOT / "tools" / "live-harness" / "semantic_interactions.py"
 SPEC_PATH = ROOT / "tools" / "live-harness" / "semantic-tests" / "flow.ui.player.input.json"
 RUNNER_PATH = ROOT / "tools" / "hatifect-live-runner"
 
-SPEC = importlib.util.spec_from_file_location("hatifect_semantic_test_driver", DRIVER_PATH)
+SPEC = importlib.util.spec_from_file_location("hatifect_semantic_test_agent", AGENT_PATH)
 assert SPEC is not None and SPEC.loader is not None
-DRIVER = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(DRIVER)
+AGENT = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(AGENT)
 
 
-class SemanticTestDriverTests(unittest.TestCase):
+class SemanticTestAgentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.document = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
 
+    def _workflow(self, steps: list[dict]) -> dict:
+        document = copy.deepcopy(self.document)
+        document["steps"] = steps
+        return document
+
+    @staticmethod
+    def _capture_steps(count: int) -> list[dict]:
+        return [
+            {
+                "id": f"capture-{index}",
+                "op": "capture",
+                "source": "domain",
+                "variable": f"captured{index}",
+            }
+            for index in range(count)
+        ]
+
     def test_checked_in_flow_workflow_is_valid_bounded_and_model_driven(self) -> None:
-        validated = DRIVER.validate_spec(copy.deepcopy(self.document), "flow.ui.player.input")
+        validated = AGENT.validate_spec(copy.deepcopy(self.document), "flow.ui.player.input")
         self.assertEqual(validated["schemaVersion"], 1)
         self.assertEqual(validated["platform"], "macos-quartz")
         self.assertGreaterEqual(len(validated["steps"]), 90)
-        self.assertLessEqual(len(validated["steps"]), DRIVER.MAX_STEPS)
+        self.assertLessEqual(len(validated["steps"]), AGENT.MAX_STEPS)
         ids = [step["id"] for step in validated["steps"]]
         self.assertEqual(len(ids), len(set(ids)))
 
@@ -85,10 +102,10 @@ class SemanticTestDriverTests(unittest.TestCase):
         self.assertTrue(fills)
         self.assertTrue(all(set(step["selector"]) == {"semantic"} for step in fills))
 
-    def test_driver_has_no_direct_hatifect_execution_backdoor(self) -> None:
+    def test_agent_has_no_direct_hatifect_execution_backdoor(self) -> None:
         body = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in (DRIVER_PATH, ENGINE_PATH, INTERACTIONS_PATH)
+            for path in (AGENT_PATH, ENGINE_PATH, INTERACTIONS_PATH)
         )
         for forbidden in (
             "ActionAutomation", "InsertAutomationText", "FlowNetworkCommand(", "FlowSendCommand(",
@@ -105,42 +122,239 @@ class SemanticTestDriverTests(unittest.TestCase):
             with self.subTest(operation=operation):
                 document = copy.deepcopy(self.document)
                 document["steps"][0]["op"] = operation
-                with self.assertRaisesRegex(DRIVER.SemanticDriverError, "Unsupported semantic test operation"):
-                    DRIVER.validate_spec(document, "flow.ui.player.input")
+                with self.assertRaisesRegex(AGENT.SemanticAgentError, "Unsupported semantic test operation"):
+                    AGENT.validate_spec(document, "flow.ui.player.input")
 
         document = copy.deepcopy(self.document)
         document["evidence"]["domain"]["path"] = "../foreign.json"
-        with self.assertRaisesRegex(DRIVER.SemanticDriverError, "below diagnostics"):
-            DRIVER.validate_spec(document, "flow.ui.player.input")
+        with self.assertRaisesRegex(AGENT.SemanticAgentError, "below diagnostics"):
+            AGENT.validate_spec(document, "flow.ui.player.input")
 
     def test_spec_rejects_duplicate_steps_ambiguous_predicates_and_foreign_identity(self) -> None:
         document = copy.deepcopy(self.document)
         document["steps"][1]["id"] = document["steps"][0]["id"]
-        with self.assertRaisesRegex(DRIVER.SemanticDriverError, "unique"):
-            DRIVER.validate_spec(document, "flow.ui.player.input")
+        with self.assertRaisesRegex(AGENT.SemanticAgentError, "unique"):
+            AGENT.validate_spec(document, "flow.ui.player.input")
 
         document = copy.deepcopy(self.document)
         wait = next(step for step in document["steps"] if step["op"] == "wait")
         wait["conditions"][0]["truthy"] = True
-        with self.assertRaisesRegex(DRIVER.SemanticDriverError, "exactly one predicate"):
-            DRIVER.validate_spec(document, "flow.ui.player.input")
+        with self.assertRaisesRegex(AGENT.SemanticAgentError, "exactly one predicate"):
+            AGENT.validate_spec(document, "flow.ui.player.input")
 
-        with self.assertRaisesRegex(DRIVER.SemanticDriverError, "identity/version mismatch"):
-            DRIVER.validate_spec(copy.deepcopy(self.document), "other.scenario")
+        with self.assertRaisesRegex(AGENT.SemanticAgentError, "identity/version mismatch"):
+            AGENT.validate_spec(copy.deepcopy(self.document), "other.scenario")
 
     def test_templates_paths_and_transforms_are_deterministic(self) -> None:
         variables = {"count": 3, "name": "alpha"}
-        self.assertEqual(DRIVER._template("${count}", variables), 3)
-        self.assertEqual(DRIVER._template("x-${name}-${count}", variables), "x-alpha-3")
+        self.assertEqual(AGENT._template("${count}", variables), 3)
+        self.assertEqual(AGENT._template("x-${name}-${count}", variables), "x-alpha-3")
         state = {"items": [{"value": "a"}, {"value": "b"}], "Nested": {"Flag": True}}
-        self.assertEqual(DRIVER._path(state, "items[-1].value"), "b")
-        self.assertTrue(DRIVER._path(state, "nested.flag"))
+        self.assertEqual(AGENT._path(state, "items[-1].value"), "b")
+        self.assertTrue(AGENT._path(state, "nested.flag"))
         parcel = "12345678-1234-4234-8234-123456789abc"
-        self.assertEqual(DRIVER._transform(parcel, "uuidHex"), "12345678123442348234123456789abc")
-        self.assertEqual(DRIVER._transform([1, 2, 3], "count"), 3)
+        self.assertEqual(AGENT._transform(parcel, "uuidHex"), "12345678123442348234123456789abc")
+        self.assertEqual(AGENT._transform([1, 2, 3], "count"), 3)
+
+    def test_variable_environment_accepts_exact_total_budget(self) -> None:
+        document = self._workflow(
+            self._capture_steps(
+                AGENT.MAX_VARIABLES - len(AGENT.INITIAL_VARIABLE_NAMES)
+            )
+        )
+
+        self.assertIs(
+            AGENT.validate_spec(document, "flow.ui.player.input"),
+            document,
+        )
+
+    def test_variable_environment_rejects_total_budget_plus_one(self) -> None:
+        document = self._workflow(
+            self._capture_steps(
+                AGENT.MAX_VARIABLES
+                - len(AGENT.INITIAL_VARIABLE_NAMES)
+                + 1
+            )
+        )
+
+        with self.assertRaisesRegex(
+            AGENT.SemanticAgentError,
+            "variable budget exhausted",
+        ):
+            AGENT.validate_spec(document, "flow.ui.player.input")
+
+    def test_126_unique_captures_exceed_three_initial_variables(self) -> None:
+        document = self._workflow(self._capture_steps(126))
+
+        with self.assertRaisesRegex(
+            AGENT.SemanticAgentError,
+            "variable budget exhausted",
+        ):
+            AGENT.validate_spec(document, "flow.ui.player.input")
+
+    def test_mixed_capture_and_discover_variables_share_one_budget(self) -> None:
+        steps = self._capture_steps(124)
+        steps.extend(
+            {
+                "id": f"discover-{index}",
+                "op": "discover",
+                "variable": f"discovered{index}",
+            }
+            for index in range(2)
+        )
+
+        with self.assertRaisesRegex(
+            AGENT.SemanticAgentError,
+            "variable budget exhausted",
+        ):
+            AGENT.validate_spec(
+                self._workflow(steps),
+                "flow.ui.player.input",
+            )
+
+    def test_variable_overwrite_does_not_consume_budget_in_validator_or_runtime(self) -> None:
+        steps = self._capture_steps(
+            AGENT.MAX_VARIABLES - len(AGENT.INITIAL_VARIABLE_NAMES)
+        )
+        steps.append(
+            {
+                "id": "overwrite-existing",
+                "op": "capture",
+                "source": "domain",
+                "variable": "captured0",
+            }
+        )
+        document = self._workflow(steps)
+
+        AGENT.validate_spec(document, "flow.ui.player.input")
+
+        for operation in ("capture", "discover"):
+            with self.subTest(operation=operation):
+                controller = object.__new__(AGENT.SemanticController)
+                controller.variables = {
+                    "requestId": "request",
+                    "requestHex": "request-hex",
+                    "scenarioId": "scenario",
+                    "existing": "old",
+                    **{
+                        f"filler{index}": index
+                        for index in range(AGENT.MAX_VARIABLES - 4)
+                    },
+                }
+                controller.value = lambda *_args, **_kwargs: "new"
+                controller._record = lambda *_args, **_kwargs: None
+                controller._controls = SimpleNamespace(
+                    discover=lambda: "new",
+                )
+                step = {
+                    "id": "overwrite-runtime",
+                    "op": operation,
+                    "variable": "existing",
+                }
+                if operation == "capture":
+                    step["source"] = "domain"
+
+                controller.execute(step)
+
+                self.assertEqual(controller.variables["existing"], "new")
+                self.assertEqual(
+                    len(controller.variables),
+                    AGENT.MAX_VARIABLES,
+                )
+
+    def test_capture_variable_name_is_bounded_to_96_characters(self) -> None:
+        document = self._workflow(
+            [
+                {
+                    "id": "capture-long-name",
+                    "op": "capture",
+                    "source": "domain",
+                    "variable": "v" * 97,
+                }
+            ]
+        )
+
+        with self.assertRaisesRegex(
+            AGENT.SemanticAgentError,
+            "capture variable is invalid",
+        ):
+            AGENT.validate_spec(document, "flow.ui.player.input")
+
+    def test_unknown_and_forward_template_references_are_rejected(self) -> None:
+        invalid_steps = (
+            [
+                {
+                    "id": "unknown-template",
+                    "op": "text",
+                    "value": "${missing}",
+                }
+            ],
+            [
+                {
+                    "id": "forward-template",
+                    "op": "text",
+                    "value": "${later}",
+                },
+                {
+                    "id": "capture-later",
+                    "op": "capture",
+                    "source": "domain",
+                    "variable": "later",
+                },
+            ],
+            [
+                {
+                    "id": "forward-discover-template",
+                    "op": "text",
+                    "value": "${discoveredLater}",
+                },
+                {
+                    "id": "discover-later",
+                    "op": "discover",
+                    "variable": "discoveredLater",
+                },
+            ],
+        )
+        for steps in invalid_steps:
+            with self.subTest(first_step=steps[0]["id"]):
+                with self.assertRaisesRegex(
+                    AGENT.SemanticAgentError,
+                    "Unknown semantic test variable",
+                ):
+                    AGENT.validate_spec(
+                        self._workflow(steps),
+                        "flow.ui.player.input",
+                    )
+
+    def test_initial_and_previous_step_template_references_are_accepted(self) -> None:
+        steps = [
+            {
+                "id": "initial-template",
+                "op": "text",
+                "value": "${requestId}",
+            },
+            {
+                "id": "capture-prior",
+                "op": "capture",
+                "source": "domain",
+                "variable": "prior",
+            },
+            {
+                "id": "prior-template",
+                "op": "fill",
+                "selector": {"semantic": "Example/${prior}"},
+                "value": "prefix-${prior}",
+            },
+        ]
+        document = self._workflow(steps)
+
+        self.assertIs(
+            AGENT.validate_spec(document, "flow.ui.player.input"),
+            document,
+        )
 
     def test_predicates_cover_state_counts_identity_and_retained_phases(self) -> None:
-        predicate = DRIVER.SemanticController._predicate
+        predicate = AGENT.SemanticController._predicate
         self.assertTrue(predicate([1, 2], {"countGreaterThan": 1}))
         self.assertTrue(predicate("ready", {"startsWith": "rea"}))
         self.assertTrue(predicate(
@@ -162,7 +376,7 @@ class SemanticTestDriverTests(unittest.TestCase):
         ))
 
     def test_pending_evidence_retries_but_contract_failures_do_not(self) -> None:
-        controller = object.__new__(DRIVER.SemanticController)
+        controller = object.__new__(AGENT.SemanticController)
         controller.deadline = time.monotonic() + 1
         attempts = 0
 
@@ -170,20 +384,20 @@ class SemanticTestDriverTests(unittest.TestCase):
             nonlocal attempts
             attempts += 1
             if attempts < 3:
-                raise DRIVER.SemanticEvidencePending("frame not ready")
+                raise AGENT.SemanticEvidencePending("frame not ready")
             return "ready"
 
         self.assertEqual(controller._wait("pending frame", pending_then_ready, seconds=0.5), "ready")
         self.assertEqual(attempts, 3)
-        with self.assertRaisesRegex(DRIVER.SemanticDriverError, "foreign identity"):
+        with self.assertRaisesRegex(AGENT.SemanticAgentError, "foreign identity"):
             controller._wait(
                 "fatal identity",
-                lambda: (_ for _ in ()).throw(DRIVER.SemanticDriverError("foreign identity")),
+                lambda: (_ for _ in ()).throw(AGENT.SemanticAgentError("foreign identity")),
                 seconds=0.5,
             )
 
         controller.latest = lambda **_kwargs: {"visible": True, "elements": []}
-        with self.assertRaises(DRIVER.SemanticElementPending):
+        with self.assertRaises(AGENT.SemanticElementPending):
             controller.find_element(semantic="A/B")
         duplicate = {
             "nodeId": "one",
@@ -196,12 +410,12 @@ class SemanticTestDriverTests(unittest.TestCase):
             "visible": True,
             "elements": [duplicate, {**duplicate, "nodeId": "two"}],
         }
-        with self.assertRaisesRegex(DRIVER.SemanticDriverError, "ambiguous"):
+        with self.assertRaisesRegex(AGENT.SemanticAgentError, "ambiguous"):
             controller.find_element(semantic="A/B")
 
     def test_minimal_spec_runs_against_detached_evidence_without_native_backend_calls(self) -> None:
         request_id = "11111111-1111-4111-8111-111111111111"
-        with tempfile.TemporaryDirectory(prefix="hatifect-semantic-driver-test.") as temporary:
+        with tempfile.TemporaryDirectory(prefix="hatifect-semantic-agent-test.") as temporary:
             artifact = Path(temporary) / request_id
             diagnostics = artifact / "diagnostics"
             diagnostics.mkdir(parents=True)
@@ -249,14 +463,14 @@ class SemanticTestDriverTests(unittest.TestCase):
                     },
                 ],
             }
-            DRIVER.validate_spec(copy.deepcopy(spec), "example.semantic")
+            AGENT.validate_spec(copy.deepcopy(spec), "example.semantic")
             backend = SimpleNamespace()
-            controller = DRIVER.SemanticController(
+            controller = AGENT.SemanticController(
                 artifact, request_id, "example.semantic", 5, backend, spec, "a" * 64
             )
             controller.run_spec()
             status = json.loads(
-                (diagnostics / "semantic-test-driver.json").read_text(encoding="utf-8")
+                (diagnostics / "semantic-test-agent.json").read_text(encoding="utf-8")
             )
             self.assertEqual(status["state"], "Completed")
             self.assertEqual(status["variables"]["observed"], 3)
@@ -265,7 +479,7 @@ class SemanticTestDriverTests(unittest.TestCase):
     def test_live_runner_discovers_checked_in_semantic_specs_instead_of_scenario_code(self) -> None:
         runner = RUNNER_PATH.read_text(encoding="utf-8")
         self.assertIn(
-            'semantic_test_driver="$TOOLS_DIR/live-harness/semantic-test-driver.py"',
+            'semantic_test_agent="$TOOLS_DIR/live-harness/semantic-test-agent.py"',
             runner,
         )
         self.assertIn(

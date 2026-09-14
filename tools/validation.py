@@ -167,6 +167,7 @@ class Run:
             raise ValidationError(f"Python tooling tests failed or skipped; log: {log}")
 
     def static(self) -> None:
+        self.command("agent-setup", [sys.executable, str(self.root / "tools/agent_setup.py")])
         self.command("architecture", [sys.executable, str(self.root / "tools/architecture_check.py")])
         self.command("semantic-public-api", [sys.executable, str(self.root / "Hatifect UI/tools/verify_public_api.py")])
         self.python_tests()
@@ -264,19 +265,23 @@ class Run:
                 f"-bl:{self.directory / 'build.binlog'}", *properties,
             ])
 
-    def tests(self, projects: tuple[Project, ...], dotnet: str) -> None:
+    def tests(self, projects: tuple[Project, ...], dotnet: str,
+              test_filter: str | None = None) -> None:
         properties = list(BUILD_PROPERTIES)
         if os.environ.get("HATIFECT_GAME_PATH"):
             properties.append("-p:GamePath=" + os.environ["HATIFECT_GAME_PATH"])
         for project in projects:
             directory = self.directory / "tests" / project.identifier
             directory.mkdir(parents=True)
-            self.command(project.identifier, [
+            arguments = [
                 dotnet, "test", str(self.root / project.path), "-c", "Release",
                 "--no-build", "--no-restore", "--verbosity", "minimal",
                 "--logger", "trx;LogFileName=tests.trx", "--results-directory", str(directory),
                 *properties,
-            ])
+            ]
+            if test_filter is not None:
+                arguments.extend(("--filter", f"FullyQualifiedName={test_filter}"))
+            self.command(project.identifier, arguments)
             try:
                 counts = read_trx(directory / "tests.trx")
             except ValidationError:
@@ -303,6 +308,10 @@ def main() -> int:
     modes.add_argument("--platform", action="store_true", help="also build/test game-linked projects; never deploy")
     modes.add_argument("--host-free", action="store_true", help="explicit default: no game-linked projects")
     parser.add_argument("--project", help="one solution test project, used by the CI matrix")
+    parser.add_argument(
+        "--test-filter",
+        help="one exact FullyQualifiedName within --project, for local Level 1 regression",
+    )
     parser.add_argument("--no-build", action="store_true", help="test an already built Release candidate without restoring or rebuilding")
     parser.add_argument("--results-directory", type=Path, help="parent directory for a fresh evidence run")
     args = parser.parse_args()
@@ -312,6 +321,14 @@ def main() -> int:
             raise ValidationError("--no-build is valid only for hatifect-test")
         if args.project and args.command != "test":
             raise ValidationError("--project is valid only for hatifect-test")
+        if args.test_filter is not None and (
+            args.command != "test"
+            or not args.project
+            or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.+`]*", args.test_filter) is None
+        ):
+            raise ValidationError(
+                "--test-filter requires hatifect-test --project and one exact FullyQualifiedName"
+            )
         if (args.command == "static" or args.scope == "tools") and (args.platform or args.project):
             raise ValidationError("static/tooling validation does not accept platform or project selectors")
         if args.command == "static":
@@ -331,7 +348,7 @@ def main() -> int:
                 run.build(inventory, selected, resolve_dotnet())
             if args.command != "build":
                 tests = inventory.select(tests=True, scope=args.scope, platform=args.platform, project=args.project)
-                run.tests(tests, test_dotnet)
+                run.tests(tests, test_dotnet, args.test_filter)
         run.finish("PASS", "all selected validation stages satisfied", platform_requested=args.platform)
         return 0
     except (InventoryError, ValidationError) as error:

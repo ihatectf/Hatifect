@@ -65,6 +65,18 @@ class SaveProvisioningTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_missing_fixture_probe_is_read_only(self) -> None:
+        before = sorted(path.relative_to(self.isolated) for path in self.isolated.rglob("*"))
+
+        with self.assertRaisesRegex(
+            SAVE.SaveProvisioningError,
+            "No compatible versioned golden save fixture",
+        ):
+            SAVE.probe_fixture(self.isolated, self.smapi)
+
+        after = sorted(path.relative_to(self.isolated) for path in self.isolated.rglob("*"))
+        self.assertEqual(after, before)
+
     def _bootstrap(self, run_id: str | None = None, save_xml: bytes = b"complete-save") -> tuple[str, Path]:
         run_id = run_id or str(uuid.uuid4())
         target = SAVE.bootstrap_preflight(self.isolated, self.smapi, run_id)
