@@ -351,76 +351,91 @@ internal sealed class UiSceneRenderPlanner
             if (node is UiCollectionSceneNode collection &&
                 layout.TryGetCollection(node.Id, out UiCollectionLayoutWindow? window) &&
                 window != null)
-            {
-                foreach (UiVirtualizedItemLayout item in window.Items)
-                {
-                    if (item.Clip.Width <= 0 || item.Clip.Height <= 0) continue;
-                    UiVisualResolution itemVisual = collection.VisualFor(item.Node, item.Item.Id, interaction);
-                    UiOpacity itemOpacity = Value(itemVisual, "opacity", opacity);
-                    UiTransform itemTransform = Value(itemVisual, "transform", transform);
-                    if (TrySurface(itemVisual, out UiSurface itemSurface))
-                    {
-                        primitives.Add(new UiSurfacePrimitive(
-                            item.Node,
-                            item.Bounds,
-                            item.Clip,
-                            itemSurface,
-                            Value(itemVisual, "radius", new UiCornerRadius(0)),
-                            Optional<UiBorder>(itemVisual, "border"),
-                            OptionalReference<UiElevation>(itemVisual, "elevation"),
-                            itemOpacity,
-                            itemTransform));
-                    }
-                    if (item.Item.Icon is { } icon && item.IconBounds is { } iconBounds)
-                        primitives.Add(new UiSurfacePrimitive(item.Node, iconBounds, item.Clip,
-                            UiSurface.Texture(icon, new UiColor(255, 255, 255), pixelSnap: true),
-                            new UiCornerRadius(0), null, null, itemOpacity, itemTransform));
-                    if (!TryValue(itemVisual, "foreground", out UiColor itemForeground) ||
-                        !TryValue(itemVisual, "typography", out UiTypography itemTypography))
-                        continue;
-                    primitives.Add(new UiTextPrimitive(
-                        item.Node,
-                        item.LabelBounds,
-                        item.Clip,
-                        item.Item.Label,
-                        itemForeground,
-                        itemTypography,
-                        UiTextOverflow.Ellipsis,
-                        itemOpacity,
-                        itemTransform));
-                    if (collection.InputPrompt is { } prompt && item.InputPromptBounds is { } promptBounds)
-                    {
-                        primitives.Add(new UiTextPrimitive(
-                            item.Node,
-                            promptBounds,
-                            item.Clip,
-                            prompt.Label,
-                            Value(itemVisual, "prompt.foreground", itemForeground),
-                            Value(itemVisual, "prompt.typography", itemTypography),
-                            UiTextOverflow.Clip,
-                            itemOpacity,
-                            itemTransform));
-                    }
-                    if (item.SupportingBounds is { } supportingBounds &&
-                        !string.IsNullOrWhiteSpace(item.Item.SupportingText))
-                    {
-                        primitives.Add(new UiTextPrimitive(
-                            item.Node,
-                            supportingBounds,
-                            item.Clip,
-                            item.Item.SupportingText!,
-                            itemForeground,
-                            itemTypography,
-                            item.SupportingOverflow,
-                            itemOpacity,
-                            itemTransform));
-                    }
-                }
-            }
+                AddCollectionItemPrimitives(
+                    collection,
+                    window,
+                    interaction,
+                    opacity,
+                    transform,
+                    primitives);
         }
 
         foreach (UiSceneNode child in node.Children)
             Visit(child, layout, interaction, textMetrics, primitives, actions);
+    }
+
+    private static void AddCollectionItemPrimitives(
+        UiCollectionSceneNode collection,
+        UiCollectionLayoutWindow window,
+        UiInteractionSnapshot? interaction,
+        UiOpacity opacity,
+        UiTransform transform,
+        ICollection<UiRenderPrimitive> primitives)
+    {
+        foreach (UiVirtualizedItemLayout item in window.Items)
+        {
+            if (item.Clip.Width <= 0 || item.Clip.Height <= 0) continue;
+            UiVisualResolution itemVisual = collection.VisualFor(item.Node, item.Item.Id, interaction);
+            UiOpacity itemOpacity = Value(itemVisual, "opacity", opacity);
+            UiTransform itemTransform = Value(itemVisual, "transform", transform);
+            if (TrySurface(itemVisual, out UiSurface itemSurface))
+            {
+                primitives.Add(new UiSurfacePrimitive(
+                    item.Node,
+                    item.Bounds,
+                    item.Clip,
+                    itemSurface,
+                    Value(itemVisual, "radius", new UiCornerRadius(0)),
+                    Optional<UiBorder>(itemVisual, "border"),
+                    OptionalReference<UiElevation>(itemVisual, "elevation"),
+                    itemOpacity,
+                    itemTransform));
+            }
+            if (item.Item.Icon is { } icon && item.IconBounds is { } iconBounds)
+                primitives.Add(new UiSurfacePrimitive(item.Node, iconBounds, item.Clip,
+                    UiSurface.Texture(icon, new UiColor(255, 255, 255), pixelSnap: true),
+                    new UiCornerRadius(0), null, null, itemOpacity, itemTransform));
+            if (!TryValue(itemVisual, "foreground", out UiColor itemForeground) ||
+                !TryValue(itemVisual, "typography", out UiTypography itemTypography))
+                continue;
+            primitives.Add(new UiTextPrimitive(
+                item.Node,
+                item.LabelBounds,
+                item.Clip,
+                item.Item.Label,
+                itemForeground,
+                itemTypography,
+                UiTextOverflow.Ellipsis,
+                itemOpacity,
+                itemTransform));
+            if (collection.InputPrompt is { } prompt && item.InputPromptBounds is { } promptBounds)
+            {
+                primitives.Add(new UiTextPrimitive(
+                    item.Node,
+                    promptBounds,
+                    item.Clip,
+                    prompt.Label,
+                    Value(itemVisual, "prompt.foreground", itemForeground),
+                    Value(itemVisual, "prompt.typography", itemTypography),
+                    UiTextOverflow.Clip,
+                    itemOpacity,
+                    itemTransform));
+            }
+            if (item.SupportingBounds is { } supportingBounds &&
+                !string.IsNullOrWhiteSpace(item.Item.SupportingText))
+            {
+                primitives.Add(new UiTextPrimitive(
+                    item.Node,
+                    supportingBounds,
+                    item.Clip,
+                    item.Item.SupportingText!,
+                    itemForeground,
+                    itemTypography,
+                    item.SupportingOverflow,
+                    itemOpacity,
+                    itemTransform));
+            }
+        }
     }
 
     private static void AddSelection(

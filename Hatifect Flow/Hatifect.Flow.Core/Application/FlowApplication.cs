@@ -44,11 +44,19 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
         RequireIdle();
         if (_snapshot.State is FlowApplicationState.Closed or FlowApplicationState.Faulted)
             return Result(FlowCommandStatus.SessionClosed, _snapshot.Code);
-        if (recovery ? _snapshot.State != FlowApplicationState.RecoveryRequired : _snapshot.State != FlowApplicationState.Active)
+        FlowApplicationState requiredState = recovery
+            ? FlowApplicationState.RecoveryRequired
+            : FlowApplicationState.Active;
+        if (_snapshot.State != requiredState)
             return Result(FlowCommandStatus.Rejected, _snapshot.Code);
-        if (!recovery && !_canExecute()) return Result(FlowCommandStatus.Rejected, FlowRejectionCode.ProviderUnavailable);
-        if (session != _snapshot.SessionId) return Result(FlowCommandStatus.Conflict, FlowRejectionCode.StaleSession);
-        return revision != _snapshot.Revision ? Result(FlowCommandStatus.Conflict, FlowRejectionCode.StaleRevision) : null;
+        if (!recovery && !_canExecute())
+            return Result(FlowCommandStatus.Rejected, FlowRejectionCode.ProviderUnavailable);
+        if (session != _snapshot.SessionId)
+            return Result(FlowCommandStatus.Conflict, FlowRejectionCode.StaleSession);
+        if (revision != _snapshot.Revision)
+            return Result(FlowCommandStatus.Conflict, FlowRejectionCode.StaleRevision);
+
+        return null;
     }
 
     public FlowSnapshot ReadSnapshot()
@@ -61,33 +69,30 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
     {
         RequireIdle();
         ArgumentNullException.ThrowIfNull(command);
+
         FlowCommandResult? invalid = ValidateExternalCommand(command.SessionId, command.ExpectedRevision);
-        if (invalid is not null) return invalid;
-        if (!Enum.IsDefined(typeof(FlowParcelAction), command.Action)) return Result(FlowCommandStatus.InvalidCommand);
+        if (invalid is not null)
+            return invalid;
+        if (!Enum.IsDefined(typeof(FlowParcelAction), command.Action))
+            return Result(FlowCommandStatus.InvalidCommand);
+
         FlowParcelSnapshot? parcel = _snapshot.Parcels.FirstOrDefault(value => value.Id == command.ParcelId);
-        if (parcel is null) return Result(FlowCommandStatus.InvalidCommand, FlowRejectionCode.ParcelNotFound);
+        if (parcel is null)
+            return Result(FlowCommandStatus.InvalidCommand, FlowRejectionCode.ParcelNotFound);
+
         FlowActionAvailability availability = parcel.Availability[command.Action];
-        if (!availability.Available) return Result(FlowCommandStatus.Rejected, availability.Code);
+        if (!availability.Available)
+            return Result(FlowCommandStatus.Rejected, availability.Code);
+
         bool applied = false;
         _operating = true;
         try
         {
-            _execute(runtime =>
-            {
-                var id = new ParcelId(command.ParcelId);
-                applied = command.Action switch
-                {
-                    FlowParcelAction.Reserve => runtime.TryReserve(id),
-                    FlowParcelAction.Cancel => runtime.Cancel(id),
-                    FlowParcelAction.RetryDelivery => runtime.RetryDelivery(id),
-                    FlowParcelAction.ReconcileTransfer => runtime.ReconcileTransfer(id),
-                    FlowParcelAction.ReturnToSource => runtime.ReturnToSource(id),
-                    _ => false
-                };
-            });
+            _execute(runtime => applied = ApplyParcelCommand(runtime, command));
         }
         catch (Exception error)
         {
+            // Closing publishes a fault notification, so it must run outside the operation guard.
             _operating = false;
             Close(FlowApplicationState.Faulted);
             Report(error);
@@ -97,16 +102,38 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
         {
             _operating = false;
         }
-        try { Refresh(); }
+        try
+        {
+            Refresh();
+        }
         catch (Exception error)
         {
             Close(FlowApplicationState.Faulted);
             Report(error);
             return Result(FlowCommandStatus.Faulted);
         }
-        return applied ? Result(FlowCommandStatus.Applied)
-            : Result(FlowCommandStatus.Rejected, _snapshot.Parcels.FirstOrDefault(value => value.Id == command.ParcelId)?.Availability[command.Action].Code
-                ?? FlowRejectionCode.ParcelNotFound);
+        if (applied)
+            return Result(FlowCommandStatus.Applied);
+
+        // A refused operation is explained by the refreshed state, not the admission snapshot.
+        FlowParcelSnapshot? currentParcel = _snapshot.Parcels.FirstOrDefault(value => value.Id == command.ParcelId);
+        FlowRejectionCode rejection = currentParcel?.Availability[command.Action].Code
+            ?? FlowRejectionCode.ParcelNotFound;
+        return Result(FlowCommandStatus.Rejected, rejection);
+    }
+
+    private static bool ApplyParcelCommand(FlowRuntime runtime, FlowParcelCommand command)
+    {
+        var id = new ParcelId(command.ParcelId);
+        return command.Action switch
+        {
+            FlowParcelAction.Reserve => runtime.TryReserve(id),
+            FlowParcelAction.Cancel => runtime.Cancel(id),
+            FlowParcelAction.RetryDelivery => runtime.RetryDelivery(id),
+            FlowParcelAction.ReconcileTransfer => runtime.ReconcileTransfer(id),
+            FlowParcelAction.ReturnToSource => runtime.ReturnToSource(id),
+            _ => false
+        };
     }
 
     internal void Refresh(bool force = false)
@@ -122,25 +149,45 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
         {
             next = _runtime.ReadApplicationSnapshot(_snapshot.SessionId, checked(_snapshot.Revision + 1), _providerMode, _supportedOperations);
             if (_availability != FlowApplicationState.Active)
-            {
-                FlowActionAvailabilitySet blocked = FlowActionAvailabilitySet.Disabled(FlowReasons.State(_availability));
-                if (_supportedOperations != FlowParcelActions.All) blocked = blocked.Restrict(_supportedOperations);
-                next = new FlowSnapshot(next.SessionId, next.NetworkId, next.Revision, _availability,
-                    next.Stations.ToArray(), next.Links.ToArray(), next.Parcels.Select(parcel => parcel with { Actions = FlowParcelActions.None, Availability = blocked }).ToArray(),
-                    _providerMode, _supportedOperations);
-            }
+                next = WithBlockedActions(next);
         }
         finally
         {
             _operating = false;
         }
-        if (!force && _snapshot.State == next.State && _snapshot.Stations.SequenceEqual(next.Stations) && _snapshot.Links.SequenceEqual(next.Links)
-            && _snapshot.Parcels.SequenceEqual(next.Parcels))
+        if (!force && HasSamePublishedContents(next))
         {
             return;
         }
         _snapshot = next;
         Notify();
+    }
+
+    private FlowSnapshot WithBlockedActions(FlowSnapshot snapshot)
+    {
+        FlowActionAvailabilitySet blocked = FlowActionAvailabilitySet.Disabled(FlowReasons.State(_availability));
+        if (_supportedOperations != FlowParcelActions.All)
+            blocked = blocked.Restrict(_supportedOperations);
+
+        FlowStationSnapshot[] stations = snapshot.Stations.ToArray();
+        FlowLinkSnapshot[] links = snapshot.Links.ToArray();
+        FlowParcelSnapshot[] parcels = snapshot.Parcels.Select(parcel => parcel with
+        {
+            Actions = FlowParcelActions.None,
+            Availability = blocked
+        }).ToArray();
+
+        return new FlowSnapshot(snapshot.SessionId, snapshot.NetworkId, snapshot.Revision, _availability,
+            stations, links, parcels, _providerMode, _supportedOperations);
+    }
+
+    private bool HasSamePublishedContents(FlowSnapshot next)
+    {
+        // A proposed revision alone doesn't warrant replacing the cached snapshot or notifying observers.
+        return _snapshot.State == next.State
+            && _snapshot.Stations.SequenceEqual(next.Stations)
+            && _snapshot.Links.SequenceEqual(next.Links)
+            && _snapshot.Parcels.SequenceEqual(next.Parcels);
     }
 
     public void Dispose() => Close(FlowApplicationState.Closed);
@@ -150,7 +197,9 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
         RequireIdle();
         if (state is not (FlowApplicationState.Active or FlowApplicationState.Paused or FlowApplicationState.RecoveryRequired))
             throw new ArgumentOutOfRangeException(nameof(state));
-        if (_availability == state || _snapshot.State is FlowApplicationState.Closed or FlowApplicationState.Faulted) return;
+        if (_availability == state || _snapshot.State is FlowApplicationState.Closed or FlowApplicationState.Faulted)
+            return;
+
         _availability = state;
         Refresh();
     }
@@ -181,11 +230,20 @@ internal sealed class FlowApplication : IFlowApplication, IDisposable
             }
             foreach (Action<long> handler in handlers.GetInvocationList())
             {
-                try { handler(_snapshot.Revision); }
-                catch (Exception error) { Report(error); }
+                try
+                {
+                    handler(_snapshot.Revision);
+                }
+                catch (Exception error)
+                {
+                    Report(error);
+                }
             }
         }
-        finally { _notifying = false; }
+        finally
+        {
+            _notifying = false;
+        }
     }
 
     private void Report(Exception error)

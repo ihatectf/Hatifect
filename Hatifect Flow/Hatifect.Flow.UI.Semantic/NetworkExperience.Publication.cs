@@ -48,15 +48,7 @@ internal sealed partial class NetworkExperience
             if (Retired) return false;
             projection = ProjectHistory(batch, projection);
             if (Retired) return false;
-            string name = batch.Read(_name.Source);
-            string capacity = batch.Read(_capacity.Source);
-            string ticks = batch.Read(_ticks.Source);
-            batch.Set(_nameError, name.Length is < 1 or > 32 || !name.All(character => char.IsLetterOrDigit(character) || character is '_' or '-')
-                    ? Text("Use 1–32 letters, digits, _ or -", "Допустимы 1–32 буквы, цифры, _ и -")
-                    : snapshot.Stations.Any(station => station.Id != source?.Id && string.Equals(station.Name, name, StringComparison.OrdinalIgnoreCase))
-                        ? Text("Name already exists", "Имя уже занято") : null)
-                .Set(_capacityError, Number(capacity, 999) ? null : Text("Enter 1–999", "Введите 1–999"))
-                .Set(_ticksError, Number(ticks, 36000) ? null : Text("Enter 1–36000", "Введите 1–36000"));
+            ValidateStationInputs(batch, snapshot, source);
             ValidateQuantity(batch);
             batch.Set(_target, snapshot.TargetDescription.Length > 0 ? snapshot.TargetDescription
                     : Text("Close this window, point at a chest, then open Flowline again", "Закройте окно, укажите на сундук и снова откройте Flowline"))
@@ -82,6 +74,21 @@ internal sealed partial class NetworkExperience
         }
         catch (ObjectDisposedException) when (Retired) { return false; }
         finally { _preparingSnapshot = null; _projecting = false; }
+    }
+
+    private void ValidateStationInputs(UiPublicationBatch batch, FlowNetworkSnapshot snapshot, FlowStationDetails? source)
+    {
+        string name = batch.Read(_name.Source);
+        string capacity = batch.Read(_capacity.Source);
+        string ticks = batch.Read(_ticks.Source);
+        string? nameError = null;
+        if (name.Length is < 1 or > 32 || !name.All(character => char.IsLetterOrDigit(character) || character is '_' or '-'))
+            nameError = Text("Use 1–32 letters, digits, _ or -", "Допустимы 1–32 буквы, цифры, _ и -");
+        else if (snapshot.Stations.Any(station => station.Id != source?.Id && string.Equals(station.Name, name, StringComparison.OrdinalIgnoreCase)))
+            nameError = Text("Name already exists", "Имя уже занято");
+        batch.Set(_nameError, nameError)
+            .Set(_capacityError, Number(capacity, 999) ? null : Text("Enter 1–999", "Введите 1–999"))
+            .Set(_ticksError, Number(ticks, 36000) ? null : Text("Enter 1–36000", "Введите 1–36000"));
     }
 
     private bool RequestSelection<T>(UiPublishedSelectableCollection<T> source, UiSymbolId item)

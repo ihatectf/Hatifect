@@ -119,6 +119,72 @@ def dependency_map(root: ElementTree.Element) -> dict[str, str]:
     return result
 
 
+def _verify_payload_and_producer(
+    package_id: str,
+    package: dict,
+    archive: zipfile.ZipFile,
+    names: set[str],
+) -> None:
+    expected_dll = f"lib/net6.0/{package_id}.dll"
+    if expected_dll not in names:
+        raise ValueError(f"{package_id}: missing {expected_dll}")
+    unexpected_binaries = sorted(
+        name for name in names
+        if name.lower().endswith((".dll", ".pdb")) and name != expected_dll
+    )
+    if unexpected_binaries:
+        raise ValueError(f"{package_id}: unexpected binary payload {unexpected_binaries}")
+
+    # Later packs may rebuild a previously packaged ProjectReference.
+    # Audit the completed feed against the final normal Release outputs.
+    producer = (
+        ROOT / Path(package["Project"]).parent
+        / "bin/Release/net6.0" / f"{package_id}.dll"
+    )
+    if not producer.is_file():
+        raise ValueError(f"{package_id}: missing final Release producer: {producer}")
+    packaged_bytes = archive.read(expected_dll)
+    producer_bytes = producer.read_bytes()
+    if packaged_bytes != producer_bytes:
+        raise ValueError(
+            f"{package_id}: packaged DLL differs from final Release producer: {producer}; "
+            f"packaged SHA-256={hashlib.sha256(packaged_bytes).hexdigest()}, "
+            f"producer SHA-256={hashlib.sha256(producer_bytes).hexdigest()}"
+        )
+
+
+def _verify_dependencies(
+    package_id: str,
+    package: dict,
+    root: ElementTree.Element,
+    version: str,
+) -> None:
+    actual_dependencies = dependency_map(root)
+    expected_dependencies = set(package["Dependencies"])
+    ui_dependencies = {
+        dependency for dependency in actual_dependencies if dependency.startswith("Hatifect.UI.")
+    }
+    if ui_dependencies != expected_dependencies:
+        raise ValueError(
+            f"{package_id}: UI dependencies {sorted(ui_dependencies)} != "
+            f"{sorted(expected_dependencies)}"
+        )
+    for dependency in expected_dependencies:
+        if actual_dependencies[dependency] not in {version, f"[{version}]"}:
+            raise ValueError(
+                f"{package_id}: dependency {dependency} is not bound to {version}"
+            )
+    external_dependencies = {
+        dependency
+        for dependency in actual_dependencies
+        if not dependency.startswith("Hatifect.UI.")
+    }
+    if external_dependencies:
+        raise ValueError(
+            f"{package_id}: build/runtime package dependency leaked: {sorted(external_dependencies)}"
+        )
+
+
 def verify_feed(document: dict, feed: Path, *, host_free: bool = False) -> None:
     feed = feed.resolve()
     if not feed.is_dir():
@@ -149,57 +215,8 @@ def verify_feed(document: dict, feed: Path, *, host_free: bool = False) -> None:
                 )
 
             names = set(archive.namelist())
-            expected_dll = f"lib/net6.0/{package_id}.dll"
-            if expected_dll not in names:
-                raise ValueError(f"{package_id}: missing {expected_dll}")
-            unexpected_binaries = sorted(
-                name for name in names
-                if name.lower().endswith((".dll", ".pdb")) and name != expected_dll
-            )
-            if unexpected_binaries:
-                raise ValueError(f"{package_id}: unexpected binary payload {unexpected_binaries}")
-
-            # Later packs may rebuild a previously packaged ProjectReference.
-            # Audit the completed feed against the final normal Release outputs.
-            producer = (
-                ROOT / Path(expected[package_id]["Project"]).parent
-                / "bin/Release/net6.0" / f"{package_id}.dll"
-            )
-            if not producer.is_file():
-                raise ValueError(f"{package_id}: missing final Release producer: {producer}")
-            packaged_bytes = archive.read(expected_dll)
-            producer_bytes = producer.read_bytes()
-            if packaged_bytes != producer_bytes:
-                raise ValueError(
-                    f"{package_id}: packaged DLL differs from final Release producer: {producer}; "
-                    f"packaged SHA-256={hashlib.sha256(packaged_bytes).hexdigest()}, "
-                    f"producer SHA-256={hashlib.sha256(producer_bytes).hexdigest()}"
-                )
-
-            actual_dependencies = dependency_map(root)
-            expected_dependencies = set(expected[package_id]["Dependencies"])
-            ui_dependencies = {
-                dependency for dependency in actual_dependencies if dependency.startswith("Hatifect.UI.")
-            }
-            if ui_dependencies != expected_dependencies:
-                raise ValueError(
-                    f"{package_id}: UI dependencies {sorted(ui_dependencies)} != "
-                    f"{sorted(expected_dependencies)}"
-                )
-            for dependency in expected_dependencies:
-                if actual_dependencies[dependency] not in {
-                    document["Version"], f"[{document['Version']}]"
-                }:
-                    raise ValueError(
-                        f"{package_id}: dependency {dependency} is not bound to {document['Version']}"
-                    )
-            external_dependencies = {
-                dependency for dependency in actual_dependencies if not dependency.startswith("Hatifect.UI.")
-            }
-            if external_dependencies:
-                raise ValueError(
-                    f"{package_id}: build/runtime package dependency leaked: {sorted(external_dependencies)}"
-                )
+            _verify_payload_and_producer(package_id, expected[package_id], archive, names)
+            _verify_dependencies(package_id, expected[package_id], root, document["Version"])
             for name in names:
                 if repository_bytes in archive.read(name):
                     raise ValueError(f"{package_id}: repository path leaked into {name}")

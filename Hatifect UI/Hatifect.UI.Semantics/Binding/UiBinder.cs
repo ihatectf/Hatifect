@@ -34,22 +34,31 @@ internal sealed class UiBinder
 
     public UiCompilationResult Bind()
     {
-        UiBoundDefinition? definition = null;
-        if (_syntax.DocumentKind == UiDocumentKind.Presentation)
+        UiBoundDefinition? definition = _syntax.DocumentKind switch
         {
-            foreach (UiStatementSyntax statement in _syntax.Statements)
-                BindPresentationStatement(statement, activeProfile: null);
-            ValidatePresentationContracts();
-            definition = new UiPresentationDefinition(DocumentId(), _placements.ToArray(), _assignments.ToArray());
-        }
-        else if (_syntax.DocumentKind == UiDocumentKind.Visual)
-        {
-            foreach (UiStatementSyntax statement in _syntax.Statements)
-                BindVisualStatement(statement, activeProfile: null);
-            definition = new UiVisualDefinition(DocumentId(), _assignments.ToArray());
-        }
+            UiDocumentKind.Presentation => BindPresentation(),
+            UiDocumentKind.Visual => BindVisual(),
+            _ => null
+        };
 
         return new UiCompilationResult(_syntax, definition, _diagnostics.ToArray());
+    }
+
+    private UiPresentationDefinition BindPresentation()
+    {
+        foreach (UiStatementSyntax statement in _syntax.Statements)
+            BindPresentationStatement(statement, activeProfile: null);
+
+        ValidatePresentationContracts();
+        return new UiPresentationDefinition(DocumentId(), _placements.ToArray(), _assignments.ToArray());
+    }
+
+    private UiVisualDefinition BindVisual()
+    {
+        foreach (UiStatementSyntax statement in _syntax.Statements)
+            BindVisualStatement(statement, activeProfile: null);
+
+        return new UiVisualDefinition(DocumentId(), _assignments.ToArray());
     }
 
     private void BindPresentationStatement(UiStatementSyntax statement, UiSymbolId? activeProfile)
@@ -79,24 +88,9 @@ internal sealed class UiBinder
 
     private void BindPresentationBlock(UiBlockSyntax block, UiSymbolId? activeProfile)
     {
-        string[] targetSegments = block.Target!.Segments.Select(segment => segment.Text).ToArray();
-        if (targetSegments.Length > 1 && block.Statements.All(statement => statement is UiAssignmentSyntax))
-        {
-            string targetName = string.Join(".", targetSegments[..^1]);
-            string propertyName = targetSegments[^1];
-            UiElementSymbol target = ResolveElement(targetName, block.Target.Span);
-            foreach (UiAssignmentSyntax matrixEntry in block.Statements.Cast<UiAssignmentSyntax>())
-            {
-                string profileName = matrixEntry.Property.ToString();
-                UiSymbolId? profile = string.Equals(profileName, "default", StringComparison.Ordinal)
-                    ? activeProfile
-                    : BindProfileName(profileName, matrixEntry.Property.Span);
-                BindAssignment(UiDefinitionKind.Presentation, target, state: null, profile, propertyName, matrixEntry.Value);
-            }
-            return;
-        }
+        if (TryBindPresentationMatrix(block, activeProfile)) return;
 
-        UiElementSymbol element = ResolveElement(block.Target.ToString(), block.Target.Span);
+        UiElementSymbol element = ResolveElement(block.Target!.ToString(), block.Target.Span);
         foreach (UiStatementSyntax child in block.Statements)
         {
             if (child is UiAssignmentSyntax assignment)
@@ -104,6 +98,26 @@ internal sealed class UiBinder
             else
                 Report("LUI2002", "Presentation element blocks may contain only property assignments.", child.Span);
         }
+    }
+
+    private bool TryBindPresentationMatrix(UiBlockSyntax block, UiSymbolId? activeProfile)
+    {
+        string[] targetSegments = block.Target!.Segments.Select(segment => segment.Text).ToArray();
+        if (targetSegments.Length <= 1 || !block.Statements.All(statement => statement is UiAssignmentSyntax))
+            return false;
+
+        string targetName = string.Join(".", targetSegments[..^1]);
+        string propertyName = targetSegments[^1];
+        UiElementSymbol target = ResolveElement(targetName, block.Target.Span);
+        foreach (UiAssignmentSyntax matrixEntry in block.Statements.Cast<UiAssignmentSyntax>())
+        {
+            string profileName = matrixEntry.Property.ToString();
+            UiSymbolId? profile = string.Equals(profileName, "default", StringComparison.Ordinal)
+                ? activeProfile
+                : BindProfileName(profileName, matrixEntry.Property.Span);
+            BindAssignment(UiDefinitionKind.Presentation, target, state: null, profile, propertyName, matrixEntry.Value);
+        }
+        return true;
     }
 
     private void BindVisualStatement(UiStatementSyntax statement, UiSymbolId? activeProfile)

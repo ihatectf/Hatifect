@@ -347,33 +347,8 @@ internal sealed partial class UiSemanticStardewOverlaySession : IDisposable
 
         if (!Visible)
         {
-            if (_acceptanceRegistered)
-            {
-                try
-                {
-                    UiStardewAcceptanceRecorder.Shared.UnregisterSemanticSurface(this);
-                    _acceptanceRegistered = false;
-                }
-                catch (Exception error)
-                {
-                    failures.Add(error);
-                }
-            }
-
-            UiSemanticStardewHost? host = _host;
-            if (host != null)
-            {
-                try
-                {
-                    host.Dispose();
-                    if (ReferenceEquals(_host, host)) _host = null;
-                }
-                catch (Exception error)
-                {
-                    failures.Add(error);
-                }
-            }
-
+            UnregisterAcceptance(failures);
+            DisposeHost(failures);
             if (notifyClosed) NotifyClosed(failures);
         }
 
@@ -381,6 +356,35 @@ internal sealed partial class UiSemanticStardewOverlaySession : IDisposable
             _disposed = true;
         if (failures.Count > 0)
             throw new AggregateException("Semantic Stardew overlay cleanup failed.", failures);
+    }
+
+    private void UnregisterAcceptance(ICollection<Exception> failures)
+    {
+        if (!_acceptanceRegistered) return;
+        try
+        {
+            UiStardewAcceptanceRecorder.Shared.UnregisterSemanticSurface(this);
+            _acceptanceRegistered = false;
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
+    }
+
+    private void DisposeHost(ICollection<Exception> failures)
+    {
+        UiSemanticStardewHost? host = _host;
+        if (host == null) return;
+        try
+        {
+            host.Dispose();
+            if (ReferenceEquals(_host, host)) _host = null;
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
     }
 
     private UiSemanticStardewHost Host
@@ -402,21 +406,31 @@ internal sealed partial class UiSemanticStardewOverlaySession : IDisposable
                 Host.Session.Deactivate();
             }
             var failures = new List<Exception>();
-            try { _keyboard.Release(restoreKeyboard && (!_events.IsCurrentScreen || OwnsCurrentMenuContext())); }
-            catch (Exception error) { failures.Add(error); }
-            try { _events.Dispose(); }
-            catch (Exception error) { failures.Add(error); }
+            ReleaseNativeBindings(restoreKeyboard, failures);
             if (failures.Count > 0)
                 throw new AggregateException("Semantic Stardew overlay hide failed.", failures);
 
-            Visible = false;
-            _pointerSynchronized = false;
-            _boundActiveMenu = null;
-            if (notifyClosed) NotifyClosed(failures);
+            CommitHiddenState(notifyClosed, failures);
             if (failures.Count > 0)
                 throw new AggregateException("Semantic Stardew overlay hide failed.", failures);
         }
         finally { _hiding = false; }
+    }
+
+    private void ReleaseNativeBindings(bool restoreKeyboard, ICollection<Exception> failures)
+    {
+        try { _keyboard.Release(restoreKeyboard && (!_events.IsCurrentScreen || OwnsCurrentMenuContext())); }
+        catch (Exception error) { failures.Add(error); }
+        try { _events.Dispose(); }
+        catch (Exception error) { failures.Add(error); }
+    }
+
+    private void CommitHiddenState(bool notifyClosed, ICollection<Exception> failures)
+    {
+        Visible = false;
+        _pointerSynchronized = false;
+        _boundActiveMenu = null;
+        if (notifyClosed) NotifyClosed(failures);
     }
 
     private void NotifyClosed(ICollection<Exception> failures)

@@ -206,19 +206,25 @@ public sealed class UiPublication : IDisposable
         var entries = _view.CopyEntries();
         foreach (var (id, next) in batch.Changes) entries[id] = next;
         _view = new(this, Version + 1, entries);
-        var observerErrors = new List<Exception>();
-        _notifying = true;
-        try
-        {
-            foreach (UiSymbolId id in batch.Changes.Keys)
-            {
-                if (_disposed) break;
-                _sources[id].Notify(observerErrors);
-            }
-            Notify(_changed, observerErrors);
-        }
-        finally { _notifying = false; }
+        List<Exception> observerErrors = NotifyCommittedSources();
         return LastResult = new(UiPublicationStatus.Committed, Id, Version, observerErrors: observerErrors);
+
+        List<Exception> NotifyCommittedSources()
+        {
+            var errors = new List<Exception>();
+            _notifying = true;
+            try
+            {
+                foreach (UiSymbolId id in batch.Changes.Keys)
+                {
+                    if (_disposed) break;
+                    _sources[id].Notify(errors);
+                }
+                Notify(_changed, errors);
+            }
+            finally { _notifying = false; }
+            return errors;
+        }
 
         UiPublicationResult Rejected(UiPublicationStatus status, string code, string message)
             => new(status, Id, Version, new[] { new UiPublicationDiagnostic(code, message, OwnerId) });
@@ -318,8 +324,16 @@ public sealed partial class UiPublicationBatch
     private void StageValidated(IUiPublicationParticipant source, IUiSemanticSource snapshot,
         UiPublicationEntry previous, bool equivalentToBase, long? version)
     {
-        if (equivalentToBase) { _changes.Remove(source.SourceId); return; }
-        if (previous.Version == long.MaxValue) { _diagnostics.Add(new("UIP006", "The source version is exhausted.", source.SourceId)); return; }
+        if (equivalentToBase)
+        {
+            _changes.Remove(source.SourceId);
+            return;
+        }
+        if (previous.Version == long.MaxValue)
+        {
+            _diagnostics.Add(new("UIP006", "The source version is exhausted.", source.SourceId));
+            return;
+        }
         _changes[source.SourceId] = new(source, snapshot, version ?? previous.Version + 1);
     }
 

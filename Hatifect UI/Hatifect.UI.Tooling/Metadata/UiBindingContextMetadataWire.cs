@@ -29,35 +29,45 @@ internal static partial class UiBindingContextMetadataWire
             writer.WriteString("ownerId", metadata.OwnerId.ToString());
             writer.WriteBoolean("requireDeclaredElements", metadata.RequireDeclaredElements);
             writer.WriteBoolean("requireDeclaredRoles", metadata.RequireDeclaredRoles);
-            writer.WritePropertyName("elements");
-            writer.WriteStartArray();
-            foreach (UiBindingElementMetadata element in metadata.Elements)
-            {
-                writer.WriteStartObject();
-                writer.WriteString("id", element.Id.ToString());
-                writer.WriteString("name", element.Name);
-                writer.WritePropertyName("capabilities");
-                writer.WriteStartArray();
-                foreach (UiSymbolId capability in element.Capabilities)
-                    writer.WriteStringValue(capability.ToString());
-                writer.WriteEndArray();
-                writer.WriteEndObject();
-            }
-            writer.WriteEndArray();
-            writer.WritePropertyName("roles");
-            writer.WriteStartArray();
-            foreach (UiBindingRoleMetadata role in metadata.Roles)
-            {
-                writer.WriteStartObject();
-                writer.WriteString("id", role.Id.ToString());
-                writer.WriteString("name", role.Name);
-                writer.WriteEndObject();
-            }
-            writer.WriteEndArray();
+            WriteLegacyElements(writer, metadata.Elements);
+            WriteLegacyRoles(writer, metadata.Roles);
             writer.WriteEndObject();
             writer.Flush();
         }
         return buffer.WrittenSpan.ToArray();
+    }
+
+    private static void WriteLegacyElements(Utf8JsonWriter writer, IEnumerable<UiBindingElementMetadata> elements)
+    {
+        writer.WritePropertyName("elements");
+        writer.WriteStartArray();
+        foreach (UiBindingElementMetadata element in elements)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", element.Id.ToString());
+            writer.WriteString("name", element.Name);
+            writer.WritePropertyName("capabilities");
+            writer.WriteStartArray();
+            foreach (UiSymbolId capability in element.Capabilities)
+                writer.WriteStringValue(capability.ToString());
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
+    }
+
+    private static void WriteLegacyRoles(Utf8JsonWriter writer, IEnumerable<UiBindingRoleMetadata> roles)
+    {
+        writer.WritePropertyName("roles");
+        writer.WriteStartArray();
+        foreach (UiBindingRoleMetadata role in roles)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", role.Id.ToString());
+            writer.WriteString("name", role.Name);
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
     }
 
     public static UiBindingContextMetadata Deserialize(ReadOnlySpan<byte> utf8Json)
@@ -94,10 +104,22 @@ internal static partial class UiBindingContextMetadataWire
         if (rolesValue.ValueKind != JsonValueKind.Array)
             throw new InvalidDataException("Binding metadata roles must be an array.");
 
+        List<UiBindingElementMetadata> elements = ReadLegacyElements(elementsValue, owner);
+        List<UiBindingRoleMetadata> roles = ReadLegacyRoles(rolesValue, owner);
+        return new UiBindingContextMetadata(
+            owner,
+            requireElements,
+            requireRoles,
+            elements.OrderBy(element => element.Name, StringComparer.Ordinal).ToArray(),
+            roles.OrderBy(role => role.Name, StringComparer.Ordinal).ToArray());
+    }
+
+    private static List<UiBindingElementMetadata> ReadLegacyElements(JsonElement values, UiSymbolId owner)
+    {
         var elementNames = new HashSet<string>(StringComparer.Ordinal);
         var elementIds = new HashSet<UiSymbolId>();
         var elements = new List<UiBindingElementMetadata>();
-        foreach (JsonElement value in elementsValue.EnumerateArray())
+        foreach (JsonElement value in values.EnumerateArray())
         {
             IReadOnlyDictionary<string, JsonElement> item = ReadObject(
                 value,
@@ -129,11 +151,15 @@ internal static partial class UiBindingContextMetadataWire
                     .OrderBy(capability => capability.ToString(), StringComparer.Ordinal)
                     .ToArray())));
         }
+        return elements;
+    }
 
+    private static List<UiBindingRoleMetadata> ReadLegacyRoles(JsonElement values, UiSymbolId owner)
+    {
         var roleNames = new HashSet<string>(StringComparer.Ordinal);
         var roleIds = new HashSet<UiSymbolId>();
         var roles = new List<UiBindingRoleMetadata>();
-        foreach (JsonElement value in rolesValue.EnumerateArray())
+        foreach (JsonElement value in values.EnumerateArray())
         {
             IReadOnlyDictionary<string, JsonElement> item = ReadObject(
                 value,
@@ -148,13 +174,7 @@ internal static partial class UiBindingContextMetadataWire
                 throw new InvalidDataException($"Binding role '{name}' is duplicated.");
             roles.Add(new UiBindingRoleMetadata(id, name));
         }
-
-        return new UiBindingContextMetadata(
-            owner,
-            requireElements,
-            requireRoles,
-            elements.OrderBy(element => element.Name, StringComparer.Ordinal).ToArray(),
-            roles.OrderBy(role => role.Name, StringComparer.Ordinal).ToArray());
+        return roles;
     }
 
     public static UiBindingContext CreateBindingContext(UiBindingContextMetadata metadata)

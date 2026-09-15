@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Hatifect.Flow.Application.Dispatch;
@@ -14,17 +15,9 @@ internal static class DurableRecovery
     public static FlowCheckpoint Recover(DurableCoreImage core, DurableProviderImage actual)
     {
         FlowCheckpoint checkpoint = core.Core.Checkpoint;
-        if (actual.PairId != core.PairId || actual.NetworkId != checkpoint.NetworkId)
-            throw new InvalidDataException("Core and provider do not belong to the same durable pair.");
+        ValidateIdentity(core, actual, checkpoint);
         var transfers = checkpoint.Transfers.ToDictionary(t => t.Key);
-        DurableProviderReceipt[] receipts = checkpoint.Stations.SelectMany(s => s.Port.Receipts.Select(r =>
-        {
-            if (!transfers.TryGetValue(r.Key, out TransferCheckpoint? transfer) || transfer.StationId != s.Id)
-                throw new InvalidDataException("Core receipt has no matching transfer payload.");
-            return new DurableProviderReceipt(r.Key, transfer.CargoId, s.Id, transfer.Manifest, r.Result);
-        })).ToArray();
-        var expected = new DurableProviderImage(core.PairId, checkpoint.NetworkId,
-            core.ProviderRevision, checkpoint.Stations, receipts, core.ProviderConfigurationRevision);
+        DurableProviderImage expected = RebuildExpectedProvider(core, checkpoint, transfers);
         FlowCheckpoint? provisioned = null;
         if (core.Capacity is not null)
         {
@@ -34,71 +27,148 @@ internal static class DurableRecovery
         {
             provisioned = ValidateProvision(core, expected);
         }
+        ValidateAdmission(core, checkpoint);
+        ValidateRegistration(core, checkpoint, expected);
+        ValidateTransferIntent(core, checkpoint, transfers, expected.Receipts);
+        if (actual.Revision != core.ProviderRevision)
+        {
+            ValidatePendingRevision(core, actual);
+            expected = ProjectPendingIntent(core, expected, transfers, provisioned, ref checkpoint);
+        }
+        if (!Equivalent(expected, actual))
+        {
+            throw new InvalidDataException("Provider state differs from its exact acknowledged or pending transition.");
+        }
+        return checkpoint with { Stations = actual.Stations };
+    }
+
+    private static void ValidateIdentity(DurableCoreImage core, DurableProviderImage actual,
+        FlowCheckpoint checkpoint)
+    {
+        if (actual.PairId != core.PairId || actual.NetworkId != checkpoint.NetworkId)
+        {
+            throw new InvalidDataException("Core and provider do not belong to the same durable pair.");
+        }
+    }
+
+    private static DurableProviderImage RebuildExpectedProvider(DurableCoreImage core,
+        FlowCheckpoint checkpoint, IReadOnlyDictionary<TransferKey, TransferCheckpoint> transfers)
+    {
+        DurableProviderReceipt[] receipts = checkpoint.Stations.SelectMany(station => station.Port.Receipts.Select(receipt =>
+        {
+            if (!transfers.TryGetValue(receipt.Key, out TransferCheckpoint? transfer) || transfer.StationId != station.Id)
+            {
+                throw new InvalidDataException("Core receipt has no matching transfer payload.");
+            }
+
+            return new DurableProviderReceipt(receipt.Key, transfer.CargoId, station.Id,
+                transfer.Manifest, receipt.Result);
+        })).ToArray();
+        return new DurableProviderImage(core.PairId, checkpoint.NetworkId, core.ProviderRevision,
+            checkpoint.Stations, receipts, core.ProviderConfigurationRevision);
+    }
+
+    private static void ValidateAdmission(DurableCoreImage core, FlowCheckpoint checkpoint)
+    {
+        if (core.Admission is null)
+        {
+            return;
+        }
+
+        StationCheckpoint? station = checkpoint.Stations.SingleOrDefault(s => s.Id == core.Admission.StationId);
+        if (core.Intent is not null || core.Registration is not null || core.Provision is not null
+            || core.Capacity is not null || station is null
+            || (station.Port.AcceptDeposits == core.Admission.AcceptDeposits
+                && station.Port.AcceptExtractions == core.Admission.AcceptExtractions))
+        {
+            throw new InvalidDataException("Admission intent must exclusively change an existing Station.");
+        }
+    }
+
+    private static void ValidateRegistration(DurableCoreImage core, FlowCheckpoint checkpoint,
+        DurableProviderImage expected)
+    {
+        if (core.Registration is null)
+        {
+            return;
+        }
+
+        StationRegistrationIntent registration = core.Registration;
+        if (core.Intent is not null || core.Admission is not null || core.Provision is not null
+            || core.Capacity is not null || registration.StationId == Guid.Empty
+            || checkpoint.Stations.Any(s => s.Id == registration.StationId)
+            || checkpoint.Stations.Length >= checkpoint.Limits.MaxStations
+            || registration.MaxCargoBatches <= 0 || registration.MaxCargoBatches > 65536
+            || registration.MaxReceipts <= 0 || registration.MaxReceipts > 65536
+            || expected.Revision >= 262144)
+        {
+            throw new InvalidDataException("Registration intent must exclusively add a new bounded Station.");
+        }
+
+        // Prove the complete proposed provider image, even before the effect committed.
+        _ = DurableProviderCodec.Encode(ProjectRegistration(expected, registration));
+    }
+
+    private static void ValidateTransferIntent(DurableCoreImage core, FlowCheckpoint checkpoint,
+        IReadOnlyDictionary<TransferKey, TransferCheckpoint> transfers, DurableProviderReceipt[] receipts)
+    {
+        if (core.Intent is not null && (!transfers.TryGetValue(core.Intent, out TransferCheckpoint? pending)
+            || pending.Retired
+            || !checkpoint.Parcels.Any(p => p.Id == core.Intent.ParcelId && p.PendingTransfer == core.Intent)
+            || receipts.Any(r => r.Key == core.Intent)))
+        {
+            throw new InvalidDataException("Core intent must identify an unseen active pending transfer.");
+        }
+    }
+
+    private static void ValidatePendingRevision(DurableCoreImage core, DurableProviderImage actual)
+    {
+        if (actual.Revision != core.ProviderRevision + 1
+            || (core.Intent is null && core.Admission is null && core.Registration is null
+                && core.Provision is null && core.Capacity is null))
+        {
+            throw new InvalidDataException("Provider revision is not acknowledged or one pending intent ahead.");
+        }
+    }
+
+    private static DurableProviderImage ProjectPendingIntent(DurableCoreImage core,
+        DurableProviderImage expected, IReadOnlyDictionary<TransferKey, TransferCheckpoint> transfers,
+        FlowCheckpoint? provisioned, ref FlowCheckpoint checkpoint)
+    {
         if (core.Admission is not null)
         {
-            StationCheckpoint? station = checkpoint.Stations.SingleOrDefault(s => s.Id == core.Admission.StationId);
-            if (core.Intent is not null || core.Registration is not null || core.Provision is not null || core.Capacity is not null || station is null || (station.Port.AcceptDeposits == core.Admission.AcceptDeposits
-                && station.Port.AcceptExtractions == core.Admission.AcceptExtractions))
+            AdmissionIntent admission = core.Admission;
+            return expected with
             {
-                throw new InvalidDataException("Admission intent must exclusively change an existing Station.");
-            }
+                Revision = expected.Revision + 1,
+                ConfigurationRevision = expected.ConfigurationRevision + 1,
+                Stations = expected.Stations.Select(s => s.Id == admission.StationId
+                    ? s with
+                    {
+                        Port = s.Port with
+                        {
+                            AcceptDeposits = admission.AcceptDeposits,
+                            AcceptExtractions = admission.AcceptExtractions
+                        }
+                    }
+                    : s).ToArray()
+            };
         }
         if (core.Registration is not null)
         {
-            StationRegistrationIntent registration = core.Registration;
-            if (core.Intent is not null || core.Admission is not null || core.Provision is not null || core.Capacity is not null || registration.StationId == Guid.Empty
-                || checkpoint.Stations.Any(s => s.Id == registration.StationId)
-                || checkpoint.Stations.Length >= checkpoint.Limits.MaxStations
-                || registration.MaxCargoBatches <= 0 || registration.MaxCargoBatches > 65536
-                || registration.MaxReceipts <= 0 || registration.MaxReceipts > 65536
-                || expected.Revision >= 262144)
-                throw new InvalidDataException("Registration intent must exclusively add a new bounded Station.");
-            // Prove the complete proposed provider image, even before the effect committed.
-            _ = DurableProviderCodec.Encode(ProjectRegistration(expected, registration));
+            return ProjectRegistration(expected, core.Registration);
         }
-        if (core.Intent is not null && (!transfers.TryGetValue(core.Intent, out TransferCheckpoint? pending)
-            || pending.Retired || !checkpoint.Parcels.Any(p => p.Id == core.Intent.ParcelId && p.PendingTransfer == core.Intent)
-            || receipts.Any(r => r.Key == core.Intent)))
-            throw new InvalidDataException("Core intent must identify an unseen active pending transfer.");
-        if (actual.Revision != core.ProviderRevision)
+        if (core.Provision is not null)
         {
-            if (actual.Revision != core.ProviderRevision + 1 || (core.Intent is null && core.Admission is null && core.Registration is null && core.Provision is null && core.Capacity is null))
-            {
-                throw new InvalidDataException("Provider revision is not acknowledged or one pending intent ahead.");
-            }
-            if (core.Admission is not null)
-            {
-                AdmissionIntent admission = core.Admission;
-                expected = expected with
-                {
-                    Revision = expected.Revision + 1,
-                    ConfigurationRevision = expected.ConfigurationRevision + 1,
-                    Stations = expected.Stations.Select(s => s.Id == admission.StationId
-                        ? s with { Port = s.Port with { AcceptDeposits = admission.AcceptDeposits,
-                            AcceptExtractions = admission.AcceptExtractions } } : s).ToArray()
-                };
-            }
-            else if (core.Registration is not null)
-            {
-                expected = ProjectRegistration(expected, core.Registration);
-            }
-            else if (core.Provision is not null)
-            {
-                expected = CargoProvisionProjection.Provider(expected, core.Provision);
-                checkpoint = provisioned!;
-            }
-            else if (core.Capacity is not null)
-            {
-                expected = PortCapacityProjection.Provider(expected, core.Capacity);
-            }
-            else
-            {
-                expected = Project(expected, transfers[core.Intent!]);
-            }
+            DurableProviderImage projected = CargoProvisionProjection.Provider(expected, core.Provision);
+            checkpoint = provisioned!;
+            return projected;
         }
-        if (!Equivalent(expected, actual))
-            throw new InvalidDataException("Provider state differs from its exact acknowledged or pending transition.");
-        return checkpoint with { Stations = actual.Stations };
+        if (core.Capacity is not null)
+        {
+            return PortCapacityProjection.Provider(expected, core.Capacity);
+        }
+        return ProjectTransfer(expected, transfers[core.Intent!]);
     }
 
     private static void ValidateCapacity(DurableCoreImage core, DurableProviderImage before)
@@ -179,12 +249,14 @@ internal static class DurableRecovery
                     intent.AcceptExtractions, Array.Empty<InventoryCheckpoint>(), Array.Empty<ReceiptCheckpoint>()))).ToArray()
         };
 
-    private static DurableProviderImage Project(DurableProviderImage before, TransferCheckpoint transfer)
+    private static DurableProviderImage ProjectTransfer(DurableProviderImage before, TransferCheckpoint transfer)
     {
         StationCheckpoint station = before.Stations.Single(s => s.Id == transfer.StationId);
         PortCheckpoint port = station.Port;
         if (port.Receipts.Length >= port.MaxReceipts)
+        {
             throw new InvalidDataException("An exhausted provider journal cannot advance.");
+        }
         bool extract = transfer.Key.Kind == (int)PortTransferKind.Extract;
         InventoryCheckpoint? cargo = port.Inventory.SingleOrDefault(c => c.CargoId == transfer.CargoId);
         bool applied = extract
@@ -194,8 +266,10 @@ internal static class DurableRecovery
         int result = (int)(applied ? PortResult.Applied : PortResult.Rejected);
         InventoryCheckpoint[] inventory = port.Inventory;
         if (applied)
+        {
             inventory = extract ? inventory.Where(c => c.CargoId != transfer.CargoId).ToArray()
                 : inventory.Append(new InventoryCheckpoint(transfer.CargoId, transfer.Manifest)).ToArray();
+        }
         var next = station with { Port = port with { Inventory = inventory,
             Receipts = port.Receipts.Append(new ReceiptCheckpoint(transfer.Key, result)).ToArray() } };
         return before with { Revision = before.Revision + 1,
@@ -206,20 +280,47 @@ internal static class DurableRecovery
 
     private static bool Equivalent(DurableProviderImage expected, DurableProviderImage actual)
     {
-        if (expected.Revision != actual.Revision || expected.ConfigurationRevision != actual.ConfigurationRevision || expected.Stations.Length != actual.Stations.Length
-            || expected.Receipts.Length != actual.Receipts.Length) return false;
+        if (expected.Revision != actual.Revision
+            || expected.ConfigurationRevision != actual.ConfigurationRevision
+            || expected.Stations.Length != actual.Stations.Length
+            || expected.Receipts.Length != actual.Receipts.Length)
+        {
+            return false;
+        }
         var stations = actual.Stations.ToDictionary(s => s.Id);
         foreach (StationCheckpoint station in expected.Stations)
         {
-            if (!stations.TryGetValue(station.Id, out StationCheckpoint? other)) return false;
-            PortCheckpoint a = station.Port, b = other.Port;
-            if (a.MaxCargoBatches != b.MaxCargoBatches || a.MaxReceipts != b.MaxReceipts
-                || a.AcceptDeposits != b.AcceptDeposits || a.AcceptExtractions != b.AcceptExtractions
-                || !a.Inventory.OrderBy(c => c.CargoId).SequenceEqual(b.Inventory.OrderBy(c => c.CargoId))
-                || !a.Receipts.OrderBy(r => r.Key.ParcelId).ThenBy(r => r.Key.Kind).ThenBy(r => r.Key.Attempt)
-                    .SequenceEqual(b.Receipts.OrderBy(r => r.Key.ParcelId).ThenBy(r => r.Key.Kind).ThenBy(r => r.Key.Attempt))) return false;
+            if (!stations.TryGetValue(station.Id, out StationCheckpoint? other)
+                || !Equivalent(station.Port, other.Port))
+            {
+                return false;
+            }
         }
-        return expected.Receipts.OrderBy(r => r.Key.ParcelId).ThenBy(r => r.Key.Kind).ThenBy(r => r.Key.Attempt)
-            .SequenceEqual(actual.Receipts.OrderBy(r => r.Key.ParcelId).ThenBy(r => r.Key.Kind).ThenBy(r => r.Key.Attempt));
+        return Equivalent(expected.Receipts, actual.Receipts);
+    }
+
+    private static bool Equivalent(PortCheckpoint expected, PortCheckpoint actual)
+    {
+        return expected.MaxCargoBatches == actual.MaxCargoBatches
+            && expected.MaxReceipts == actual.MaxReceipts
+            && expected.AcceptDeposits == actual.AcceptDeposits
+            && expected.AcceptExtractions == actual.AcceptExtractions
+            && expected.Inventory.OrderBy(c => c.CargoId)
+                .SequenceEqual(actual.Inventory.OrderBy(c => c.CargoId))
+            && Equivalent(expected.Receipts, actual.Receipts);
+    }
+
+    private static bool Equivalent(IEnumerable<ReceiptCheckpoint> expected,
+        IEnumerable<ReceiptCheckpoint> actual)
+    {
+        return expected.OrderBy(r => r.Key.ParcelId).ThenBy(r => r.Key.Kind).ThenBy(r => r.Key.Attempt)
+            .SequenceEqual(actual.OrderBy(r => r.Key.ParcelId).ThenBy(r => r.Key.Kind).ThenBy(r => r.Key.Attempt));
+    }
+
+    private static bool Equivalent(IEnumerable<DurableProviderReceipt> expected,
+        IEnumerable<DurableProviderReceipt> actual)
+    {
+        return expected.OrderBy(r => r.Key.ParcelId).ThenBy(r => r.Key.Kind).ThenBy(r => r.Key.Attempt)
+            .SequenceEqual(actual.OrderBy(r => r.Key.ParcelId).ThenBy(r => r.Key.Kind).ThenBy(r => r.Key.Attempt));
     }
 }
