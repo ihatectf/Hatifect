@@ -512,14 +512,7 @@ internal sealed class UiInteractionSession
         if (TryGetFocusedCollectionItem(out UiCollectionSceneNode collection, out _, out int index) &&
             _layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window) && window != null)
         {
-            int next = direction switch
-            {
-                UiNavigationDirection.Up => index - window.Columns,
-                UiNavigationDirection.Down => index + window.Columns,
-                UiNavigationDirection.Left when index % window.Columns > 0 => index - 1,
-                UiNavigationDirection.Right when index % window.Columns < window.Columns - 1 => index + 1,
-                _ => -1
-            };
+            int next = AdjacentCollectionIndex(direction, index, window.Columns);
             if ((uint)next < (uint)collection.Count) return FocusItem(collection, next);
         }
         int current = Snapshot.Focused is { } id
@@ -530,6 +523,34 @@ internal sealed class UiInteractionSession
 
         UiSymbolId origin = _focusable[current];
         if (!TryGetBounds(origin, out UiRect originBounds)) return null;
+        UiSymbolId? winner = FindGeometricFocusCandidate(direction, origin, originBounds);
+        return winner ?? (_scene.Root.Policy.Focus == UiFocusScopePolicy.Trapped
+            ? Sequential(direction is UiNavigationDirection.Left or UiNavigationDirection.Up
+                ? UiNavigationDirection.Previous
+                : UiNavigationDirection.Next)
+            : null);
+    }
+
+    private static int AdjacentCollectionIndex(
+        UiNavigationDirection direction,
+        int index,
+        int columns)
+    {
+        return direction switch
+        {
+            UiNavigationDirection.Up => index - columns,
+            UiNavigationDirection.Down => index + columns,
+            UiNavigationDirection.Left when index % columns > 0 => index - 1,
+            UiNavigationDirection.Right when index % columns < columns - 1 => index + 1,
+            _ => -1
+        };
+    }
+
+    private UiSymbolId? FindGeometricFocusCandidate(
+        UiNavigationDirection direction,
+        UiSymbolId origin,
+        UiRect originBounds)
+    {
         UiPoint center = Center(originBounds);
         UiSymbolId? winner = null;
         float winnerScore = float.PositiveInfinity;
@@ -548,11 +569,7 @@ internal sealed class UiInteractionSession
             winner = candidate;
             winnerScore = score;
         }
-        return winner ?? (_scene.Root.Policy.Focus == UiFocusScopePolicy.Trapped
-            ? Sequential(direction is UiNavigationDirection.Left or UiNavigationDirection.Up
-                ? UiNavigationDirection.Previous
-                : UiNavigationDirection.Next)
-            : null);
+        return winner;
     }
 
     private UiSymbolId? Sequential(UiNavigationDirection direction)

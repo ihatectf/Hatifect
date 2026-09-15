@@ -387,30 +387,11 @@ internal sealed class UiHostRuntimeSession
                 layout = BuildLayout(_scene, _placement, offset);
                 interaction = interaction.PrepareReconcile(_scene, layout);
             }
-            UiCollectionViewportState? collections = null;
-            if (interaction.TryGetFocusedCollectionItem(out UiCollectionSceneNode collection, out UiSymbolId item, out int index) &&
-                layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window) && window != null &&
-                layout.TryGetEntry(collection.Id, out UiLayoutEntry? entry) && entry != null)
+            UiCollectionViewportState? collections = PrepareFocusedCollectionReveal(interaction, layout);
+            if (collections != null)
             {
-                UiVirtualizedItemLayout? target = null;
-                foreach (UiVirtualizedItemLayout row in window.Items)
-                    if (row.Item.Id == item) { target = row; break; }
-                float top = Math.Max(entry.ContentBounds.Y, entry.Clip.Y);
-                float bottom = Math.Min(entry.ContentBounds.Bottom, entry.Clip.Bottom);
-                if (target is not { } visible || visible.Bounds.Y < top || visible.Bounds.Bottom > bottom)
-                {
-                    collections = new UiCollectionViewportState();
-                    collections.Synchronize(layout);
-                    if (target is { } row)
-                    {
-                        float delta = row.Bounds.Height > bottom - top || row.Bounds.Y < top
-                            ? row.Bounds.Y - top : row.Bounds.Bottom - bottom;
-                        collections.SetOffset(collection.Id, Math.Max(0, window.ScrollOffset + delta));
-                    }
-                    else collections.Reveal(collection.Id, item, index);
-                    layout = BuildLayout(_scene, _placement, offset, collections);
-                    interaction = interaction.PrepareReconcile(_scene, layout);
-                }
+                layout = BuildLayout(_scene, _placement, offset, collections);
+                interaction = interaction.PrepareReconcile(_scene, layout);
             }
             bool layoutChanged = !ReferenceEquals(layout, Layout);
             if (layoutChanged)
@@ -438,6 +419,35 @@ internal sealed class UiHostRuntimeSession
             throw;
         }
         finally { _preparingUpdate = false; }
+    }
+
+    private static UiCollectionViewportState? PrepareFocusedCollectionReveal(
+        UiInteractionSession interaction,
+        UiLayoutSnapshot layout)
+    {
+        if (!interaction.TryGetFocusedCollectionItem(out UiCollectionSceneNode collection, out UiSymbolId item, out int index) ||
+            !layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window) || window == null ||
+            !layout.TryGetEntry(collection.Id, out UiLayoutEntry? entry) || entry == null)
+            return null;
+
+        UiVirtualizedItemLayout? target = null;
+        foreach (UiVirtualizedItemLayout row in window.Items)
+            if (row.Item.Id == item) { target = row; break; }
+        float top = Math.Max(entry.ContentBounds.Y, entry.Clip.Y);
+        float bottom = Math.Min(entry.ContentBounds.Bottom, entry.Clip.Bottom);
+        bool needsReveal = target is not { } visible || visible.Bounds.Y < top || visible.Bounds.Bottom > bottom;
+        if (!needsReveal) return null;
+
+        var collections = new UiCollectionViewportState();
+        collections.Synchronize(layout);
+        if (target is { } clipped)
+        {
+            float delta = clipped.Bounds.Height > bottom - top || clipped.Bounds.Y < top
+                ? clipped.Bounds.Y - top : clipped.Bounds.Bottom - bottom;
+            collections.SetOffset(collection.Id, Math.Max(0, window.ScrollOffset + delta));
+        }
+        else collections.Reveal(collection.Id, item, index);
+        return collections;
     }
 
     public UiInteractionUpdate MoveFocus(UiNavigationDirection direction)

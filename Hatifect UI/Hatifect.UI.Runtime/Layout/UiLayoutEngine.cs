@@ -174,20 +174,7 @@ internal sealed class UiSceneLayoutEngine
         UiHostPlacementResult placement = _placement.Place(
             scene.Root.Policy, context, root.Desired, root.Minimum);
 
-        UiRootScrollLayout? rootScroll = null;
-        if ((scene.Root.Policy.CustomPolicy == UiProvisionalHostPolicies.OverlayCenteredId ||
-             scene.Root.Policy.CustomPolicy == UiProvisionalHostPolicies.SemanticWindowId) &&
-            placement.WasClamped && root.Minimum.Height > placement.Bounds.Height + .01f)
-        {
-            UiRect content = placement.Bounds.Inset(root.Inset);
-            float height = content.Height - root.HeadingHeight;
-            // Scrolling cannot repair an unusable viewport or insufficient horizontal space.
-            if (height <= 0 || placement.Bounds.Width + .01f < root.Minimum.Width)
-                throw new UiLayoutException($"Node '{scene.Root.Id}' has space smaller than required minimum viewport.");
-            var viewport = new UiRect(content.X, content.Y + root.HeadingHeight, content.Width, height);
-            float extent = root.Desired.Height - root.Inset.Top - root.Inset.Bottom - root.HeadingHeight;
-            rootScroll = new(viewport, extent, Math.Clamp(rootOffset, 0, UiRootScrollLayout.MaximumFor(viewport, extent)));
-        }
+        UiRootScrollLayout? rootScroll = ResolveRootScroll(scene.Root, root, placement, rootOffset);
         var entries = new Dictionary<UiSymbolId, UiLayoutEntry>();
         var collectionWindows = new Dictionary<UiSymbolId, UiCollectionLayoutWindow>();
         Arrange(
@@ -195,6 +182,28 @@ internal sealed class UiSceneLayoutEngine
             collections, collectionWindows, scene.MeasurementContext, context.Viewport, rootScroll);
         _collections.Synchronize(collectionWindows.Keys);
         return new UiLayoutSnapshot(entries, placement, collectionWindows, rootScroll);
+    }
+
+    private static UiRootScrollLayout? ResolveRootScroll(
+        UiHostSceneNode node,
+        MeasuredNode measured,
+        UiHostPlacementResult placement,
+        float requestedOffset)
+    {
+        bool scrollableHost = node.Policy.CustomPolicy == UiProvisionalHostPolicies.OverlayCenteredId ||
+                              node.Policy.CustomPolicy == UiProvisionalHostPolicies.SemanticWindowId;
+        if (!(scrollableHost && placement.WasClamped &&
+              measured.Minimum.Height > placement.Bounds.Height + .01f))
+            return null;
+
+        UiRect content = placement.Bounds.Inset(measured.Inset);
+        float height = content.Height - measured.HeadingHeight;
+        // Scrolling cannot repair an unusable viewport or insufficient horizontal space.
+        if (height <= 0 || placement.Bounds.Width + .01f < measured.Minimum.Width)
+            throw new UiLayoutException($"Node '{node.Id}' has space smaller than required minimum viewport.");
+        var viewport = new UiRect(content.X, content.Y + measured.HeadingHeight, content.Width, height);
+        float extent = measured.Desired.Height - measured.Inset.Top - measured.Inset.Bottom - measured.HeadingHeight;
+        return new(viewport, extent, Math.Clamp(requestedOffset, 0, UiRootScrollLayout.MaximumFor(viewport, extent)));
     }
 
     private MeasuredNode Measure(
@@ -218,16 +227,7 @@ internal sealed class UiSceneLayoutEngine
                 measured);
         }
         UiTextOverflow overflow = Overflow(node.Kind);
-        UiSize desiredContent;
-        UiSize minimumContent;
-        float itemExtent = 0;
-        float itemLineHeight = 0;
-        float preferredItemWidth = 0;
-        UiTypography? collectionTypography = null;
-        float inputPromptWidth = 0;
-        float inputPromptHeight = 0;
-        float inputPromptSpacing = 0;
-        float actionStatusLineHeight = 0;
+        MeasuredContent content;
         UiSize? tooltipSize = null;
         UiThickness tooltipInset = default;
 
@@ -245,149 +245,31 @@ internal sealed class UiSceneLayoutEngine
         string? text = RuntimeText(node);
         if (node is UiCollectionSceneNode collection)
         {
-            UiTypography typography = Required<UiTypography>(node.Visual, "typography", node.Id);
-            UiSize line = _textMetrics.Measure("M", typography, contentWidth, UiTextOverflow.Clip);
-            itemLineHeight = Math.Max(1, line.Height);
-            collectionTypography = typography;
-            if (InputPrompt(node) is { } prompt)
-            {
-                UiTypography promptTypography = Required<UiTypography>(node.Visual, "prompt.typography", node.Id);
-                UiSize promptSize = _textMetrics.Measure(
-                    prompt.Label,
-                    promptTypography,
-                    contentWidth,
-                    UiTextOverflow.Clip);
-                inputPromptWidth = Math.Min(contentWidth, promptSize.Width);
-                inputPromptHeight = promptSize.Height;
-                inputPromptSpacing = Required<UiSpacing>(node.Visual, "prompt.spacing", node.Id).Value;
-            }
-            float promptSpace = inputPromptWidth > 0
-                ? Math.Min(contentWidth, inputPromptWidth + inputPromptSpacing)
-                : 0;
-            float rowTextWidth = Math.Max(1, contentWidth - promptSpace);
-            float desiredWidth = line.Width + promptSpace;
-            int samples = Math.Min(collection.Count, 8);
-            bool hasSupportingText = collection.MayHaveSupportingText;
-            int maximumSupportingLength = 0;
-            for (int index = 0; index < samples; index++)
-            {
-                UiSemanticCollectionItem item = collection.ItemAt(index);
-                UiSize sample = _textMetrics.Measure(
-                    item.Label,
-                    typography,
-                    rowTextWidth,
-                    UiTextOverflow.Ellipsis);
-                desiredWidth = Math.Max(desiredWidth, sample.Width + promptSpace);
-                if (!collection.Recipe.IsNavigation && !string.IsNullOrWhiteSpace(item.SupportingText))
-                {
-                    maximumSupportingLength = Math.Max(maximumSupportingLength, item.SupportingText!.Length);
-                }
-            }
-            float density = UiDensityPolicy.Factor(collection.Recipe.Density, measurementContext.Profile);
-            float localeFactor = measurementContext.Locale.StartsWith("ru", StringComparison.OrdinalIgnoreCase)
-                ? 1.05f
-                : 1;
-            int supportingLines = hasSupportingText
-                ? collection.Recipe.IsAdaptive
-                    ? Math.Clamp(
-                        (int)MathF.Ceiling(
-                            maximumSupportingLength * typography.Size * 0.55f * localeFactor /
-                            rowTextWidth),
-                        1,
-                        3)
-                    : 1
-                : 0;
-            float textHeight = itemLineHeight +
-                               supportingLines * itemLineHeight +
-                               (supportingLines > 0 ? itemLineHeight * 0.2f * density : 0);
-            itemExtent = Math.Max(textHeight, inputPromptHeight) +
-                         itemLineHeight * 0.7f * density * localeFactor;
-            preferredItemWidth = Math.Max(
-                1,
-                collection.Recipe.Layout == UiCollectionLayoutKind.AdaptiveGrid
-                    ? Math.Max(desiredWidth, line.Height * 6)
-                    : desiredWidth);
-            int desiredColumns = collection.Recipe.Layout == UiCollectionLayoutKind.AdaptiveGrid
-                ? Math.Min(collection.Count, collection.Recipe.PreferredColumns)
-                : Math.Min(collection.Count, 1);
-            int totalRows = desiredColumns == 0
-                ? 0
-                : (collection.Count + desiredColumns - 1) / desiredColumns;
-            int desiredRows = Math.Min(totalRows, collection.Recipe.PreviewRows);
-            if (collection.Count == 0 && collection.IsSelectable)
-            {
-                desiredColumns = 1;
-                desiredRows = 1;
-            }
-            desiredContent = new UiSize(preferredItemWidth * desiredColumns, desiredRows * itemExtent);
-            minimumContent = collection.Count == 0 && !collection.IsSelectable
-                ? default
-                : new UiSize(
-                    Math.Max(
-                        1,
-                        collection.Recipe.Layout == UiCollectionLayoutKind.AdaptiveGrid
-                            ? Math.Min(preferredItemWidth, contentWidth)
-                            : line.Width),
-                    itemExtent);
+            content = MeasureCollection(collection, contentWidth, measurementContext);
         }
         else if (text != null && !(node is UiSourceSceneNode && text.Length == 0))
         {
-            UiTypography typography = Required<UiTypography>(node.Visual, "typography", node.Id);
-            float iconSpace = node is UiRouteButtonSceneNode route ? route.IconSpace : 0;
-            UiInputPrompt? prompt = InputPrompt(node);
-            float promptSpace = 0;
-            float promptHeight = 0;
-            if (prompt != null)
-            {
-                UiTypography promptTypography = Required<UiTypography>(node.Visual, "prompt.typography", node.Id);
-                UiSize promptSize = _textMetrics.Measure(
-                    prompt.Label,
-                    promptTypography,
-                    Math.Max(1, contentWidth - iconSpace),
-                    UiTextOverflow.Clip);
-                float promptSpacing = Required<UiSpacing>(node.Visual, "prompt.spacing", node.Id).Value;
-                inputPromptWidth = Math.Min(contentWidth, promptSize.Width);
-                promptSpace = Math.Min(contentWidth, inputPromptWidth + promptSpacing);
-                promptHeight = promptSize.Height;
-            }
-            float reservedSpace = Math.Min(contentWidth, iconSpace + promptSpace);
-            UiSize desiredText = _textMetrics.Measure(
-                text,
-                typography,
-                Math.Max(1, contentWidth - reservedSpace),
-                overflow);
-            UiSize minimumLine = _textMetrics.Measure("M", typography, contentWidth, UiTextOverflow.Clip);
-            desiredContent = new UiSize(
-                Math.Min(contentWidth, desiredText.Width + reservedSpace),
-                Math.Max(Math.Max(desiredText.Height, promptHeight),
-                    iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 0));
-            minimumContent = new UiSize(
-                IsInteractive(node) ? Math.Min(contentWidth, Math.Max(1, minimumLine.Width + reservedSpace)) : 0,
-                Math.Max(Math.Max(iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 1, minimumLine.Height), promptHeight));
-            if (node is UiButtonSceneNode { Action.Binding: not null })
-            {
-                // Reserve a second line before invocation so status changes retain geometry.
-                actionStatusLineHeight = minimumLine.Height;
-                desiredContent = new UiSize(Math.Max(desiredContent.Width, Math.Min(contentWidth, minimumLine.Width * 24)),
-                    desiredContent.Height + minimumLine.Height);
-                minimumContent = new UiSize(minimumContent.Width, minimumContent.Height + minimumLine.Height);
-            }
+            content = MeasureText(node, text, contentWidth, overflow);
         }
         else if (node is UiHostSceneNode { Policy.Kind: UiHostKind.Terminal })
         {
-            (desiredContent, minimumContent) = MeasureTerminalShell(node.Children, children);
+            (UiSize shellDesired, UiSize shellMinimum) = MeasureTerminalShell(node.Children, children);
+            content = new MeasuredContent(shellDesired, shellMinimum);
         }
         else if (children.Length > 0)
         {
             bool horizontal = node.Kind == UiSceneNodeKind.ActionBar;
-            desiredContent = Aggregate(children, horizontal, minimum: false);
-            minimumContent = Aggregate(children, horizontal, minimum: true);
+            content = new MeasuredContent(
+                Aggregate(children, horizontal, minimum: false),
+                Aggregate(children, horizontal, minimum: true));
         }
         else
         {
-            desiredContent = default;
-            minimumContent = default;
+            content = default;
         }
+
+        UiSize desiredContent = content.Desired;
+        UiSize minimumContent = content.Minimum;
 
         // Headings reserve one measured line. Ellipsis keeps that height valid when
         // host placement narrows the final content box; values retain their wrap policy.
@@ -419,20 +301,248 @@ internal sealed class UiSceneLayoutEngine
             inset,
             overflow,
             IsFlexible(node),
-            itemExtent,
-            itemLineHeight,
-            preferredItemWidth,
-            collectionTypography,
+            content.ItemExtent,
+            content.ItemLineHeight,
+            content.PreferredItemWidth,
+            content.CollectionTypography,
             heading,
             headingHeight,
-            inputPromptWidth,
-            inputPromptHeight,
-            inputPromptSpacing,
-            actionStatusLineHeight,
+            content.InputPrompt.Width,
+            content.InputPrompt.Height,
+            content.InputPrompt.Spacing,
+            content.ActionStatusLineHeight,
             tooltipSize,
             tooltipInset);
         measured.Add(node.Id, result);
         return result;
+    }
+
+    private MeasuredContent MeasureCollection(
+        UiCollectionSceneNode collection,
+        float contentWidth,
+        UiSceneMeasurementContext measurementContext)
+    {
+        UiTypography typography = Required<UiTypography>(collection.Visual, "typography", collection.Id);
+        UiSize line = _textMetrics.Measure("M", typography, contentWidth, UiTextOverflow.Clip);
+        float itemLineHeight = Math.Max(1, line.Height);
+        UiCollectionPromptMetrics inputPrompt = MeasureCollectionPrompt(collection, contentWidth);
+        float promptSpace = inputPrompt.Width > 0
+            ? Math.Min(contentWidth, inputPrompt.Width + inputPrompt.Spacing)
+            : 0;
+        float rowTextWidth = Math.Max(1, contentWidth - promptSpace);
+        CollectionSampledText sampledText = MeasureCollectionSampledText(
+            collection,
+            typography,
+            rowTextWidth,
+            promptSpace,
+            line.Width);
+        float itemExtent = EstimateCollectionItemExtent(
+            collection,
+            measurementContext,
+            typography,
+            itemLineHeight,
+            inputPrompt.Height,
+            rowTextWidth,
+            sampledText);
+        CollectionContentGeometry geometry = ResolveCollectionContentGeometry(
+            collection,
+            contentWidth,
+            line,
+            itemExtent,
+            sampledText.DesiredWidth);
+        return new MeasuredContent(
+            geometry.Desired,
+            geometry.Minimum,
+            itemExtent,
+            itemLineHeight,
+            geometry.PreferredItemWidth,
+            typography,
+            inputPrompt);
+    }
+
+    private UiCollectionPromptMetrics MeasureCollectionPrompt(
+        UiCollectionSceneNode collection,
+        float contentWidth)
+    {
+        if (InputPrompt(collection) is { } prompt)
+        {
+            UiTypography promptTypography = Required<UiTypography>(collection.Visual, "prompt.typography", collection.Id);
+            UiSize promptSize = _textMetrics.Measure(
+                prompt.Label,
+                promptTypography,
+                contentWidth,
+                UiTextOverflow.Clip);
+            float inputPromptWidth = Math.Min(contentWidth, promptSize.Width);
+            float inputPromptHeight = promptSize.Height;
+            float inputPromptSpacing = Required<UiSpacing>(
+                collection.Visual,
+                "prompt.spacing",
+                collection.Id).Value;
+            return new UiCollectionPromptMetrics(
+                inputPromptWidth,
+                inputPromptHeight,
+                inputPromptSpacing);
+        }
+
+        return default;
+    }
+
+    private CollectionSampledText MeasureCollectionSampledText(
+        UiCollectionSceneNode collection,
+        UiTypography typography,
+        float rowTextWidth,
+        float promptSpace,
+        float lineWidth)
+    {
+        float desiredWidth = lineWidth + promptSpace;
+        int samples = Math.Min(collection.Count, 8);
+        bool hasSupportingText = collection.MayHaveSupportingText;
+        int maximumSupportingLength = 0;
+        for (int index = 0; index < samples; index++)
+        {
+            UiSemanticCollectionItem item = collection.ItemAt(index);
+            UiSize sample = _textMetrics.Measure(
+                item.Label,
+                typography,
+                rowTextWidth,
+                UiTextOverflow.Ellipsis);
+            desiredWidth = Math.Max(desiredWidth, sample.Width + promptSpace);
+            if (!collection.Recipe.IsNavigation && !string.IsNullOrWhiteSpace(item.SupportingText))
+            {
+                maximumSupportingLength = Math.Max(maximumSupportingLength, item.SupportingText!.Length);
+            }
+        }
+
+        return new CollectionSampledText(
+            desiredWidth,
+            hasSupportingText,
+            maximumSupportingLength);
+    }
+
+    private static float EstimateCollectionItemExtent(
+        UiCollectionSceneNode collection,
+        UiSceneMeasurementContext measurementContext,
+        UiTypography typography,
+        float itemLineHeight,
+        float inputPromptHeight,
+        float rowTextWidth,
+        CollectionSampledText sampledText)
+    {
+        float density = UiDensityPolicy.Factor(collection.Recipe.Density, measurementContext.Profile);
+        float localeFactor = measurementContext.Locale.StartsWith("ru", StringComparison.OrdinalIgnoreCase)
+            ? 1.05f
+            : 1;
+        int supportingLines = sampledText.HasSupportingText
+            ? collection.Recipe.IsAdaptive
+                ? Math.Clamp(
+                    (int)MathF.Ceiling(
+                        sampledText.MaximumSupportingLength * typography.Size * 0.55f * localeFactor /
+                        rowTextWidth),
+                    1,
+                    3)
+                : 1
+            : 0;
+        float textHeight = itemLineHeight +
+                           supportingLines * itemLineHeight +
+                           (supportingLines > 0 ? itemLineHeight * 0.2f * density : 0);
+        return Math.Max(textHeight, inputPromptHeight) +
+               itemLineHeight * 0.7f * density * localeFactor;
+    }
+
+    private static CollectionContentGeometry ResolveCollectionContentGeometry(
+        UiCollectionSceneNode collection,
+        float contentWidth,
+        UiSize line,
+        float itemExtent,
+        float desiredWidth)
+    {
+        float preferredItemWidth = Math.Max(
+            1,
+            collection.Recipe.Layout == UiCollectionLayoutKind.AdaptiveGrid
+                ? Math.Max(desiredWidth, line.Height * 6)
+                : desiredWidth);
+        int desiredColumns = collection.Recipe.Layout == UiCollectionLayoutKind.AdaptiveGrid
+            ? Math.Min(collection.Count, collection.Recipe.PreferredColumns)
+            : Math.Min(collection.Count, 1);
+        int totalRows = desiredColumns == 0
+            ? 0
+            : (collection.Count + desiredColumns - 1) / desiredColumns;
+        int desiredRows = Math.Min(totalRows, collection.Recipe.PreviewRows);
+        if (collection.Count == 0 && collection.IsSelectable)
+        {
+            desiredColumns = 1;
+            desiredRows = 1;
+        }
+        UiSize desiredContent = new UiSize(preferredItemWidth * desiredColumns, desiredRows * itemExtent);
+        UiSize minimumContent = collection.Count == 0 && !collection.IsSelectable
+            ? default
+            : new UiSize(
+                Math.Max(
+                    1,
+                    collection.Recipe.Layout == UiCollectionLayoutKind.AdaptiveGrid
+                        ? Math.Min(preferredItemWidth, contentWidth)
+                        : line.Width),
+                itemExtent);
+
+        return new CollectionContentGeometry(
+            desiredContent,
+            minimumContent,
+            preferredItemWidth);
+    }
+
+    private MeasuredContent MeasureText(
+        UiSceneNode node,
+        string text,
+        float contentWidth,
+        UiTextOverflow overflow)
+    {
+        UiTypography typography = Required<UiTypography>(node.Visual, "typography", node.Id);
+        float iconSpace = node is UiRouteButtonSceneNode route ? route.IconSpace : 0;
+        UiInputPrompt? prompt = InputPrompt(node);
+        float inputPromptWidth = 0;
+        float actionStatusLineHeight = 0;
+        float promptSpace = 0;
+        float promptHeight = 0;
+        if (prompt != null)
+        {
+            UiTypography promptTypography = Required<UiTypography>(node.Visual, "prompt.typography", node.Id);
+            UiSize promptSize = _textMetrics.Measure(
+                prompt.Label,
+                promptTypography,
+                Math.Max(1, contentWidth - iconSpace),
+                UiTextOverflow.Clip);
+            float promptSpacing = Required<UiSpacing>(node.Visual, "prompt.spacing", node.Id).Value;
+            inputPromptWidth = Math.Min(contentWidth, promptSize.Width);
+            promptSpace = Math.Min(contentWidth, inputPromptWidth + promptSpacing);
+            promptHeight = promptSize.Height;
+        }
+        float reservedSpace = Math.Min(contentWidth, iconSpace + promptSpace);
+        UiSize desiredText = _textMetrics.Measure(
+            text,
+            typography,
+            Math.Max(1, contentWidth - reservedSpace),
+            overflow);
+        UiSize minimumLine = _textMetrics.Measure("M", typography, contentWidth, UiTextOverflow.Clip);
+        UiSize desiredContent = new UiSize(
+            Math.Min(contentWidth, desiredText.Width + reservedSpace),
+            Math.Max(Math.Max(desiredText.Height, promptHeight),
+                iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 0));
+        UiSize minimumContent = new UiSize(
+            IsInteractive(node) ? Math.Min(contentWidth, Math.Max(1, minimumLine.Width + reservedSpace)) : 0,
+            Math.Max(Math.Max(iconSpace > 0 ? UiRouteButtonSceneNode.IconExtent : 1, minimumLine.Height), promptHeight));
+        if (node is UiButtonSceneNode { Action.Binding: not null })
+        {
+            // Reserve a second line before invocation so status changes retain geometry.
+            actionStatusLineHeight = minimumLine.Height;
+            desiredContent = new UiSize(Math.Max(desiredContent.Width, Math.Min(contentWidth, minimumLine.Width * 24)),
+                desiredContent.Height + minimumLine.Height);
+            minimumContent = new UiSize(minimumContent.Width, minimumContent.Height + minimumLine.Height);
+        }
+        return new MeasuredContent(
+            desiredContent,
+            minimumContent,
+            InputPrompt: new UiCollectionPromptMetrics(inputPromptWidth, 0, 0),
+            ActionStatusLineHeight: actionStatusLineHeight);
     }
 
     private void Arrange(
@@ -562,41 +672,43 @@ internal sealed class UiSceneLayoutEngine
         // Use the same tolerance as minimum admission: subtracting headings and
         // insets can leave a subpixel deficit even when every child is at minimum.
         if (desiredTotal > available + 0.01f)
+            ShrinkToFit(children, desired, horizontal, desiredTotal - available);
+        else if (desiredTotal < available)
+            ExpandFlexibleChildren(children, desired, available, desiredTotal);
+        return desired;
+
+        static void ShrinkToFit(MeasuredNode[] children, float[] sizes, bool horizontal, float excess)
         {
-            float excess = desiredTotal - available;
             float slack = 0;
             for (int index = 0; index < children.Length; index++)
             {
                 MeasuredNode child = children[index];
                 float minimumValue = horizontal ? child.Minimum.Width : child.Minimum.Height;
-                slack += desired[index] - minimumValue;
+                slack += sizes[index] - minimumValue;
             }
             if (slack <= 0) throw new UiLayoutException("Layout constraints cannot be satisfied.");
             for (int index = 0; index < children.Length; index++)
             {
                 MeasuredNode child = children[index];
                 float minimumValue = horizontal ? child.Minimum.Width : child.Minimum.Height;
-                float itemSlack = desired[index] - minimumValue;
-                desired[index] -= excess * (itemSlack / slack);
+                float itemSlack = sizes[index] - minimumValue;
+                sizes[index] -= excess * (itemSlack / slack);
             }
         }
-        else if (desiredTotal < available)
+
+        static void ExpandFlexibleChildren(MeasuredNode[] children, float[] sizes, float available, float desiredTotal)
         {
             int flexibleCount = 0;
             for (int index = 0; index < children.Length; index++)
             {
                 if (children[index].Flexible) flexibleCount++;
             }
-            if (flexibleCount > 0)
-            {
-                float extra = (available - desiredTotal) / flexibleCount;
-                for (int index = 0; index < children.Length; index++)
-                {
-                    if (children[index].Flexible) desired[index] += extra;
-                }
-            }
+            if (flexibleCount == 0) return;
+
+            float extra = (available - desiredTotal) / flexibleCount;
+            for (int index = 0; index < children.Length; index++)
+                if (children[index].Flexible) sizes[index] += extra;
         }
-        return desired;
     }
 
     private void ArrangeTerminalShell(
@@ -883,6 +995,26 @@ internal sealed class UiSceneLayoutEngine
         value = default!;
         return false;
     }
+
+    private readonly record struct MeasuredContent(
+        UiSize Desired,
+        UiSize Minimum,
+        float ItemExtent = 0,
+        float ItemLineHeight = 0,
+        float PreferredItemWidth = 0,
+        UiTypography? CollectionTypography = null,
+        UiCollectionPromptMetrics InputPrompt = default,
+        float ActionStatusLineHeight = 0);
+
+    private readonly record struct CollectionSampledText(
+        float DesiredWidth,
+        bool HasSupportingText,
+        int MaximumSupportingLength);
+
+    private readonly record struct CollectionContentGeometry(
+        UiSize Desired,
+        UiSize Minimum,
+        float PreferredItemWidth);
 
     private sealed record MeasuredNode(
         UiSize Desired,
