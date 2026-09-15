@@ -38,7 +38,7 @@ EXPECTED_HOST_FREE_TEST_COUNTS = {
     "hatifect-flow-tests": 803,
     "hatifect-ui-devtools-tests": 10,
     "hatifect-ui-planning-tests": 149,
-    "hatifect-ui-runtime-tests": 703,
+    "hatifect-ui-runtime-tests": 712,
     "hatifect-ui-semantics-tests": 69,
     "hatifect-ui-tooling-server-tests": 16,
     "hatifect-ui-tooling-tests": 192,
@@ -65,7 +65,7 @@ RUNTIME_TEST_SHARDS = (
         "&(FullyQualifiedName!=Hatifect.UI.Runtime.Tests.CollectionPublicationInteractionTests."
         "ColdPredecessorSearchReportsTheWorstRemovalTransitionAndLeavesSteadyRenderingBounded"
         "|DisplayName!~Adaptive)",
-        684,
+        693,
     ),
 )
 

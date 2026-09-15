@@ -58,20 +58,26 @@ class LiveHarnessTests(unittest.TestCase):
             / "UiAutomatedAcceptanceController.cs"
         ).read_text(encoding="utf-8")
 
+        catalog = (
+            ROOT / "Hatifect UI" / "Hatifect.UI.Stardew" / "Diagnostics"
+            / "UiAcceptanceScenarioCatalog.cs"
+        ).read_text(encoding="utf-8")
+
         self.assertEqual(all_scenario.get("checks", []), [])
-        self.assertIn("BuiltInScenarioRegistry", driver)
-        self.assertIn("private static AcceptanceScenarioCatalog BuildScenarioCatalog", driver)
-        self.assertIn("if (!checkOwners.TryAdd(check, scenario.Id))", driver)
-        self.assertIn("allChecks.AddRange(scenario.Checks);", driver)
-        self.assertIn("scenario.Kind == AcceptanceScenarioKind.Ui", driver)
-        self.assertIn("contributions.Descriptors", driver)
+        self.assertIn("BuiltInScenarioRegistry", catalog)
+        self.assertIn("internal static UiAcceptanceScenarioCatalog Create", catalog)
+        self.assertIn("if (!checkOwners.TryAdd(check, scenario.Id))", catalog)
+        self.assertIn("allChecks.AddRange(scenario.Checks);", catalog)
+        self.assertIn("scenario.Kind == AcceptanceScenarioKind.Ui", catalog)
+        self.assertIn("contributions.Descriptors", catalog)
         self.assertIn("scenario.Contribution.Execute(context);", driver)
         self.assertIn("ExecuteAllNamedUiScenarios()", driver)
-        self.assertIn("ValidateAllExecution(allScenarios);", driver)
+        self.assertIn("UiAcceptanceScenarioCatalog.Create(UiAutomatedAcceptanceScenarioRegistry.Freeze())", driver)
+        self.assertIn("ValidateAllExecution(allScenarios);", catalog)
         self.assertIn("ScenarioCatalog.IsDeclaredCheck(_scenario, checkId)", driver)
         self.assertIn("produced undeclared check", driver)
-        self.assertIn("contribution.IncludeInAggregate", driver)
-        self.assertIn("if (!contribution.IncludeInAggregate) continue;", driver)
+        self.assertIn("contribution.IncludeInAggregate", catalog)
+        self.assertIn("if (!contribution.IncludeInAggregate) continue;", catalog)
         self.assertNotIn('case "all":', driver)
         self.assertNotIn('["all"] = new[]', driver)
         owners: dict[str, str] = {}
@@ -156,10 +162,15 @@ class LiveHarnessTests(unittest.TestCase):
             / "UiAutomatedAcceptanceController.cs"
         ).read_text(encoding="utf-8")
 
+        catalog = (
+            ROOT / "Hatifect UI" / "Hatifect.UI.Stardew" / "Diagnostics"
+            / "UiAcceptanceScenarioCatalog.cs"
+        ).read_text(encoding="utf-8")
+
         self.assertTrue(resolved["requiresSave"])
         self.assertIn(
             'new("semantic.locale-scale-theme", AcceptanceScenarioKind.Ui, true',
-            driver,
+            catalog,
         )
         self.assertIn("if (ScenarioCatalog.RequiresWorld(_scenario))", driver)
         self.assertIn("BeginLoadIsolatedSave();", driver)
@@ -407,7 +418,7 @@ class LiveHarnessTests(unittest.TestCase):
 
         write_diagnostics = driver[
             driver.index("private void WriteDiagnostics()"):driver.index(
-                "private enum AcceptanceScenarioKind"
+                "private sealed class HarnessTerminalFailure"
             )
         ]
         guard = write_diagnostics.index("if (_diagnosticsWritten) return;")
