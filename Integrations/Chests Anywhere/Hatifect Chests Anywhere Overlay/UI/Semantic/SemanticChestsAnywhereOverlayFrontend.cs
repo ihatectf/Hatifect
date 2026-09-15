@@ -231,18 +231,7 @@ internal sealed class SemanticChestsAnywhereOverlayFrontend : IChestsAnywhereOve
 
         ChestsAnywhereNavigatorExperienceSession? experience = _experience;
         var failures = new List<Exception>();
-        _retirementInProgress = true;
-        try
-        {
-            if (!_surfaceCleanupCompleted)
-                _surfaceCleanupCompleted = AttemptCleanup(surface.Dispose, failures);
-            if (!_experienceCleanupCompleted)
-                _experienceCleanupCompleted = AttemptCleanup(() => experience?.Dispose(), failures);
-        }
-        finally
-        {
-            _retirementInProgress = false;
-        }
+        AttemptRetirementCleanup(surface, experience, failures);
 
         if (!_surfaceCleanupCompleted || !_experienceCleanupCompleted)
         {
@@ -259,6 +248,25 @@ internal sealed class SemanticChestsAnywhereOverlayFrontend : IChestsAnywhereOve
             throw new AggregateException(
                 "Semantic Chests Anywhere Overlay session cleanup failed.",
                 failures);
+        }
+    }
+
+    private void AttemptRetirementCleanup(
+        IUiSemanticSurfaceSession surface,
+        ChestsAnywhereNavigatorExperienceSession? experience,
+        ICollection<Exception> failures)
+    {
+        _retirementInProgress = true;
+        try
+        {
+            if (!_surfaceCleanupCompleted)
+                _surfaceCleanupCompleted = AttemptCleanup(surface.Dispose, failures);
+            if (!_experienceCleanupCompleted)
+                _experienceCleanupCompleted = AttemptCleanup(() => experience?.Dispose(), failures);
+        }
+        finally
+        {
+            _retirementInProgress = false;
         }
     }
 
