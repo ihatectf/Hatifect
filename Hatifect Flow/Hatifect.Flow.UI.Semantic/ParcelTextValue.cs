@@ -29,19 +29,33 @@ internal sealed record ParcelTextValue(ParcelPresentationSnapshot Facts, ParcelT
                 : (Facts.LocalizedItemName?.Resolve(locale) ?? Facts.ItemName) + " × " + parcel!.Quantity.ToString(CultureInfo.InvariantCulture),
             ParcelTextPart.Route => unavailable ? string.Empty
                 : (Facts.Origin ?? Text("Station", "Станция")) + " → " + (Facts.Destination ?? Text("Station", "Станция")),
-            ParcelTextPart.State => unselected ? Text("No shipment selected", "Отправление не выбрано")
-                : unavailable ? FlowReasonText.Describe(missingCode, string.Empty, russian)
-                : DescribeState(snapshot, parcel!, russian),
-            ParcelTextPart.Availability => unselected && snapshot.Code == FlowRejectionCode.None
-                ? Text("Select a shipment to inspect", "Выберите отправление для просмотра")
-                : unavailable ? FlowReasonText.Describe(
-                    snapshot.Code == FlowRejectionCode.None ? missingCode : snapshot.Code, string.Empty, russian)
-                : FlowReasonText.UnavailableActions(parcel!.Availability, russian),
+            ParcelTextPart.State => FormatState(),
+            ParcelTextPart.Availability => FormatAvailability(),
             ParcelTextPart.Result => Facts.Result is null ? string.Empty
                 : Facts.Result.Status == FlowCommandStatus.Applied ? Text("Command completed", "Команда выполнена")
                 : FlowReasonText.Describe(Facts.Result.Code, Facts.Result.ReasonKey, russian),
             _ => throw new InvalidOperationException("Unknown parcel text part.")
         };
+
+        string FormatState()
+        {
+            if (unselected)
+                return Text("No shipment selected", "Отправление не выбрано");
+            if (unavailable)
+                return FlowReasonText.Describe(missingCode, string.Empty, russian);
+            return DescribeState(snapshot, parcel!, russian);
+        }
+
+        string FormatAvailability()
+        {
+            if (unselected && snapshot.Code == FlowRejectionCode.None)
+                return Text("Select a shipment to inspect", "Выберите отправление для просмотра");
+            if (unavailable)
+                return FlowReasonText.Describe(
+                    snapshot.Code == FlowRejectionCode.None ? missingCode : snapshot.Code, string.Empty, russian);
+            return FlowReasonText.UnavailableActions(parcel!.Availability, russian);
+        }
+
         string Text(string english, string translated) => russian ? translated : english;
     }
 

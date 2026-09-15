@@ -240,19 +240,19 @@ public sealed class UiVisualResolver
         IReadOnlyList<UiVisualStateRef> activeStates,
         UiVisualResolutionLayer layer)
     {
-        var byId = activeStates.ToDictionary(state => state.Id);
+        var activeStatesById = activeStates.ToDictionary(state => state.Id);
         var selectedByState = recipes
-            .Where(recipe => recipe.Target == context.Role && recipe.State is { } state && byId.ContainsKey(state) &&
+            .Where(recipe => recipe.Target == context.Role && recipe.State is { } state && activeStatesById.ContainsKey(state) &&
                              (recipe.Profile == null || recipe.Profile == context.Profile))
-            .GroupBy(recipe => (recipe.State!.Value, recipe.Property.Id))
-            .Select(group => SelectProfile(group, context.Profile, group.Key.Item1))
+            .GroupBy(recipe => (State: recipe.State!.Value, Property: recipe.Property.Id))
+            .Select(group => SelectProfile(group, context.Profile, group.Key.State))
             .ToArray();
 
         var result = new List<SelectedAssignment>();
-        foreach (IGrouping<UiSymbolId, SelectedAssignment> property in selectedByState.GroupBy(item => item.Assignment.Property.Id))
+        foreach (IGrouping<UiSymbolId, SelectedAssignment> propertyAssignments in selectedByState.GroupBy(item => item.Assignment.Property.Id))
         {
-            int highest = property.Max(item => byId[item.State!.Value].Priority);
-            SelectedAssignment[] winners = property.Where(item => byId[item.State!.Value].Priority == highest).ToArray();
+            int highestPriority = propertyAssignments.Max(item => activeStatesById[item.State!.Value].Priority);
+            SelectedAssignment[] winners = propertyAssignments.Where(item => activeStatesById[item.State!.Value].Priority == highestPriority).ToArray();
             if (winners.Length != 1)
                 throw new InvalidOperationException(
                     $"Visual property '{winners[0].Assignment.Property.Name}' has an equal-priority conflict in {layer}.");
