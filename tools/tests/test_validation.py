@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
@@ -59,18 +61,58 @@ class ValidationTests(unittest.TestCase):
         return test_inventory.Inventory(self.solution(ui, flow, ca))
 
     def trx(self, *, total=2, executed=2, passed=2, failed=0, outcomes=("Passed", "Passed"),
-            execution_ids=("one", "two"), extra=None, summary="Completed") -> Path:
+            execution_ids=("one", "two"), test_names=None, test_ids=None,
+            extra=None, summary="Completed") -> Path:
         path = self.root / "tests.trx"
         root = ET.Element("TestRun", xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010")
         results = ET.SubElement(root, "Results")
-        for outcome, identity in zip(outcomes, execution_ids):
-            ET.SubElement(results, "UnitTestResult", outcome=outcome, executionId=identity)
+        names = test_names or tuple(f"Example.Tests.Case{index}" for index in range(len(outcomes)))
+        identities = test_ids or tuple(f"test-{index}" for index in range(len(outcomes)))
+        for outcome, identity, name, test_id in zip(outcomes, execution_ids, names, identities):
+            ET.SubElement(
+                results,
+                "UnitTestResult",
+                outcome=outcome,
+                executionId=identity,
+                testName=name,
+                testId=test_id,
+            )
         result_summary = ET.SubElement(root, "ResultSummary", outcome=summary)
         counts = {"total": total, "executed": executed, "passed": passed, "failed": failed}
         counts.update(extra or {})
         ET.SubElement(result_summary, "Counters", **{key: str(value) for key, value in counts.items()})
         ET.ElementTree(root).write(path)
         return path
+
+    def write_trx(
+        self,
+        path: Path,
+        names: tuple[str, ...],
+        test_ids: tuple[str, ...] | None = None,
+    ) -> None:
+        root = ET.Element("TestRun", xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010")
+        results = ET.SubElement(root, "Results")
+        identities = test_ids or tuple(f"test-{name}" for name in names)
+        for index, (name, test_id) in enumerate(zip(names, identities)):
+            ET.SubElement(
+                results,
+                "UnitTestResult",
+                outcome="Passed",
+                executionId=f"execution-{index}",
+                testName=name,
+                testId=test_id,
+            )
+        summary = ET.SubElement(root, "ResultSummary", outcome="Completed")
+        total = str(len(names))
+        ET.SubElement(
+            summary,
+            "Counters",
+            total=total,
+            executed=total,
+            passed=total,
+            failed="0",
+        )
+        ET.ElementTree(root).write(path)
 
     def test_module_scopes_select_registered_projects_without_category_filters(self) -> None:
         inventory = self.basic_graph()
@@ -278,6 +320,208 @@ class ValidationTests(unittest.TestCase):
             with self.subTest(name=name):
                 profile = validation.resolve_performance_profile(name)
                 self.assertNotIn("-p:NuGetAudit=false", profile.build_properties)
+        with patch.object(validation.os, "cpu_count", return_value=10):
+            safe = validation.resolve_performance_profile("safe")
+            fast = validation.resolve_performance_profile("fast")
+            diagnostic = validation.resolve_performance_profile("diagnostic")
+        self.assertFalse(safe.python_build_overlap)
+        self.assertEqual(1, safe.runtime_test_shards)
+        self.assertTrue(fast.python_build_overlap)
+        self.assertEqual(3, fast.runtime_test_shards)
+        self.assertFalse(diagnostic.python_build_overlap)
+        self.assertEqual(1, diagnostic.runtime_test_shards)
+        with patch.object(validation.os, "cpu_count", return_value=2):
+            constrained = validation.resolve_performance_profile("fast")
+        self.assertEqual(1, constrained.msbuild_nodes)
+        self.assertEqual(1, constrained.runtime_test_shards)
+
+    def test_isolated_python_worker_requires_one_fresh_exact_summary(self) -> None:
+        run = validation.Run(self.root)
+
+        def command(name, arguments, **_):
+            self.assertEqual("python-tests", name)
+            worker_root = Path(arguments[arguments.index("--results-directory") + 1])
+            child = worker_root / "run-child"
+            child.mkdir()
+            (child / "summary.json").write_text(json.dumps({
+                "status": "PASS",
+                "stages": [{
+                    "name": "python-tests",
+                    "status": "PASS",
+                    "total": 679,
+                    "failed": 0,
+                    "skipped": 0,
+                    "expectedTotal": 679,
+                    "log": str(child / "python-tests.log"),
+                }],
+            }))
+            (child / "python-tests.log").write_text("ok")
+            run.stages.append({"name": name, "status": "PASS"})
+            return ""
+
+        with patch.object(run, "command", side_effect=command):
+            run.python_tests_isolated(679)
+        self.assertEqual(679, run.stages[-1]["total"])
+        self.assertEqual(679, run.stages[-1]["expectedTotal"])
+        self.assertTrue(Path(run.stages[-1]["workerSummary"]).is_file())
+
+        invalid = validation.Run(self.root)
+
+        def changed_count(name, arguments, **_):
+            worker_root = Path(arguments[arguments.index("--results-directory") + 1])
+            child = worker_root / "run-child"
+            child.mkdir()
+            (child / "summary.json").write_text(json.dumps({
+                "status": "PASS",
+                "stages": [{
+                    "name": "python-tests", "status": "PASS",
+                    "total": 667, "failed": 0, "skipped": 0,
+                    "expectedTotal": 679,
+                    "log": str(child / "python-tests.log"),
+                }],
+            }))
+            (child / "python-tests.log").write_text("wrong count")
+            invalid.stages.append({"name": name, "status": "PASS"})
+            return ""
+
+        with patch.object(invalid, "command", side_effect=changed_count):
+            with self.assertRaisesRegex(validation.ValidationError, "changed count"):
+                invalid.python_tests_isolated(679)
+        self.assertEqual("FAIL", invalid.stages[-1]["status"])
+
+    def test_isolated_python_worker_rejects_malformed_shape_and_preserves_blocked(self) -> None:
+        malformed = validation.Run(self.root)
+
+        def malformed_command(name, arguments, **_):
+            worker_root = Path(arguments[arguments.index("--results-directory") + 1])
+            child = worker_root / "run-child"
+            child.mkdir()
+            (child / "summary.json").write_text("[]")
+            malformed.stages.append({"name": name, "status": "PASS"})
+            return ""
+
+        with patch.object(malformed, "command", side_effect=malformed_command):
+            with self.assertRaisesRegex(validation.ValidationError, "JSON object"):
+                malformed.python_tests_isolated(679)
+        self.assertEqual("FAIL", malformed.stages[-1]["status"])
+
+        blocked = validation.Run(self.root)
+        reserved = blocked.reserve_stage("python-tests")
+        with patch.object(
+            blocked,
+            "command",
+            side_effect=validation.ValidationError("cancelled", "BLOCKED"),
+        ):
+            with self.assertRaises(validation.ValidationError) as caught:
+                blocked.python_tests_isolated(679, reserved)
+        self.assertEqual("BLOCKED", caught.exception.status)
+        self.assertEqual("BLOCKED", reserved["status"])
+
+    def test_python_and_build_overlap_in_isolated_branches_with_canonical_stage_order(self) -> None:
+        tests = self.project("Hatifect.Flow.Tests", test=True)
+        inventory = test_inventory.Inventory(self.solution(tests))
+        run = validation.Run(self.root)
+        python_started = threading.Event()
+        build_started = threading.Event()
+
+        def python_worker(expected, reserved):
+            self.assertEqual(679, expected)
+            self.assertEqual("python-tests", reserved["name"])
+            python_started.set()
+            self.assertTrue(build_started.wait(2))
+            reserved["status"] = "PASS"
+
+        def build_worker(*_):
+            build_started.set()
+            self.assertTrue(python_started.wait(2))
+            with run._stages_lock:
+                run.stages.append({"name": "build", "status": "PASS"})
+
+        run.stages.append({"name": "architecture", "status": "PASS"})
+        with patch.object(run, "python_tests_isolated", side_effect=python_worker), \
+                patch.object(run, "build", side_effect=build_worker):
+            run.build_with_python_tests(inventory, inventory.select(), "/sdk/dotnet", 679)
+
+        self.assertEqual(["architecture", "python-tests", "build"], [
+            stage["name"] for stage in run.stages
+        ])
+        self.assertEqual("/sdk/dotnet", run.environment["HATIFECT_DOTNET"])
+
+    def test_overlap_records_unexpected_python_branch_failure(self) -> None:
+        tests = self.project("Hatifect.Flow.Tests", test=True)
+        inventory = test_inventory.Inventory(self.solution(tests))
+        run = validation.Run(self.root)
+        with patch.object(
+            run,
+            "python_tests_isolated",
+            side_effect=RuntimeError("worker crashed"),
+        ), patch.object(run, "build", return_value=None):
+            with self.assertRaisesRegex(validation.ValidationError, "worker crashed"):
+                run.build_with_python_tests(
+                    inventory,
+                    inventory.select(),
+                    "/sdk/dotnet",
+                    679,
+                )
+        self.assertEqual("FAIL", run.stages[0]["status"])
+
+    def test_overlapped_command_cancels_its_owned_process_group(self) -> None:
+        if validation.os.name == "nt":
+            self.skipTest("POSIX process-group regression")
+        run = validation.Run(self.root)
+        cancellation = threading.Event()
+        run._command_cancellation = cancellation
+        caught: list[validation.ValidationError] = []
+        heartbeat = self.root / "descendant.heartbeat"
+        child = (
+            "import pathlib,signal,time;"
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN);"
+            f"heartbeat=pathlib.Path({str(heartbeat)!r});"
+            "exec('while True:\\n heartbeat.write_text(str(time.monotonic_ns()))\\n time.sleep(.05)')"
+        )
+        parent = (
+            "import subprocess,sys,time;"
+            f"subprocess.Popen([sys.executable, '-c', {child!r}]);"
+            "time.sleep(30)"
+        )
+
+        def invoke() -> None:
+            try:
+                run.command(
+                    "sleeping-worker",
+                    [sys.executable, "-c", parent],
+                    timeout=30,
+                )
+            except validation.ValidationError as error:
+                caught.append(error)
+
+        worker = threading.Thread(target=invoke)
+        started = time.monotonic()
+        worker.start()
+        deadline = time.monotonic() + 3
+        while not heartbeat.is_file() and time.monotonic() < deadline:
+            time.sleep(.05)
+        self.assertTrue(heartbeat.is_file(), "descendant never started")
+        cancellation.set()
+        worker.join(3)
+        self.assertFalse(worker.is_alive())
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertEqual("BLOCKED", caught[0].status)
+        self.assertEqual("BLOCKED", run.stages[-1]["status"])
+        final_heartbeat = heartbeat.read_text()
+        time.sleep(.2)
+        self.assertEqual(final_heartbeat, heartbeat.read_text())
+
+        windows_process = Mock(pid=42)
+        with patch.object(validation.os, "name", "nt"), patch.object(
+            validation.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess(["taskkill"], 1),
+        ):
+            with self.assertRaisesRegex(validation.ValidationError, "taskkill") as windows_error:
+                validation.Run.stop_process(windows_process)
+        self.assertEqual("BLOCKED", windows_error.exception.status)
+        windows_process.kill.assert_called_once_with()
 
     def test_build_and_test_commands_disable_deployment_and_do_not_filter_away_tests(self) -> None:
         tests = self.project("Hatifect.Flow.Tests", test=True)
@@ -413,6 +657,121 @@ class ValidationTests(unittest.TestCase):
         command.assert_called_once_with(
             "build-metadata-tests", [sys.executable, str(self.root / "tools/build_metadata_tests.py")])
 
+    def test_runtime_shards_are_exhaustive_isolated_and_aggregated(self) -> None:
+        runtime = self.project("Hatifect.UI.Runtime.Tests", test=True)
+        inventory = test_inventory.Inventory(self.solution(runtime))
+        project = inventory.select(tests=True)[0]
+        with patch.object(validation.os, "cpu_count", return_value=10):
+            profile = validation.replace(
+                validation.resolve_performance_profile("fast"),
+                runtime_test_shards=3,
+            )
+        run = validation.Run(self.root, profile=profile)
+        calls: list[tuple[str, str, dict[str, str] | None]] = []
+        expected_by_filter = {
+            expression: count for _, expression, count in validation.RUNTIME_TEST_SHARDS
+        }
+
+        def command(name, arguments, *, environment=None, **_):
+            expression = arguments[arguments.index("--filter") + 1]
+            calls.append((name, expression, environment))
+            count = expected_by_filter[expression]
+            output = Path(arguments[arguments.index("--results-directory") + 1]) / "tests.trx"
+            self.write_trx(output, tuple(f"{name}.Case{index}" for index in range(count)))
+            with run._stages_lock:
+                run.stages.append({"name": name, "status": "PASS"})
+            return ""
+
+        with patch.object(run, "command", side_effect=command):
+            run.tests(
+                (project,),
+                "/sdk/dotnet",
+                expected_counts={validation.RUNTIME_TEST_PROJECT: 703},
+            )
+
+        self.assertEqual(3, len(calls))
+        self.assertTrue(calls[-1][0].endswith("shard-01-gates"))
+        self.assertEqual(set(expected_by_filter), {expression for _, expression, _ in calls})
+        temp_roots = {
+            environment["TMPDIR"]
+            for _, _, environment in calls
+            if environment is not None
+        }
+        self.assertEqual(3, len(temp_roots))
+        self.assertTrue(all(environment["DOTNET_PROCESSOR_COUNT"] == "3"
+                            for _, _, environment in calls if environment is not None))
+        self.assertEqual([validation.RUNTIME_TEST_PROJECT], [stage["name"] for stage in run.stages])
+        stage = run.stages[0]
+        self.assertEqual("PASS", stage["status"])
+        self.assertEqual(703, stage["total"])
+        self.assertEqual([10, 9, 684], [shard["total"] for shard in stage["shards"]])
+
+    def test_runtime_shards_reject_count_drift_and_cross_shard_duplicates(self) -> None:
+        runtime = self.project("Hatifect.UI.Runtime.Tests", test=True)
+        inventory = test_inventory.Inventory(self.solution(runtime))
+        project = inventory.select(tests=True)[0]
+        with patch.object(validation.os, "cpu_count", return_value=10):
+            profile = validation.replace(
+                validation.resolve_performance_profile("fast"),
+                runtime_test_shards=3,
+            )
+
+        for mutation, expected_message in (
+            ("count", "test count changed"),
+            ("duplicate-name", "duplicate"),
+            ("duplicate-id", "duplicate"),
+        ):
+            with self.subTest(mutation=mutation):
+                run = validation.Run(self.root, profile=profile)
+                expected_by_filter = {
+                    expression: count for _, expression, count in validation.RUNTIME_TEST_SHARDS
+                }
+
+                def command(name, arguments, **_):
+                    expression = arguments[arguments.index("--filter") + 1]
+                    count = expected_by_filter[expression]
+                    if mutation == "count" and name.endswith("shard-02-adaptive"):
+                        count -= 1
+                    names = [f"{name}.Case{index}" for index in range(count)]
+                    if mutation == "duplicate-name" and not name.endswith("shard-01-gates"):
+                        names[0] = "Shared.Runtime.Test"
+                    output = Path(arguments[arguments.index("--results-directory") + 1]) / "tests.trx"
+                    test_ids = None
+                    if mutation == "duplicate-id":
+                        test_ids = tuple(
+                            "shared-test-id" if index == 0 else f"{name}-id"
+                            for index, name in enumerate(names)
+                        )
+                    self.write_trx(output, tuple(names), test_ids)
+                    with run._stages_lock:
+                        run.stages.append({"name": name, "status": "PASS"})
+                    return ""
+
+                with patch.object(run, "command", side_effect=command):
+                    with self.assertRaisesRegex(validation.ValidationError, expected_message):
+                        run.tests((project,), "/sdk/dotnet")
+                self.assertEqual("FAIL", run.stages[0]["status"])
+
+    def test_runtime_shard_aggregate_preserves_blocked_child_status(self) -> None:
+        runtime = self.project("Hatifect.UI.Runtime.Tests", test=True)
+        project = test_inventory.Inventory(self.solution(runtime)).select(tests=True)[0]
+        profile = validation.replace(
+            validation.resolve_performance_profile("fast"),
+            runtime_test_shards=3,
+        )
+        run = validation.Run(self.root, profile=profile)
+
+        def command(name, _arguments, **_):
+            with run._stages_lock:
+                run.stages.append({"name": name, "status": "BLOCKED"})
+            raise validation.ValidationError("worker unavailable", "BLOCKED")
+
+        with patch.object(run, "command", side_effect=command):
+            with self.assertRaises(validation.ValidationError) as caught:
+                run.tests((project,), "/sdk/dotnet")
+        self.assertEqual("BLOCKED", caught.exception.status)
+        self.assertEqual("BLOCKED", run.stages[0]["status"])
+
     def test_exact_test_filter_is_additive_and_preserves_trx_validation(self) -> None:
         tests = self.project("Hatifect.Flow.Tests", test=True)
         inventory = test_inventory.Inventory(self.solution(tests))
@@ -437,6 +796,36 @@ class ValidationTests(unittest.TestCase):
             calls[0][calls[0].index("--filter") + 1],
         )
         self.assertEqual(1, run.stages[-1]["passed"])
+
+        with patch.object(validation.os, "cpu_count", return_value=10):
+            fast = validation.replace(
+                validation.resolve_performance_profile("fast"),
+                runtime_test_shards=3,
+            )
+        runtime_path = self.project("Hatifect.UI.Runtime.Tests", test=True)
+        runtime_inventory = test_inventory.Inventory(self.solution(tests, runtime_path))
+        runtime_project = tuple(
+            project for project in runtime_inventory.select(tests=True)
+            if project.path == runtime_path
+        )
+        sharding_run = validation.Run(self.root, profile=fast)
+        sharded_calls: list[list[str]] = []
+
+        def exact_command(name, arguments, **_):
+            sharded_calls.append(arguments)
+            output = Path(arguments[arguments.index("--results-directory") + 1]) / "tests.trx"
+            output.write_bytes(self.trx(total=1, executed=1, passed=1,
+                                        outcomes=("Passed",), execution_ids=("only",)).read_bytes())
+            sharding_run.stages.append({"name": name, "status": "PASS"})
+            return ""
+
+        with patch.object(sharding_run, "command", side_effect=exact_command):
+            sharding_run.tests(runtime_project, "/sdk/dotnet", "Example.Namespace.Tests.OneCase")
+        self.assertEqual(1, len(sharded_calls))
+        self.assertEqual(
+            "FullyQualifiedName=Example.Namespace.Tests.OneCase",
+            sharded_calls[0][sharded_calls[0].index("--filter") + 1],
+        )
 
     def test_exact_test_filter_still_rejects_empty_or_malformed_trx(self) -> None:
         tests = self.project("Hatifect.Flow.Tests", test=True)
@@ -568,7 +957,7 @@ class ValidationTests(unittest.TestCase):
                 self.assertEqual(0, validation.main(arguments))
             run = run_type.return_value
             if arguments[0] == "check":
-                run.static.assert_called_once_with(668)
+                run.static.assert_called_once_with(679)
                 self.assertEqual(1, run.build.call_count)
                 self.assertEqual(["Hatifect.UI.Tests", "Hatifect.Flow.Tests"],
                                  [item.name for item in run.tests.call_args.args[0]])
@@ -578,6 +967,93 @@ class ValidationTests(unittest.TestCase):
                 run.build.assert_not_called()
                 run.tests.assert_not_called()
             progressive.assert_not_called()
+
+    def test_fast_full_check_uses_overlap_and_shards_while_safe_routes_stay_explicit(self) -> None:
+        inventory = self.basic_graph()
+        runtime = self.project("Hatifect.UI.Runtime.Tests", test=True)
+        self.solution(*inventory.projects, runtime)
+        counts = {
+            "hatifect-ui-tests": 2,
+            "hatifect-flow-tests": 2,
+            validation.RUNTIME_TEST_PROJECT: 703,
+        }
+        with patch.object(validation, "ROOT", self.root), \
+                patch.object(validation.os, "cpu_count", return_value=10), \
+                patch.object(validation, "Run") as run_type, \
+                patch.object(validation, "resolve_dotnet", return_value="/sdk/dotnet"), \
+                patch.object(validation, "EXPECTED_HOST_FREE_TEST_COUNTS", counts):
+            self.assertEqual(0, validation.main(["check", "--performance-profile", "fast"]))
+
+        run = run_type.return_value
+        run.static_contracts.assert_called_once_with()
+        run.static.assert_not_called()
+        run.build_with_python_tests.assert_called_once()
+        self.assertEqual(679, run.build_with_python_tests.call_args.args[-1])
+        self.assertEqual(counts, run.tests.call_args.args[-1])
+        profile = run_type.call_args.args[2]
+        self.assertTrue(profile.python_build_overlap)
+        self.assertEqual(3, profile.runtime_test_shards)
+
+        with patch.object(validation, "ROOT", self.root), patch.object(validation, "Run") as invalid:
+            self.assertEqual(1, validation.main([
+                "test", "ui", "--performance-profile", "fast",
+                "--python-build-overlap", "on",
+            ]))
+        invalid.return_value.build.assert_not_called()
+        invalid.return_value.tests.assert_not_called()
+        self.assertEqual("FAIL", invalid.return_value.finish.call_args.args[0])
+
+    def test_explicit_runtime_sharding_rejects_selections_without_unfiltered_runtime(self) -> None:
+        self.basic_graph()
+        cases = (
+            ["static", "--runtime-test-shards", "3"],
+            ["test", "tools", "--runtime-test-shards", "3"],
+            ["build", "all", "--runtime-test-shards", "3"],
+            ["test", "flow", "--runtime-test-shards", "3"],
+            [
+                "test", "all",
+                "--project", "Hatifect.Flow.Tests.csproj",
+                "--runtime-test-shards", "3",
+            ],
+            [
+                "test", "all",
+                "--project", "Hatifect.Flow.Tests.csproj",
+                "--test-filter", "Example.Tests.Case",
+                "--runtime-test-shards", "3",
+            ],
+        )
+        for arguments in cases:
+            with self.subTest(arguments=arguments), patch.object(validation, "ROOT", self.root), \
+                    patch.object(validation, "Run") as run_type, \
+                    patch.object(validation, "resolve_dotnet", return_value="/sdk/dotnet"):
+                self.assertEqual(1, validation.main(arguments))
+            run_type.return_value.static.assert_not_called()
+            run_type.return_value.build.assert_not_called()
+            run_type.return_value.tests.assert_not_called()
+
+    def test_overlap_reserves_one_cpu_for_python_only_when_enabled(self) -> None:
+        self.basic_graph()
+        with patch.object(validation, "ROOT", self.root), \
+                patch.object(validation.os, "cpu_count", return_value=4), \
+                patch.object(validation, "Run") as run_type, \
+                patch.object(validation, "resolve_dotnet", return_value="/sdk/dotnet"), \
+                patch.object(validation, "EXPECTED_HOST_FREE_TEST_COUNTS", {
+                    "hatifect-ui-tests": 2,
+                    "hatifect-flow-tests": 2,
+                }):
+            self.assertEqual(0, validation.main([
+                "check", "--performance-profile", "fast", "--python-build-overlap", "on",
+            ]))
+        self.assertEqual(3, run_type.call_args.args[2].msbuild_nodes)
+
+        with patch.object(validation, "ROOT", self.root), \
+                patch.object(validation.os, "cpu_count", return_value=1), \
+                patch.object(validation, "Run") as constrained:
+            self.assertEqual(1, validation.main([
+                "check", "--performance-profile", "fast", "--python-build-overlap", "on",
+            ]))
+        constrained.return_value.static.assert_not_called()
+        constrained.return_value.build.assert_not_called()
 
     def game_reference_metadata(self, game: Path) -> str:
         return json.dumps({
@@ -640,16 +1116,27 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual("PASS", run.stages[-1]["status"])
 
     def test_failed_or_timed_out_command_retains_distinct_fail_and_blocked_status(self) -> None:
-        for error, expected in ((None, "FAIL"), (subprocess.TimeoutExpired(["test"], 1), "BLOCKED")):
+        for expected in ("FAIL", "BLOCKED"):
             with self.subTest(status=expected):
                 run = validation.Run(self.root)
-                with patch("validation.subprocess.run", side_effect=error,
-                           return_value=subprocess.CompletedProcess(["test"], 7)):
+                process = Mock(pid=123, returncode=7 if expected == "FAIL" else -15)
+                process.wait.side_effect = (
+                    None if expected == "FAIL"
+                    else subprocess.TimeoutExpired(["test"], 1)
+                )
+                if expected == "FAIL":
+                    process.wait.return_value = 7
+                with patch("validation.subprocess.Popen", return_value=process), patch.object(
+                    validation.time,
+                    "monotonic",
+                    side_effect=None if expected == "FAIL" else [0, 2],
+                ), patch.object(run, "stop_process") as stop_process:
                     with self.assertRaises(validation.ValidationError) as caught:
-                        run.command("test", ["test"])
+                        run.command("test", ["test"], timeout=1)
                 self.assertEqual(expected, caught.exception.status)
                 self.assertEqual(expected, run.stages[-1]["status"])
                 self.assertTrue(Path(run.stages[-1]["log"]).is_file())
+                self.assertEqual(int(expected == "BLOCKED"), stop_process.call_count)
 
     def test_python_runner_rejects_empty_discovery_and_skipped_execution(self) -> None:
         run = validation.Run(self.root)
