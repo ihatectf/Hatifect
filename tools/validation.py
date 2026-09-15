@@ -33,7 +33,7 @@ BASE_BUILD_PROPERTIES = (
 # Stable compatibility export used by tooling that intentionally keeps the
 # conservative one-node profile outside this validator.
 BUILD_PROPERTIES = (*BASE_BUILD_PROPERTIES, "-p:UseSharedCompilation=false", "-nodeReuse:false", "-m:1")
-EXPECTED_TOOL_TEST_COUNT = 679
+EXPECTED_TOOL_TEST_COUNT = 683
 EXPECTED_HOST_FREE_TEST_COUNTS = {
     "hatifect-flow-tests": 803,
     "hatifect-ui-devtools-tests": 10,

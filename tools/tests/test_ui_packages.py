@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
@@ -104,6 +105,96 @@ class UiPackageProjectionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, f"{package['Id']}: missing final Release producer"):
                 self.verify_feed(contract, feed)
             self.assertFalse(producer.exists())
+
+    def test_producer_mismatch_precedes_dependency_and_path_errors(self) -> None:
+        contract = ui_packages.load_contract()
+        package = min(contract["Packages"], key=lambda item: item["Id"])
+        with tempfile.TemporaryDirectory() as temporary:
+            feed = Path(temporary)
+            for item in contract["Packages"]:
+                self.write_package(feed, contract, item, dependency_version="0.0.0")
+            producer = self.producer_path(feed, package)
+            packaged_bytes = producer.read_bytes()
+            producer_bytes = packaged_bytes + b" changed after packing"
+            producer.write_bytes(producer_bytes)
+            path = feed / f"{package['Id']}.{contract['Version']}.nupkg"
+            with zipfile.ZipFile(path, "a") as archive:
+                archive.writestr("repository.txt", str((feed / "producer").resolve()).encode())
+            archive_bytes = path.read_bytes()
+
+            with self.assertRaises(ValueError) as error:
+                self.verify_feed(contract, feed)
+
+            self.assertEqual(
+                f"{package['Id']}: packaged DLL differs from final Release producer: {producer}; "
+                f"packaged SHA-256={hashlib.sha256(packaged_bytes).hexdigest()}, "
+                f"producer SHA-256={hashlib.sha256(producer_bytes).hexdigest()}",
+                str(error.exception),
+            )
+            self.assertEqual(archive_bytes, path.read_bytes())
+            self.assertEqual(producer_bytes, producer.read_bytes())
+
+    def test_dependency_error_precedes_repository_path_leak(self) -> None:
+        contract = ui_packages.load_contract()
+        package = min(contract["Packages"], key=lambda item: item["Id"])
+        with tempfile.TemporaryDirectory() as temporary:
+            feed = Path(temporary)
+            for item in contract["Packages"]:
+                self.write_package(feed, contract, item)
+            self.write_package(feed, contract, {**package, "Dependencies": []})
+            path = feed / f"{package['Id']}.{contract['Version']}.nupkg"
+            leak = str((feed / "producer").resolve()).encode()
+            with zipfile.ZipFile(path, "a") as archive:
+                archive.writestr("repository.txt", leak)
+            archive_bytes = path.read_bytes()
+
+            with self.assertRaises(ValueError) as error:
+                self.verify_feed(contract, feed)
+
+            self.assertEqual(
+                f"{package['Id']}: UI dependencies [] != {sorted(package['Dependencies'])}",
+                str(error.exception),
+            )
+            self.assertEqual(archive_bytes, path.read_bytes())
+
+            # Repair only the dependencies; the same path leak must then surface.
+            self.write_package(feed, contract, package)
+            with zipfile.ZipFile(path, "a") as archive:
+                archive.writestr("repository.txt", leak)
+            with self.assertRaises(ValueError) as error:
+                self.verify_feed(contract, feed)
+            self.assertEqual(
+                f"{package['Id']}: repository path leaked into repository.txt",
+                str(error.exception),
+            )
+
+    def test_each_sorted_package_is_fully_checked_before_the_next(self) -> None:
+        contract = ui_packages.load_contract()
+        first, *_, last = sorted(contract["Packages"], key=lambda item: item["Id"])
+        with tempfile.TemporaryDirectory() as temporary:
+            feed = Path(temporary)
+            for package in contract["Packages"]:
+                self.write_package(feed, contract, package)
+            self.write_package(feed, contract, {**first, "Dependencies": []})
+            missing_producer = self.producer_path(feed, last)
+            missing_producer.unlink()
+
+            with self.assertRaises(ValueError) as error:
+                self.verify_feed(contract, feed)
+
+            self.assertEqual(
+                f"{first['Id']}: UI dependencies [] != {sorted(first['Dependencies'])}",
+                str(error.exception),
+            )
+            self.assertFalse(missing_producer.exists())
+
+            self.write_package(feed, contract, first)
+            with self.assertRaises(ValueError) as error:
+                self.verify_feed(contract, feed)
+            self.assertEqual(
+                f"{last['Id']}: missing final Release producer: {missing_producer}",
+                str(error.exception),
+            )
 
     @staticmethod
     def verify_feed(contract: dict, feed: Path, *, host_free: bool = False) -> None:

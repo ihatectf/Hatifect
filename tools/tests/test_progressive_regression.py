@@ -261,6 +261,51 @@ class ProgressiveRegressionTests(unittest.TestCase):
         changed = self.plan(changed_paths=["tools/live-harness/reproduction.py"])
         self.assertNotEqual(first["selectionFingerprint"], changed["selectionFingerprint"])
 
+    def test_final_host_free_gate_distinguishes_platform_omissions_and_exact_precedence(
+        self,
+    ) -> None:
+        platform_project = (
+            "Hatifect UI/tests/Hatifect.UI.Stardew.Tests/"
+            "Hatifect.UI.Stardew.Tests.csproj"
+        )
+        plan = self.plan(
+            exact_tests=[
+                f"dotnet:{platform_project}::"
+                "Hatifect.UI.Stardew.Tests.ScreenOwnershipTests."
+                "NativeSlotSetterCanDisposeBeforeAssigningReplacementWithoutRecursiveWrites"
+            ],
+            final=True,
+        )
+        omitted = {
+            item["scopeId"]: item for item in plan["testsOmittedByScope"]
+        }
+
+        exact_project = omitted[f"dotnet-project:{platform_project}"]
+        self.assertEqual("PARTIALLY_COVERED_BY_EXACT_TEST", exact_project["reason"])
+        self.assertTrue(exact_project["platformRequired"])
+        self.assertNotIn("full-host-free", omitted)
+        other_platform = [
+            item
+            for item in omitted.values()
+            if item["scopeId"] != exact_project["scopeId"]
+        ]
+        self.assertGreater(len(other_platform), 0)
+        self.assertEqual(
+            {"PLATFORM_TEST_NOT_IN_HOST_FREE_FULL_GATE"},
+            {item["reason"] for item in other_platform},
+        )
+        self.assertTrue(
+            all(
+                item["platformRequired"]
+                for item in omitted.values()
+                if item["kind"] == "dotnet-assembly"
+            )
+        )
+        self.assertEqual(
+            sorted(omitted),
+            [item["scopeId"] for item in plan["testsOmittedByScope"]],
+        )
+
     def test_aggregate_scenario_falls_back_to_full_regression(self) -> None:
         plan = self.plan(scenario="all")
 
