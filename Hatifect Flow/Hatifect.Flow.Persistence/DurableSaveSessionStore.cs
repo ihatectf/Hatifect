@@ -50,12 +50,7 @@ internal sealed class DurableSaveSessionStore
             Path.Combine(directory, "core"), Path.Combine(directory, "provider"), initial);
         try
         {
-            byte[] bytes = new byte[BindingLength];
-            Magic.CopyTo(bytes, 0);
-            BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(8, 8), save.Value);
-            session.PairId.TryWriteBytes(bytes.AsSpan(16, 16));
-            session.Runtime.NetworkId.Value.TryWriteBytes(bytes.AsSpan(32, 16));
-            SHA256.HashData(bytes.AsSpan(0, 48)).CopyTo(bytes, 48);
+            byte[] bytes = EncodeBinding(save, session);
             PublishBinding(directory, bytes);
             return session;
         }
@@ -73,6 +68,23 @@ internal sealed class DurableSaveSessionStore
         using FileStream bindingLease = CheckpointWriterLease.Acquire(Path.Combine(directory, LockFileName));
         ValidatePaths(directory);
         byte[] bytes = ReadBinding(Path.Combine(directory, BindingFileName));
+        (Guid pair, Guid network) = DecodeBinding(bytes, save);
+        return DurableFlowSession.OpenBound(Path.Combine(directory, "core"), Path.Combine(directory, "provider"), pair, network);
+    }
+
+    private static byte[] EncodeBinding(FlowSaveIdentity save, DurableFlowSession session)
+    {
+        byte[] bytes = new byte[BindingLength];
+        Magic.CopyTo(bytes, 0);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(8, 8), save.Value);
+        session.PairId.TryWriteBytes(bytes.AsSpan(16, 16));
+        session.Runtime.NetworkId.Value.TryWriteBytes(bytes.AsSpan(32, 16));
+        SHA256.HashData(bytes.AsSpan(0, 48)).CopyTo(bytes, 48);
+        return bytes;
+    }
+
+    private static (Guid Pair, Guid Network) DecodeBinding(byte[] bytes, FlowSaveIdentity save)
+    {
         if (!bytes.AsSpan(0, 8).SequenceEqual(Magic)
             || BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(8, 8)) != save.Value
             || !CryptographicOperations.FixedTimeEquals(bytes.AsSpan(48, 32), SHA256.HashData(bytes.AsSpan(0, 48))))
@@ -81,7 +93,7 @@ internal sealed class DurableSaveSessionStore
         Guid network = new(bytes.AsSpan(32, 16));
         if (pair == Guid.Empty || network == Guid.Empty)
             throw new InvalidDataException("The durable binding contains an empty pair or network identity.");
-        return DurableFlowSession.OpenBound(Path.Combine(directory, "core"), Path.Combine(directory, "provider"), pair, network);
+        return (pair, network);
     }
 
     private static byte[] ReadBinding(string path)
