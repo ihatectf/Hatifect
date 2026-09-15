@@ -10,18 +10,6 @@
       "component": "repository-validation",
       "forceLevel": 5,
       "integrationArea": "repository",
-      "pattern": ".agents/*"
-    },
-    {
-      "component": "repository-validation",
-      "forceLevel": 5,
-      "integrationArea": "repository",
-      "pattern": "AGENTS.md"
-    },
-    {
-      "component": "repository-validation",
-      "forceLevel": 5,
-      "integrationArea": "repository",
       "pattern": "Hatifect.slnx"
     },
     {

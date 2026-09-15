@@ -38,10 +38,10 @@ UI authoring: [подключение language server, экспорт метад
 Общий `Directory.Build.targets` восстанавливает revision/source-root metadata, если SDK обнаружил Git repository, но потерял metadata в linked worktree с packed refs. Recovery использует только read-only Git queries и завершает сборку ошибкой при их отказе; обычные source archives и CA projection без Git не требуют этих запросов. Канонический build запускает `tools/build_metadata_tests.py` после выбора SDK; статическая стадия остаётся Python-only. [Контракт, регрессии и статус фактической приёмки](BUILD_SOURCE_IDENTITY.md).
 
 Выбор progressive по умолчанию реализован в `tools/validation.py`, а правила scope — в
-`tools/progressive_regression.py` и `tools/regression-selection.json`. Для выбора не нужны
-`AGENTS.md`, `.agents` или `.codex`. Явные scope, `--project`, `--platform`, `--host-free`
-и `--no-build` сохраняют прямой запуск без progressive; `--results-directory` сам по себе
-не отключает progressive. `hatifect-check` остаётся независимым полным gate.
+`tools/progressive_regression.py` и `tools/regression-selection.json`. Явные scope,
+`--project`, `--platform`, `--host-free` и `--no-build` сохраняют прямой запуск без
+progressive; `--results-directory` сам по себе не отключает progressive.
+`hatifect-check` остаётся независимым полным gate.
 Подробнее: [progressive regression](PROGRESSIVE_REGRESSION.md).
 
 ## CI и ветки
