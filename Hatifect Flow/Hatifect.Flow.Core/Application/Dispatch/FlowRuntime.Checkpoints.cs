@@ -54,25 +54,31 @@ internal sealed partial class FlowRuntime
             new StationCheckpoint(pair.Key.Value, pair.Value is ICheckpointCargoPort port
                 ? port.CaptureCheckpoint()
                 : throw new InvalidOperationException("A Port cannot capture its complete fake inventory and journal."))).ToArray();
-        var snapshot = new FlowCheckpoint(NetworkId.Value, Now, limits, stations,
-            _network.History.OrderBy(link => link.Id.Value).Select(link => new LinkCheckpoint(link.Id.Value,
+        Guid networkId = NetworkId.Value;
+        long tick = Now;
+        LinkCheckpoint[] links = _network.History.OrderBy(link => link.Id.Value)
+            .Select(link => new LinkCheckpoint(link.Id.Value,
                 link.Origin.Value, link.Destination.Value, link.Capacity, link.TransitTicks,
-                _network.IsActive(link.Id))).ToArray(),
-            _shipments.Values.OrderBy(shipment => shipment.Id.Value).Select(shipment => new ShipmentCheckpoint(
+                _network.IsActive(link.Id))).ToArray();
+        ShipmentCheckpoint[] shipments = _shipments.Values.OrderBy(shipment => shipment.Id.Value)
+            .Select(shipment => new ShipmentCheckpoint(
                 shipment.Id.Value, shipment.Origin.Value, shipment.Destination.Value,
                 CheckpointValues.Capture(shipment.Manifest), CheckpointValues.Capture(shipment.Policy),
-                shipment.ParcelId?.Value)).ToArray(),
-            _parcels.Values.OrderBy(execution => execution.Snapshot.Id.Value).Select(CaptureExecution).ToArray(),
-            _cargo.Batches.OrderBy(batch => batch.Id.Value).Select(batch => new CargoCheckpoint(batch.Id.Value,
+                shipment.ParcelId?.Value)).ToArray();
+        ParcelCheckpoint[] parcels = _parcels.Values.OrderBy(execution => execution.Snapshot.Id.Value)
+            .Select(CaptureExecution).ToArray();
+        CargoCheckpoint[] cargo = _cargo.Batches.OrderBy(batch => batch.Id.Value)
+            .Select(batch => new CargoCheckpoint(batch.Id.Value,
                 CheckpointValues.Capture(batch.Manifest), CheckpointValues.Capture(batch.Owner),
-                batch.ClaimedBy?.Value, batch.RegistrationStation.Value, batch.DispatchCount)).ToArray(),
-            _authority.Issued.OrderBy(transfer => transfer.Id.ParcelId.Value).ThenBy(transfer => transfer.Kind)
-                .ThenBy(transfer => transfer.Id.Attempt).Select(transfer => new TransferCheckpoint(
-                    CheckpointValues.Key(transfer.Id), transfer.CargoId.Value, transfer.StationId.Value,
-                    CheckpointValues.Capture(transfer.Manifest), _authority.IsRetired(transfer))).ToArray(),
-            _events.Select(entry => new EventCheckpoint(entry.ParcelId.Value, entry.Sequence, entry.Tick,
-                (int)entry.Kind, (int)entry.State, CheckpointValues.Capture(entry.Owner))).ToArray());
-        return snapshot;
+                batch.ClaimedBy?.Value, batch.RegistrationStation.Value, batch.DispatchCount)).ToArray();
+        TransferCheckpoint[] transfers = _authority.Issued.OrderBy(transfer => transfer.Id.ParcelId.Value)
+            .ThenBy(transfer => transfer.Kind).ThenBy(transfer => transfer.Id.Attempt)
+            .Select(transfer => new TransferCheckpoint(
+                CheckpointValues.Key(transfer.Id), transfer.CargoId.Value, transfer.StationId.Value,
+                CheckpointValues.Capture(transfer.Manifest), _authority.IsRetired(transfer))).ToArray();
+        EventCheckpoint[] events = _events.Select(entry => new EventCheckpoint(entry.ParcelId.Value, entry.Sequence, entry.Tick,
+            (int)entry.Kind, (int)entry.State, CheckpointValues.Capture(entry.Owner))).ToArray();
+        return new FlowCheckpoint(networkId, tick, limits, stations, links, shipments, parcels, cargo, transfers, events);
     }
 
     private static ParcelCheckpoint CaptureExecution(Execution execution)

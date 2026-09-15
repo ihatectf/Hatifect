@@ -81,30 +81,7 @@ internal sealed partial class NetworkExperience : IFlowExperience
             _linkForm = new(new UiSemanticFormField(id.Child("field/capacity"), Text("Capacity", "Ёмкость"), _capacity, _capacityError),
                 new UiSemanticFormField(id.Child("field/ticks"), Text("Travel ticks", "Время в тиках"), _ticks, _ticksError));
             _shipmentForm = new(new UiSemanticFormField(id.Child("field/quantity"), Text("Quantity", "Количество"), _quantity, _quantityError));
-            var builder = new UiExperienceBuilder(id, Text("Flowline network", "Сеть Flowline")
-                + (_snapshot.Transport.ProviderMode == FlowProviderMode.DiagnosticFake ? Text(" · diagnostic", " · диагностика") : ""))
-                .Status(id.Child("element/transport"), "Transport", Text("Transport", "Перевозки"), _status)
-                .Element(id.Child("element/captured-chest"), "CapturedChest", Text("Captured chest", "Выбранный сундук"), _target, UiSourceTypes.String, UiCapabilities.Inspect)
-                .Element(id.Child("element/station-details"), "StationDetails", Text("Station details", "Параметры станции"), _stationForm, FlowUiDataTypes.StationForm, UiCapabilities.Configure)
-                .Element(id.Child("element/source-station"), "SourceStation", Text("Source station", "Станция отправления"), _sources, UiSourceTypes.Collection(FlowUiDataTypes.Station), UiCapabilities.Select)
-                .Actions(id.Child("element/station-actions"), "StationActions", Text("Station actions", "Действия со станцией"),
-                    Action(id, "register", Text("Bind new station", "Создать станцию"), () => Command(FlowNetworkAction.RegisterStation), () => _stationForm.IsValid && _snapshot.Target != Guid.Empty
-                        && !_snapshot.Stations.Any(station => string.Equals(station.Name, _name.Value, StringComparison.OrdinalIgnoreCase))),
-                    Action(id, "rename", Text("Rename source", "Переименовать источник"), () => Command(FlowNetworkAction.RenameStation), () => _stationForm.IsValid && Source is not null),
-                    Action(id, "rebind", Text("Rebind source to captured chest", "Привязать источник к выбранному сундуку"), () => Command(FlowNetworkAction.RebindStation), () => Source is not null && _snapshot.Target != Guid.Empty))
-                .Element(id.Child("element/destination-station"), "DestinationStation", Text("Destination station", "Станция назначения"), _destinations, UiSourceTypes.Collection(FlowUiDataTypes.Station), UiCapabilities.Select)
-                .Element(id.Child("element/route-preview"), "RoutePreview", Text("Route preview", "Предпросмотр маршрута"), _route, UiSourceTypes.String, UiCapabilities.Inspect)
-                .Element(id.Child("element/link-settings"), "LinkSettings", Text("Link settings", "Параметры связи"), _linkForm, FlowUiDataTypes.LinkForm, UiCapabilities.Configure)
-                .Actions(id.Child("element/route-actions"), "RouteActions", Text("Route actions", "Действия с маршрутом"),
-                    Action(id, "link", Text("Add directed link", "Добавить направленную связь"), () => Command(FlowNetworkAction.AddLink), () => _linkForm.IsValid && Source is not null && Destination is not null && Source.Id != Destination.Id))
-                .Element(id.Child("element/links"), "Links", Text("Links", "Связи"), _links, UiSourceTypes.Collection(FlowUiDataTypes.Link), UiCapabilities.Select)
-                .Actions(id.Child("element/link-actions"), "LinkActions", Text("Link actions", "Действия со связью"),
-                    Action(id, "remove", Text("Remove selected link", "Удалить выбранную связь"), () => Command(FlowNetworkAction.RemoveLink), () => Selected(_links) is not null),
-                    new UiActionDefinition(id.Child("action/refresh"), Text("Refresh", "Обновить"), Refresh, () => CanRequest && IsActive));
-            AppendShipping(builder, id);
-            AppendHistory(builder, id);
-            AppendRecovery(builder, id);
-            Experience = builder.Element(id.Child("element/result"), "Result", Text("Result", "Результат"), _result, UiSourceTypes.String, UiCapabilities.Monitor).Build();
+            Experience = BuildExperience(id);
             Project(initial, _publication.BeginUpdate());
             if (_dirty) Pump();
         }
@@ -156,6 +133,44 @@ internal sealed partial class NetworkExperience : IFlowExperience
             _stationForm.Dispose(); _linkForm.Dispose(); _shipmentForm.Dispose();
             _publication.Dispose();
         }
+    }
+
+    private UiExperienceDefinition BuildExperience(UiSymbolId id)
+    {
+        var builder = new UiExperienceBuilder(id, Text("Flowline network", "Сеть Flowline")
+            + (_snapshot.Transport.ProviderMode == FlowProviderMode.DiagnosticFake ? Text(" · diagnostic", " · диагностика") : ""))
+            .Status(id.Child("element/transport"), "Transport", Text("Transport", "Перевозки"), _status);
+        AppendStationManagement(builder, id);
+        AppendRouteManagement(builder, id);
+        AppendShipping(builder, id);
+        AppendHistory(builder, id);
+        AppendRecovery(builder, id);
+        return builder.Element(id.Child("element/result"), "Result", Text("Result", "Результат"), _result, UiSourceTypes.String, UiCapabilities.Monitor).Build();
+    }
+
+    private void AppendStationManagement(UiExperienceBuilder builder, UiSymbolId id)
+    {
+        builder.Element(id.Child("element/captured-chest"), "CapturedChest", Text("Captured chest", "Выбранный сундук"), _target, UiSourceTypes.String, UiCapabilities.Inspect)
+            .Element(id.Child("element/station-details"), "StationDetails", Text("Station details", "Параметры станции"), _stationForm, FlowUiDataTypes.StationForm, UiCapabilities.Configure)
+            .Element(id.Child("element/source-station"), "SourceStation", Text("Source station", "Станция отправления"), _sources, UiSourceTypes.Collection(FlowUiDataTypes.Station), UiCapabilities.Select)
+            .Actions(id.Child("element/station-actions"), "StationActions", Text("Station actions", "Действия со станцией"),
+                Action(id, "register", Text("Bind new station", "Создать станцию"), () => Command(FlowNetworkAction.RegisterStation), () => _stationForm.IsValid && _snapshot.Target != Guid.Empty
+                    && !_snapshot.Stations.Any(station => string.Equals(station.Name, _name.Value, StringComparison.OrdinalIgnoreCase))),
+                Action(id, "rename", Text("Rename source", "Переименовать источник"), () => Command(FlowNetworkAction.RenameStation), () => _stationForm.IsValid && Source is not null),
+                Action(id, "rebind", Text("Rebind source to captured chest", "Привязать источник к выбранному сундуку"), () => Command(FlowNetworkAction.RebindStation), () => Source is not null && _snapshot.Target != Guid.Empty));
+    }
+
+    private void AppendRouteManagement(UiExperienceBuilder builder, UiSymbolId id)
+    {
+        builder.Element(id.Child("element/destination-station"), "DestinationStation", Text("Destination station", "Станция назначения"), _destinations, UiSourceTypes.Collection(FlowUiDataTypes.Station), UiCapabilities.Select)
+            .Element(id.Child("element/route-preview"), "RoutePreview", Text("Route preview", "Предпросмотр маршрута"), _route, UiSourceTypes.String, UiCapabilities.Inspect)
+            .Element(id.Child("element/link-settings"), "LinkSettings", Text("Link settings", "Параметры связи"), _linkForm, FlowUiDataTypes.LinkForm, UiCapabilities.Configure)
+            .Actions(id.Child("element/route-actions"), "RouteActions", Text("Route actions", "Действия с маршрутом"),
+                Action(id, "link", Text("Add directed link", "Добавить направленную связь"), () => Command(FlowNetworkAction.AddLink), () => _linkForm.IsValid && Source is not null && Destination is not null && Source.Id != Destination.Id))
+            .Element(id.Child("element/links"), "Links", Text("Links", "Связи"), _links, UiSourceTypes.Collection(FlowUiDataTypes.Link), UiCapabilities.Select)
+            .Actions(id.Child("element/link-actions"), "LinkActions", Text("Link actions", "Действия со связью"),
+                Action(id, "remove", Text("Remove selected link", "Удалить выбранную связь"), () => Command(FlowNetworkAction.RemoveLink), () => Selected(_links) is not null),
+                new UiActionDefinition(id.Child("action/refresh"), Text("Refresh", "Обновить"), Refresh, () => CanRequest && IsActive));
     }
 
     private FlowSelectionSource<FlowStationDetails> Stations(UiSymbolId id, string role)
