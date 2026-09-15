@@ -177,38 +177,14 @@ internal sealed class ChestsAnywhereOverlayController
             return;
 
         string revision = snapshot.RevisionKey;
-        bool changed = !ReferenceEquals(_snapshot?.Overlay, snapshot.Overlay) || !string.Equals(_snapshotRevision, revision, StringComparison.Ordinal);
+        bool snapshotChanged = !ReferenceEquals(_snapshot?.Overlay, snapshot.Overlay)
+            || !string.Equals(_snapshotRevision, revision, StringComparison.Ordinal);
         _snapshot = snapshot;
         _snapshotRevision = revision;
-        if (changed) _semanticRevision++;
+        if (snapshotChanged) _semanticRevision++;
 
-        // Direct world RMB stays entirely Chests Anywhere-owned. Native selectors are suppressed
-        // only while the Hatifect overlay is actually visible, and restored immediately when it hides.
-        if (IsVisible)
-        {
-            if (!_adapter.MuteNativeToggle(snapshot.Overlay))
-            {
-                Hide();
-                return;
-            }
-            bool hideNativeSelectors = _getConfig().HideNativeSelectors;
-            bool synchronizeSelectors = ChestsAnywhereSelectorSynchronizationPolicy.ShouldSynchronize(
-                    changed || _nativeSelectorResynchronizationPending,
-                    hideNativeSelectors,
-                    _adapter.HasSuppressedNativeSelectors);
-            if (synchronizeSelectors
-                && !_adapter.SuppressNativeSelectors(snapshot.Overlay, hideNativeSelectors))
-            {
-                Hide();
-                return;
-            }
-            if (synchronizeSelectors || !hideNativeSelectors)
-                _nativeSelectorResynchronizationPending = false;
-        }
-        else if (!_adapter.RestoreNativeSelectors() || !_adapter.RestoreNativeToggle())
-        {
+        if (!SynchronizeNativeControls(snapshot, snapshotChanged))
             return;
-        }
 
         if (string.IsNullOrWhiteSpace(SelectedCategory) || !snapshot.Categories.Contains(SelectedCategory, StringComparer.Ordinal))
             SelectedCategory = snapshot.Current?.Category ?? snapshot.Categories.FirstOrDefault() ?? string.Empty;
@@ -220,7 +196,7 @@ internal sealed class ChestsAnywhereOverlayController
             _closeAfterRenderedFrames = Math.Max(_closeAfterRenderedFrames, 2);
         }
 
-        if (changed)
+        if (snapshotChanged)
             _frontend?.Refresh(preserveViewState: true);
 
         ChestsAnywhereOverlayTransition transition = _lifecycle.ObserveActive(
@@ -236,6 +212,34 @@ internal sealed class ChestsAnywhereOverlayController
         }
 
         _frontend?.UpdateOptions(_getConfig());
+    }
+
+    private bool SynchronizeNativeControls(StorageSnapshot snapshot, bool snapshotChanged)
+    {
+        // World RMB remains CA-owned. Hatifect suppresses native controls only while visible.
+        if (!IsVisible)
+            return _adapter.RestoreNativeSelectors() && _adapter.RestoreNativeToggle();
+
+        if (!_adapter.MuteNativeToggle(snapshot.Overlay))
+        {
+            Hide();
+            return false;
+        }
+
+        bool hideNativeSelectors = _getConfig().HideNativeSelectors;
+        bool synchronizeSelectors = ChestsAnywhereSelectorSynchronizationPolicy.ShouldSynchronize(
+            snapshotChanged || _nativeSelectorResynchronizationPending,
+            hideNativeSelectors,
+            _adapter.HasSuppressedNativeSelectors);
+        if (synchronizeSelectors
+            && !_adapter.SuppressNativeSelectors(snapshot.Overlay, hideNativeSelectors))
+        {
+            Hide();
+            return false;
+        }
+        if (synchronizeSelectors || !hideNativeSelectors)
+            _nativeSelectorResynchronizationPending = false;
+        return true;
     }
 
     public void Show()

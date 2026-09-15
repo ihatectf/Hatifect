@@ -395,24 +395,7 @@ internal sealed class ChestsAnywhereAdapter : IChestsAnywhereOverlayAdapter
             return false;
         try
         {
-            FieldInfo chestsField = RequiredField(overlay.GetType(), "Chests");
-            FieldInfo chestField = RequiredField(overlay.GetType(), "Chest");
-            Array chests = chestsField.GetValue(overlay) as Array
-                ?? throw new InvalidOperationException("Chests Anywhere overlay did not expose its storage array.");
-            object current = chestField.GetValue(overlay)
-                ?? throw new InvalidOperationException("Chests Anywhere overlay did not expose its current storage.");
-
-            var entries = new List<StorageEntry>(chests.Length);
-            foreach (object? chest in chests)
-            {
-                if (chest == null)
-                    continue;
-                entries.Add(ReadStorage(chest));
-            }
-
-            string currentKey = BuildKey(current);
-            IReadOnlyList<string> categories = ReadCategories(overlay, entries);
-            snapshot = new StorageSnapshot(overlay, categories, entries, currentKey);
+            snapshot = CaptureStorageSnapshot(overlay);
             return true;
         }
         catch (Exception ex)
@@ -420,6 +403,28 @@ internal sealed class ChestsAnywhereAdapter : IChestsAnywhereOverlayAdapter
             LogUnsupported(ex);
             return false;
         }
+    }
+
+    private StorageSnapshot CaptureStorageSnapshot(object overlay)
+    {
+        FieldInfo chestsField = RequiredField(overlay.GetType(), "Chests");
+        FieldInfo chestField = RequiredField(overlay.GetType(), "Chest");
+        Array chests = chestsField.GetValue(overlay) as Array
+            ?? throw new InvalidOperationException("Chests Anywhere overlay did not expose its storage array.");
+        object current = chestField.GetValue(overlay)
+            ?? throw new InvalidOperationException("Chests Anywhere overlay did not expose its current storage.");
+
+        var entries = new List<StorageEntry>(chests.Length);
+        foreach (object? chest in chests)
+        {
+            if (chest == null)
+                continue;
+            entries.Add(ReadStorage(chest));
+        }
+
+        string currentKey = BuildKey(current);
+        IReadOnlyList<string> categories = ReadCategories(overlay, entries);
+        return new StorageSnapshot(overlay, categories, entries, currentKey);
     }
 
     /// <summary>Remove CA's native chest/category dropdowns while preserving its underlying menu and navigation logic.</summary>
@@ -737,9 +742,16 @@ internal sealed class ChestsAnywhereAdapter : IChestsAnywhereOverlayAdapter
         object? location = ReadProperty(chest, "Location");
         string locationName = location == null
             ? category
-            : ReadString(location, "DisplayName", ReadString(location, "NameOrUniqueName", ReadString(location, "Name", category)));
+            : ReadStorageLocationName(location, category);
         int? order = ReadNullableInt(chest, "Order");
         return new StorageEntry(BuildKey(chest), name, category, locationName, order, chest);
+    }
+
+    private static string ReadStorageLocationName(object location, string category)
+    {
+        string name = ReadString(location, "Name", category);
+        string uniqueName = ReadString(location, "NameOrUniqueName", name);
+        return ReadString(location, "DisplayName", uniqueName);
     }
 
     private static IReadOnlyList<string> ReadCategories(object overlay, IReadOnlyList<StorageEntry> entries)
@@ -786,9 +798,14 @@ internal sealed class ChestsAnywhereAdapter : IChestsAnywhereOverlayAdapter
     private static string BuildKey(object chest)
     {
         object? location = ReadProperty(chest, "Location");
-        string locationId = location == null
-            ? "unknown"
-            : ReadString(location, "NameOrUniqueName", ReadString(location, "Name", location.GetType().Name));
+        string locationId;
+        if (location == null)
+            locationId = "unknown";
+        else
+        {
+            string name = ReadString(location, "Name", location.GetType().Name);
+            locationId = ReadString(location, "NameOrUniqueName", name);
+        }
         object? tileRaw = ReadProperty(chest, "Tile");
         string tile = tileRaw is Vector2 point ? $"{point.X:0.###},{point.Y:0.###}" : "0,0";
         object? container = ReadProperty(chest, "Container");

@@ -26,19 +26,19 @@ internal static class ChestsAnywhereAutomatedHandoffPolicy
         if (currentOverlay == null || currentMenu == null || currentOverlayMenu == null)
             return ChestsAnywhereAutomatedHandoffState.Invalid;
 
-        bool overlayChanged = !ReferenceEquals(currentOverlay, originalOverlay);
-        bool menuChanged = !ReferenceEquals(currentMenu, originalMenu);
-        if (overlayChanged && menuChanged && ReferenceEquals(currentOverlayMenu, currentMenu))
-            return ChestsAnywhereAutomatedHandoffState.Synchronized;
+        if (ReferenceEquals(currentMenu, originalMenu))
+            return ChestsAnywhereAutomatedHandoffState.Invalid;
 
-        if (ReferenceEquals(currentOverlay, originalOverlay)
-            && ReferenceEquals(currentOverlayMenu, originalMenu)
-            && menuChanged)
+        if (ReferenceEquals(currentOverlay, originalOverlay))
         {
-            return ChestsAnywhereAutomatedHandoffState.AwaitingOverlaySynchronization;
+            return ReferenceEquals(currentOverlayMenu, originalMenu)
+                ? ChestsAnywhereAutomatedHandoffState.AwaitingOverlaySynchronization
+                : ChestsAnywhereAutomatedHandoffState.Invalid;
         }
 
-        return ChestsAnywhereAutomatedHandoffState.Invalid;
+        return ReferenceEquals(currentOverlayMenu, currentMenu)
+            ? ChestsAnywhereAutomatedHandoffState.Synchronized
+            : ChestsAnywhereAutomatedHandoffState.Invalid;
     }
 
     internal static bool CanRecoverForRollback(
@@ -53,16 +53,12 @@ internal static class ChestsAnywhereAutomatedHandoffPolicy
 
         if (currentOverlay == null)
             return true;
-        if (currentMenu == null)
+
+        // A closed or unchanged menu is recoverable only while the original overlay still owns the original menu.
+        if (currentMenu == null || ReferenceEquals(currentMenu, originalMenu))
         {
             return ReferenceEquals(currentOverlay, originalOverlay)
                 && ReferenceEquals(currentOverlayMenu, originalMenu);
-        }
-        if (ReferenceEquals(currentOverlay, originalOverlay)
-            && ReferenceEquals(currentMenu, originalMenu)
-            && ReferenceEquals(currentOverlayMenu, originalMenu))
-        {
-            return true;
         }
 
         return Classify(
