@@ -284,25 +284,33 @@ internal sealed partial class UiSemanticStardewMenu : IClickableMenu, IDisposabl
         var failures = new List<Exception>();
         try
         {
-            try { _host?.Session.Deactivate(); }
-            catch (Exception error) { failures.Add(error); }
-            try { _keyboard.Dispose(); }
-            catch (Exception error) { failures.Add(error); }
-            try { UiStardewAcceptanceRecorder.Shared.UnregisterSemanticSurface(this); }
-            catch (Exception error) { failures.Add(error); }
-            try { _host?.Dispose(); _host = null; }
-            catch (Exception error) { failures.Add(error); }
-            if (!_closedNotified)
-            {
-                _closedNotified = true;
-                try { _onClosed?.Invoke(); }
-                catch (Exception error) { failures.Add(error); }
-            }
+            ReleaseSessionResources(failures);
+            NotifyClosed(failures);
             _cleanupComplete = failures.Count == 0;
         }
         finally { _cleaning = false; }
         if (failures.Count > 0)
             throw new AggregateException("Semantic Stardew menu cleanup failed.", failures);
+    }
+
+    private void ReleaseSessionResources(List<Exception> failures)
+    {
+        try { _host?.Session.Deactivate(); }
+        catch (Exception error) { failures.Add(error); }
+        try { _keyboard.Dispose(); }
+        catch (Exception error) { failures.Add(error); }
+        try { UiStardewAcceptanceRecorder.Shared.UnregisterSemanticSurface(this); }
+        catch (Exception error) { failures.Add(error); }
+        try { _host?.Dispose(); _host = null; }
+        catch (Exception error) { failures.Add(error); }
+    }
+
+    private void NotifyClosed(List<Exception> failures)
+    {
+        if (_closedNotified) return;
+        _closedNotified = true;
+        try { _onClosed?.Invoke(); }
+        catch (Exception error) { failures.Add(error); }
     }
 
     private void SynchronizeViewport()
