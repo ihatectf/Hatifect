@@ -278,15 +278,15 @@ internal sealed partial class FlowRuntime
         using MutationScope mutation = EnterMutation();
         Execution execution = _parcels[id];
         Parcel parcel = execution.Snapshot;
-        if (parcel.State is not (ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted or ParcelState.ReturnRejected or ParcelState.ReturnFaulted)
-            || parcel.PendingOperation is not null
-            || parcel.DeliveryAttempts >= _limits.MaxDeliveryAttempts || !_operations.HasRoom)
+        if (RetryRejection(parcel) != FlowRejectionCode.None)
         {
             return false;
         }
         long dueTick = checked(Now + 1);
         Commit(execution, parcel.State, parcel.CurrentStation, OperationKind.DeliveryRetry, Now);
-        Schedule(execution, parcel.State is ParcelState.ReturnRejected or ParcelState.ReturnFaulted ? OperationKind.ReturnDelivery : OperationKind.Delivery, dueTick);
+        OperationKind delivery = parcel.State is ParcelState.ReturnRejected or ParcelState.ReturnFaulted
+            ? OperationKind.ReturnDelivery : OperationKind.Delivery;
+        Schedule(execution, delivery, dueTick);
         return true;
     }
 
@@ -465,46 +465,60 @@ internal sealed partial class FlowRuntime
         PortResult result;
         try
         {
-            _preparingTransfer = transfer;
-            try
-            {
-                _intentSink?.Invoke(transfer);
-            }
-            finally
-            {
-                _preparingTransfer = null;
-            }
-            result = _ports[transfer.StationId].Apply(transfer);
-            if (result is not (PortResult.Applied or PortResult.Rejected))
-            {
-                throw new InvalidOperationException("Apply must report Applied or Rejected; its result is uncertain.");
-            }
+            result = ApplyPreparedTransfer(transfer);
         }
         catch
         {
-            Commit(execution, kind == PortTransferKind.Extract
-                ? ParcelState.ExtractionUncertain : target.HasValue ? ParcelState.ReturnUncertain : ParcelState.DeliveryUncertain,
-                parcel.CurrentStation, OperationKind.PortUncertain, tick);
+            ParcelState uncertain = (kind, target.HasValue) switch
+            {
+                (PortTransferKind.Extract, _) => ParcelState.ExtractionUncertain,
+                (_, true) => ParcelState.ReturnUncertain,
+                _ => ParcelState.DeliveryUncertain
+            };
+            Commit(execution, uncertain, parcel.CurrentStation, OperationKind.PortUncertain, tick);
             throw;
         }
         SettleTransfer(execution, result);
+    }
+
+    private PortResult ApplyPreparedTransfer(PortTransfer transfer)
+    {
+        _preparingTransfer = transfer;
+        try
+        {
+            _intentSink?.Invoke(transfer);
+        }
+        finally
+        {
+            _preparingTransfer = null;
+        }
+        PortResult result = _ports[transfer.StationId].Apply(transfer);
+        if (result is not (PortResult.Applied or PortResult.Rejected))
+        {
+            throw new InvalidOperationException("Apply must report Applied or Rejected; its result is uncertain.");
+        }
+        return result;
     }
 
     private void SettleTransfer(Execution execution, PortResult result)
     {
         Parcel parcel = execution.Snapshot;
         PortTransfer transfer = parcel.PendingTransfer!;
-        bool extracted = transfer.Kind == PortTransferKind.Extract;
-        CargoOwner destination = result == PortResult.Applied
-            ? (extracted ? CargoOwner.InParcel(parcel.Id) : CargoOwner.AtStation(transfer.StationId))
-            : (extracted ? CargoOwner.AtStation(transfer.StationId) : CargoOwner.InParcel(parcel.Id));
+        bool isExtraction = transfer.Kind == PortTransferKind.Extract;
+        CargoOwner destination = (isExtraction, result) switch
+        {
+            (true, PortResult.Applied) => CargoOwner.InParcel(parcel.Id),
+            (true, _) => CargoOwner.AtStation(transfer.StationId),
+            (false, PortResult.Applied) => CargoOwner.AtStation(transfer.StationId),
+            _ => CargoOwner.InParcel(parcel.Id)
+        };
         // Revoke before releasing any claim, particularly when Missing has no
         // receipt. A retained old request cannot mutate redispatched cargo.
         _authority.Retire(transfer);
         _cargo.Transfer(parcel.CargoId, CargoOwner.InTransfer(transfer.Id), destination);
         execution.Snapshot = parcel with { PendingTransfer = null };
         long tick = execution.TransferTick;
-        if (extracted)
+        if (isExtraction)
         {
             if (result == PortResult.Applied)
             {
@@ -520,9 +534,15 @@ internal sealed partial class FlowRuntime
         else
         {
             bool returning = transfer.StationId == _shipments[parcel.ShipmentId].Origin;
-            ParcelState state = returning
-                ? result == PortResult.Applied ? ParcelState.Returned : result == PortResult.Rejected ? ParcelState.ReturnRejected : ParcelState.ReturnFaulted
-                : result == PortResult.Applied ? ParcelState.Delivered : result == PortResult.Rejected ? ParcelState.DeliveryRejected : ParcelState.DeliveryFaulted;
+            ParcelState state = (returning, result) switch
+            {
+                (true, PortResult.Applied) => ParcelState.Returned,
+                (true, PortResult.Rejected) => ParcelState.ReturnRejected,
+                (true, _) => ParcelState.ReturnFaulted,
+                (false, PortResult.Applied) => ParcelState.Delivered,
+                (false, PortResult.Rejected) => ParcelState.DeliveryRejected,
+                _ => ParcelState.DeliveryFaulted
+            };
             Commit(execution, state, state == ParcelState.Returned ? transfer.StationId : parcel.CurrentStation,
                 returning ? OperationKind.ReturnDelivery : OperationKind.Delivery, tick);
             if (state is ParcelState.Delivered or ParcelState.Returned)

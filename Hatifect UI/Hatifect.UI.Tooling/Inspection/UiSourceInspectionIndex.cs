@@ -55,36 +55,7 @@ public sealed class UiSourceInspectionIndex
             .ThenBy(entry => entry.Source.Span.Length)
             .ThenBy(entry => entry.Kind)
             .ToArray();
-        var sourceEntries = new Dictionary<string, List<IndexedInterval>>(StringComparer.Ordinal);
-        for (int ordinal = 0; ordinal < _entries.Length; ordinal++)
-        {
-            UiSourceInspectionEntry entry = _entries[ordinal];
-            if (entry.Kind == UiSourceInspectionKind.Placement && entry.Target is { } element)
-            {
-                _placements.TryAdd(new PlacementKey(entry.Definition, element), entry);
-            }
-            else if (entry.Kind == UiSourceInspectionKind.Assignment && entry.Property is { } property)
-            {
-                _assignments.TryAdd(new AssignmentKey(
-                    entry.Definition,
-                    entry.Target,
-                    property.Id,
-                    entry.Profile,
-                    entry.State), entry);
-            }
-
-            if (IndexedInterval.TryCreate(entry, ordinal, out IndexedInterval interval))
-            {
-                if (!sourceEntries.TryGetValue(entry.Source.SourceName, out List<IndexedInterval>? entries))
-                {
-                    entries = new List<IndexedInterval>();
-                    sourceEntries.Add(entry.Source.SourceName, entries);
-                }
-                entries.Add(interval);
-            }
-        }
-        foreach ((string sourceName, List<IndexedInterval> entries) in sourceEntries)
-            _sourceIntervals.Add(sourceName, SourceIntervalNode.Build(entries));
+        IndexEntries();
         Entries = Array.AsReadOnly(_entries);
     }
 
@@ -131,6 +102,43 @@ public sealed class UiSourceInspectionIndex
             out UiSourceInspectionEntry? entry)
             ? entry
             : null;
+    }
+
+    private void IndexEntries()
+    {
+        var sourceEntries = new Dictionary<string, List<IndexedInterval>>(StringComparer.Ordinal);
+        for (int ordinal = 0; ordinal < _entries.Length; ordinal++)
+        {
+            UiSourceInspectionEntry entry = _entries[ordinal];
+            IndexSemanticEntry(entry);
+
+            if (!IndexedInterval.TryCreate(entry, ordinal, out IndexedInterval interval)) continue;
+            if (!sourceEntries.TryGetValue(entry.Source.SourceName, out List<IndexedInterval>? entries))
+            {
+                entries = new List<IndexedInterval>();
+                sourceEntries.Add(entry.Source.SourceName, entries);
+            }
+            entries.Add(interval);
+        }
+        foreach ((string sourceName, List<IndexedInterval> entries) in sourceEntries)
+            _sourceIntervals.Add(sourceName, SourceIntervalNode.Build(entries));
+    }
+
+    private void IndexSemanticEntry(UiSourceInspectionEntry entry)
+    {
+        if (entry.Kind == UiSourceInspectionKind.Placement && entry.Target is { } element)
+        {
+            _placements.TryAdd(new PlacementKey(entry.Definition, element), entry);
+        }
+        else if (entry.Kind == UiSourceInspectionKind.Assignment && entry.Property is { } property)
+        {
+            _assignments.TryAdd(new AssignmentKey(
+                entry.Definition,
+                entry.Target,
+                property.Id,
+                entry.Profile,
+                entry.State), entry);
+        }
     }
 
     private static IEnumerable<UiSourceInspectionEntry> EntriesFor(UiBoundDefinition definition)

@@ -247,10 +247,7 @@ internal sealed class DurableFlowSession : IDisposable
         long acknowledgementRevision = checked(revision + 1);
         FlowCheckpoint checkpoint = CaptureOwned();
         FlowCheckpoint projected = CargoProvisionProjection.Core(checkpoint, intent);
-        _ = FlowRuntime.RestoreCheckpoint(projected);
-        _ = DurableCoreCodec.Encode(new DurableCoreImage(_pairId, checked(providerRevision + 1), null,
-            new CheckpointImage(acknowledgementRevision, projected),
-            ProviderConfigurationRevision: checked(_provider.ConfigurationRevision + 1)));
+        PreflightProjectedAcknowledgement(projected, providerRevision, acknowledgementRevision);
         var image = new DurableCoreImage(_pairId, providerRevision, null,
             new CheckpointImage(revision, checkpoint),
             ProviderConfigurationRevision: _provider.ConfigurationRevision, Provision: intent);
@@ -289,10 +286,7 @@ internal sealed class DurableFlowSession : IDisposable
         long acknowledgementRevision = checked(revision + 1);
         FlowCheckpoint checkpoint = CaptureOwned();
         FlowCheckpoint projected = PortCapacityProjection.Core(checkpoint, intent);
-        _ = FlowRuntime.RestoreCheckpoint(projected);
-        _ = DurableCoreCodec.Encode(new DurableCoreImage(_pairId, checked(providerRevision + 1), null,
-            new CheckpointImage(acknowledgementRevision, projected),
-            ProviderConfigurationRevision: checked(_provider.ConfigurationRevision + 1)));
+        PreflightProjectedAcknowledgement(projected, providerRevision, acknowledgementRevision);
         var image = new DurableCoreImage(_pairId, providerRevision, null,
             new CheckpointImage(revision, checkpoint),
             ProviderConfigurationRevision: _provider.ConfigurationRevision, Capacity: intent);
@@ -316,6 +310,17 @@ internal sealed class DurableFlowSession : IDisposable
             throw;
         }
         finally { _operating = false; }
+    }
+
+    private void PreflightProjectedAcknowledgement(
+        FlowCheckpoint projected,
+        long providerRevision,
+        long acknowledgementRevision)
+    {
+        _ = FlowRuntime.RestoreCheckpoint(projected);
+        _ = DurableCoreCodec.Encode(new DurableCoreImage(_pairId, checked(providerRevision + 1), null,
+            new CheckpointImage(acknowledgementRevision, projected),
+            ProviderConfigurationRevision: checked(_provider.ConfigurationRevision + 1)));
     }
 
     public void Dispose() { RequireThreadAndIdle(); FenceAndClose(); }

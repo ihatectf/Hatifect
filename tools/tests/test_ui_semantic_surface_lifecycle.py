@@ -18,6 +18,7 @@ SURFACE_SERVICE = (
     / "Hosting"
     / "UiSemanticSurfaceService.cs"
 )
+ACTIVE_MENU_SURFACE = SURFACE_SERVICE.with_name("UiActiveMenuSemanticSurfaceSession.cs")
 STARDEW_RUNTIME = (
     ROOT
     / "Hatifect UI"
@@ -91,6 +92,7 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
         route = _method_body(source, "private bool CanRouteInput()")
         retire = _method_body(source, "private void RetireLostMenuContext()")
         hide = _method_body(source, "private void HideCore(bool notifyClosed, bool restoreKeyboard = true)")
+        commit_hidden = _method_body(source, "private void CommitHiddenState(")
 
         self.assertRegex(
             route,
@@ -108,11 +110,12 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
         )
         self.assertNotIn("Game1.activeClickableMenu =", retire)
         self.assertIn("if (!Visible) return;", hide)
-        self.assertLess(hide.index("Visible = false;"), hide.index("NotifyClosed(failures)"))
+        self.assertIn("CommitHiddenState(notifyClosed, failures);", hide)
+        self.assertLess(commit_hidden.index("Visible = false;"), commit_hidden.index("NotifyClosed(failures)"))
 
     def test_consumer_refresh_and_synchronize_retire_lost_menu_identity(self) -> None:
         overlay_source = OVERLAY_SESSION.read_text(encoding="utf-8")
-        service_source = SURFACE_SERVICE.read_text(encoding="utf-8")
+        service_source = ACTIVE_MENU_SURFACE.read_text(encoding="utf-8")
         context = _method_body(overlay_source, "internal bool SynchronizeMenuContext()")
         refresh = _method_body(service_source, "public void Refresh()")
         synchronize = _method_body(service_source, "public void Synchronize()")
@@ -129,7 +132,7 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
             )
 
     def test_hidden_surface_can_recompose_before_first_show(self) -> None:
-        source = SURFACE_SERVICE.read_text(encoding="utf-8")
+        source = ACTIVE_MENU_SURFACE.read_text(encoding="utf-8")
         refresh = _method_body(source, "public void Refresh()")
         synchronize = _method_body(source, "public void Synchronize()")
 
@@ -163,6 +166,8 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
         retire = _method_body(source, "internal void Retire()")
         dispose = _method_body(source, "private void DisposeCore()")
         hide = _method_body(source, "private void HideCore(bool notifyClosed, bool restoreKeyboard = true)")
+        release_native = _method_body(source, "private void ReleaseNativeBindings(")
+        commit_hidden = _method_body(source, "private void CommitHiddenState(")
         binding = (ROOT / "Hatifect UI/Hatifect.UI.Stardew/Semantic/UiSemanticOverlayEventBinding.cs").read_text(encoding="utf-8")
         unsubscribe = _method_body(binding, "public void Dispose()")
         detach = _method_body(binding, "internal void Detach()")
@@ -179,16 +184,21 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
         )
         self.assertLess(
             hide.index('throw new AggregateException("Semantic Stardew overlay hide failed."'),
-            hide.index("Visible = false;"),
+            hide.index("CommitHiddenState(notifyClosed, failures);"),
         )
-        self.assertIn("_events.Dispose();", hide)
+        self.assertLess(
+            hide.index("ReleaseNativeBindings(restoreKeyboard, failures);"),
+            hide.index('throw new AggregateException("Semantic Stardew overlay hide failed."'),
+        )
+        self.assertIn("Visible = false;", commit_hidden)
+        self.assertIn("_events.Dispose();", release_native)
         self.assertLess(unsubscribe.index("_enabled = false;"), unsubscribe.index("subscription.Detach();"))
         self.assertIn('throw new AggregateException("Semantic Stardew overlay event teardown failed."', unsubscribe)
         self.assertLess(detach.index("_remove();"), detach.index("Attached = false;"))
 
     def test_closed_callback_cannot_reentrantly_show_same_session(self) -> None:
         overlay_source = OVERLAY_SESSION.read_text(encoding="utf-8")
-        service_source = SURFACE_SERVICE.read_text(encoding="utf-8")
+        service_source = ACTIVE_MENU_SURFACE.read_text(encoding="utf-8")
         overlay_show = _method_body(overlay_source, "public void Show()")
         notify = _method_body(overlay_source, "private void NotifyClosed(")
         surface_show = _method_body(service_source, "public void Show()")
@@ -214,7 +224,7 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
         )
 
     def test_public_surface_close_is_terminal_even_before_first_show(self) -> None:
-        source = SURFACE_SERVICE.read_text(encoding="utf-8")
+        source = ACTIVE_MENU_SURFACE.read_text(encoding="utf-8")
         hide = _method_body(source, "public void Hide()")
         throw_if_unavailable = _method_body(source, "private void ThrowIfUnavailable()")
 
@@ -231,7 +241,7 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
             self.assertIn("ThrowIfUnavailable();", _method_body(source, signature))
 
     def test_surface_retains_runtime_until_overlay_cleanup_succeeds(self) -> None:
-        source = SURFACE_SERVICE.read_text(encoding="utf-8")
+        source = ACTIVE_MENU_SURFACE.read_text(encoding="utf-8")
         dispose = _method_body(source, "public void Dispose()")
         owned = _method_body(source, "private void DisposeOwnedResources(")
 
@@ -244,7 +254,8 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
         source = SURFACE_SERVICE.read_text(encoding="utf-8")
         create = _method_body(source, "public IUiSemanticSurfaceSession CreateActiveMenuOverlay(")
         cancel = _method_body(source, "public void Cancel(")
-        ownership = _method_body(source, "internal bool IsOwnedBy(")
+        session = ACTIVE_MENU_SURFACE.read_text(encoding="utf-8")
+        ownership = _method_body(session, "internal bool IsOwnedBy(")
 
         self.assertIn("new UiActiveMenuSemanticSurfaceSession(this,", create)
         self.assertIn("!owned.IsOwnedBy(this)", cancel)

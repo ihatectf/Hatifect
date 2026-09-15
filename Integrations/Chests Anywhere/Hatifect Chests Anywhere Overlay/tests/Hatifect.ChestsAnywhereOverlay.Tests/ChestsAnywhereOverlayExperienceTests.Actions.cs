@@ -108,6 +108,65 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
     }
 
     [Fact]
+    public void RejectedReopenClearsPriorHandoffTogetherWithErrorStatus()
+    {
+        var port = new RecordingPort(TwoCategorySnapshot());
+        using var session = new ChestsAnywhereNavigatorExperienceSession(Id("rejected-reopen"), port);
+        Assert.Equal(UiActionOutcome.Success, Invoke(Action(session, "open")).Outcome);
+        Assert.Equal(UiStatusKind.Loading, session.Status.Value.Kind);
+        Assert.Equal("farm-a", session.Handoff.Value!.StorageKey);
+        long version = session.Publication.Version;
+        port.RejectOpen = true;
+        var observed = new List<(UiStatusKind Kind, string Message, string? Storage)>();
+        session.Status.Changed += () => observed.Add((session.Status.Value.Kind,
+            session.Status.Value.Message, session.Handoff.Value?.StorageKey));
+        session.Handoff.Changed += () => observed.Add((session.Status.Value.Kind,
+            session.Status.Value.Message, session.Handoff.Value?.StorageKey));
+
+        var result = Invoke(Action(session, "open"));
+
+        Assert.Equal(UiActionOutcome.Rejected, result.Outcome);
+        Assert.Equal("CA_OPEN_REJECTED", result.Rejection!.Code);
+        Assert.Equal(version + 1, session.Publication.Version);
+        Assert.Null(session.Handoff.Value);
+        Assert.Equal(2, observed.Count);
+        Assert.All(observed, state =>
+        {
+            Assert.Equal(UiStatusKind.Error, state.Kind);
+            Assert.Equal("Switch failed", state.Message);
+            Assert.Null(state.Storage);
+        });
+        Assert.Equal(new[] { "farm-a", "farm-a" }, port.OpenRequests);
+    }
+
+    [Theory]
+    [InlineData("refresh")]
+    [InlineData("toggle-favorite")]
+    [InlineData("mode-categories")]
+    [InlineData("mode-favorites")]
+    [InlineData("mode-recent")]
+    [InlineData("select-category")]
+    public void NonOpenCommandPreservesHandoffWithoutReportingAnotherOpen(string actionName)
+    {
+        var port = new RecordingPort(TwoCategorySnapshot());
+        using var session = new ChestsAnywhereNavigatorExperienceSession(Id("preserved-handoff"), port);
+        Assert.Equal(UiActionOutcome.Success, Invoke(Action(session, "open")).Outcome);
+        ChestsAnywhereStorageHandoff handoff = session.Handoff.Value!;
+        Assert.Equal("farm-a", handoff.StorageKey);
+        Assert.Equal(UiStatusKind.Loading, session.Status.Value.Kind);
+        long version = session.Publication.Version;
+
+        var result = Invoke(Action(session, actionName));
+
+        Assert.Equal(UiActionOutcome.Success, result.Outcome);
+        Assert.Equal(version + 1, session.Publication.Version);
+        Assert.Equal(session.Publication.Version, result.Value.PublicationVersion);
+        Assert.Same(handoff, session.Handoff.Value);
+        Assert.Equal(UiStatusKind.Status, session.Status.Value.Kind);
+        Assert.Equal("farm-a", Assert.Single(port.OpenRequests));
+    }
+
+    [Fact]
     public void TypedProviderFailureKeepsAcceptedProjectionAndSeparatesDiagnosticText()
     {
         var port = new RecordingPort(TwoCategorySnapshot()) { ThrowOnRefresh = true };

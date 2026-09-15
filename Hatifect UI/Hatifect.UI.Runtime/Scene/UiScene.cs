@@ -257,9 +257,10 @@ internal sealed class UiCollectionSceneNode : UiSceneNode
             !TryGetIndex(selected, -1, out _))
             throw new InvalidOperationException(
                 $"Collection '{id}' selected item '{selected}' is absent from its semantic snapshot.");
-        _activeItemVisuals = new ReadOnlyDictionary<UiSymbolId, UiVisualResolution>(
-            new Dictionary<UiSymbolId, UiVisualResolution>(
-                activeItemVisuals ?? new Dictionary<UiSymbolId, UiVisualResolution>()));
+        Dictionary<UiSymbolId, UiVisualResolution> activeItemVisualSnapshot = activeItemVisuals is null
+            ? new Dictionary<UiSymbolId, UiVisualResolution>()
+            : new Dictionary<UiSymbolId, UiVisualResolution>(activeItemVisuals);
+        _activeItemVisuals = new ReadOnlyDictionary<UiSymbolId, UiVisualResolution>(activeItemVisualSnapshot);
         _stateVisuals = stateVisuals;
         InputPrompt = inputPrompt;
         _itemTooltipVisual = itemTooltipVisual;

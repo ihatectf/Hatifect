@@ -957,7 +957,7 @@ class ValidationTests(unittest.TestCase):
                 self.assertEqual(0, validation.main(arguments))
             run = run_type.return_value
             if arguments[0] == "check":
-                run.static.assert_called_once_with(679)
+                run.static.assert_called_once_with(683)
                 self.assertEqual(1, run.build.call_count)
                 self.assertEqual(["Hatifect.UI.Tests", "Hatifect.Flow.Tests"],
                                  [item.name for item in run.tests.call_args.args[0]])
@@ -988,7 +988,7 @@ class ValidationTests(unittest.TestCase):
         run.static_contracts.assert_called_once_with()
         run.static.assert_not_called()
         run.build_with_python_tests.assert_called_once()
-        self.assertEqual(679, run.build_with_python_tests.call_args.args[-1])
+        self.assertEqual(683, run.build_with_python_tests.call_args.args[-1])
         self.assertEqual(counts, run.tests.call_args.args[-1])
         profile = run_type.call_args.args[2]
         self.assertTrue(profile.python_build_overlap)

@@ -96,22 +96,30 @@ public partial class UiPublishedCollection<T> : IUiSemanticSource<IReadOnlyList<
         int supportingCount = 0;
         if (sameContent) { items = previous!.Items; supportingCount = previous.SupportingItemCount; }
         else
-        {
-            var revised = new UiSemanticCollectionItem[data.Items.Count];
-            for (int index = 0; index < revised.Length; index++)
-            {
-                var item = data.Items[index];
-                UiSemanticCollectionItem? old = previous is not null && previous.TryGetIndex(item.Id, out int oldIndex)
-                    ? previous.GetItem(oldIndex) : null;
-                revised[index] = old is not null && UiSemanticCollectionSnapshot.ItemEquivalent(old, item)
-                    ? old : item with { ItemRevision = version };
-                if (!string.IsNullOrWhiteSpace(revised[index].SupportingText)) supportingCount++;
-            }
-            items = Array.AsReadOnly(revised);
-        }
+            items = BuildRevisedItems(previous, data.Items, version, out supportingCount);
         return new(sameContent ? previous!.Value : data.Values, items, sameContent ? previous!.Indices : indices,
             supportingCount,
             revision, selected, version, History(previous, change));
+    }
+
+    private static IReadOnlyList<UiSemanticCollectionItem> BuildRevisedItems(
+        UiPublishedCollectionSnapshot<T>? previous,
+        IReadOnlyList<UiSemanticCollectionItem> candidateItems,
+        long version,
+        out int supportingCount)
+    {
+        supportingCount = 0;
+        var revised = new UiSemanticCollectionItem[candidateItems.Count];
+        for (int index = 0; index < revised.Length; index++)
+        {
+            var item = candidateItems[index];
+            UiSemanticCollectionItem? old = previous is not null && previous.TryGetIndex(item.Id, out int oldIndex)
+                ? previous.GetItem(oldIndex) : null;
+            revised[index] = old is not null && UiSemanticCollectionSnapshot.ItemEquivalent(old, item)
+                ? old : item with { ItemRevision = version };
+            if (!string.IsNullOrWhiteSpace(revised[index].SupportingText)) supportingCount++;
+        }
+        return Array.AsReadOnly(revised);
     }
 
     internal UiPublishedCollectionSnapshot<T> Select(UiPublishedCollectionSnapshot<T> data, UiSymbolId? selected,

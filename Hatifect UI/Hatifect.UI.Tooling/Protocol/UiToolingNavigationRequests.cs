@@ -68,10 +68,7 @@ internal sealed partial class UiToolingProtocolSession
         if (OptionalProperty(options, "declarations") is not { } values) return declarations;
         if (values.ValueKind != JsonValueKind.Array || values.GetArrayLength() > 4096)
             throw new InvalidDataException("declarations must be an array of at most 4096 entries.");
-        var known = contexts.SelectMany(context => context.Graph is { } graph
-            ? graph.Nodes.Select(node => node.Id).Concat(graph.Nodes.SelectMany(node => node.Inputs.Select(input => input.Id)))
-                .Concat(graph.Relations.Select(relation => relation.Id)).Concat(graph.Roles.Select(role => role.Id))
-            : context.Elements.Select(e => e.Id).Concat(context.Roles.Select(r => r.Id))).ToHashSet();
+        HashSet<UiSymbolId> known = contexts.SelectMany(DeclaredSymbolIds).ToHashSet();
         foreach (JsonElement value in values.EnumerateArray())
         {
             JsonElement entry = RequiredObject(value, "declaration");
@@ -90,6 +87,18 @@ internal sealed partial class UiToolingProtocolSession
                 throw new InvalidDataException("A declaration symbol is duplicated.");
         }
         return declarations;
+    }
+
+    private static IEnumerable<UiSymbolId> DeclaredSymbolIds(UiBindingContextMetadata context)
+    {
+        if (context.Graph is not { } graph)
+            return context.Elements.Select(element => element.Id)
+                .Concat(context.Roles.Select(role => role.Id));
+
+        return graph.Nodes.Select(node => node.Id)
+            .Concat(graph.Nodes.SelectMany(node => node.Inputs.Select(input => input.Id)))
+            .Concat(graph.Relations.Select(relation => relation.Id))
+            .Concat(graph.Roles.Select(role => role.Id));
     }
 
     private static UiEditorPosition ReadPosition(JsonElement value)

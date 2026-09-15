@@ -127,6 +127,8 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession
 
     private UiActionResult<NavigatorActionReceipt> ExecuteRequest(NavigatorActionRequest request)
     {
+        // Provider effects and publication stay inside the cross-action Request guard.
+        // Publication rechecks the owner; retirement cannot undo a committed provider effect.
         RequireCurrent(request.Context);
         if (request.Command == NavigatorCommand.Close)
         {
@@ -137,11 +139,11 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession
             _onClose?.Invoke();
             return UiActionResult<NavigatorActionReceipt>.Success(new(_publication.Id, version, revision, null, null, true));
         }
+        if (request.Command == NavigatorCommand.Open)
+            return ExecuteOpenRequest(request);
+
         NavigatorProjection next;
         bool preserveView = request.PreserveView;
-        bool replaceHandoff = false;
-        bool opened = true;
-        ChestsAnywhereStorageHandoff? handoff = null;
         switch (request.Command)
         {
             case NavigatorCommand.ChangeView:
@@ -158,24 +160,31 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession
             case NavigatorCommand.Favorite:
                 next = Project(_port.ToggleFavorite(request.Storage!.Key));
                 break;
-            case NavigatorCommand.Open:
-                ChestsAnywhereNavigatorMutationResult result = _port.RequestOpenStorage(request.Storage!.Key);
-                next = Project(result.Snapshot);
-                opened = result.Succeeded;
-                replaceHandoff = true;
-                if (opened) handoff = new(request.Storage.Id, request.Storage.Key);
-                break;
             default: throw new InvalidOperationException("Unknown navigator command.");
         }
-        // Provider effect and publication share the cross-action Request guard. A retired or
-        // changed owner cannot receive the result; any committed provider effect remains real.
-        UiStatusKind statusKind = request.Command == NavigatorCommand.Open
-            ? opened ? UiStatusKind.Loading : UiStatusKind.Error
-            : UiStatusKind.Status;
-        ApplyProjection(next, request.Context, preserveView, handoff, replaceHandoff, statusKind);
-        return opened
-            ? UiActionResult<NavigatorActionReceipt>.Success(new(_publication.Id, _publication.Version,
-                next.Revision, request.Storage?.Id, request.Storage?.Key, false))
-            : UiActionResult<NavigatorActionReceipt>.Rejected(OpenReason);
+        ApplyProjection(next, request.Context, preserveView);
+        return UiActionResult<NavigatorActionReceipt>.Success(new(_publication.Id, _publication.Version,
+            next.Revision, request.Storage?.Id, request.Storage?.Key, false));
+    }
+
+    private UiActionResult<NavigatorActionReceipt> ExecuteOpenRequest(NavigatorActionRequest request)
+    {
+        ChestsAnywhereNavigatorStorage storage = request.Storage!;
+        ChestsAnywhereNavigatorMutationResult result = _port.RequestOpenStorage(storage.Key);
+        NavigatorProjection next = Project(result.Snapshot);
+        if (!result.Succeeded)
+        {
+            ApplyProjection(next, request.Context, request.PreserveView,
+                handoff: null, replaceHandoff: true, statusKind: UiStatusKind.Error);
+            return UiActionResult<NavigatorActionReceipt>.Rejected(OpenReason);
+        }
+
+        // Success accepts the handoff, not its native menu completion. The controller owns
+        // that confirmation; this publication keeps the navigator in Loading meanwhile.
+        var handoff = new ChestsAnywhereStorageHandoff(storage.Id, storage.Key);
+        ApplyProjection(next, request.Context, request.PreserveView,
+            handoff: handoff, replaceHandoff: true, statusKind: UiStatusKind.Loading);
+        return UiActionResult<NavigatorActionReceipt>.Success(new(_publication.Id, _publication.Version,
+            next.Revision, storage.Id, storage.Key, false));
     }
 }

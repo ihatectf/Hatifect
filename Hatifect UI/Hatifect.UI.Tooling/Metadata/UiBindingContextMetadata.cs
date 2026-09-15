@@ -61,12 +61,7 @@ internal static class UiBindingContextMetadataExporter
             .OrderBy(role => role.Key, StringComparer.Ordinal)
             .Select(role => new UiBindingRoleMetadata(role.Value, role.Key))
             .ToArray();
-        UiSemanticGraph? graph = context.Graph;
-        if (graph is null && (symbols.Any(element => element.Id != context.OwnerId.Child("element/" + element.Name) || element.Label != element.Name)
-            || roles.Any(role => role.Id != context.OwnerId.Child("role/" + role.Name))))
-            graph = new UiSemanticGraph(context.OwnerId,
-                symbols.Select(element => new UiSemanticNode(element.Id, element.Name, element.Label, null, element.Capabilities)),
-                roles: roles.Select(role => new UiGraphRole(role.Id, role.Name)));
+        UiSemanticGraph? graph = GraphForExport(context, symbols, roles);
         return new UiBindingContextMetadata(
             context.OwnerId,
             context.RequireDeclaredElements,
@@ -74,5 +69,23 @@ internal static class UiBindingContextMetadataExporter
             elements,
             roles,
             graph);
+    }
+
+    private static UiSemanticGraph? GraphForExport(
+        UiBindingContext context,
+        UiElementSymbol[] symbols,
+        UiBindingRoleMetadata[] roles)
+    {
+        if (context.Graph is { } graph) return graph;
+
+        // Legacy metadata derives IDs from names and cannot retain separate labels.
+        bool needsGraph = symbols.Any(element =>
+            element.Id != context.OwnerId.Child("element/" + element.Name) || element.Label != element.Name)
+            || roles.Any(role => role.Id != context.OwnerId.Child("role/" + role.Name));
+        if (!needsGraph) return null;
+
+        return new UiSemanticGraph(context.OwnerId,
+            symbols.Select(element => new UiSemanticNode(element.Id, element.Name, element.Label, null, element.Capabilities)),
+            roles: roles.Select(role => new UiGraphRole(role.Id, role.Name)));
     }
 }

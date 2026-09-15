@@ -147,11 +147,13 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDispos
             category => category.Id,
             category => category.Label,
             CategoryId(projection.SelectedCategoryKey));
+        IReadOnlyList<ChestsAnywhereNavigatorStorage> visibleStorages =
+            VisibleStorages(projection, projection.Mode, projection.SelectedCategoryKey);
         _storages = _publication.SelectableCollection(id.Child("element/Storages"),
-            VisibleStorages(projection, projection.Mode, projection.SelectedCategoryKey), storageType,
+            visibleStorages, storageType,
             storage => storage.Id,
             storage => storage.Name,
-            SelectInitialStorageId(projection, projection.Mode, projection.SelectedCategoryKey),
+            SelectInitialStorageId(visibleStorages),
             StorageSupportingText);
         Categories = new(_categories, RequestCategory);
         Storages = new(_storages, RequestStorage);
@@ -325,13 +327,10 @@ internal sealed partial class ChestsAnywhereNavigatorExperienceSession : IDispos
     }
 
     private static UiSymbolId? SelectInitialStorageId(
-        NavigatorProjection projection,
-        ChestsAnywhereNavigatorMode mode,
-        string categoryKey)
+        IReadOnlyList<ChestsAnywhereNavigatorStorage> visibleStorages)
     {
-        IReadOnlyList<ChestsAnywhereNavigatorStorage> visible = VisibleStorages(projection, mode, categoryKey);
-        ChestsAnywhereNavigatorStorage? current = visible.FirstOrDefault(storage => storage.IsCurrent);
-        return current?.Id ?? (visible.Count == 0 ? null : visible[0].Id);
+        ChestsAnywhereNavigatorStorage? current = visibleStorages.FirstOrDefault(storage => storage.IsCurrent);
+        return current?.Id ?? (visibleStorages.Count == 0 ? null : visibleStorages[0].Id);
     }
 
     private static NavigatorProjection Project(ChestsAnywhereNavigatorSnapshot snapshot)
