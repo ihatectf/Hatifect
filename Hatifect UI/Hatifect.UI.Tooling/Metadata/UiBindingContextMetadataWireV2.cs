@@ -22,70 +22,92 @@ internal static partial class UiBindingContextMetadataWire
             writer.WriteBoolean("requireDeclaredElements", metadata.RequireDeclaredElements);
             writer.WriteBoolean("requireDeclaredRoles", metadata.RequireDeclaredRoles);
             writer.WriteStartObject("graph");
-            writer.WriteStartArray("nodes");
-            foreach (UiSemanticNode node in graph.Nodes.OrderBy(node => node.Id.ToString(), StringComparer.Ordinal))
-            {
-                writer.WriteStartObject();
-                writer.WriteString("id", node.Id.ToString());
-                writer.WriteString("alias", node.Alias);
-                writer.WriteString("label", node.Label);
-                WriteType(writer, "dataType", node.DataType, typeBudget);
-                WriteSymbols(writer, "capabilities", node.Capabilities.OrderBy(id => id.ToString(), StringComparer.Ordinal));
-                writer.WriteStartArray("inputs");
-                foreach (UiProjectionInput input in node.Inputs.OrderBy(input => input.Id.ToString(), StringComparer.Ordinal))
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("id", input.Id.ToString());
-                    writer.WriteString("name", input.Name);
-                    WriteType(writer, "acceptedType", input.AcceptedType, typeBudget);
-                    writer.WriteBoolean("required", input.Required);
-                    writer.WriteEndObject();
-                }
-                writer.WriteEndArray();
-                writer.WriteEndObject();
-            }
-            writer.WriteEndArray();
-            writer.WriteStartArray("relations");
-            foreach (UiSemanticRelation relation in graph.Relations.OrderBy(relation => relation.Id.ToString(), StringComparer.Ordinal))
-            {
-                writer.WriteStartObject();
-                writer.WriteString("id", relation.Id.ToString());
-                writer.WriteString("kind", relation.Kind.ToString());
-                writer.WriteString("source", relation.Source.ToString());
-                writer.WriteString("target", relation.Target.ToString());
-                WriteSymbol(writer, "targetInput", relation.TargetInput);
-                WriteType(writer, "mapping", relation.Mapping, typeBudget);
-                writer.WritePropertyName("provenance");
-                if (relation.Provenance is not { } provenance) writer.WriteNullValue();
-                else
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("sourceName", provenance.SourceName);
-                    WriteSymbol(writer, "declarationId", provenance.DeclarationId);
-                    writer.WriteNumber("start", provenance.Span.Start);
-                    writer.WriteNumber("length", provenance.Span.Length);
-                    writer.WriteNumber("line", provenance.Span.Line);
-                    writer.WriteNumber("column", provenance.Span.Column);
-                    writer.WriteEndObject();
-                }
-                writer.WriteEndObject();
-            }
-            writer.WriteEndArray();
+            WriteNodes(writer, graph, typeBudget);
+            WriteRelations(writer, graph, typeBudget);
             // Membership order is authoring order, and can later drive presentation planning.
             WriteSymbols(writer, "presentedNodes", graph.PresentedNodes);
-            writer.WriteStartArray("roles");
-            foreach (UiGraphRole role in graph.Roles.OrderBy(role => role.Alias, StringComparer.Ordinal))
-            {
-                writer.WriteStartObject();
-                writer.WriteString("id", role.Id.ToString());
-                writer.WriteString("alias", role.Alias);
-                writer.WriteEndObject();
-            }
-            writer.WriteEndArray();
+            WriteRoles(writer, graph);
             writer.WriteEndObject();
             writer.WriteEndObject();
         }
         return buffer.WrittenSpan.ToArray();
+    }
+
+    private static void WriteNodes(Utf8JsonWriter writer, UiSemanticGraph graph, TypeWriteBudget typeBudget)
+    {
+        writer.WriteStartArray("nodes");
+        foreach (UiSemanticNode node in graph.Nodes.OrderBy(node => node.Id.ToString(), StringComparer.Ordinal))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", node.Id.ToString());
+            writer.WriteString("alias", node.Alias);
+            writer.WriteString("label", node.Label);
+            WriteType(writer, "dataType", node.DataType, typeBudget);
+            WriteSymbols(writer, "capabilities", node.Capabilities.OrderBy(id => id.ToString(), StringComparer.Ordinal));
+            writer.WriteStartArray("inputs");
+            foreach (UiProjectionInput input in node.Inputs.OrderBy(input => input.Id.ToString(), StringComparer.Ordinal))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("id", input.Id.ToString());
+                writer.WriteString("name", input.Name);
+                WriteType(writer, "acceptedType", input.AcceptedType, typeBudget);
+                writer.WriteBoolean("required", input.Required);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
+    }
+
+    private static void WriteRelations(Utf8JsonWriter writer, UiSemanticGraph graph, TypeWriteBudget typeBudget)
+    {
+        writer.WriteStartArray("relations");
+        foreach (UiSemanticRelation relation in graph.Relations.OrderBy(relation => relation.Id.ToString(), StringComparer.Ordinal))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", relation.Id.ToString());
+            writer.WriteString("kind", relation.Kind.ToString());
+            writer.WriteString("source", relation.Source.ToString());
+            writer.WriteString("target", relation.Target.ToString());
+            WriteSymbol(writer, "targetInput", relation.TargetInput);
+            WriteType(writer, "mapping", relation.Mapping, typeBudget);
+            WriteProvenance(writer, relation.Provenance);
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
+    }
+
+    private static void WriteProvenance(Utf8JsonWriter writer, UiGraphProvenance? provenance)
+    {
+        writer.WritePropertyName("provenance");
+        if (provenance is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString("sourceName", provenance.SourceName);
+        WriteSymbol(writer, "declarationId", provenance.DeclarationId);
+        writer.WriteNumber("start", provenance.Span.Start);
+        writer.WriteNumber("length", provenance.Span.Length);
+        writer.WriteNumber("line", provenance.Span.Line);
+        writer.WriteNumber("column", provenance.Span.Column);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteRoles(Utf8JsonWriter writer, UiSemanticGraph graph)
+    {
+        writer.WriteStartArray("roles");
+        foreach (UiGraphRole role in graph.Roles.OrderBy(role => role.Alias, StringComparer.Ordinal))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", role.Id.ToString());
+            writer.WriteString("alias", role.Alias);
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
     }
 
     private static UiBindingContextMetadata DeserializeV2(JsonElement value)
@@ -94,6 +116,24 @@ internal static partial class UiBindingContextMetadataWire
         if (RequiredInt32(root, "schemaVersion") != 2) throw new InvalidDataException("Unsupported binding metadata schemaVersion.");
         UiSymbolId owner = RequiredSymbol(root, "ownerId");
         var graph = ReadObject(Required(root, "graph"), "semantic graph", "nodes", "relations", "presentedNodes", "roles");
+        List<UiSemanticNode> nodes = ReadNodes(graph);
+        List<UiSemanticRelation> relations = ReadRelations(graph);
+        List<UiGraphRole> roles = ReadRoles(graph);
+        var model = new UiSemanticGraph(owner, nodes, relations,
+            ReadArray(graph, "presentedNodes").Select(item => ParseSymbol(item, "presented node")), roles);
+        try
+        {
+            return UiBindingContextMetadataExporter.Export(new UiBindingContext(model)
+            {
+                RequireDeclaredElements = RequiredBoolean(root, "requireDeclaredElements"),
+                RequireDeclaredRoles = RequiredBoolean(root, "requireDeclaredRoles")
+            });
+        }
+        catch (UiGraphValidationException error) { throw new InvalidDataException(error.Message, error); }
+    }
+
+    private static List<UiSemanticNode> ReadNodes(IReadOnlyDictionary<string, JsonElement> graph)
+    {
         var nodes = new List<UiSemanticNode>();
         foreach (JsonElement entry in ReadArray(graph, "nodes"))
         {
@@ -108,40 +148,45 @@ internal static partial class UiBindingContextMetadataWire
             nodes.Add(new(RequiredSymbol(node, "id"), RequiredNonEmptyString(node, "alias"), RequiredNonEmptyString(node, "label"),
                 ReadType(Required(node, "dataType")), ReadArray(node, "capabilities").Select(item => ParseSymbol(item, "capability")), inputs));
         }
+        return nodes;
+    }
+
+    private static List<UiSemanticRelation> ReadRelations(IReadOnlyDictionary<string, JsonElement> graph)
+    {
         var relations = new List<UiSemanticRelation>();
         foreach (JsonElement entry in ReadArray(graph, "relations"))
         {
             var relation = ReadObject(entry, "semantic relation", "id", "kind", "source", "target", "targetInput", "mapping", "provenance");
-            UiGraphProvenance? provenance = null;
-            if (Required(relation, "provenance") is { ValueKind: not JsonValueKind.Null } location)
-            {
-                var fields = ReadObject(location, "relation provenance", "sourceName", "declarationId", "start", "length", "line", "column");
-                int start = NonNegative(fields, "start"), length = NonNegative(fields, "length");
-                if ((long)start + length > int.MaxValue) throw new InvalidDataException("Provenance span overflows.");
-                provenance = new(RequiredNonEmptyString(fields, "sourceName"),
-                    new UiTextSpan(start, length, NonNegative(fields, "line"), NonNegative(fields, "column")), OptionalSymbol(fields, "declarationId"));
-            }
+            UiGraphProvenance? provenance = ReadProvenance(relation);
             relations.Add(new(RequiredSymbol(relation, "id"), ReadEnum<UiRelationKind>(relation, "kind"),
                 RequiredSymbol(relation, "source"), RequiredSymbol(relation, "target"), OptionalSymbol(relation, "targetInput"),
                 ReadType(Required(relation, "mapping")), provenance));
         }
+        return relations;
+    }
+
+    private static UiGraphProvenance? ReadProvenance(IReadOnlyDictionary<string, JsonElement> relation)
+    {
+        JsonElement location = Required(relation, "provenance");
+        if (location.ValueKind == JsonValueKind.Null) return null;
+
+        var fields = ReadObject(location, "relation provenance", "sourceName", "declarationId", "start", "length", "line", "column");
+        int start = NonNegative(fields, "start"), length = NonNegative(fields, "length");
+        if ((long)start + length > int.MaxValue) throw new InvalidDataException("Provenance span overflows.");
+        return new UiGraphProvenance(RequiredNonEmptyString(fields, "sourceName"),
+            new UiTextSpan(start, length, NonNegative(fields, "line"), NonNegative(fields, "column")),
+            OptionalSymbol(fields, "declarationId"));
+    }
+
+    private static List<UiGraphRole> ReadRoles(IReadOnlyDictionary<string, JsonElement> graph)
+    {
         var roles = new List<UiGraphRole>();
         foreach (JsonElement entry in ReadArray(graph, "roles"))
         {
             var role = ReadObject(entry, "graph role", "id", "alias");
             roles.Add(new(RequiredSymbol(role, "id"), RequiredNonEmptyString(role, "alias")));
         }
-        var model = new UiSemanticGraph(owner, nodes, relations,
-            ReadArray(graph, "presentedNodes").Select(item => ParseSymbol(item, "presented node")), roles);
-        try
-        {
-            return UiBindingContextMetadataExporter.Export(new UiBindingContext(model)
-            {
-                RequireDeclaredElements = RequiredBoolean(root, "requireDeclaredElements"),
-                RequireDeclaredRoles = RequiredBoolean(root, "requireDeclaredRoles")
-            });
-        }
-        catch (UiGraphValidationException error) { throw new InvalidDataException(error.Message, error); }
+        return roles;
     }
 
     private static void WriteType(Utf8JsonWriter writer, string name, UiDataType? type, TypeWriteBudget budget)

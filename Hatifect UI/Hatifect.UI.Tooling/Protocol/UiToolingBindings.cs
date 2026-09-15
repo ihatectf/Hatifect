@@ -46,21 +46,24 @@ internal sealed partial class UiToolingProtocolSession
             if (entries.ValueKind != JsonValueKind.Array || entries.GetArrayLength() > _workspace.Capacity)
                 throw new InvalidDataException($"documentBindings must have at most {_workspace.Capacity} entries.");
             foreach (JsonElement value in entries.EnumerateArray())
-            {
-                JsonElement entry = RequiredObject(value, "document binding");
-                string uri = RequiredString(entry, "uri");
-                if (uri.Length > 8192 || !Uri.TryCreate(uri, UriKind.Absolute, out _))
-                    throw new InvalidDataException("A document binding URI must be absolute and at most 8192 characters.");
-                UiBindingContextMetadata binding = ReadMetadata(Property(entry, "bindingMetadata"));
-                symbols += SymbolCount(binding);
-                if (symbols > 16384) throw new InvalidDataException("The session binding budget is 16384 symbols.");
-                if (!documents.TryAdd(uri, UiBindingContextMetadataWire.CreateBindingContext(binding)))
-                    throw new InvalidDataException("A document binding URI is duplicated.");
-                metadata.Add(binding);
-            }
+                AddDocumentBinding(value);
         }
         return new BindingConfiguration(UiBindingContextMetadataWire.CreateBindingContext(defaults), documents,
             ReadDeclarations(options, metadata));
+
+        void AddDocumentBinding(JsonElement value)
+        {
+            JsonElement entry = RequiredObject(value, "document binding");
+            string uri = RequiredString(entry, "uri");
+            if (uri.Length > 8192 || !Uri.TryCreate(uri, UriKind.Absolute, out _))
+                throw new InvalidDataException("A document binding URI must be absolute and at most 8192 characters.");
+            UiBindingContextMetadata binding = ReadMetadata(Property(entry, "bindingMetadata"));
+            symbols += SymbolCount(binding);
+            if (symbols > 16384) throw new InvalidDataException("The session binding budget is 16384 symbols.");
+            if (!documents.TryAdd(uri, UiBindingContextMetadataWire.CreateBindingContext(binding)))
+                throw new InvalidDataException("A document binding URI is duplicated.");
+            metadata.Add(binding);
+        }
     }
 
     private static UiBindingContextMetadata ReadMetadata(JsonElement value)
