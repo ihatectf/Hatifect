@@ -53,25 +53,7 @@ internal sealed partial class UiEditorAnalysis
             {
                 case UiBlockSyntax block:
                 {
-                    string? matrix = null;
-                    if (block.Target is { IsMissing: false } target)
-                    {
-                        if (TryMatrix(target.ToString(), out string element, out string property))
-                        {
-                            UiSyntaxToken last = target.Segments[^1];
-                            AddTarget(element, UiTextSpan.Between(target.Segments[0].Span, target.Segments[^2].Span));
-                            AddProperty(Property(property), last.Span);
-                            matrix = property;
-                        }
-                        else AddTarget(target.ToString(), target.Span);
-                    }
-                    if (block.Specialization is { IsMissing: false } specialization)
-                    {
-                        bool isProfile = block.Target == null;
-                        if (isProfile || DefinitionKind == UiDefinitionKind.Visual)
-                            AddNamed(isProfile ? Language.Profiles : Language.States, specialization.Text,
-                                specialization.Span, isProfile ? "Presentation profile" : "Visual state");
-                    }
+                    string? matrix = AddBlockSymbols(block);
                     for (int i = block.Statements.Count - 1; i >= 0; i--)
                         pending.Push((block.Statements[i], matrix));
                     break;
@@ -81,18 +63,45 @@ internal sealed partial class UiEditorAnalysis
                     AddNamed(Language.Regions, placement.Region.ToString(), placement.Region.Span, "Region");
                     break;
                 case UiAssignmentSyntax assignment:
-                {
-                    UiPropertyMetadata? property = Property(entry.Matrix ?? assignment.Property.ToString());
-                    if (entry.Matrix == null) AddProperty(property, assignment.Property.Span);
-                    else if (assignment.Property.ToString() == "default")
-                        Add(null, "default", assignment.Property.Span, UiEditorSymbolKind.Keyword, "Default profile");
-                    else AddNamed(Language.Profiles, assignment.Property.ToString(), assignment.Property.Span, "Presentation profile");
-                    AddValues(assignment.Value, property);
+                    AddAssignmentSymbols(assignment, entry.Matrix);
                     break;
-                }
             }
         }
         return Array.AsReadOnly(symbols.OrderBy(s => s.Span.Start).ToArray());
+
+        string? AddBlockSymbols(UiBlockSyntax block)
+        {
+            string? matrix = null;
+            if (block.Target is { IsMissing: false } target)
+            {
+                if (TryMatrix(target.ToString(), out string element, out string property))
+                {
+                    UiSyntaxToken last = target.Segments[^1];
+                    AddTarget(element, UiTextSpan.Between(target.Segments[0].Span, target.Segments[^2].Span));
+                    AddProperty(Property(property), last.Span);
+                    matrix = property;
+                }
+                else AddTarget(target.ToString(), target.Span);
+            }
+            if (block.Specialization is { IsMissing: false } specialization)
+            {
+                bool isProfile = block.Target == null;
+                if (isProfile || DefinitionKind == UiDefinitionKind.Visual)
+                    AddNamed(isProfile ? Language.Profiles : Language.States, specialization.Text,
+                        specialization.Span, isProfile ? "Presentation profile" : "Visual state");
+            }
+            return matrix;
+        }
+
+        void AddAssignmentSymbols(UiAssignmentSyntax assignment, string? matrix)
+        {
+            UiPropertyMetadata? property = Property(matrix ?? assignment.Property.ToString());
+            if (matrix == null) AddProperty(property, assignment.Property.Span);
+            else if (assignment.Property.ToString() == "default")
+                Add(null, "default", assignment.Property.Span, UiEditorSymbolKind.Keyword, "Default profile");
+            else AddNamed(Language.Profiles, assignment.Property.ToString(), assignment.Property.Span, "Presentation profile");
+            AddValues(assignment.Value, property);
+        }
 
         void Add(UiSymbolId? id, string name, UiTextSpan span, UiEditorSymbolKind kind,
             string description, bool declaration = false)
