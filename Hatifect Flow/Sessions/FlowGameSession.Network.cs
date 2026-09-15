@@ -37,12 +37,7 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
         _managing = true;
         try
         {
-            StationBinding source = RequireStation(command.Source), destination = RequireStation(command.Destination);
-            if (string.IsNullOrEmpty(command.Fingerprint) || command.Fingerprint.Length != 64 || command.Quantity is <= 0 or > 999)
-                return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision);
-            if (!SendCore(source.Name, destination.Name, command.Slot, command.Fingerprint, command.Quantity).HasValue)
-                return new FlowCommandResult(FlowCommandStatus.Conflict, ReadSnapshot().Revision);
-            return new FlowCommandResult(FlowCommandStatus.Applied, ReadSnapshot().Revision);
+            return ExecuteSendCommand(command);
         }
         catch (CommandAdmissionFailure error)
         {
@@ -57,6 +52,17 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
         catch (Exception error) when (error is ArgumentException or InvalidOperationException)
         { return new FlowCommandResult(_faulted ? FlowCommandStatus.Faulted : FlowCommandStatus.Rejected, ReadSnapshot().Revision); }
         finally { _managing = false; }
+    }
+
+    // Station resolution, command-shape validation and SendCore dispatch as one visible sequence.
+    private FlowCommandResult ExecuteSendCommand(FlowSendCommand command)
+    {
+        StationBinding source = RequireStation(command.Source), destination = RequireStation(command.Destination);
+        if (string.IsNullOrEmpty(command.Fingerprint) || command.Fingerprint.Length != 64 || command.Quantity is <= 0 or > 999)
+            return new FlowCommandResult(FlowCommandStatus.InvalidCommand, ReadSnapshot().Revision);
+        if (!SendCore(source.Name, destination.Name, command.Slot, command.Fingerprint, command.Quantity).HasValue)
+            return new FlowCommandResult(FlowCommandStatus.Conflict, ReadSnapshot().Revision);
+        return new FlowCommandResult(FlowCommandStatus.Applied, ReadSnapshot().Revision);
     }
 
     internal void CaptureTarget(string location, int x, int y, Chest chest)
@@ -133,32 +139,7 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
             {
                 case FlowNetworkAction.RegisterStation:
                 case FlowNetworkAction.RebindStation:
-                    if (capturedTarget is not { } target || target.Token != command.Target
-                        || !ReferenceEquals(_resolve(target.Binding), target.Chest))
-                        return new FlowCommandResult(FlowCommandStatus.Conflict, ReadSnapshot().Revision);
-                    if (!ChestInventoryAccess.IsSupported(target.Chest) || target.Chest.GetMutex().IsLocked())
-                        throw new CommandAdmissionFailure(FlowRejectionCode.ProviderUnavailable);
-                    if (command.Action == FlowNetworkAction.RegisterStation)
-                    {
-                        if (_stations.Values.Any(station => string.Equals(station.Name, command.Name, StringComparison.OrdinalIgnoreCase)
-                                || station.Location == target.Binding.Location && station.X == target.Binding.X && station.Y == target.Binding.Y)
-                            || target.Chest.modData.TryGetValue(StationKey, out string previous)
-                                && Guid.TryParse(previous, out Guid old) && _stations.ContainsKey(old))
-                            throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged);
-                        RegisterStation(command.Name, target.Binding.Location, target.Binding.X, target.Binding.Y, target.Chest);
-                    }
-                    else
-                    {
-                        StationBinding station = RequireStation(command.Station);
-                        if (_stations.Values.Any(value => value.Id != station.Id && value.Location == target.Binding.Location
-                                && value.X == target.Binding.X && value.Y == target.Binding.Y)
-                            || target.Chest.modData.TryGetValue(StationKey, out string tag) && tag != station.Id.ToString("D"))
-                            throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged);
-                        if (ReadSnapshot().Parcels.Any(parcel => parcel.Origin == station.Id
-                            && parcel.State is ParcelState.Created or ParcelState.Reserved or ParcelState.ExtractionUncertain))
-                            throw new CommandAdmissionFailure(FlowRejectionCode.OperationPending);
-                        RebindStation(station.Name, target.Binding.Location, target.Binding.X, target.Binding.Y, target.Chest);
-                    }
+                    if (BindOrRebindStation(command, capturedTarget) is { } stationResult) return stationResult;
                     break;
                 case FlowNetworkAction.RenameStation:
                     StationBinding selected = RequireStation(command.Station);
@@ -200,6 +181,45 @@ internal sealed partial class FlowGameSession : IFlowNetworkApplication
 
     private StationBinding RequireStation(Guid id) => _stations.TryGetValue(id, out StationBinding? station)
         ? station : throw new ArgumentException("Unknown station identity.");
+
+    // The captured target must still name the same physical chest that was pointed at; a stale
+    // or foreign reference is a Conflict, never an admission failure inside the switch.
+    private FlowCommandResult? BindOrRebindStation(FlowNetworkCommand command, FlowCapturedTarget? capturedTarget)
+    {
+        if (capturedTarget is not { } target || target.Token != command.Target
+            || !ReferenceEquals(_resolve(target.Binding), target.Chest))
+            return new FlowCommandResult(FlowCommandStatus.Conflict, ReadSnapshot().Revision);
+        if (!ChestInventoryAccess.IsSupported(target.Chest) || target.Chest.GetMutex().IsLocked())
+            throw new CommandAdmissionFailure(FlowRejectionCode.ProviderUnavailable);
+        if (command.Action == FlowNetworkAction.RegisterStation)
+            RegisterCapturedStation(command, target);
+        else
+            RebindCapturedStation(command, target);
+        return null;
+    }
+
+    private void RegisterCapturedStation(FlowNetworkCommand command, FlowCapturedTarget target)
+    {
+        if (_stations.Values.Any(station => string.Equals(station.Name, command.Name, StringComparison.OrdinalIgnoreCase)
+                || station.Location == target.Binding.Location && station.X == target.Binding.X && station.Y == target.Binding.Y)
+            || target.Chest.modData.TryGetValue(StationKey, out string previous)
+                && Guid.TryParse(previous, out Guid old) && _stations.ContainsKey(old))
+            throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged);
+        RegisterStation(command.Name, target.Binding.Location, target.Binding.X, target.Binding.Y, target.Chest);
+    }
+
+    private void RebindCapturedStation(FlowNetworkCommand command, FlowCapturedTarget target)
+    {
+        StationBinding station = RequireStation(command.Station);
+        if (_stations.Values.Any(value => value.Id != station.Id && value.Location == target.Binding.Location
+                && value.X == target.Binding.X && value.Y == target.Binding.Y)
+            || target.Chest.modData.TryGetValue(StationKey, out string tag) && tag != station.Id.ToString("D"))
+            throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged);
+        if (ReadSnapshot().Parcels.Any(parcel => parcel.Origin == station.Id
+            && parcel.State is ParcelState.Created or ParcelState.Reserved or ParcelState.ExtractionUncertain))
+            throw new CommandAdmissionFailure(FlowRejectionCode.OperationPending);
+        RebindStation(station.Name, target.Binding.Location, target.Binding.X, target.Binding.Y, target.Chest);
+    }
 
     private static FlowRejectionCode ResourceLimitCode(FlowAdmissionResource resource) => resource switch
     {

@@ -542,58 +542,7 @@ internal sealed class ChestsAnywhereAdapter : IChestsAnywhereOverlayAdapter
             method.Invoke(snapshot.Overlay, new[] { entry.Handle });
             if (advanceAutomationLease)
             {
-                object? nextOverlay = GetOverlayObject();
-                object? nextMenu = Game1.activeClickableMenu;
-                object? nextOverlayMenu = nextOverlay == null
-                    ? null
-                    : RequiredField(nextOverlay.GetType(), "Menu").GetValue(nextOverlay);
-                ChestsAnywhereAutomatedHandoffState handoffState = ChestsAnywhereAutomatedHandoffPolicy.Classify(
-                    snapshot.Overlay,
-                    leasedMenu!,
-                    nextOverlay,
-                    nextMenu,
-                    nextOverlayMenu);
-                if (handoffState == ChestsAnywhereAutomatedHandoffState.AwaitingOverlaySynchronization)
-                {
-                    object target = _automatedApiTarget
-                        ?? throw new InvalidOperationException("The automated Chests Anywhere owner is unavailable during handoff.");
-                    MethodInfo changeOverlay = _automatedChangeOverlay
-                        ?? throw new InvalidOperationException("The automated Chests Anywhere overlay synchronizer is unavailable during handoff.");
-
-                    // Chests Anywhere 1.30.1 deliberately leaves its old overlay attached until
-                    // the next UpdateTicking/UpdateTicked callback. The automated acceptance runs
-                    // in one bounded host action, so invoke that same native reconciler explicitly.
-                    // Shipping Bin may replace the menu a second time inside this callback; only the
-                    // final overlay/menu pair is eligible to become the new exact ownership lease.
-                    changeOverlay.Invoke(target, null);
-                    nextOverlay = GetOverlayObject();
-                    nextMenu = Game1.activeClickableMenu;
-                    nextOverlayMenu = nextOverlay == null
-                        ? null
-                        : RequiredField(nextOverlay.GetType(), "Menu").GetValue(nextOverlay);
-                    handoffState = ChestsAnywhereAutomatedHandoffPolicy.Classify(
-                        snapshot.Overlay,
-                        leasedMenu!,
-                        nextOverlay,
-                        nextMenu,
-                        nextOverlayMenu);
-                }
-                if (handoffState != ChestsAnywhereAutomatedHandoffState.Synchronized)
-                {
-                    throw new InvalidOperationException(
-                        "The Chests Anywhere handoff did not reach its synchronized native overlay/menu state.");
-                }
-                if (!_automatedOverlayLease.TryAdvanceAfterMutation(
-                        snapshot.Overlay,
-                        leasedMenu!,
-                        selectionAttempted,
-                        nextOverlay,
-                        nextMenu))
-                {
-                    throw new InvalidOperationException(
-                        "The Chests Anywhere handoff could not advance the exact automated ownership lease.");
-                }
-                leaseTransitionCaptured = true;
+                leaseTransitionCaptured = AdvanceAutomationLeaseAfterSelection(snapshot, leasedMenu!, selectionAttempted);
             }
             return true;
         }
@@ -604,99 +553,172 @@ internal sealed class ChestsAnywhereAdapter : IChestsAnywhereOverlayAdapter
             bool rollbackAuthorized = false;
             if (advanceAutomationLease && selectionAttempted && !leaseTransitionCaptured && leasedMenu != null)
             {
-                try
-                {
-                    // Capture the active menu before invoking the private overlay getter. If the
-                    // getter itself fails, diagnostics still preserve which causally-created menu
-                    // displaced the exact leased menu during this handoff attempt.
-                    object? recoveryMenu = Game1.activeClickableMenu;
-                    object? recoveryOverlay = null;
-                    object? recoveryOverlayMenu = null;
-                    Exception? overlayReadFailure = null;
-                    try
-                    {
-                        recoveryOverlay = GetOverlayObject();
-                        recoveryOverlayMenu = recoveryOverlay == null
-                            ? null
-                            : RequiredField(recoveryOverlay.GetType(), "Menu").GetValue(recoveryOverlay);
-                    }
-                    catch (Exception readFailure)
-                    {
-                        overlayReadFailure = Unwrap(readFailure);
-                    }
-
-                    bool recovered;
-                    if (overlayReadFailure != null)
-                    {
-                        recovered = _automatedOverlayLease.TryRecoverMenuAfterMutation(
-                            snapshot.Overlay,
-                            leasedMenu,
-                            mutationAttempted: true,
-                            recoveryMenu);
-                        recoveryDiagnostic = " Native overlay recovery read failed after the active menu was captured: "
-                            + overlayReadFailure.Message + ".";
-                    }
-                    else
-                    {
-                        bool recoverable = ChestsAnywhereAutomatedHandoffPolicy.CanRecoverForRollback(
-                            snapshot.Overlay,
-                            leasedMenu,
-                            recoveryOverlay,
-                            recoveryMenu,
-                            recoveryOverlayMenu);
-                        recovered = recoverable
-                            && _automatedOverlayLease.TryAdvanceAfterMutation(
-                                snapshot.Overlay,
-                                leasedMenu,
-                                mutationAttempted: true,
-                                recoveryOverlay,
-                                recoveryMenu);
-                        if (!recoverable && recoveryMenu != null)
-                        {
-                            recovered = _automatedOverlayLease.TryRecoverMenuAfterMutation(
-                                snapshot.Overlay,
-                                leasedMenu,
-                                mutationAttempted: true,
-                                recoveryMenu);
-                            recoveryDiagnostic =
-                                " The invalid native pair was demoted to its causally-created menu for exact rollback.";
-                        }
-                        else if (!recoverable)
-                        {
-                            recoveryDiagnostic =
-                                " The observed native state was not eligible for exact automation rollback.";
-                        }
-                    }
-                    rollbackAuthorized = recovered;
-                    if (!recovered)
-                    {
-                        recoveryDiagnostic += " The exact automation lease could not recover the attempted native handoff.";
-                    }
-                }
-                catch (Exception recoveryFailure)
-                {
-                    recoveryDiagnostic = " Native handoff recovery failed: " + Unwrap(recoveryFailure).Message;
-                }
+                recoveryDiagnostic = RecoverAutomationLeaseAfterFailedSelection(snapshot, leasedMenu, out rollbackAuthorized);
             }
             if (rollbackAuthorized && _automatedOverlayLease.IsActive)
             {
-                try
-                {
-                    if (!TryCloseAutomatedOverlay(out string closeDiagnostic))
-                    {
-                        rollbackDiagnostic = string.IsNullOrWhiteSpace(closeDiagnostic)
-                            ? " The failed native handoff could not roll back its exact automation lease."
-                            : " " + closeDiagnostic;
-                    }
-                }
-                catch (Exception rollbackFailure)
-                {
-                    rollbackDiagnostic = " Native handoff rollback failed: " + Unwrap(rollbackFailure).Message;
-                }
+                rollbackDiagnostic = RollbackAutomationLease();
             }
             _logWarning(
                 $"Chests Anywhere could not switch to '{entry.Name}': {Unwrap(ex).Message}{recoveryDiagnostic}{rollbackDiagnostic}");
             return false;
+        }
+    }
+
+    private bool AdvanceAutomationLeaseAfterSelection(StorageSnapshot snapshot, object leasedMenu, bool selectionAttempted)
+    {
+        ChestsAnywhereAutomatedHandoffState handoffState = ObserveHandoffState(
+            snapshot, leasedMenu, out object? nextOverlay, out object? nextMenu);
+        if (handoffState == ChestsAnywhereAutomatedHandoffState.AwaitingOverlaySynchronization)
+        {
+            ReconcileNativeOverlay();
+            handoffState = ObserveHandoffState(snapshot, leasedMenu, out nextOverlay, out nextMenu);
+        }
+        if (handoffState != ChestsAnywhereAutomatedHandoffState.Synchronized)
+        {
+            throw new InvalidOperationException(
+                "The Chests Anywhere handoff did not reach its synchronized native overlay/menu state.");
+        }
+        if (!_automatedOverlayLease.TryAdvanceAfterMutation(
+                snapshot.Overlay,
+                leasedMenu,
+                selectionAttempted,
+                nextOverlay,
+                nextMenu))
+        {
+            throw new InvalidOperationException(
+                "The Chests Anywhere handoff could not advance the exact automated ownership lease.");
+        }
+        return true;
+    }
+
+    private ChestsAnywhereAutomatedHandoffState ObserveHandoffState(
+        StorageSnapshot snapshot, object leasedMenu, out object? nextOverlay, out object? nextMenu)
+    {
+        nextOverlay = GetOverlayObject();
+        nextMenu = Game1.activeClickableMenu;
+        object? nextOverlayMenu = nextOverlay == null
+            ? null
+            : RequiredField(nextOverlay.GetType(), "Menu").GetValue(nextOverlay);
+        return ChestsAnywhereAutomatedHandoffPolicy.Classify(
+            snapshot.Overlay,
+            leasedMenu,
+            nextOverlay,
+            nextMenu,
+            nextOverlayMenu);
+    }
+
+    private void ReconcileNativeOverlay()
+    {
+        object target = _automatedApiTarget
+            ?? throw new InvalidOperationException("The automated Chests Anywhere owner is unavailable during handoff.");
+        MethodInfo changeOverlay = _automatedChangeOverlay
+            ?? throw new InvalidOperationException("The automated Chests Anywhere overlay synchronizer is unavailable during handoff.");
+
+        // Chests Anywhere 1.30.1 deliberately leaves its old overlay attached until
+        // the next UpdateTicking/UpdateTicked callback. The automated acceptance runs
+        // in one bounded host action, so invoke that same native reconciler explicitly.
+        // Shipping Bin may replace the menu a second time inside this callback; only the
+        // final overlay/menu pair is eligible to become the new exact ownership lease.
+        changeOverlay.Invoke(target, null);
+    }
+
+    private string RecoverAutomationLeaseAfterFailedSelection(
+        StorageSnapshot snapshot, object leasedMenu, out bool rollbackAuthorized)
+    {
+        rollbackAuthorized = false;
+        try
+        {
+            // Capture the active menu before invoking the private overlay getter. If the
+            // getter itself fails, diagnostics still preserve which causally-created menu
+            // displaced the exact leased menu during this handoff attempt.
+            object? recoveryMenu = Game1.activeClickableMenu;
+            object? recoveryOverlay = null;
+            object? recoveryOverlayMenu = null;
+            Exception? overlayReadFailure = null;
+            try
+            {
+                recoveryOverlay = GetOverlayObject();
+                recoveryOverlayMenu = recoveryOverlay == null
+                    ? null
+                    : RequiredField(recoveryOverlay.GetType(), "Menu").GetValue(recoveryOverlay);
+            }
+            catch (Exception readFailure)
+            {
+                overlayReadFailure = Unwrap(readFailure);
+            }
+
+            bool recovered;
+            string recoveryDiagnostic = string.Empty;
+            if (overlayReadFailure != null)
+            {
+                recovered = _automatedOverlayLease.TryRecoverMenuAfterMutation(
+                    snapshot.Overlay,
+                    leasedMenu,
+                    mutationAttempted: true,
+                    recoveryMenu);
+                recoveryDiagnostic = " Native overlay recovery read failed after the active menu was captured: "
+                    + overlayReadFailure.Message + ".";
+            }
+            else
+            {
+                bool recoverable = ChestsAnywhereAutomatedHandoffPolicy.CanRecoverForRollback(
+                    snapshot.Overlay,
+                    leasedMenu,
+                    recoveryOverlay,
+                    recoveryMenu,
+                    recoveryOverlayMenu);
+                recovered = recoverable
+                    && _automatedOverlayLease.TryAdvanceAfterMutation(
+                        snapshot.Overlay,
+                        leasedMenu,
+                        mutationAttempted: true,
+                        recoveryOverlay,
+                        recoveryMenu);
+                if (!recoverable && recoveryMenu != null)
+                {
+                    recovered = _automatedOverlayLease.TryRecoverMenuAfterMutation(
+                        snapshot.Overlay,
+                        leasedMenu,
+                        mutationAttempted: true,
+                        recoveryMenu);
+                    recoveryDiagnostic =
+                        " The invalid native pair was demoted to its causally-created menu for exact rollback.";
+                }
+                else if (!recoverable)
+                {
+                    recoveryDiagnostic =
+                        " The observed native state was not eligible for exact automation rollback.";
+                }
+            }
+            rollbackAuthorized = recovered;
+            if (!recovered)
+            {
+                recoveryDiagnostic += " The exact automation lease could not recover the attempted native handoff.";
+            }
+            return recoveryDiagnostic;
+        }
+        catch (Exception recoveryFailure)
+        {
+            return " Native handoff recovery failed: " + Unwrap(recoveryFailure).Message;
+        }
+    }
+
+    private string RollbackAutomationLease()
+    {
+        try
+        {
+            if (!TryCloseAutomatedOverlay(out string closeDiagnostic))
+            {
+                return string.IsNullOrWhiteSpace(closeDiagnostic)
+                    ? " The failed native handoff could not roll back its exact automation lease."
+                    : " " + closeDiagnostic;
+            }
+            return string.Empty;
+        }
+        catch (Exception rollbackFailure)
+        {
+            return " Native handoff rollback failed: " + Unwrap(rollbackFailure).Message;
         }
     }
 

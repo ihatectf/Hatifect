@@ -216,136 +216,226 @@ internal sealed class FlowUiAcceptance : IDisposable
             {
                 case Stage.Startup when _frames >= 30:
                 case Stage.Reload:
-                    RequireSavesUnchanged();
-                    _stage = Stage.Loading;
-                    SaveGame.Load(Path.GetFileName(SavePath(_loads == 1 ? 1 : 0)));
-                    Game1.exitActiveMenu();
+                    AdvanceReload();
                     break;
                 case Stage.AwaitNativeReady:
                     if (NativeWorldReady()) BeginWorldView();
                     break;
                 case Stage.EmptyEnglish:
-                    if (!Observe("empty-en", false, "", "", "No shipment selected", "Select a shipment to inspect")) break;
-                    _publicationBeforeLocale = _view!.Experience.Publication.Version;
-                    SetEnvironment(true, 1, false); _stage = Stage.EmptyRussian;
+                    AdvanceEmptyEnglish();
                     break;
                 case Stage.EmptyRussian:
-                    if (!Observe("empty-ru", true, "", "", "Отправление не выбрано", "Выберите отправление для просмотра")) break;
-                    Require(_view!.Experience.Publication.Version == _publicationBeforeLocale, "Locale switch republished the empty Flow model.");
-                    _passed.Add("empty"); Open(_world!.Parcel); _stage = Stage.Missing;
+                    AdvanceEmptyRussian();
                     break;
                 case Stage.Missing:
-                    if (!Observe("missing-ru", true, "", "", "Отправление больше недоступно", "Отправление больше недоступно")) break;
-                    _passed.Add("missing"); _world!.Seed(); _stage = Stage.CargoRussian;
+                    AdvanceMissing();
                     break;
                 case Stage.CargoRussian:
-                    if (!ObserveCargo("cargo-ru", true, "Готово к отправке", null, "reserve", "cancel")) break;
-                    _publicationBeforeLocale = _view!.Experience.Publication.Version;
-                    SetEnvironment(false, 1, false); _stage = Stage.CargoEnglish;
+                    AdvanceCargoRussian();
                     break;
                 case Stage.CargoEnglish:
-                    if (!ObserveCargo("cargo-en", false, "Ready to dispatch", null, "reserve", "cancel")) break;
-                    Require(_view!.Experience.Publication.Version == _publicationBeforeLocale, "Locale switch republished the cargo model.");
-                    _passed.Add("locale"); SetEnvironment(false, .75f, false); _stage = Stage.Scale75;
+                    AdvanceCargoEnglish();
                     break;
                 case Stage.Scale75:
                 case Stage.Scale100:
                 case Stage.Scale125:
                 case Stage.Scale150:
-                    if (!ObserveCargo("scale-" + _stage, false, "Ready to dispatch", null, "reserve", "cancel")) break;
-                    Require(_view!.Experience.Publication.Version == _publicationBeforeLocale, "Scale switch republished the Flow model.");
-                    if (_stage == Stage.Scale150)
-                    { _passed.Add("scale"); SetEnvironment(true, 1.25f, true); _stage = Stage.Controller; }
-                    else
-                    {
-                        float scale = _stage == Stage.Scale75 ? 1 : _stage == Stage.Scale100 ? 1.25f : 1.5f;
-                        SetEnvironment(false, scale, false); _stage++;
-                    }
+                    AdvanceScaleStep();
                     break;
                 case Stage.Controller:
-                    if (!ObserveCargo("controller-ru", true, "Готово к отправке", null, "reserve", "cancel")) break;
-                    _passed.Add("controller-profile"); _world!.SetAvailability(FlowApplicationState.Paused); _stage = Stage.Paused;
+                    AdvanceController();
                     break;
                 case Stage.Paused:
-                    if (!ObserveCargo("paused-ru", true, "Перевозки приостановлены", "Перевозки приостановлены")) break;
-                    _world!.SetAvailability(FlowApplicationState.RecoveryRequired); _stage = Stage.Recovery;
+                    AdvancePaused();
                     break;
                 case Stage.Recovery:
-                    if (!ObserveCargo("recovery-ru", true, "Требуется восстановление; груз сохранён", "Требуется восстановление; груз сохранён")) break;
-                    _passed.Add("unavailable"); _world!.SetAvailability(FlowApplicationState.Active); _stage = Stage.Resumed;
+                    AdvanceRecovery();
                     break;
                 case Stage.Resumed:
-                    if (!ObserveCargo("resumed-ru", true, "Готово к отправке", null, "reserve", "cancel")) break;
-                    _publicationBeforeUpdate = _view!.Experience.Publication.Version;
-                    var before = _world!.ReadSnapshot();
-                    Require(_world.Execute(new FlowParcelCommand(before.SessionId, before.Revision, _world.Parcel,
-                        FlowParcelAction.Reserve)).Status == FlowCommandStatus.Applied, "The fixture could not publish a real reservation.");
-                    _stage = Stage.Updated;
+                    AdvanceResumed();
                     break;
                 case Stage.Updated:
-                    if (!ObserveCargo("updated-ru", true, "Запланировано", null, "cancel")) break;
-                    Require(_view!.Experience.Publication.Version == _publicationBeforeUpdate + 1 && _world!.EffectAttempts == 1,
-                        "The real domain change did not update the retained view exactly once.");
-                    _passed.Add("publication");
-                    _world!.FailNextOperation = true;
-                    var current = _world.ReadSnapshot();
-                    Require(_world.Execute(new FlowParcelCommand(current.SessionId, current.Revision, _world.Parcel,
-                        FlowParcelAction.Cancel)).Status == FlowCommandStatus.Faulted, "The isolated executor did not fault through FlowApplication.");
-                    _stage = Stage.Faulted;
+                    AdvanceUpdated();
                     break;
                 case Stage.Faulted:
-                    if (!Observe("faulted-ru", true, "", "", "Ошибка перевозки; см. журнал диагностики", "Ошибка перевозки; см. журнал диагностики")) break;
-                    Require(_world!.EffectAttempts == 2 && _world.Errors.Count == 1
-                        && ReferenceEquals(_world.Errors[0], _world.InjectedFailure), "The fault repeated an effect or hid another error.");
-                    _passed.Add("faulted"); _world.CloseApplication(); _stage = Stage.Closed;
+                    AdvanceFaulted();
                     break;
                 case Stage.Closed:
-                    if (_view!.Surface.Visible) break;
-                    RequireRetired(_view); _close(); _passed.Add("close");
-                    _world!.Dispose(); _world = new FlowUiAcceptanceWorld(false); _world.Seed(); _worlds.Add(_world);
-                    SetEnvironment(false, 1, false); Open(_world.Parcel); _stage = Stage.Retry;
+                    AdvanceClosed();
                     break;
                 case Stage.Retry:
-                    if (!ObserveCargo("reopened-en", false, "Ready to dispatch", null, "reserve", "cancel")) break;
-                    _world!.FailNextUnsubscribe = true;
-                    Exception? failure = null;
-                    try { Open(_world.Parcel); } catch (Exception error) { failure = error; }
-                    Require(ReferenceEquals(failure, _world.UnsubscribeFailure) && _world.Subscribers == 1
-                        && !_view!.Experience.IsActive, "Failed unsubscribe lost its retryable consumer handle.");
-                    _close(); RequireRetired(_view!); Require(_world.Subscribers == 0, "Retry retained a Flow subscriber.");
-                    _passed.Add("unsubscribe-retry"); Open(_world.Parcel); _stage = Stage.BeforeReturn;
+                    AdvanceRetry();
                     break;
                 case Stage.BeforeReturn:
                     if (!ObserveCargo("before-title-en", false, "Ready to dispatch", null, "reserve", "cancel")) break;
                     BeginReturn();
                     break;
                 case Stage.ReopenedWorld:
-                    if (!ObserveCargo("world-" + _loads, false, "Ready to dispatch", null, "reserve", "cancel")) break;
-                    RequireRetiredViews();
-                    if (_loads == 2) BeginReturn();
-                    else { _passed.Add("save-isolation"); _stage = Stage.Final; }
+                    AdvanceReopenedWorld();
                     break;
                 case Stage.Final:
-                    if (++_stableFrames < 120) break;
-                    RequireRetiredViews(); _close(); RequireRetired(_view!); _world!.Dispose();
-                    Require(_loads == 3 && _titles == 2, "Flow UI did not complete A to B to A.");
-                    Require(_observations.Count == 19 && _views.Count == 6 && _worlds.Count == 4,
-                        "Flow UI did not observe its complete bounded state and reopening matrix.");
-                    RestoreSettings(); _stage = Stage.RestoringFinal;
+                    AdvanceFinal();
                     break;
                 case Stage.RestoringForTitle:
                     if (!ObserveRestoration()) break;
                     _stage = Stage.Returning; RequestReturnToTitle();
                     break;
                 case Stage.RestoringFinal:
-                    if (!ObserveRestoration()) break;
-                    RequireSavesUnchanged();
-                    _passed.Add("retired-handles"); _passed.Add("restored"); _passed.Add("read-only");
-                    WriteReport(); _stage = Stage.Exit;
+                    AdvanceRestoringFinal();
                     break;
             }
         }
         catch (Exception error) { Fail(error); }
+    }
+
+    private void AdvanceReload()
+    {
+        RequireSavesUnchanged();
+        _stage = Stage.Loading;
+        SaveGame.Load(Path.GetFileName(SavePath(_loads == 1 ? 1 : 0)));
+        Game1.exitActiveMenu();
+    }
+
+    private void AdvanceEmptyEnglish()
+    {
+        if (!Observe("empty-en", false, "", "", "No shipment selected", "Select a shipment to inspect")) return;
+        _publicationBeforeLocale = _view!.Experience.Publication.Version;
+        SetEnvironment(true, 1, false); _stage = Stage.EmptyRussian;
+    }
+
+    private void AdvanceEmptyRussian()
+    {
+        if (!Observe("empty-ru", true, "", "", "Отправление не выбрано", "Выберите отправление для просмотра")) return;
+        Require(_view!.Experience.Publication.Version == _publicationBeforeLocale, "Locale switch republished the empty Flow model.");
+        _passed.Add("empty"); Open(_world!.Parcel); _stage = Stage.Missing;
+    }
+
+    private void AdvanceMissing()
+    {
+        if (!Observe("missing-ru", true, "", "", "Отправление больше недоступно", "Отправление больше недоступно")) return;
+        _passed.Add("missing"); _world!.Seed(); _stage = Stage.CargoRussian;
+    }
+
+    private void AdvanceCargoRussian()
+    {
+        if (!ObserveCargo("cargo-ru", true, "Готово к отправке", null, "reserve", "cancel")) return;
+        _publicationBeforeLocale = _view!.Experience.Publication.Version;
+        SetEnvironment(false, 1, false); _stage = Stage.CargoEnglish;
+    }
+
+    private void AdvanceCargoEnglish()
+    {
+        if (!ObserveCargo("cargo-en", false, "Ready to dispatch", null, "reserve", "cancel")) return;
+        Require(_view!.Experience.Publication.Version == _publicationBeforeLocale, "Locale switch republished the cargo model.");
+        _passed.Add("locale"); SetEnvironment(false, .75f, false); _stage = Stage.Scale75;
+    }
+
+    private void AdvanceScaleStep()
+    {
+        if (!ObserveCargo("scale-" + _stage, false, "Ready to dispatch", null, "reserve", "cancel")) return;
+        Require(_view!.Experience.Publication.Version == _publicationBeforeLocale, "Scale switch republished the Flow model.");
+        if (_stage == Stage.Scale150)
+        { _passed.Add("scale"); SetEnvironment(true, 1.25f, true); _stage = Stage.Controller; }
+        else
+        {
+            float scale = _stage == Stage.Scale75 ? 1 : _stage == Stage.Scale100 ? 1.25f : 1.5f;
+            SetEnvironment(false, scale, false); _stage++;
+        }
+    }
+
+    private void AdvanceController()
+    {
+        if (!ObserveCargo("controller-ru", true, "Готово к отправке", null, "reserve", "cancel")) return;
+        _passed.Add("controller-profile"); _world!.SetAvailability(FlowApplicationState.Paused); _stage = Stage.Paused;
+    }
+
+    private void AdvancePaused()
+    {
+        if (!ObserveCargo("paused-ru", true, "Перевозки приостановлены", "Перевозки приостановлены")) return;
+        _world!.SetAvailability(FlowApplicationState.RecoveryRequired); _stage = Stage.Recovery;
+    }
+
+    private void AdvanceRecovery()
+    {
+        if (!ObserveCargo("recovery-ru", true, "Требуется восстановление; груз сохранён", "Требуется восстановление; груз сохранён")) return;
+        _passed.Add("unavailable"); _world!.SetAvailability(FlowApplicationState.Active); _stage = Stage.Resumed;
+    }
+
+    private void AdvanceResumed()
+    {
+        if (!ObserveCargo("resumed-ru", true, "Готово к отправке", null, "reserve", "cancel")) return;
+        _publicationBeforeUpdate = _view!.Experience.Publication.Version;
+        var before = _world!.ReadSnapshot();
+        Require(_world.Execute(new FlowParcelCommand(before.SessionId, before.Revision, _world.Parcel,
+            FlowParcelAction.Reserve)).Status == FlowCommandStatus.Applied, "The fixture could not publish a real reservation.");
+        _stage = Stage.Updated;
+    }
+
+    private void AdvanceUpdated()
+    {
+        if (!ObserveCargo("updated-ru", true, "Запланировано", null, "cancel")) return;
+        Require(_view!.Experience.Publication.Version == _publicationBeforeUpdate + 1 && _world!.EffectAttempts == 1,
+            "The real domain change did not update the retained view exactly once.");
+        _passed.Add("publication");
+        _world!.FailNextOperation = true;
+        var current = _world.ReadSnapshot();
+        Require(_world.Execute(new FlowParcelCommand(current.SessionId, current.Revision, _world.Parcel,
+            FlowParcelAction.Cancel)).Status == FlowCommandStatus.Faulted, "The isolated executor did not fault through FlowApplication.");
+        _stage = Stage.Faulted;
+    }
+
+    private void AdvanceFaulted()
+    {
+        if (!Observe("faulted-ru", true, "", "", "Ошибка перевозки; см. журнал диагностики", "Ошибка перевозки; см. журнал диагностики")) return;
+        Require(_world!.EffectAttempts == 2 && _world.Errors.Count == 1
+            && ReferenceEquals(_world.Errors[0], _world.InjectedFailure), "The fault repeated an effect or hid another error.");
+        _passed.Add("faulted"); _world.CloseApplication(); _stage = Stage.Closed;
+    }
+
+    private void AdvanceClosed()
+    {
+        if (_view!.Surface.Visible) return;
+        RequireRetired(_view); _close(); _passed.Add("close");
+        _world!.Dispose(); _world = new FlowUiAcceptanceWorld(false); _world.Seed(); _worlds.Add(_world);
+        SetEnvironment(false, 1, false); Open(_world.Parcel); _stage = Stage.Retry;
+    }
+
+    private void AdvanceRetry()
+    {
+        if (!ObserveCargo("reopened-en", false, "Ready to dispatch", null, "reserve", "cancel")) return;
+        _world!.FailNextUnsubscribe = true;
+        Exception? failure = null;
+        try { Open(_world.Parcel); } catch (Exception error) { failure = error; }
+        Require(ReferenceEquals(failure, _world.UnsubscribeFailure) && _world.Subscribers == 1
+            && !_view!.Experience.IsActive, "Failed unsubscribe lost its retryable consumer handle.");
+        _close(); RequireRetired(_view!); Require(_world.Subscribers == 0, "Retry retained a Flow subscriber.");
+        _passed.Add("unsubscribe-retry"); Open(_world.Parcel); _stage = Stage.BeforeReturn;
+    }
+
+    private void AdvanceReopenedWorld()
+    {
+        if (!ObserveCargo("world-" + _loads, false, "Ready to dispatch", null, "reserve", "cancel")) return;
+        RequireRetiredViews();
+        if (_loads == 2) BeginReturn();
+        else { _passed.Add("save-isolation"); _stage = Stage.Final; }
+    }
+
+    private void AdvanceFinal()
+    {
+        if (++_stableFrames < 120) return;
+        RequireRetiredViews(); _close(); RequireRetired(_view!); _world!.Dispose();
+        Require(_loads == 3 && _titles == 2, "Flow UI did not complete A to B to A.");
+        Require(_observations.Count == 19 && _views.Count == 6 && _worlds.Count == 4,
+            "Flow UI did not observe its complete bounded state and reopening matrix.");
+        RestoreSettings(); _stage = Stage.RestoringFinal;
+    }
+
+    private void AdvanceRestoringFinal()
+    {
+        if (!ObserveRestoration()) return;
+        RequireSavesUnchanged();
+        _passed.Add("retired-handles"); _passed.Add("restored"); _passed.Add("read-only");
+        WriteReport(); _stage = Stage.Exit;
     }
 
     private void Open(Guid? parcel)

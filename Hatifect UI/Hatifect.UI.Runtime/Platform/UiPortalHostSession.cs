@@ -216,13 +216,7 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession, IUiHostScen
     {
         EnsureActive();
         ArgumentNullException.ThrowIfNull(request);
-        if (_portals.Any(item => item.Request.Id == request.Id))
-            throw new InvalidOperationException($"Portal '{request.Id}' is already active.");
-        if (!OwnerExists(request.Owner))
-            throw new InvalidOperationException(
-                $"Portal '{request.Id}' references missing owner node '{request.Owner.Node}'.");
-        UiHostRuntimeSession owner = OwnerRuntime(request.Owner)!;
-        long ownerVersion = owner.AcceptedVersion;
+        (UiHostRuntimeSession owner, long ownerVersion) = ValidatePresentation(request);
 
         long generation = ++_nextGeneration;
         var runtime = new UiHostRuntimeSession(
@@ -257,6 +251,17 @@ internal sealed class UiPortalHostSession : IUiPlatformInputSession, IUiHostScen
                 _portals.Any(item => item.Request.Id == request.Id))
                 throw new InvalidOperationException("The portal owner or registration changed during preparation.");
         }
+    }
+
+    private (UiHostRuntimeSession Owner, long OwnerVersion) ValidatePresentation(UiPortalRequest request)
+    {
+        if (_portals.Any(item => item.Request.Id == request.Id))
+            throw new InvalidOperationException($"Portal '{request.Id}' is already active.");
+        if (!OwnerExists(request.Owner))
+            throw new InvalidOperationException(
+                $"Portal '{request.Id}' references missing owner node '{request.Owner.Node}'.");
+        UiHostRuntimeSession owner = OwnerRuntime(request.Owner)!;
+        return (owner, owner.AcceptedVersion);
     }
 
     public UiHostUpdate UpdateRoot(UiScene scene, UiHostPlacementContext placement)
