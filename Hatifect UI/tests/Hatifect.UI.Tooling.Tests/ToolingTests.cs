@@ -222,7 +222,9 @@ Item@Selected
         });
         UiSourceInspectionEntry expected = Assert.IsType<UiSourceInspectionEntry>(
             inspection.RevealAssignment(definitionId, targets[^1], propertyId));
-        for (int warmup = 0; warmup < 256; warmup++)
+        // Concurrent assemblies can delay tier promotion beyond a short warm-up.
+        // Reach steady-state lookup code before measuring the allocation contract.
+        for (int warmup = 0; warmup < count; warmup++)
             Assert.Same(expected, inspection.RevealAssignment(definitionId, targets[^1], propertyId));
 
         int matched = 0;
