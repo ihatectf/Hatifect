@@ -44,12 +44,7 @@ public sealed class UiPresentationPlanner
         ArgumentNullException.ThrowIfNull(host);
         PlanIndexes indexes = PlanIndexes.Create(experience, presentation);
         var globalDecisions = new List<UiPlanDecision>();
-        if (host.Environment is { } environment)
-        {
-            if (host.Profile != UiPresentationProfiles.Resolve(environment).Id)
-                throw new ArgumentException("The selected profile contradicts the captured environment.", nameof(host));
-            ExplainEnvironment(environment, host.Profile, globalDecisions);
-        }
+        ValidateEnvironment(host, globalDecisions);
         UiSymbolId pattern = ResolvePattern(indexes, globalDecisions);
         var planned = new List<UiPlannedElement>(experience.Count);
         var collectionRecipes = new Dictionary<UiSymbolId, UiPlannedCollectionRecipe>();
@@ -102,25 +97,30 @@ public sealed class UiPresentationPlanner
         PlanIndexes indexes)
     {
         var decisions = new List<UiPlanDecision>();
-        UiPlacementIr? placement = indexes.FindPlacement(element.Id);
-        UiSymbolId region;
-        if (placement != null)
-        {
-            region = placement.Region;
-            decisions.Add(new UiPlanDecision(UiPlanDecisionCode.ExplicitPlacement, element.Id,
-                "Region comes from the Presentation asset.", placement.Provenance));
-        }
-        else
-        {
-            string regionName = DefaultRegion(element, indexes);
-            if (!_catalog.TryGetRegion(regionName, out region))
-                throw new InvalidOperationException($"Foundation region '{regionName}' is not registered.");
-            decisions.Add(new UiPlanDecision(UiPlanDecisionCode.CapabilityPlacement, element.Id,
-                $"Region '{regionName}' was selected from element capabilities.", null));
-        }
-
+        UiSymbolId region = ResolveRegion(element, indexes, decisions);
         UiSymbolId presentation = ResolvePresentation(element, host, indexes, decisions);
         return new UiPlannedElement(element.Id, region, presentation, Array.AsReadOnly(decisions.ToArray()));
+    }
+
+    private UiSymbolId ResolveRegion(
+        PlanningElementView element,
+        PlanIndexes indexes,
+        List<UiPlanDecision> decisions)
+    {
+        UiPlacementIr? placement = indexes.FindPlacement(element.Id);
+        if (placement != null)
+        {
+            decisions.Add(new UiPlanDecision(UiPlanDecisionCode.ExplicitPlacement, element.Id,
+                "Region comes from the Presentation asset.", placement.Provenance));
+            return placement.Region;
+        }
+
+        string regionName = DefaultRegion(element, indexes);
+        if (!_catalog.TryGetRegion(regionName, out UiSymbolId region))
+            throw new InvalidOperationException($"Foundation region '{regionName}' is not registered.");
+        decisions.Add(new UiPlanDecision(UiPlanDecisionCode.CapabilityPlacement, element.Id,
+            $"Region '{regionName}' was selected from element capabilities.", null));
+        return region;
     }
 
     private UiSymbolId ResolvePresentation(
@@ -129,8 +129,7 @@ public sealed class UiPresentationPlanner
         PlanIndexes indexes,
         List<UiPlanDecision> decisions)
     {
-        UiPropertyAssignmentIr? explicitView = indexes.FindAssignment(element.Id, "view", host.Profile)
-            ?? indexes.FindAssignment(element.Id, "view", profile: null);
+        UiPropertyAssignmentIr? explicitView = indexes.FindProfiledAssignment(element.Id, "view", host.Profile);
         if (explicitView?.Value is UiSymbolValue explicitValue)
         {
             RequireCoverage(element, explicitValue, explicitView.Provenance, decisions);
@@ -140,8 +139,10 @@ public sealed class UiPresentationPlanner
         }
 
         bool compact = host.Profile == UiPresentationProfiles.Compact.Id || host.Profile == UiPresentationProfiles.Controller.Id;
-        UiPropertyAssignmentIr? preferred = indexes.FindAssignment(element.Id, compact ? "fallback" : "prefer", host.Profile)
-            ?? indexes.FindAssignment(element.Id, compact ? "fallback" : "prefer", profile: null);
+        UiPropertyAssignmentIr? preferred = indexes.FindProfiledAssignment(
+            element.Id,
+            compact ? "fallback" : "prefer",
+            host.Profile);
         if (preferred?.Value is UiSymbolValue preferredValue)
         {
             RequireCoverage(element, preferredValue, preferred.Provenance, decisions);
@@ -227,7 +228,27 @@ public sealed class UiPresentationPlanner
                 $"{facet} = {value}; origin: {origin}.", null));
     }
 
+    private static void ValidateEnvironment(UiHostContext host, List<UiPlanDecision> decisions)
+    {
+        if (host.Environment is not { } environment) return;
+        if (host.Profile != UiPresentationProfiles.Resolve(environment).Id)
+            throw new ArgumentException("The selected profile contradicts the captured environment.", nameof(host));
+
+        ExplainEnvironment(environment, host.Profile, decisions);
+    }
+
     private UiPlannedCollectionRecipe ResolveCollectionRecipe(
+        PlanningElementView element,
+        UiSymbolId presentation,
+        UiHostContext host,
+        PlanIndexes indexes)
+    {
+        UiSymbolId sizing = ResolveCollectionItemSizing(element, presentation, host, indexes);
+        UiSymbolId density = ResolveCollectionDensity(element, host, indexes);
+        return new UiPlannedCollectionRecipe(sizing, density);
+    }
+
+    private UiSymbolId ResolveCollectionItemSizing(
         PlanningElementView element,
         UiSymbolId presentation,
         UiHostContext host,
@@ -238,8 +259,7 @@ public sealed class UiPresentationPlanner
             !_catalog.TryGetPropertyValue(property, "Adaptive", out UiEnumValueSymbol? adaptive) || adaptive == null)
             throw new InvalidOperationException("Foundation item-sizing catalog values are not registered.");
 
-        UiPropertyAssignmentIr? explicitSizing = indexes.FindAssignment(element.Id, "itemSizing", host.Profile)
-            ?? indexes.FindAssignment(element.Id, "itemSizing", profile: null);
+        UiPropertyAssignmentIr? explicitSizing = indexes.FindProfiledAssignment(element.Id, "itemSizing", host.Profile);
         UiSymbolId sizing = explicitSizing?.Value is UiSymbolValue sizingValue
             ? sizingValue.Symbol
             : uniform.Id;
@@ -252,6 +272,14 @@ public sealed class UiPresentationPlanner
             throw new InvalidOperationException(
                 $"Collection element '{element.Id}' requests Adaptive sizing for Uniform-only NavigationList.");
 
+        return sizing;
+    }
+
+    private UiSymbolId ResolveCollectionDensity(
+        PlanningElementView element,
+        UiHostContext host,
+        PlanIndexes indexes)
+    {
         if (!_catalog.TryGetPresentationProperty("density", out UiPropertySymbol? densityProperty) ||
             densityProperty == null ||
             !_catalog.TryGetPropertyValue(densityProperty, "Default", out UiEnumValueSymbol? defaultDensity) ||
@@ -262,8 +290,7 @@ public sealed class UiPresentationPlanner
             comfortableDensity == null)
             throw new InvalidOperationException("Foundation density catalog values are not registered.");
 
-        UiPropertyAssignmentIr? explicitDensity = indexes.FindAssignment(element.Id, "density", host.Profile)
-            ?? indexes.FindAssignment(element.Id, "density", profile: null);
+        UiPropertyAssignmentIr? explicitDensity = indexes.FindProfiledAssignment(element.Id, "density", host.Profile);
         UiSymbolId density;
         if (explicitDensity == null)
         {
@@ -283,7 +310,7 @@ public sealed class UiPresentationPlanner
         if (density != defaultDensity.Id && density != compactDensity.Id && density != comfortableDensity.Id)
             throw new InvalidOperationException(
                 $"Collection element '{element.Id}' resolved an unknown density catalog value '{density}'.");
-        return new UiPlannedCollectionRecipe(sizing, density);
+        return density;
     }
 
     private static string DefaultRegion(PlanningElementView element, PlanIndexes indexes)
@@ -416,6 +443,12 @@ public sealed class UiPresentationPlanner
             => _assignments.TryGetValue(new AssignmentKey(target, property, profile), out UiPropertyAssignmentIr? assignment)
                 ? assignment
                 : null;
+
+        internal UiPropertyAssignmentIr? FindProfiledAssignment(
+            UiSymbolId target,
+            string property,
+            UiSymbolId profile)
+            => FindAssignment(target, property, profile) ?? FindAssignment(target, property, profile: null);
 
         internal bool Has(PlanningElementView element, UiCapability capability)
             => _elementCapabilities[element.Id].Contains(capability.Id);
