@@ -24,6 +24,7 @@ public sealed record FlowActionAvailabilitySet(FlowActionAvailability Reserve, F
     FlowActionAvailability RetryDelivery, FlowActionAvailability ReconcileTransfer, FlowActionAvailability ReturnToSource)
 {
     private static readonly FlowActionAvailabilitySet[] LegacyMasks = CreateLegacyMasks();
+
     public FlowActionAvailability this[FlowParcelAction action] => action switch
     {
         FlowParcelAction.Reserve => Reserve,
@@ -35,43 +36,73 @@ public sealed record FlowActionAvailabilitySet(FlowActionAvailability Reserve, F
     };
 
     internal FlowParcelActions Actions => (Reserve.Available ? FlowParcelActions.Reserve : 0)
-        | (Cancel.Available ? FlowParcelActions.Cancel : 0) | (RetryDelivery.Available ? FlowParcelActions.RetryDelivery : 0)
-        | (ReconcileTransfer.Available ? FlowParcelActions.ReconcileTransfer : 0) | (ReturnToSource.Available ? FlowParcelActions.ReturnToSource : 0);
+        | (Cancel.Available ? FlowParcelActions.Cancel : 0)
+        | (RetryDelivery.Available ? FlowParcelActions.RetryDelivery : 0)
+        | (ReconcileTransfer.Available ? FlowParcelActions.ReconcileTransfer : 0)
+        | (ReturnToSource.Available ? FlowParcelActions.ReturnToSource : 0);
 
     internal static FlowActionAvailabilitySet FromCodes(FlowRejectionCode reserve, FlowRejectionCode cancel,
         FlowRejectionCode retry, FlowRejectionCode reconcile, FlowRejectionCode returning)
-        => new(FlowActionAvailability.From(FlowParcelAction.Reserve, reserve), FlowActionAvailability.From(FlowParcelAction.Cancel, cancel),
-            FlowActionAvailability.From(FlowParcelAction.RetryDelivery, retry), FlowActionAvailability.From(FlowParcelAction.ReconcileTransfer, reconcile),
+        => new(
+            FlowActionAvailability.From(FlowParcelAction.Reserve, reserve),
+            FlowActionAvailability.From(FlowParcelAction.Cancel, cancel),
+            FlowActionAvailability.From(FlowParcelAction.RetryDelivery, retry),
+            FlowActionAvailability.From(FlowParcelAction.ReconcileTransfer, reconcile),
             FlowActionAvailability.From(FlowParcelAction.ReturnToSource, returning));
 
     internal static FlowActionAvailabilitySet Disabled(FlowRejectionCode code) => FromCodes(code, code, code, code, code);
 
     internal static FlowActionAvailabilitySet FromMask(FlowParcelActions actions)
     {
-        if ((actions & ~FlowParcelActions.All) != 0) throw new ArgumentOutOfRangeException(nameof(actions));
+        if ((actions & ~FlowParcelActions.All) != 0)
+            throw new ArgumentOutOfRangeException(nameof(actions));
+
         return LegacyMasks[(int)actions];
     }
 
     private static FlowActionAvailabilitySet[] CreateLegacyMasks()
     {
         var masks = new FlowActionAvailabilitySet[(int)FlowParcelActions.All + 1];
-        for (int index = 0; index < masks.Length; index++) masks[index] = Mask((FlowParcelActions)index);
+        for (int index = 0; index < masks.Length; index++)
+            masks[index] = CreateLegacyAvailability((FlowParcelActions)index);
+
         return masks;
     }
 
-    private static FlowActionAvailabilitySet Mask(FlowParcelActions actions)
+    private static FlowActionAvailabilitySet CreateLegacyAvailability(FlowParcelActions actions)
     {
-        FlowRejectionCode Code(FlowParcelActions flag) => (actions & flag) != 0 ? FlowRejectionCode.None : FlowRejectionCode.ActionUnavailable;
-        return FromCodes(Code(FlowParcelActions.Reserve), Code(FlowParcelActions.Cancel), Code(FlowParcelActions.RetryDelivery),
-            Code(FlowParcelActions.ReconcileTransfer), Code(FlowParcelActions.ReturnToSource));
+        // The legacy mask records availability, but not the reason an action was refused.
+        FlowRejectionCode GetRejectionCode(FlowParcelActions flag)
+        {
+            return (actions & flag) != 0
+                ? FlowRejectionCode.None
+                : FlowRejectionCode.ActionUnavailable;
+        }
+
+        return FromCodes(
+            GetRejectionCode(FlowParcelActions.Reserve),
+            GetRejectionCode(FlowParcelActions.Cancel),
+            GetRejectionCode(FlowParcelActions.RetryDelivery),
+            GetRejectionCode(FlowParcelActions.ReconcileTransfer),
+            GetRejectionCode(FlowParcelActions.ReturnToSource));
     }
 
     internal FlowActionAvailabilitySet Restrict(FlowParcelActions supported)
     {
-        FlowRejectionCode Code(FlowParcelAction action) => (supported & (FlowParcelActions)(1 << (int)action)) != 0
-            ? this[action].Code : FlowRejectionCode.UnsupportedAction;
-        return FromCodes(Code(FlowParcelAction.Reserve), Code(FlowParcelAction.Cancel), Code(FlowParcelAction.RetryDelivery),
-            Code(FlowParcelAction.ReconcileTransfer), Code(FlowParcelAction.ReturnToSource));
+        FlowRejectionCode GetRejectionCode(FlowActionAvailability availability, FlowParcelActions flag)
+        {
+            if ((supported & flag) == 0)
+                return FlowRejectionCode.UnsupportedAction;
+
+            return availability.Code;
+        }
+
+        return FromCodes(
+            GetRejectionCode(Reserve, FlowParcelActions.Reserve),
+            GetRejectionCode(Cancel, FlowParcelActions.Cancel),
+            GetRejectionCode(RetryDelivery, FlowParcelActions.RetryDelivery),
+            GetRejectionCode(ReconcileTransfer, FlowParcelActions.ReconcileTransfer),
+            GetRejectionCode(ReturnToSource, FlowParcelActions.ReturnToSource));
     }
 }
 

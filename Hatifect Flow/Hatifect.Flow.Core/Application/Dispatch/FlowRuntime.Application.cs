@@ -37,15 +37,25 @@ internal sealed partial class FlowRuntime
     {
         FlowRejectionCode reserve = ReservationRejection(parcel, out _);
         FlowRejectionCode cancel = parcel.State is ParcelState.Created or ParcelState.Reserved ? FlowRejectionCode.None : FlowRejectionCode.InvalidState;
-        FlowRejectionCode retry = parcel.State is not (ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted or ParcelState.ReturnRejected or ParcelState.ReturnFaulted)
-            ? FlowRejectionCode.InvalidState : parcel.PendingOperation is not null ? FlowRejectionCode.OperationPending
-            : parcel.DeliveryAttempts >= _limits.MaxDeliveryAttempts ? FlowRejectionCode.RetryLimit
-            : !_operations.HasRoom ? FlowRejectionCode.WorkLimit : FlowRejectionCode.None;
+        FlowRejectionCode retry = RetryRejection(parcel);
         FlowRejectionCode returning = parcel.State is ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted ? retry : FlowRejectionCode.InvalidState;
-        FlowRejectionCode reconcile = parcel.State is ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain ? FlowRejectionCode.None
-            : parcel.State != ParcelState.ExtractionUncertain ? FlowRejectionCode.InvalidState
-            : _operations.HasRoom ? FlowRejectionCode.None : FlowRejectionCode.WorkLimit;
+        FlowRejectionCode reconcile = parcel.State switch
+        {
+            ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain => FlowRejectionCode.None,
+            ParcelState.ExtractionUncertain => _operations.HasRoom ? FlowRejectionCode.None : FlowRejectionCode.WorkLimit,
+            _ => FlowRejectionCode.InvalidState
+        };
         return FlowActionAvailabilitySet.FromCodes(reserve, cancel, retry, reconcile, returning);
+    }
+
+    private FlowRejectionCode RetryRejection(Parcel parcel)
+    {
+        if (parcel.State is not (ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted or ParcelState.ReturnRejected or ParcelState.ReturnFaulted))
+            return FlowRejectionCode.InvalidState;
+        if (parcel.PendingOperation is not null) return FlowRejectionCode.OperationPending;
+        if (parcel.DeliveryAttempts >= _limits.MaxDeliveryAttempts) return FlowRejectionCode.RetryLimit;
+        if (!_operations.HasRoom) return FlowRejectionCode.WorkLimit;
+        return FlowRejectionCode.None;
     }
 
     private FlowRejectionCode ReservationRejection(Parcel parcel, out RoutePlan? plan)
