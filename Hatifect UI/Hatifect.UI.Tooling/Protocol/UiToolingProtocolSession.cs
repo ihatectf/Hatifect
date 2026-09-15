@@ -151,44 +151,7 @@ internal sealed partial class UiToolingProtocolSession
                 && NestedProperty(parameters, "capabilities", "textDocument", "codeAction", "codeActionLiteralSupport")
                     is { ValueKind: JsonValueKind.Object };
 
-            UiJsonRpcDispatchResult response = Success(new
-            {
-                capabilities = new
-                {
-                    experimental = new
-                    {
-                        hatifectUi = new
-                        {
-                            protocolVersion = ProtocolVersion,
-                            capabilities = _protocolCapabilities,
-                            bindingMetadataVersions = new[] { 1, 2 }
-                        }
-                    },
-                    positionEncoding = "utf-16",
-                    textDocumentSync = new { openClose = true, change = 2 },
-                    diagnosticProvider = new
-                    {
-                        identifier = "hatifect-ui",
-                        interFileDependencies = false,
-                        workspaceDiagnostics = true
-                    },
-                    documentFormattingProvider = true,
-                    hoverProvider = true,
-                    documentSymbolProvider = true,
-                    foldingRangeProvider = true,
-                    referencesProvider = true,
-                    documentHighlightProvider = true,
-                    definitionProvider = true,
-                    codeActionProvider = versionedCodeActions,
-                    semanticTokensProvider = new
-                    {
-                        legend = new { tokenTypes = UiEditorAnalysis.TokenTypes, tokenModifiers = new[] { "declaration" } },
-                        full = true, range = false
-                    },
-                    completionProvider = new { triggerCharacters = new[] { ".", "@", "=" }, resolveProvider = false }
-                },
-                serverInfo = new { name = "Hatifect UI Tooling", version = "0" }
-            });
+            UiJsonRpcDispatchResult response = CreateInitializationResponse(versionedCodeActions);
             if (response.IsError) return response;
             _bindingContext = configuration.Default;
             _documentBindings = configuration.Documents;
@@ -203,6 +166,48 @@ internal sealed partial class UiToolingProtocolSession
         {
             return InvalidParams(error.Message);
         }
+    }
+
+    private UiJsonRpcDispatchResult CreateInitializationResponse(bool versionedCodeActions)
+    {
+        return Success(new
+        {
+            capabilities = new
+            {
+                experimental = new
+                {
+                    hatifectUi = new
+                    {
+                        protocolVersion = ProtocolVersion,
+                        capabilities = _protocolCapabilities,
+                        bindingMetadataVersions = new[] { 1, 2 }
+                    }
+                },
+                positionEncoding = "utf-16",
+                textDocumentSync = new { openClose = true, change = 2 },
+                diagnosticProvider = new
+                {
+                    identifier = "hatifect-ui",
+                    interFileDependencies = false,
+                    workspaceDiagnostics = true
+                },
+                documentFormattingProvider = true,
+                hoverProvider = true,
+                documentSymbolProvider = true,
+                foldingRangeProvider = true,
+                referencesProvider = true,
+                documentHighlightProvider = true,
+                definitionProvider = true,
+                codeActionProvider = versionedCodeActions,
+                semanticTokensProvider = new
+                {
+                    legend = new { tokenTypes = UiEditorAnalysis.TokenTypes, tokenModifiers = new[] { "declaration" } },
+                    full = true, range = false
+                },
+                completionProvider = new { triggerCharacters = new[] { ".", "@", "=" }, resolveProvider = false }
+            },
+            serverInfo = new { name = "Hatifect UI Tooling", version = "0" }
+        });
     }
 
     private UiJsonRpcDispatchResult Initialized(UiJsonRpcRequest request)
@@ -323,6 +328,13 @@ internal sealed partial class UiToolingProtocolSession
         JsonElement changes = Property(parameters, "contentChanges");
         if (changes.ValueKind != JsonValueKind.Array || changes.GetArrayLength() is < 1 or > 128)
             throw new InvalidDataException("didChange requires between 1 and 128 content changes.");
+        string text = ApplyContentChanges(current, changes);
+        _workspace.Update(uri, version, text, ContextFor(uri));
+        return UiJsonRpcDispatchResult.Success();
+    }
+
+    private string ApplyContentChanges(UiEditorDocumentSnapshot current, JsonElement changes)
+    {
         string text = current.Source;
         UiEditorText map = current.Text;
         foreach (JsonElement item in changes.EnumerateArray())
@@ -348,8 +360,7 @@ internal sealed partial class UiToolingProtocolSession
             text = string.Concat(text.AsSpan(0, start), replacement.AsSpan(), text.AsSpan(end));
             map = new UiEditorText(text);
         }
-        _workspace.Update(uri, version, text, ContextFor(uri));
-        return UiJsonRpcDispatchResult.Success();
+        return text;
     }
 
     private UiJsonRpcDispatchResult DidClose(UiJsonRpcRequest request)

@@ -112,6 +112,81 @@ public sealed class SemanticGraphTests
     }
 
     [Fact]
+    public void DiagnosticsPreserveDeclarationRelationAndRequiredBindingOrder()
+    {
+        UiSemanticGraph graph = Graph();
+        var nodes = graph.Nodes.ToArray();
+        UiSemanticNode items = nodes[0];
+        nodes[0] = new(items.Id, items.Alias, " ", items.DataType, items.Capabilities, items.Inputs);
+        var relations = graph.Relations.ToList();
+        UiSemanticRelation query = relations[2] with { Source = Id("missing-source") };
+        relations[2] = query;
+        relations.RemoveAt(6);
+        UiSymbolId invalidRole = Id("role/invalid");
+        var invalid = new UiSemanticGraph(Owner, nodes, relations,
+            graph.PresentedNodes.Concat(new[] { Id("items"), Id("missing-presented") }),
+            new[] { new UiGraphRole(invalidRole, "Invalid Role") });
+        var expected = new UiGraphDiagnostic[]
+        {
+            new("UIG003", "Node label is required.", Id("items")),
+            new("UIG002", "Role alias must be a unique authoring identifier.", invalidRole),
+            new("UIG008", "Presented node is missing or duplicated.", Id("items")),
+            new("UIG008", "Presented node is missing or duplicated.", Id("missing-presented")),
+            new("UIG011", "Relation endpoint does not exist.", query.Id,
+                query.Source, query.Target, query.TargetInput, query.Provenance),
+            new("UIG018", "Required input needs exactly one producer.", Id("items"), Input: Id("items/input/query")),
+            new("UIG027", "An action with a target contract requires an ActionTarget binding.", Id("action"))
+        };
+
+        IReadOnlyList<UiGraphDiagnostic> diagnostics = UiGraphBinder.Validate(invalid);
+
+        Assert.Equal(expected, diagnostics);
+        UiGraphValidationException error = Assert.Throws<UiGraphValidationException>(() => new UiBindingContext(invalid));
+        Assert.Equal(expected, error.Diagnostics);
+        Assert.Equal(string.Join(Environment.NewLine, expected.Select(item => $"{item.Code} {item.Subject}: {item.Message}")), error.Message);
+    }
+
+    [Fact]
+    public void DuplicateRelationDiagnosticsPrecedeEndpointErrorsAndCycleDiagnostics()
+    {
+        UiDataType collection = UiDataTypes.Collection(Item);
+        UiSemanticNode Node(string name) => new(Id(name), name, name, collection, new[] { Cap("Browse"), Cap("Filter") },
+            new[] { new UiProjectionInput(Id(name + "/input"), "Input", collection, true) });
+        var provenance = new UiGraphProvenance("cycle.cs", new UiTextSpan(4, 6, 0, 4), Id("declaration/cycle"));
+        var missing = new UiSemanticRelation(Id("relations/missing"), UiRelationKind.Details,
+            Id("missing-source"), Id("missing-target"), Provenance: provenance);
+        UiSemanticRelation duplicate = missing with { Id = Id("relations/duplicate") };
+        var forward = new UiSemanticRelation(Id("relations/forward"), UiRelationKind.Filter,
+            Id("A"), Id("B"), Id("B/input"), Provenance: provenance);
+        var backward = new UiSemanticRelation(Id("relations/backward"), UiRelationKind.Filter,
+            Id("B"), Id("A"), Id("A/input"), Provenance: provenance);
+        var graph = new UiSemanticGraph(Owner, new[] { Node("A"), Node("B") },
+            new[] { missing, duplicate, forward, backward });
+        var expected = new UiGraphDiagnostic[]
+        {
+            new("UIG011", "Relation endpoint does not exist.", missing.Id,
+                missing.Source, missing.Target, Provenance: provenance),
+            new("UIG025", "The same semantic relation is already declared.", duplicate.Id,
+                duplicate.Source, duplicate.Target, Provenance: provenance),
+            new("UIG026", "This target accepts a single producer for this relation kind.", duplicate.Id,
+                duplicate.Source, duplicate.Target, Provenance: provenance),
+            new("UIG011", "Relation endpoint does not exist.", duplicate.Id,
+                duplicate.Source, duplicate.Target, Provenance: provenance),
+            new("UIG019", "Data dependency belongs to or is blocked by a cycle.", forward.Id,
+                forward.Source, forward.Target, forward.TargetInput, provenance),
+            new("UIG019", "Data dependency belongs to or is blocked by a cycle.", backward.Id,
+                backward.Source, backward.Target, backward.TargetInput, provenance)
+        };
+
+        IReadOnlyList<UiGraphDiagnostic> diagnostics = UiGraphBinder.Validate(graph);
+
+        Assert.Equal(expected, diagnostics);
+        Assert.All(diagnostics, diagnostic => Assert.Same(provenance, diagnostic.Provenance));
+        UiGraphValidationException error = Assert.Throws<UiGraphValidationException>(() => new UiBindingContext(graph));
+        Assert.Equal(expected, error.Diagnostics);
+    }
+
+    [Fact]
     public void RequiredValuesMayFeedOptionalSlotsButOptionalValuesCannotFeedRequiredSlots()
     {
         Assert.True((UiDataTypes.String with { Nullable = true }).Accepts(UiDataTypes.String));

@@ -22,6 +22,12 @@ internal sealed partial class UiToolingProtocolSession
                 location = new { uri = document.SourceName, range = Range(document.Text, n.Selection) },
                 containerName = n.Parent >= 0 ? outline[n.Parent].Name : string.Empty
             }).ToArray());
+        return Success(BuildHierarchicalSymbols(document));
+    }
+
+    private static object[] BuildHierarchicalSymbols(UiEditorDocumentSnapshot document)
+    {
+        IReadOnlyList<UiEditorOutlineNode> outline = document.Analysis.Outline;
         var children = new Dictionary<int, List<object>>();
         for (int i = outline.Count - 1; i >= 0; i--)
         {
@@ -33,8 +39,8 @@ internal sealed partial class UiToolingProtocolSession
             siblings.Add(new { name = node.Name, kind = node.Kind, range = Range(document.Text, node.Span),
                 selectionRange = Range(document.Text, node.Selection), children = nested });
         }
-        return Success(children.TryGetValue(-1, out List<object>? roots)
-            ? roots.AsEnumerable().Reverse().ToArray() : System.Array.Empty<object>());
+        return children.TryGetValue(-1, out List<object>? roots)
+            ? roots.AsEnumerable().Reverse().ToArray() : System.Array.Empty<object>();
     }
 
     private UiJsonRpcDispatchResult FoldingRanges(UiJsonRpcRequest request)
