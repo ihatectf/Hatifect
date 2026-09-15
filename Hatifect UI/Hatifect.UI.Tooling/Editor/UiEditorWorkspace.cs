@@ -139,24 +139,30 @@ public sealed class UiEditorWorkspace
             if (TryResolveExisting(sourceName, version, source, expectedKind, out UiEditorDocumentSnapshot existing))
                 return existing;
 
-            if (_documents.TryGetValue(sourceName, out LinkedListNode<UiEditorDocumentSnapshot>? previous))
-            {
-                _documents.Remove(sourceName);
-                _recency.Remove(previous);
-            }
-            else if (_documents.Count == Capacity)
-            {
-                LinkedListNode<UiEditorDocumentSnapshot> oldest = _recency.First
-                    ?? throw new InvalidOperationException("A full editor workspace has no eviction candidate.");
-                _recency.RemoveFirst();
-                _documents.Remove(oldest.Value.SourceName);
-            }
-
-            var node = new LinkedListNode<UiEditorDocumentSnapshot>(candidate);
-            _recency.AddLast(node);
-            _documents.Add(sourceName, node);
-            return candidate;
+            return InsertEvictingOldest(sourceName, candidate);
         }
+    }
+
+    // Callers must already hold _sync: this only mutates the recency list and document map.
+    private UiEditorDocumentSnapshot InsertEvictingOldest(string sourceName, UiEditorDocumentSnapshot candidate)
+    {
+        if (_documents.TryGetValue(sourceName, out LinkedListNode<UiEditorDocumentSnapshot>? previous))
+        {
+            _documents.Remove(sourceName);
+            _recency.Remove(previous);
+        }
+        else if (_documents.Count == Capacity)
+        {
+            LinkedListNode<UiEditorDocumentSnapshot> oldest = _recency.First
+                ?? throw new InvalidOperationException("A full editor workspace has no eviction candidate.");
+            _recency.RemoveFirst();
+            _documents.Remove(oldest.Value.SourceName);
+        }
+
+        var node = new LinkedListNode<UiEditorDocumentSnapshot>(candidate);
+        _recency.AddLast(node);
+        _documents.Add(sourceName, node);
+        return candidate;
     }
 
     public bool TryGet(string sourceName, out UiEditorDocumentSnapshot? snapshot)

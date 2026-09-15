@@ -135,33 +135,7 @@ internal sealed class UiAccessibilitySnapshotBuilder
         if (!layout.TryGetEntry(node.Id, out UiLayoutEntry? entry) || entry == null)
             throw new InvalidOperationException($"Accessibility node '{node.Id}' has no layout entry.");
 
-        UiAccessibilityNodeSnapshot[] children = node.Children
-            .Where(IsExposed)
-            .Select(child => BuildNode(scene, child, layout, interaction, actions))
-            .ToArray();
-        if (node is UiCollectionSceneNode collection &&
-            layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window) &&
-            window != null)
-        {
-            children = window.Items
-                .Where(item => item.Clip.Width > 0 && item.Clip.Height > 0)
-                .Select(item => new UiAccessibilityNodeSnapshot(
-                    item.Node,
-                    UiAccessibilityRole.ListItem,
-                    item.Item.Label,
-                    value: null,
-                    enabled: true,
-                    focused: interaction.Focused == item.Node,
-                    selected: collection.IsSelected(item.Item.Id),
-                    item.Bounds,
-                    item.Clip,
-                    Array.Empty<UiAccessibilityNodeSnapshot>(),
-                    item.Index + 1,
-                    window.TotalCount,
-                    shortcut: collection.InputPrompt?.Label,
-                    description: item.Tooltip?.Presentation.Text))
-                .ToArray();
-        }
+        UiAccessibilityNodeSnapshot[] children = ResolveChildren(scene, node, layout, interaction, actions);
 
         return new UiAccessibilityNodeSnapshot(
             node.Id,
@@ -177,6 +151,50 @@ internal sealed class UiAccessibilitySnapshotBuilder
             shortcut: UiSceneLayoutEngine.InputPrompt(node)?.Label,
             description: node.Tooltip?.Text);
     }
+
+    private static UiAccessibilityNodeSnapshot[] ResolveChildren(
+        UiScene scene,
+        UiSceneNode node,
+        UiLayoutSnapshot layout,
+        UiInteractionSnapshot interaction,
+        IUiActionResolver? actions)
+    {
+        UiAccessibilityNodeSnapshot[] children = node.Children
+            .Where(IsExposed)
+            .Select(child => BuildNode(scene, child, layout, interaction, actions))
+            .ToArray();
+        if (node is UiCollectionSceneNode collection &&
+            layout.TryGetCollection(collection.Id, out UiCollectionLayoutWindow? window) &&
+            window != null)
+        {
+            children = BuildCollectionItemChildren(collection, window, interaction);
+        }
+
+        return children;
+    }
+
+    private static UiAccessibilityNodeSnapshot[] BuildCollectionItemChildren(
+        UiCollectionSceneNode collection,
+        UiCollectionLayoutWindow window,
+        UiInteractionSnapshot interaction)
+        => window.Items
+            .Where(item => item.Clip.Width > 0 && item.Clip.Height > 0)
+            .Select(item => new UiAccessibilityNodeSnapshot(
+                item.Node,
+                UiAccessibilityRole.ListItem,
+                item.Item.Label,
+                value: null,
+                enabled: true,
+                focused: interaction.Focused == item.Node,
+                selected: collection.IsSelected(item.Item.Id),
+                item.Bounds,
+                item.Clip,
+                Array.Empty<UiAccessibilityNodeSnapshot>(),
+                item.Index + 1,
+                window.TotalCount,
+                shortcut: collection.InputPrompt?.Label,
+                description: item.Tooltip?.Presentation.Text))
+            .ToArray();
 
     private static bool IsExposed(UiSceneNode node)
         => node is not UiSlotSceneNode slot || slot.Children.Count > 0;

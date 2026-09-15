@@ -63,40 +63,52 @@ public static class UiLanguageMetadataExporter
     {
         ArgumentNullException.ThrowIfNull(catalog);
         return new UiLanguageMetadata(
-            catalog.Tokens
-                .OrderBy(token => token.Name, StringComparer.Ordinal)
-                .Select(token => new UiTokenMetadata(token.Id, token.Name, token.Type))
-                .ToArray(),
-            catalog.Presentations
-                .OrderBy(presentation => presentation.Name, StringComparer.Ordinal)
-                .Select(presentation => new UiPresentationMetadata(
-                    presentation.Id,
-                    presentation.Name,
-                    Array.AsReadOnly(presentation.SupportedCapabilities
-                        .OrderBy(id => id.ToString(), StringComparer.Ordinal)
-                        .ToArray())))
-                .ToArray(),
+            ExportTokens(catalog),
+            ExportPresentations(catalog),
             catalog.Patterns.Select(item => new UiNamedSymbolMetadata(item.Value, item.Key)).Sorted(),
             catalog.Regions.Select(item => new UiNamedSymbolMetadata(item.Value, item.Key)).Sorted(),
             catalog.Profiles.Select(item => new UiNamedSymbolMetadata(item.Value, item.Key)).Sorted(),
             catalog.States.Select(item => new UiNamedSymbolMetadata(item.Value, item.Key)).Sorted(),
-            catalog.EnumValues
-                .OrderBy(value => value.Property.ToString(), StringComparer.Ordinal)
-                .ThenBy(value => value.Name, StringComparer.Ordinal)
-                .Select(value => new UiEnumValueMetadata(value.Id, value.Name, value.Property))
-                .ToArray(),
-            catalog.Properties
-                .OrderBy(property => property.DefinitionKind)
-                .ThenBy(property => property.Name, StringComparer.Ordinal)
-                .Select(property => new UiPropertyMetadata(
-                    property.Id,
-                    property.Name,
-                    property.DefinitionKind,
-                    property.Type,
-                    property.Effects,
-                    property.Animatable))
-                .ToArray());
+            ExportEnumValues(catalog),
+            ExportProperties(catalog));
     }
+
+    private static UiTokenMetadata[] ExportTokens(UiSemanticCatalog catalog)
+        => catalog.Tokens
+            .OrderBy(token => token.Name, StringComparer.Ordinal)
+            .Select(token => new UiTokenMetadata(token.Id, token.Name, token.Type))
+            .ToArray();
+
+    private static UiPresentationMetadata[] ExportPresentations(UiSemanticCatalog catalog)
+        => catalog.Presentations
+            .OrderBy(presentation => presentation.Name, StringComparer.Ordinal)
+            .Select(presentation => new UiPresentationMetadata(
+                presentation.Id,
+                presentation.Name,
+                Array.AsReadOnly(presentation.SupportedCapabilities
+                    .OrderBy(id => id.ToString(), StringComparer.Ordinal)
+                    .ToArray())))
+            .ToArray();
+
+    private static UiEnumValueMetadata[] ExportEnumValues(UiSemanticCatalog catalog)
+        => catalog.EnumValues
+            .OrderBy(value => value.Property.ToString(), StringComparer.Ordinal)
+            .ThenBy(value => value.Name, StringComparer.Ordinal)
+            .Select(value => new UiEnumValueMetadata(value.Id, value.Name, value.Property))
+            .ToArray();
+
+    private static UiPropertyMetadata[] ExportProperties(UiSemanticCatalog catalog)
+        => catalog.Properties
+            .OrderBy(property => property.DefinitionKind)
+            .ThenBy(property => property.Name, StringComparer.Ordinal)
+            .Select(property => new UiPropertyMetadata(
+                property.Id,
+                property.Name,
+                property.DefinitionKind,
+                property.Type,
+                property.Effects,
+                property.Animatable))
+            .ToArray();
 
     private static UiNamedSymbolMetadata[] Sorted(this IEnumerable<UiNamedSymbolMetadata> values)
         => values.OrderBy(value => value.Name, StringComparer.Ordinal).ToArray();

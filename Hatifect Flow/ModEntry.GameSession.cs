@@ -193,64 +193,40 @@ public sealed partial class ModEntry
             switch (args[0])
             {
                 case "diagnostics" when args.Length == 1:
-                    Monitor.Log(session.ReadResources().Format(), LogLevel.Info);
+                    RunDiagnosticsCommand(session);
                     break;
                 case "recovery" when args.Length == 1:
-                    Monitor.Log(string.Join("\n", session.ReadRecovery().Select(value => $"{value.ParcelId}: {value.Phase}, receipt={value.Receipt}, can reconcile={value.CanReconcile}")), LogLevel.Info);
+                    RunRecoveryCommand(session);
                     break;
                 case "recover" when args.Length == 2:
-                    FlowSnapshot recovering = session.ReadSnapshot();
-                    Monitor.Log("Recovery: " + session.Execute(new FlowRecoveryCommand(recovering.SessionId, recovering.Revision, Guid.Parse(args[1]))).Status, LogLevel.Info);
+                    RunRecoverCommand(session, args);
                     break;
                 case "target" when args.Length == 1:
-                    Vector2 targetTile = Helper.Input.GetCursorPosition().GrabTile;
-                    if (!Game1.currentLocation.Objects.TryGetValue(targetTile, out StardewValley.Object? targetItem) || targetItem is not Chest targetChest)
-                        throw new ArgumentException("Point at an ordinary player chest.");
-                    session.CaptureTarget(Game1.currentLocation.NameOrUniqueName, (int)targetTile.X, (int)targetTile.Y, targetChest);
-                    Monitor.Log("Chest captured for Flowline network controls.", LogLevel.Info);
+                    RunTargetCommand(session);
                     break;
                 case "network" when args.Length == 1:
                     ShowNetwork(session);
                     break;
                 case "rename" when args.Length == 3:
-                    session.RenameStation(args[1], args[2]);
-                    Monitor.Log("Station renamed.", LogLevel.Info);
+                    RunRenameCommand(session, args);
                     break;
                 case "station" or "rebind" when args.Length == 2:
-                    Vector2 tile = Helper.Input.GetCursorPosition().GrabTile;
-                    if (!Game1.currentLocation.Objects.TryGetValue(tile, out StardewValley.Object? item) || item is not Chest chest)
-                        throw new ArgumentException("Point at an ordinary player chest before binding a station.");
-                    if (args[0] == "station") session.RegisterStation(args[1], Game1.currentLocation.NameOrUniqueName, (int)tile.X, (int)tile.Y, chest);
-                    else session.RebindStation(args[1], Game1.currentLocation.NameOrUniqueName, (int)tile.X, (int)tile.Y, chest);
-                    Monitor.Log("Station bound: " + args[1], LogLevel.Info);
+                    RunStationOrRebindCommand(session, args);
                     break;
                 case "link" when args.Length is >= 3 and <= 5:
-                    session.Link(args[1], args[2], args.Length > 3 ? ParseNumber(args[3]) : 999, args.Length > 4 ? ParseNumber(args[4]) : 180);
-                    Monitor.Log("Route link registered.", LogLevel.Info);
+                    RunLinkCommand(session, args);
                     break;
                 case "send" when args.Length == 4:
-                    _selectedParcel = session.Send(args[1], args[2], checked(ParseNumber(args[3]) - 1));
-                    Monitor.Log("Shipment: " + _selectedParcel + ". Use hatifect_flow show with a game menu open.", LogLevel.Info);
+                    RunSendCommand(session, args);
                     break;
                 case "list" when args.Length == 1:
-                    FlowSnapshot snapshot = session.Application.ReadSnapshot();
-                    Monitor.Log("Stations: " + string.Join(", ", snapshot.Stations.Select(value => session.StationName(value.Id)))
-                        + "\n" + string.Join("\n", snapshot.Parcels.Select(value => $"{value.Id}: {value.ItemKey} × {value.Quantity}, {value.State}")), LogLevel.Info);
+                    RunListCommand(session);
                     break;
                 case "show" when args.Length is 1 or 2:
-                    Guid? selected = args.Length == 2 ? Guid.Parse(args[1])
-                        : _selectedParcel ?? session.Application.ReadSnapshot().Parcels.FirstOrDefault()?.Id;
-                    ShowParcel(session.Application, selected, session.StationName);
+                    RunShowCommand(session, args);
                     break;
                 case "cancel" or "reserve" or "retry" or "reconcile" or "return" when args.Length == 2:
-                    FlowParcelAction action = args[0] switch
-                    {
-                        "cancel" => FlowParcelAction.Cancel, "reserve" => FlowParcelAction.Reserve,
-                        "retry" => FlowParcelAction.RetryDelivery, "return" => FlowParcelAction.ReturnToSource, _ => FlowParcelAction.ReconcileTransfer
-                    };
-                    FlowSnapshot current = session.Application.ReadSnapshot();
-                    FlowCommandResult result = session.Application.Execute(new FlowParcelCommand(current.SessionId, current.Revision, Guid.Parse(args[1]), action));
-                    Monitor.Log("Shipment command: " + result.Status, LogLevel.Info);
+                    RunParcelActionCommand(session, args);
                     break;
                 default: throw new ArgumentException("Invalid command. Use hatifect_flow help.");
             }
@@ -258,6 +234,81 @@ public sealed partial class ModEntry
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or FormatException or OverflowException)
         { Monitor.Log("Flowline: " + error.Message, LogLevel.Warn); }
         catch (Exception error) { ReportGameFailure(error); }
+    }
+
+    private void RunDiagnosticsCommand(FlowGameSession session)
+        => Monitor.Log(session.ReadResources().Format(), LogLevel.Info);
+
+    private void RunRecoveryCommand(FlowGameSession session)
+        => Monitor.Log(string.Join("\n", session.ReadRecovery().Select(value => $"{value.ParcelId}: {value.Phase}, receipt={value.Receipt}, can reconcile={value.CanReconcile}")), LogLevel.Info);
+
+    private void RunRecoverCommand(FlowGameSession session, string[] args)
+    {
+        FlowSnapshot recovering = session.ReadSnapshot();
+        Monitor.Log("Recovery: " + session.Execute(new FlowRecoveryCommand(recovering.SessionId, recovering.Revision, Guid.Parse(args[1]))).Status, LogLevel.Info);
+    }
+
+    private void RunTargetCommand(FlowGameSession session)
+    {
+        Vector2 targetTile = Helper.Input.GetCursorPosition().GrabTile;
+        if (!Game1.currentLocation.Objects.TryGetValue(targetTile, out StardewValley.Object? targetItem) || targetItem is not Chest targetChest)
+            throw new ArgumentException("Point at an ordinary player chest.");
+        session.CaptureTarget(Game1.currentLocation.NameOrUniqueName, (int)targetTile.X, (int)targetTile.Y, targetChest);
+        Monitor.Log("Chest captured for Flowline network controls.", LogLevel.Info);
+    }
+
+    private void RunRenameCommand(FlowGameSession session, string[] args)
+    {
+        session.RenameStation(args[1], args[2]);
+        Monitor.Log("Station renamed.", LogLevel.Info);
+    }
+
+    private void RunStationOrRebindCommand(FlowGameSession session, string[] args)
+    {
+        Vector2 tile = Helper.Input.GetCursorPosition().GrabTile;
+        if (!Game1.currentLocation.Objects.TryGetValue(tile, out StardewValley.Object? item) || item is not Chest chest)
+            throw new ArgumentException("Point at an ordinary player chest before binding a station.");
+        if (args[0] == "station") session.RegisterStation(args[1], Game1.currentLocation.NameOrUniqueName, (int)tile.X, (int)tile.Y, chest);
+        else session.RebindStation(args[1], Game1.currentLocation.NameOrUniqueName, (int)tile.X, (int)tile.Y, chest);
+        Monitor.Log("Station bound: " + args[1], LogLevel.Info);
+    }
+
+    private void RunLinkCommand(FlowGameSession session, string[] args)
+    {
+        session.Link(args[1], args[2], args.Length > 3 ? ParseNumber(args[3]) : 999, args.Length > 4 ? ParseNumber(args[4]) : 180);
+        Monitor.Log("Route link registered.", LogLevel.Info);
+    }
+
+    private void RunSendCommand(FlowGameSession session, string[] args)
+    {
+        _selectedParcel = session.Send(args[1], args[2], checked(ParseNumber(args[3]) - 1));
+        Monitor.Log("Shipment: " + _selectedParcel + ". Use hatifect_flow show with a game menu open.", LogLevel.Info);
+    }
+
+    private void RunListCommand(FlowGameSession session)
+    {
+        FlowSnapshot snapshot = session.Application.ReadSnapshot();
+        Monitor.Log("Stations: " + string.Join(", ", snapshot.Stations.Select(value => session.StationName(value.Id)))
+            + "\n" + string.Join("\n", snapshot.Parcels.Select(value => $"{value.Id}: {value.ItemKey} × {value.Quantity}, {value.State}")), LogLevel.Info);
+    }
+
+    private void RunShowCommand(FlowGameSession session, string[] args)
+    {
+        Guid? selected = args.Length == 2 ? Guid.Parse(args[1])
+            : _selectedParcel ?? session.Application.ReadSnapshot().Parcels.FirstOrDefault()?.Id;
+        ShowParcel(session.Application, selected, session.StationName);
+    }
+
+    private void RunParcelActionCommand(FlowGameSession session, string[] args)
+    {
+        FlowParcelAction action = args[0] switch
+        {
+            "cancel" => FlowParcelAction.Cancel, "reserve" => FlowParcelAction.Reserve,
+            "retry" => FlowParcelAction.RetryDelivery, "return" => FlowParcelAction.ReturnToSource, _ => FlowParcelAction.ReconcileTransfer
+        };
+        FlowSnapshot current = session.Application.ReadSnapshot();
+        FlowCommandResult result = session.Application.Execute(new FlowParcelCommand(current.SessionId, current.Revision, Guid.Parse(args[1]), action));
+        Monitor.Log("Shipment command: " + result.Status, LogLevel.Info);
     }
 
     // Production and exact native acceptance share the same consumer opening/retirement path.

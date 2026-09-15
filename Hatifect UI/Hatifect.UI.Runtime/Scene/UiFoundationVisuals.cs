@@ -25,90 +25,143 @@ internal sealed class UiFoundationVisuals
         switch (kind)
         {
             case UiSceneNodeKind.Host:
-                values.Add(Token("typography", UiThemeTokens.TypographyTitle.Id, UiSemanticType.TypographyToken));
-                values.Add(Token("surface", HostSurface(host), UiSemanticType.SurfaceToken));
-                values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
-                values.Add(Token("padding", UiThemeTokens.SpaceL.Id, UiSemanticType.SpaceToken));
+                AddHostVisuals(values, host);
                 break;
             case UiSceneNodeKind.Button:
             case UiSceneNodeKind.RouteButton:
-                values.Add(Token(
-                    "surface",
-                    kind == UiSceneNodeKind.RouteButton && Contains(domainStates, UiVisualStates.Selected)
-                        ? UiThemeTokens.SurfacePressed.Id
-                        : UiThemeTokens.SurfaceRaised.Id,
-                    UiSemanticType.SurfaceToken));
-                values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
-                values.Add(Token("radius", UiThemeTokens.RadiusM.Id, UiSemanticType.RadiusToken));
-                values.Add(Token("padding", UiThemeTokens.SpaceM.Id, UiSemanticType.SpaceToken));
-                values.Add(Token("typography", UiThemeTokens.TypographyLabel.Id, UiSemanticType.TypographyToken));
-                values.Add(Token("prompt.foreground", UiThemeTokens.TextInputPrompt.Id, UiSemanticType.ColorToken));
-                values.Add(Token("prompt.typography", UiThemeTokens.TypographyInputPrompt.Id, UiSemanticType.TypographyToken));
-                values.Add(Token("prompt.spacing", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
-                values.Add(Token("motion", UiThemeTokens.MotionFast.Id, UiSemanticType.MotionToken));
-                values.Add(Token("opacity", Contains(interactionStates, UiVisualStates.Disabled)
-                    ? UiThemeTokens.OpacityDisabled.Id : UiThemeTokens.OpacityVisible.Id, UiSemanticType.Opacity));
+                AddButtonVisuals(values, kind, domainStates, interactionStates);
                 break;
             case UiSceneNodeKind.Text:
-                values.Add(Token("foreground", Contains(domainStates, UiVisualStates.Error)
-                    ? UiThemeTokens.TextDanger.Id
-                    : UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
-                values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+                AddTextVisuals(values, domainStates);
                 break;
             case UiSceneNodeKind.Collection:
             case UiSceneNodeKind.Inspector:
             case UiSceneNodeKind.Form:
-                values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
-                values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+                AddBodyVisuals(values);
                 break;
             case UiSceneNodeKind.Status:
-                values.Add(Token("foreground", StatusForeground(domainStates), UiSemanticType.ColorToken));
-                values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+                AddStatusVisuals(values, domainStates);
                 break;
             case UiSceneNodeKind.TextInput:
-                values.Add(Token("surface", UiThemeTokens.SurfaceSecondary.Id, UiSemanticType.SurfaceToken));
-                values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
-                values.Add(Token("radius", UiThemeTokens.RadiusM.Id, UiSemanticType.RadiusToken));
-                values.Add(Token("padding", UiThemeTokens.SpaceM.Id, UiSemanticType.SpaceToken));
-                values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+                AddTextInputVisuals(values);
                 break;
             case UiSceneNodeKind.Tooltip:
-                values.Add(Token("surface", UiThemeTokens.SurfacePopup.Id, UiSemanticType.SurfaceToken));
-                values.Add(Token("foreground", Contains(domainStates, UiVisualStates.Error)
-                    ? UiThemeTokens.TextDanger.Id
-                    : UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
-                values.Add(Token("radius", UiThemeTokens.RadiusS.Id, UiSemanticType.RadiusToken));
-                values.Add(Token("padding", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
-                values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
-                values.Add(Token("elevation", UiThemeTokens.ElevationHigh.Id, UiSemanticType.ElevationToken));
-                values.Add(Token("motion", UiThemeTokens.MotionNormal.Id, UiSemanticType.MotionToken));
+                AddTooltipVisuals(values, domainStates);
                 break;
         }
+        AddFocusVisualIfSupported(values, kind, interactionStates);
+        if (kind == UiSceneNodeKind.Collection)
+            AddCollectionExtras(values, domainStates, interactionStates);
+        return values;
+    }
+
+    private void AddHostVisuals(List<UiVisualOverride> values, UiHostPolicy host)
+    {
+        values.Add(Token("typography", UiThemeTokens.TypographyTitle.Id, UiSemanticType.TypographyToken));
+        values.Add(Token("surface", HostSurface(host), UiSemanticType.SurfaceToken));
+        values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
+        values.Add(Token("padding", UiThemeTokens.SpaceL.Id, UiSemanticType.SpaceToken));
+    }
+
+    private void AddButtonVisuals(
+        List<UiVisualOverride> values,
+        UiSceneNodeKind kind,
+        IReadOnlyList<UiVisualStateRef>? domainStates,
+        IReadOnlyList<UiVisualStateRef>? interactionStates)
+    {
+        values.Add(Token(
+            "surface",
+            kind == UiSceneNodeKind.RouteButton && Contains(domainStates, UiVisualStates.Selected)
+                ? UiThemeTokens.SurfacePressed.Id
+                : UiThemeTokens.SurfaceRaised.Id,
+            UiSemanticType.SurfaceToken));
+        values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
+        values.Add(Token("radius", UiThemeTokens.RadiusM.Id, UiSemanticType.RadiusToken));
+        values.Add(Token("padding", UiThemeTokens.SpaceM.Id, UiSemanticType.SpaceToken));
+        values.Add(Token("typography", UiThemeTokens.TypographyLabel.Id, UiSemanticType.TypographyToken));
+        values.Add(Token("prompt.foreground", UiThemeTokens.TextInputPrompt.Id, UiSemanticType.ColorToken));
+        values.Add(Token("prompt.typography", UiThemeTokens.TypographyInputPrompt.Id, UiSemanticType.TypographyToken));
+        values.Add(Token("prompt.spacing", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
+        values.Add(Token("motion", UiThemeTokens.MotionFast.Id, UiSemanticType.MotionToken));
+        values.Add(Token("opacity", Contains(interactionStates, UiVisualStates.Disabled)
+            ? UiThemeTokens.OpacityDisabled.Id : UiThemeTokens.OpacityVisible.Id, UiSemanticType.Opacity));
+    }
+
+    private void AddTextVisuals(List<UiVisualOverride> values, IReadOnlyList<UiVisualStateRef>? domainStates)
+    {
+        values.Add(Token("foreground", Contains(domainStates, UiVisualStates.Error)
+            ? UiThemeTokens.TextDanger.Id
+            : UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
+        values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+    }
+
+    private void AddBodyVisuals(List<UiVisualOverride> values)
+    {
+        values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
+        values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+    }
+
+    private void AddStatusVisuals(List<UiVisualOverride> values, IReadOnlyList<UiVisualStateRef>? domainStates)
+    {
+        values.Add(Token("foreground", StatusForeground(domainStates), UiSemanticType.ColorToken));
+        values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+    }
+
+    private void AddTextInputVisuals(List<UiVisualOverride> values)
+    {
+        values.Add(Token("surface", UiThemeTokens.SurfaceSecondary.Id, UiSemanticType.SurfaceToken));
+        values.Add(Token("foreground", UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
+        values.Add(Token("radius", UiThemeTokens.RadiusM.Id, UiSemanticType.RadiusToken));
+        values.Add(Token("padding", UiThemeTokens.SpaceM.Id, UiSemanticType.SpaceToken));
+        values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+    }
+
+    private void AddTooltipVisuals(List<UiVisualOverride> values, IReadOnlyList<UiVisualStateRef>? domainStates)
+    {
+        values.Add(Token("surface", UiThemeTokens.SurfacePopup.Id, UiSemanticType.SurfaceToken));
+        values.Add(Token("foreground", Contains(domainStates, UiVisualStates.Error)
+            ? UiThemeTokens.TextDanger.Id
+            : UiThemeTokens.TextPrimary.Id, UiSemanticType.ColorToken));
+        values.Add(Token("radius", UiThemeTokens.RadiusS.Id, UiSemanticType.RadiusToken));
+        values.Add(Token("padding", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
+        values.Add(Token("typography", UiThemeTokens.TypographyBody.Id, UiSemanticType.TypographyToken));
+        values.Add(Token("elevation", UiThemeTokens.ElevationHigh.Id, UiSemanticType.ElevationToken));
+        values.Add(Token("motion", UiThemeTokens.MotionNormal.Id, UiSemanticType.MotionToken));
+    }
+
+    private void AddFocusVisualIfSupported(
+        List<UiVisualOverride> values,
+        UiSceneNodeKind kind,
+        IReadOnlyList<UiVisualStateRef>? interactionStates)
+    {
         bool supportsFocusVisual = kind is UiSceneNodeKind.Button or UiSceneNodeKind.RouteButton or
             UiSceneNodeKind.TextInput or UiSceneNodeKind.Collection;
         if (supportsFocusVisual && Contains(interactionStates, UiVisualStates.Focused))
             values.Add(Token("border", UiThemeTokens.BorderFocus.Id, UiSemanticType.Border));
-        if (kind == UiSceneNodeKind.Collection)
+    }
+
+    private void AddCollectionExtras(
+        List<UiVisualOverride> values,
+        IReadOnlyList<UiVisualStateRef>? domainStates,
+        IReadOnlyList<UiVisualStateRef>? interactionStates)
+    {
+        values.Add(Token("prompt.foreground", UiThemeTokens.TextInputPrompt.Id, UiSemanticType.ColorToken));
+        values.Add(Token("prompt.typography", UiThemeTokens.TypographyInputPrompt.Id, UiSemanticType.TypographyToken));
+        values.Add(Token("prompt.spacing", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
+        bool selected = Contains(domainStates, UiVisualStates.Selected);
+        bool hovered = Contains(interactionStates, UiVisualStates.Hover);
+        bool pressed = Contains(interactionStates, UiVisualStates.Pressed);
+        if (selected)
         {
-            values.Add(Token("prompt.foreground", UiThemeTokens.TextInputPrompt.Id, UiSemanticType.ColorToken));
-            values.Add(Token("prompt.typography", UiThemeTokens.TypographyInputPrompt.Id, UiSemanticType.TypographyToken));
-            values.Add(Token("prompt.spacing", UiThemeTokens.SpaceS.Id, UiSemanticType.SpaceToken));
-            bool selected = Contains(domainStates, UiVisualStates.Selected);
-            bool hovered = Contains(interactionStates, UiVisualStates.Hover);
-            bool pressed = Contains(interactionStates, UiVisualStates.Pressed);
-            if (selected)
-            {
-                values.Add(Token("radius", UiThemeTokens.RadiusS.Id, UiSemanticType.RadiusToken));
-            }
-            if (selected || hovered || pressed)
-                values.Add(Token(
-                    "surface",
-                    pressed || selected && !hovered
-                        ? UiThemeTokens.SurfacePressed.Id
-                        : UiThemeTokens.SurfaceHover.Id,
-                    UiSemanticType.SurfaceToken));
+            values.Add(Token("radius", UiThemeTokens.RadiusS.Id, UiSemanticType.RadiusToken));
         }
-        return values;
+        if (selected || hovered || pressed)
+            values.Add(Token(
+                "surface",
+                pressed || selected && !hovered
+                    ? UiThemeTokens.SurfacePressed.Id
+                    : UiThemeTokens.SurfaceHover.Id,
+                UiSemanticType.SurfaceToken));
     }
 
     private static bool Contains(IReadOnlyList<UiVisualStateRef>? states, UiVisualStateRef expected)

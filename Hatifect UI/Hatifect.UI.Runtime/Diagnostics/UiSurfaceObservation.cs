@@ -56,9 +56,27 @@ internal sealed class UiSurfaceObservationState
         int unobservedPortalCount = host.ActivePortalCount;
         bool truncated = false;
         bool unmapped = false;
+
+        Dictionary<UiSymbolId, (UiSymbolId? Semantic, UiSymbolId? Action)> origins =
+            CaptureOrigins(runtime.Scene.Root, ref truncated);
+        UiSemanticSurfaceElement[] elements =
+            CaptureElements(runtime.Accessibility.Root, origins, ref truncated, ref unmapped);
+        UiSemanticSurfaceText[] texts =
+            CaptureTexts(runtime.Frame.Primitives, origins, ref truncated, ref unmapped);
+
+        return new(_instance, _surface, runtime.Scene.Experience, visible, false, unobservedPortalCount, environment,
+            new(runtime.AcceptedVersion, runtime.FrameVersion), _passes,
+            _passes == 0 ? null : new(_rendered.SceneVersion, _rendered.FrameVersion),
+            elements, texts, truncated, unmapped);
+    }
+
+    private static Dictionary<UiSymbolId, (UiSymbolId? Semantic, UiSymbolId? Action)> CaptureOrigins(
+        UiSceneNode root,
+        ref bool truncated)
+    {
         var origins = new Dictionary<UiSymbolId, (UiSymbolId? Semantic, UiSymbolId? Action)>();
         var sceneNodes = new Stack<UiSceneNode>();
-        sceneNodes.Push(runtime.Scene.Root);
+        sceneNodes.Push(root);
         int visited = 0;
         while (sceneNodes.TryPop(out UiSceneNode? node))
         {
@@ -68,11 +86,19 @@ internal sealed class UiSurfaceObservationState
             truncated |= take < node.Children.Count;
             for (int i = take - 1; i >= 0; i--) sceneNodes.Push(node.Children[i]);
         }
+        return origins;
+    }
 
+    private static UiSemanticSurfaceElement[] CaptureElements(
+        UiAccessibilityNodeSnapshot root,
+        Dictionary<UiSymbolId, (UiSymbolId? Semantic, UiSymbolId? Action)> origins,
+        ref bool truncated,
+        ref bool unmapped)
+    {
         var elements = new List<UiSemanticSurfaceElement>();
         var nodes = new Stack<(UiAccessibilityNodeSnapshot Node, UiSymbolId? Collection)>();
-        nodes.Push((runtime.Accessibility.Root, null));
-        visited = 0;
+        nodes.Push((root, null));
+        int visited = 0;
         while (nodes.TryPop(out var item))
         {
             visited++;
@@ -99,9 +125,16 @@ internal sealed class UiSurfaceObservationState
             UiSymbolId? itemOwner = node.Role == UiAccessibilityRole.List ? origin.Semantic : null;
             for (int i = take - 1; i >= 0; i--) nodes.Push((node.Children[i], itemOwner));
         }
+        return elements.ToArray();
+    }
 
+    private static UiSemanticSurfaceText[] CaptureTexts(
+        IReadOnlyList<UiRenderPrimitive> primitives,
+        Dictionary<UiSymbolId, (UiSymbolId? Semantic, UiSymbolId? Action)> origins,
+        ref bool truncated,
+        ref bool unmapped)
+    {
         var texts = new List<UiSemanticSurfaceText>();
-        var primitives = runtime.Frame.Primitives;
         int primitiveCount = Math.Min(primitives.Count, MaxPrimitives);
         truncated |= primitiveCount < primitives.Count;
         for (int i = 0; i < primitiveCount; i++)
@@ -112,11 +145,7 @@ internal sealed class UiSurfaceObservationState
             texts.Add(new(text.Node, origin.Semantic, Limit(text.Text, ref truncated)!));
             unmapped |= origin.Semantic is null;
         }
-
-        return new(_instance, _surface, runtime.Scene.Experience, visible, false, unobservedPortalCount, environment,
-            new(runtime.AcceptedVersion, runtime.FrameVersion), _passes,
-            _passes == 0 ? null : new(_rendered.SceneVersion, _rendered.FrameVersion),
-            elements.ToArray(), texts.ToArray(), truncated, unmapped);
+        return texts.ToArray();
     }
 
     private static Dictionary<UiAccessibilityRole, string> CreateRoleNames()

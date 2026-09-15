@@ -149,40 +149,50 @@ internal sealed class InMemoryCargoPort : ICheckpointCargoPort
             throw new InvalidOperationException("The cargo port receipt limit is reached.");
         }
 
-        bool accepted = transfer.Kind switch
+        bool accepted = IsTransferAccepted(transfer);
+        ReserveCapacityForOutcome(transfer, accepted);
+        if (accepted)
         {
-            PortTransferKind.Extract => _acceptExtractions
-                && _inventory.TryGetValue(transfer.CargoId, out CargoManifest? batch)
-                && batch == transfer.Manifest,
-            PortTransferKind.Deposit => _acceptDeposits
-                && !_inventory.ContainsKey(transfer.CargoId)
-                && _inventory.Count < _maxCargoBatches,
-            _ => false
-        };
+            ApplyAcceptedTransfer(transfer);
+        }
+        PortResult result = accepted ? PortResult.Applied : PortResult.Rejected;
+        _receipts.Add(transfer.Id, result);
+        return result;
+    }
 
-        // Reserve all dictionary storage before changing custody. Rejection is
-        // also recorded, so replay cannot later turn a refused command into an
-        // accepted one merely because capacity or physical inventory changed.
+    private bool IsTransferAccepted(PortTransfer transfer) => transfer.Kind switch
+    {
+        PortTransferKind.Extract => _acceptExtractions
+            && _inventory.TryGetValue(transfer.CargoId, out CargoManifest? batch)
+            && batch == transfer.Manifest,
+        PortTransferKind.Deposit => _acceptDeposits
+            && !_inventory.ContainsKey(transfer.CargoId)
+            && _inventory.Count < _maxCargoBatches,
+        _ => false
+    };
+
+    // Reserve all dictionary storage before changing custody. Rejection is
+    // also recorded, so replay cannot later turn a refused command into an
+    // accepted one merely because capacity or physical inventory changed.
+    private void ReserveCapacityForOutcome(PortTransfer transfer, bool accepted)
+    {
         _receipts.EnsureCapacity(_receipts.Count + 1);
         if (accepted && transfer.Kind == PortTransferKind.Deposit)
         {
             _inventory.EnsureCapacity(_inventory.Count + 1);
         }
+    }
 
-        if (accepted)
+    private void ApplyAcceptedTransfer(PortTransfer transfer)
+    {
+        if (transfer.Kind == PortTransferKind.Extract)
         {
-            if (transfer.Kind == PortTransferKind.Extract)
-            {
-                _inventory.Remove(transfer.CargoId);
-            }
-            else
-            {
-                _inventory.Add(transfer.CargoId, transfer.Manifest);
-            }
+            _inventory.Remove(transfer.CargoId);
         }
-        PortResult result = accepted ? PortResult.Applied : PortResult.Rejected;
-        _receipts.Add(transfer.Id, result);
-        return result;
+        else
+        {
+            _inventory.Add(transfer.CargoId, transfer.Manifest);
+        }
     }
 
     public PortResult ReadResult(PortTransfer transfer)

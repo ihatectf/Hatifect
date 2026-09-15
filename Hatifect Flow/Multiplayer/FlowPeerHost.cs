@@ -108,29 +108,7 @@ internal sealed class FlowPeerHost : IDisposable
         FlowRoutePreview? route = null;
         try
         {
-            switch (intent.Operation)
-            {
-                case FlowPeerOperation.Parcel: result = _session.Execute(intent.Parcel!); break;
-                case FlowPeerOperation.Network: result = _session.Execute(intent.Network!, peer.Target); break;
-                case FlowPeerOperation.Send: result = _session.Execute(intent.Send!); break;
-                case FlowPeerOperation.Recovery: result = _session.Execute(intent.Recovery!); break;
-                case FlowPeerOperation.Inventory: inventory = _session.ReadInventory(intent.Station).ToArray(); break;
-                case FlowPeerOperation.Route: route = _session.PreviewRoute(intent.Station, intent.Destination); break;
-                case FlowPeerOperation.Target:
-                    FlowSnapshot snapshot = _session.ReadSnapshot();
-                    FlowCommandResult? unavailable = _session.Application.ValidateExternalCommand(snapshot.SessionId, snapshot.Revision);
-                    if (unavailable is not null)
-                    {
-                        result = unavailable;
-                        break;
-                    }
-                    peer.Target = _captureTarget(id, intent);
-                    result = new FlowCommandResult(peer.Target is null ? FlowCommandStatus.Rejected : FlowCommandStatus.Applied,
-                        _session.ReadSnapshot().Revision);
-                    break;
-                case FlowPeerOperation.Refresh: break;
-                default: result = new FlowCommandResult(FlowCommandStatus.InvalidCommand, _session.ReadSnapshot().Revision); break;
-            }
+            (result, inventory, route) = ExecuteIntent(id, peer, intent);
             Capture();
         }
         catch (Exception error)
@@ -145,6 +123,38 @@ internal sealed class FlowPeerHost : IDisposable
             RouteSource = route is null ? Guid.Empty : intent.Station,
             RouteDestination = route is null ? Guid.Empty : intent.Destination, Route = route
         };
+    }
+
+    private (FlowCommandResult? Result, FlowInventorySlot[]? Inventory, FlowRoutePreview? Route) ExecuteIntent(
+        long id, Peer peer, FlowPeerIntent intent)
+    {
+        FlowCommandResult? result = null;
+        FlowInventorySlot[]? inventory = null;
+        FlowRoutePreview? route = null;
+        switch (intent.Operation)
+        {
+            case FlowPeerOperation.Parcel: result = _session.Execute(intent.Parcel!); break;
+            case FlowPeerOperation.Network: result = _session.Execute(intent.Network!, peer.Target); break;
+            case FlowPeerOperation.Send: result = _session.Execute(intent.Send!); break;
+            case FlowPeerOperation.Recovery: result = _session.Execute(intent.Recovery!); break;
+            case FlowPeerOperation.Inventory: inventory = _session.ReadInventory(intent.Station).ToArray(); break;
+            case FlowPeerOperation.Route: route = _session.PreviewRoute(intent.Station, intent.Destination); break;
+            case FlowPeerOperation.Target:
+                FlowSnapshot snapshot = _session.ReadSnapshot();
+                FlowCommandResult? unavailable = _session.Application.ValidateExternalCommand(snapshot.SessionId, snapshot.Revision);
+                if (unavailable is not null)
+                {
+                    result = unavailable;
+                    break;
+                }
+                peer.Target = _captureTarget(id, intent);
+                result = new FlowCommandResult(peer.Target is null ? FlowCommandStatus.Rejected : FlowCommandStatus.Applied,
+                    _session.ReadSnapshot().Revision);
+                break;
+            case FlowPeerOperation.Refresh: break;
+            default: result = new FlowCommandResult(FlowCommandStatus.InvalidCommand, _session.ReadSnapshot().Revision); break;
+        }
+        return (result, inventory, route);
     }
 
     private FlowPeerReply Reply(Peer peer, long sequence)

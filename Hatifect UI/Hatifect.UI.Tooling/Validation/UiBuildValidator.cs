@@ -62,37 +62,7 @@ public sealed class UiBuildValidator
         var owners = new Dictionary<UiSymbolId, string>();
 
         foreach (UiBuildAsset asset in ordered)
-        {
-            UiCompilationResult compilation = _compiler.Compile(asset.Source, asset.BindingContext, asset.SourceName);
-            diagnostics.AddRange(compilation.Diagnostics);
-            if (!compilation.IsValid || compilation.Definition == null) continue;
-
-            UiBoundDefinition definition = compilation.Definition;
-            if (asset.ExpectedKind is { } expected && definition.Kind != expected)
-            {
-                diagnostics.Add(new UiDiagnostic(
-                    "LUI3001",
-                    UiDiagnosticSeverity.Error,
-                    $"Expected a {expected} definition but source declares {definition.Kind}.",
-                    compilation.Syntax.KindToken.Span,
-                    asset.SourceName));
-                continue;
-            }
-
-            if (owners.TryGetValue(definition.Id, out string? previous))
-            {
-                diagnostics.Add(new UiDiagnostic(
-                    "LUI3002",
-                    UiDiagnosticSeverity.Error,
-                    $"Definition '{definition.Id}' is already provided by '{previous}'.",
-                    compilation.Syntax.NameToken.Span,
-                    asset.SourceName));
-                continue;
-            }
-
-            owners.Add(definition.Id, asset.SourceName);
-            definitions.Add(new UiValidatedDefinition(asset.SourceName, definition));
-        }
+            ValidateAsset(asset, owners, definitions, diagnostics);
 
         UiDiagnostic[] stableDiagnostics = diagnostics
             .OrderBy(diagnostic => diagnostic.SourceName, StringComparer.Ordinal)
@@ -100,5 +70,42 @@ public sealed class UiBuildValidator
             .ThenBy(diagnostic => diagnostic.Id, StringComparer.Ordinal)
             .ToArray();
         return new UiBuildValidationResult(definitions.ToArray(), stableDiagnostics);
+    }
+
+    private void ValidateAsset(
+        UiBuildAsset asset,
+        Dictionary<UiSymbolId, string> owners,
+        List<UiValidatedDefinition> definitions,
+        List<UiDiagnostic> diagnostics)
+    {
+        UiCompilationResult compilation = _compiler.Compile(asset.Source, asset.BindingContext, asset.SourceName);
+        diagnostics.AddRange(compilation.Diagnostics);
+        if (!compilation.IsValid || compilation.Definition == null) return;
+
+        UiBoundDefinition definition = compilation.Definition;
+        if (asset.ExpectedKind is { } expected && definition.Kind != expected)
+        {
+            diagnostics.Add(new UiDiagnostic(
+                "LUI3001",
+                UiDiagnosticSeverity.Error,
+                $"Expected a {expected} definition but source declares {definition.Kind}.",
+                compilation.Syntax.KindToken.Span,
+                asset.SourceName));
+            return;
+        }
+
+        if (owners.TryGetValue(definition.Id, out string? previous))
+        {
+            diagnostics.Add(new UiDiagnostic(
+                "LUI3002",
+                UiDiagnosticSeverity.Error,
+                $"Definition '{definition.Id}' is already provided by '{previous}'.",
+                compilation.Syntax.NameToken.Span,
+                asset.SourceName));
+            return;
+        }
+
+        owners.Add(definition.Id, asset.SourceName);
+        definitions.Add(new UiValidatedDefinition(asset.SourceName, definition));
     }
 }
