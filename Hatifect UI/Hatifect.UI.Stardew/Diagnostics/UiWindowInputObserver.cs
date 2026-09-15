@@ -9,6 +9,7 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using Hatifect.UI.Runtime.Diagnostics;
 using Hatifect.UI.Runtime.Layout;
+using Hatifect.UI.Runtime.Platform;
 using Hatifect.UI.Stardew.Semantic;
 
 namespace Hatifect.UI.Stardew;
@@ -134,14 +135,7 @@ internal sealed class UiWindowInputObserver : IDisposable
             UiSemanticStardewMenu? menu = CurrentMenu();
             if (menu is null)
             {
-                DetachMenu(); _previousStamp = null;
-                _gate.Observe(_frame, default);
-                _latest = new
-                {
-                    visible = false, completedFrame = _frame, surfaceEpoch = _epoch,
-                    viewport = Viewport(), window = WindowGeometry(), pointer = Pointer()
-                };
-                if (_frame % 12 == 0) WriteProgress();
+                ObserveEmptyFrame();
                 return;
             }
             var runtime = menu.CaptureRuntimeContext();
@@ -185,37 +179,54 @@ internal sealed class UiWindowInputObserver : IDisposable
             bool stable = _previousStamp == stamp;
             _previousStamp = stamp;
             if (visible && (completed is not null || stable && _capturedStamp != stamp))
-            {
-                bool acceptedSceneChanged = _pendingStableScene == runtime.AcceptedVersion;
-                bool canCaptureActionResult = acceptedSceneChanged && _pendingActionId is not null
-                    && _pendingActionScene != runtime.AcceptedVersion;
-                bool hasVisibleResult = canCaptureActionResult
-                    && elements.Any(element => element.SemanticId == ResultSemantic
-                        && IsRequiredActionResult(acceptedSceneChanged, runtime.AcceptedVersion,
-                            _pendingActionScene, _pendingActionId, element.Value,
-                            FullyVisible(element.Bounds, element.Clip)));
-                string? requiredKey = RequiredCaptureKey(completed, _epoch, acceptedSceneChanged,
-                    _pendingActionId, hasVisibleResult);
-                bool captured = _captures.TryAdd(requiredKey, sequence =>
-                {
-                    string name = "window-input-" + sequence.ToString("D3");
-                    Capture(name);
-                    return new(completed?.ToString(), _latest,
-                        "screenshots/" + name + ".png", "screenshots/" + name + "-ui-layer.png");
-                }, DeleteCapture);
-                _capturedStamp = stamp;
-                if (acceptedSceneChanged) _pendingStableScene = null;
-                if (requiredKey?.StartsWith("action-result:", StringComparison.Ordinal) is true)
-                {
-                    _pendingActionId = null;
-                    _pendingActionScene = null;
-                }
-                if (captured) WriteProgress();
-                else if (_frame % 12 == 0) WriteProgress();
-            }
+                EvaluateCapture(completed, runtime, elements, stamp);
             else if (_frame % 12 == 0) WriteProgress();
         }
         catch (Exception error) { Fail(error); }
+    }
+
+    private void ObserveEmptyFrame()
+    {
+        DetachMenu(); _previousStamp = null;
+        _gate.Observe(_frame, default);
+        _latest = new
+        {
+            visible = false, completedFrame = _frame, surfaceEpoch = _epoch,
+            viewport = Viewport(), window = WindowGeometry(), pointer = Pointer()
+        };
+        if (_frame % 12 == 0) WriteProgress();
+    }
+
+    private void EvaluateCapture(UiWindowInputPhase? completed, UiHostRuntimeSession runtime,
+        System.Collections.Generic.IReadOnlyList<UiNativeInteractionNode> elements,
+        (long Epoch, long Scene, long Frame) stamp)
+    {
+        bool acceptedSceneChanged = _pendingStableScene == runtime.AcceptedVersion;
+        bool canCaptureActionResult = acceptedSceneChanged && _pendingActionId is not null
+            && _pendingActionScene != runtime.AcceptedVersion;
+        bool hasVisibleResult = canCaptureActionResult
+            && elements.Any(element => element.SemanticId == ResultSemantic
+                && IsRequiredActionResult(acceptedSceneChanged, runtime.AcceptedVersion,
+                    _pendingActionScene, _pendingActionId, element.Value,
+                    FullyVisible(element.Bounds, element.Clip)));
+        string? requiredKey = RequiredCaptureKey(completed, _epoch, acceptedSceneChanged,
+            _pendingActionId, hasVisibleResult);
+        bool captured = _captures.TryAdd(requiredKey, sequence =>
+        {
+            string name = "window-input-" + sequence.ToString("D3");
+            Capture(name);
+            return new(completed?.ToString(), _latest,
+                "screenshots/" + name + ".png", "screenshots/" + name + "-ui-layer.png");
+        }, DeleteCapture);
+        _capturedStamp = stamp;
+        if (acceptedSceneChanged) _pendingStableScene = null;
+        if (requiredKey?.StartsWith("action-result:", StringComparison.Ordinal) is true)
+        {
+            _pendingActionId = null;
+            _pendingActionScene = null;
+        }
+        if (captured) WriteProgress();
+        else if (_frame % 12 == 0) WriteProgress();
     }
 
     private static object Viewport() => new { width = Game1.uiViewport.Width, height = Game1.uiViewport.Height };

@@ -113,21 +113,57 @@ internal sealed class UiStardewAcceptanceRecorder
         if (active is null || !_semanticSurfaces.TryGetValue(surface, out string? kind))
             return;
 
+        SemanticPendingFrame pending = GetOrCreatePendingFrame(surface);
+        AccumulateOperationMetrics(pending, startedTicks, startedAllocatedBytes);
+        if (!completesFrame)
+            return;
+
+        RecordCompletedFrameEvidence(surface, kind, active, pending, layoutBuilds);
+    }
+
+    private SemanticPendingFrame GetOrCreatePendingFrame(object surface)
+    {
         if (!_semanticFrames.TryGetValue(surface, out SemanticPendingFrame? pending))
         {
             pending = new SemanticPendingFrame();
             _semanticFrames.Add(surface, pending);
         }
 
+        return pending;
+    }
+
+    private static void AccumulateOperationMetrics(
+        SemanticPendingFrame pending,
+        long startedTicks,
+        long startedAllocatedBytes)
+    {
         pending.Ticks += Math.Max(0, Stopwatch.GetTimestamp() - startedTicks);
         pending.AllocatedBytes += Math.Max(
             0,
             GC.GetAllocatedBytesForCurrentThread() - startedAllocatedBytes);
-        if (!completesFrame)
-            return;
+    }
 
+    private void RecordCompletedFrameEvidence(
+        object surface,
+        string kind,
+        ActiveScenario active,
+        SemanticPendingFrame pending,
+        long layoutBuilds)
+    {
         active.FrameTimesMs.Add(pending.Ticks * 1000d / Stopwatch.Frequency);
         active.AllocatedBytes += pending.AllocatedBytes;
+        RecordLayoutExecutionMetrics(surface, active, layoutBuilds);
+        active.SurfaceKinds.Add(kind);
+        active.ThemeIds.Add(UiSemanticStardewTheme.Id);
+        active.DisplayMetrics.Add(CaptureSemanticDisplayMetrics());
+        pending.Reset();
+    }
+
+    private void RecordLayoutExecutionMetrics(
+        object surface,
+        ActiveScenario active,
+        long layoutBuilds)
+    {
         long previousLayoutBuilds = _semanticLayoutBaselines.TryGetValue(surface, out long baseline)
             ? baseline
             : layoutBuilds;
@@ -145,10 +181,6 @@ internal sealed class UiStardewAcceptanceRecorder
             active.ArrangeExecutions += layoutExecutions;
         }
         _semanticLayoutBaselines[surface] = layoutBuilds;
-        active.SurfaceKinds.Add(kind);
-        active.ThemeIds.Add(UiSemanticStardewTheme.Id);
-        active.DisplayMetrics.Add(CaptureSemanticDisplayMetrics());
-        pending.Reset();
     }
 
     public void ExecuteCommand(string[] args)
@@ -156,7 +188,15 @@ internal sealed class UiStardewAcceptanceRecorder
         if (_helper is null || _monitor is null)
             return;
 
-        string action = args.FirstOrDefault()?.Trim().ToLowerInvariant() ?? "status";
+        string action = ParseCommandAction(args);
+        DispatchCommand(action, args);
+    }
+
+    private static string ParseCommandAction(string[] args)
+        => args.FirstOrDefault()?.Trim().ToLowerInvariant() ?? "status";
+
+    private void DispatchCommand(string action, string[] args)
+    {
         switch (action)
         {
             case "status":
@@ -166,7 +206,7 @@ internal sealed class UiStardewAcceptanceRecorder
             case "begin":
                 if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
                 {
-                    _monitor.Log("Usage: hatifect_ui_acceptance begin <scenario-id>", LogLevel.Warn);
+                    _monitor!.Log("Usage: hatifect_ui_acceptance begin <scenario-id>", LogLevel.Warn);
                     return;
                 }
                 BeginScenario(args[1]);
@@ -189,7 +229,7 @@ internal sealed class UiStardewAcceptanceRecorder
                 return;
 
             default:
-                _monitor.Log(
+                _monitor!.Log(
                     "Usage: hatifect_ui_acceptance [status|begin <scenario>|end|check <id> <pass|fail> [note]|save [path]|clear]",
                     LogLevel.Warn);
                 return;
