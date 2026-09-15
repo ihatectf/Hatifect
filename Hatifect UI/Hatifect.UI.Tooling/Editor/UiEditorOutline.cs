@@ -27,31 +27,8 @@ internal sealed partial class UiEditorAnalysis
             Syntax.Statements.Reverse().Select(s => (s, root, 1)));
         while (pending.TryPop(out var entry))
         {
-            string name;
-            UiTextSpan selection;
-            int kind;
-            switch (entry.Statement)
-            {
-                case UiBlockSyntax block:
-                    name = (block.Target?.ToString() ?? string.Empty) +
-                        (block.Specialization == null ? string.Empty :
-                            (block.Target == null ? "@" : " @") + block.Specialization.Text);
-                    selection = block.Target?.Span ?? block.Specialization?.Span ?? block.Span;
-                    kind = 5;
-                    break;
-                case UiAssignmentSyntax assignment:
-                    name = assignment.Property.ToString();
-                    selection = assignment.Property.Span;
-                    kind = 7;
-                    break;
-                case UiPlacementSyntax placement:
-                    name = $"{placement.Subject} -> {placement.Region}";
-                    selection = placement.Subject.Span;
-                    kind = 8;
-                    break;
-                default:
-                    continue;
-            }
+            if (!TryDescribeStatement(entry.Statement, out string name, out UiTextSpan selection, out int kind))
+                continue;
             int parent = entry.Parent;
             if (selection.Length > 0 && !string.IsNullOrWhiteSpace(name))
             {
@@ -70,6 +47,36 @@ internal sealed partial class UiEditorAnalysis
             int end = span.End;
             while (end > span.Start && char.IsWhiteSpace(Text.Source[end - 1])) end--;
             return Text.Span(span.Start, end - span.Start);
+        }
+    }
+
+    private static bool TryDescribeStatement(
+        UiStatementSyntax statement, out string name, out UiTextSpan selection, out int kind)
+    {
+        switch (statement)
+        {
+            case UiBlockSyntax block:
+                name = (block.Target?.ToString() ?? string.Empty) +
+                    (block.Specialization == null ? string.Empty :
+                        (block.Target == null ? "@" : " @") + block.Specialization.Text);
+                selection = block.Target?.Span ?? block.Specialization?.Span ?? block.Span;
+                kind = 5;
+                return true;
+            case UiAssignmentSyntax assignment:
+                name = assignment.Property.ToString();
+                selection = assignment.Property.Span;
+                kind = 7;
+                return true;
+            case UiPlacementSyntax placement:
+                name = $"{placement.Subject} -> {placement.Region}";
+                selection = placement.Subject.Span;
+                kind = 8;
+                return true;
+            default:
+                name = string.Empty;
+                selection = default;
+                kind = 0;
+                return false;
         }
     }
 }

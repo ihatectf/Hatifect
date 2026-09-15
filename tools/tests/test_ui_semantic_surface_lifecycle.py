@@ -264,21 +264,25 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
     def test_runtime_dispose_retains_failed_owners_and_bridge_for_retry(self) -> None:
         source = STARDEW_RUNTIME.read_text(encoding="utf-8")
         dispose = _method_body(source, "public void Dispose()")
+        retire_overlays = _method_body(source, "private void RetireOverlays(")
+        retire_hosts = _method_body(source, "private void RetireHosts(")
+        release_bridge = _method_body(source, "private void ReleaseBridge(")
         throw_if_disposed = _method_body(source, "private void ThrowIfDisposed()")
 
         self.assertIn("if (_disposed || _disposing) return;", dispose)
         self.assertIn("_disposeRequested = true;", dispose)
         self.assertNotIn("_overlays.Clear();", dispose)
         self.assertNotIn("_hosts.Clear();", dispose)
+        self.assertIn("RetireOverlays(failures);", dispose)
         self.assertRegex(
-            dispose,
+            retire_overlays,
             re.compile(
                 r"try\s*\{\s*overlay\.Retire\(\);\s*"
                 r"_overlays\.Remove\(overlay\);\s*\}\s*catch"
             ),
         )
         self.assertRegex(
-            dispose,
+            retire_hosts,
             re.compile(
                 r"try\s*\{\s*host\.Retire\(\);\s*"
                 r"_hosts\.Remove\(host\);\s*\}\s*catch"
@@ -288,19 +292,23 @@ class UiSemanticSurfaceLifecycleTests(unittest.TestCase):
             dispose,
             re.compile(
                 r"if \(_overlays\.Count == 0\)\s*\{\s*"
-                r"foreach \(UiSemanticStardewHost host"
+                r"RetireHosts\(failures\);"
             ),
         )
         self.assertIn(
             "if (_overlays.Count == 0 && _hosts.Count == 0 && !_bridgeDisposed)",
             dispose,
         )
+        self.assertIn("ReleaseBridge(failures);", dispose)
         self.assertLess(
-            dispose.index("_bridge.ReleaseGeneratedResources();"),
-            dispose.index("_bridge.Dispose();"),
+            release_bridge.index("_bridge.ReleaseGeneratedResources();"),
+            release_bridge.index("_bridge.Dispose();"),
         )
-        self.assertLess(dispose.index("_bridge.Dispose();"), dispose.index("_bridgeDisposed = true;"))
-        self.assertLess(dispose.index("_bridgeDisposed = true;"), dispose.index("_disposed = true;"))
+        self.assertLess(
+            release_bridge.index("_bridge.Dispose();"),
+            release_bridge.index("_bridgeDisposed = true;"),
+        )
+        self.assertLess(dispose.index("ReleaseBridge(failures);"), dispose.index("_disposed = true;"))
         self.assertIn("if (_disposeRequested)", throw_if_disposed)
 
     def test_host_retirement_keeps_failed_owner_registered_for_retry(self) -> None:

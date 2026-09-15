@@ -220,29 +220,46 @@ public sealed class UiFormState : IUiSemanticSource<IReadOnlyList<UiSemanticForm
     {
         EnsureActive();
         _operating = true;
-        bool valid = true;
+        bool valid;
         try
         {
             string[] drafts = _fields.Select(field => field.Value.Value).ToArray();
             object?[] values = new object?[_fields.Count];
             string?[] errors = new string?[_fields.Count];
-            for (int index = 0; index < _fields.Count; index++)
-            {
-                values[index] = _fields[index].Prepare(drafts[index], out errors[index]);
-                valid &= errors[index] == null;
-            }
-            for (int index = 0; index < _fields.Count; index++)
-                if (_fields[index].Value.Value != drafts[index])
-                    throw new InvalidOperationException("A validator changed the form draft.");
-            for (int index = 0; index < _fields.Count; index++)
-            {
-                _fields[index].Error = errors[index];
-                if (valid) _fields[index].Commit(values[index]);
-            }
+            valid = PrepareDrafts(drafts, values, errors);
+            EnsureDraftsUnchangedDuringPreparation(drafts);
+            CommitPreparedValues(values, errors, valid);
         }
         finally { _operating = false; }
         Changed?.Invoke();
         return valid;
+    }
+
+    private bool PrepareDrafts(string[] drafts, object?[] values, string?[] errors)
+    {
+        bool valid = true;
+        for (int index = 0; index < _fields.Count; index++)
+        {
+            values[index] = _fields[index].Prepare(drafts[index], out errors[index]);
+            valid &= errors[index] == null;
+        }
+        return valid;
+    }
+
+    private void EnsureDraftsUnchangedDuringPreparation(string[] drafts)
+    {
+        for (int index = 0; index < _fields.Count; index++)
+            if (_fields[index].Value.Value != drafts[index])
+                throw new InvalidOperationException("A validator changed the form draft.");
+    }
+
+    private void CommitPreparedValues(object?[] values, string?[] errors, bool valid)
+    {
+        for (int index = 0; index < _fields.Count; index++)
+        {
+            _fields[index].Error = errors[index];
+            if (valid) _fields[index].Commit(values[index]);
+        }
     }
 
     public void Reset()

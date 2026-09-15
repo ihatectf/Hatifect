@@ -225,49 +225,15 @@ internal sealed class UiSemanticStardewRuntime : IDisposable
         var failures = new List<Exception>();
         try
         {
-            foreach (UiSemanticStardewOverlaySession overlay in new List<UiSemanticStardewOverlaySession>(_overlays))
-            {
-                try
-                {
-                    overlay.Retire();
-                    _overlays.Remove(overlay);
-                }
-                catch (Exception error)
-                {
-                    failures.Add(error);
-                }
-            }
-
+            RetireOverlays(failures);
             if (_overlays.Count == 0)
             {
-                foreach (UiSemanticStardewHost host in new List<UiSemanticStardewHost>(_hosts))
-                {
-                    try
-                    {
-                        host.Retire();
-                        _hosts.Remove(host);
-                    }
-                    catch (Exception error)
-                    {
-                        failures.Add(error);
-                    }
-                }
+                RetireHosts(failures);
             }
-
             if (_overlays.Count == 0 && _hosts.Count == 0 && !_bridgeDisposed)
             {
-                try
-                {
-                    _bridge.ReleaseGeneratedResources();
-                    _bridge.Dispose();
-                    _bridgeDisposed = true;
-                }
-                catch (Exception error)
-                {
-                    failures.Add(error);
-                }
+                ReleaseBridge(failures);
             }
-
             if (failures.Count == 0
                 && _overlays.Count == 0
                 && _hosts.Count == 0
@@ -283,6 +249,52 @@ internal sealed class UiSemanticStardewRuntime : IDisposable
 
         if (failures.Count > 0)
             throw new AggregateException("One or more semantic Stardew resources failed to dispose.", failures);
+    }
+
+    private void RetireOverlays(List<Exception> failures)
+    {
+        foreach (UiSemanticStardewOverlaySession overlay in new List<UiSemanticStardewOverlaySession>(_overlays))
+        {
+            try
+            {
+                overlay.Retire();
+                _overlays.Remove(overlay);
+            }
+            catch (Exception error)
+            {
+                failures.Add(error);
+            }
+        }
+    }
+
+    private void RetireHosts(List<Exception> failures)
+    {
+        foreach (UiSemanticStardewHost host in new List<UiSemanticStardewHost>(_hosts))
+        {
+            try
+            {
+                host.Retire();
+                _hosts.Remove(host);
+            }
+            catch (Exception error)
+            {
+                failures.Add(error);
+            }
+        }
+    }
+
+    private void ReleaseBridge(List<Exception> failures)
+    {
+        try
+        {
+            _bridge.ReleaseGeneratedResources();
+            _bridge.Dispose();
+            _bridgeDisposed = true;
+        }
+        catch (Exception error)
+        {
+            failures.Add(error);
+        }
     }
 
     private void ThrowIfDisposed()

@@ -163,6 +163,35 @@ internal sealed class UiLspJsonRpcDispatcher
             return false;
         }
 
+        if (!TryScanTopLevelProperties(root, out TopLevelFields fields) ||
+            !IsValidRequestShape(fields, maximumPayloadBytes))
+        {
+            request = null!;
+            return false;
+        }
+
+        request = new UiJsonRpcRequest(
+            fields.Method.GetString()!,
+            isNotification: !fields.HasId,
+            fields.HasId ? fields.Id.Clone() : null,
+            fields.HasParameters ? fields.Parameters.Clone() : null);
+        return true;
+    }
+
+    private readonly struct TopLevelFields
+    {
+        public JsonElement Version { get; init; }
+        public JsonElement Method { get; init; }
+        public JsonElement Id { get; init; }
+        public JsonElement Parameters { get; init; }
+        public bool HasVersion { get; init; }
+        public bool HasMethod { get; init; }
+        public bool HasId { get; init; }
+        public bool HasParameters { get; init; }
+    }
+
+    private static bool TryScanTopLevelProperties(JsonElement root, out TopLevelFields fields)
+    {
         JsonElement version = default;
         JsonElement method = default;
         JsonElement id = default;
@@ -176,44 +205,54 @@ internal sealed class UiLspJsonRpcDispatcher
             switch (property.Name)
             {
                 case "jsonrpc":
-                    if (hasVersion) return Invalid(out request);
+                    if (hasVersion) { fields = default; return false; }
                     hasVersion = true;
                     version = property.Value;
                     break;
                 case "method":
-                    if (hasMethod) return Invalid(out request);
+                    if (hasMethod) { fields = default; return false; }
                     hasMethod = true;
                     method = property.Value;
                     break;
                 case "id":
-                    if (hasId) return Invalid(out request);
+                    if (hasId) { fields = default; return false; }
                     hasId = true;
                     id = property.Value;
                     break;
                 case "params":
-                    if (hasParameters) return Invalid(out request);
+                    if (hasParameters) { fields = default; return false; }
                     hasParameters = true;
                     parameters = property.Value;
                     break;
             }
         }
 
-        if (!hasVersion || version.ValueKind != JsonValueKind.String || version.GetString() != "2.0")
-            return Invalid(out request);
-        if (!hasMethod || method.ValueKind != JsonValueKind.String)
-            return Invalid(out request);
-        if (hasId && !IsValidLspRequestId(id, maximumPayloadBytes))
-            return Invalid(out request);
-        if (hasParameters &&
-            parameters.ValueKind != JsonValueKind.Object &&
-            parameters.ValueKind != JsonValueKind.Array)
-            return Invalid(out request);
+        fields = new TopLevelFields
+        {
+            Version = version,
+            Method = method,
+            Id = id,
+            Parameters = parameters,
+            HasVersion = hasVersion,
+            HasMethod = hasMethod,
+            HasId = hasId,
+            HasParameters = hasParameters
+        };
+        return true;
+    }
 
-        request = new UiJsonRpcRequest(
-            method.GetString()!,
-            isNotification: !hasId,
-            hasId ? id.Clone() : null,
-            hasParameters ? parameters.Clone() : null);
+    private static bool IsValidRequestShape(in TopLevelFields fields, int maximumPayloadBytes)
+    {
+        if (!fields.HasVersion || fields.Version.ValueKind != JsonValueKind.String || fields.Version.GetString() != "2.0")
+            return false;
+        if (!fields.HasMethod || fields.Method.ValueKind != JsonValueKind.String)
+            return false;
+        if (fields.HasId && !IsValidLspRequestId(fields.Id, maximumPayloadBytes))
+            return false;
+        if (fields.HasParameters &&
+            fields.Parameters.ValueKind != JsonValueKind.Object &&
+            fields.Parameters.ValueKind != JsonValueKind.Array)
+            return false;
         return true;
     }
 

@@ -19,88 +19,107 @@ public sealed class UiSemanticCatalog
     public static UiSemanticCatalog CreateFoundation()
     {
         var catalog = new UiSemanticCatalog();
+        catalog.RegisterFoundationPresentations();
+        catalog.RegisterFoundationNamedSymbols();
+        catalog.RegisterFoundationPresentationProperties();
+        catalog.RegisterFoundationVisualProperties();
+        catalog.RegisterFoundationTokens();
+        return catalog;
+    }
 
-        catalog.AddPresentation("Gallery", "Browse", "Select");
-        catalog.AddPresentation("List", "Browse", "Select");
-        catalog.AddPresentation("TextField", "Search");
-        catalog.AddPresentation("FilterBar", "Filter");
-        catalog.AddPresentation("Value", "Select");
-        catalog.AddPresentation("Side", "Inspect");
-        catalog.AddPresentation("Sheet", "Inspect");
-        catalog.AddPresentation("Route", "Inspect", "Navigate");
-        catalog.AddPresentation("Form", "Configure");
-        catalog.AddPresentation("Status", "Monitor");
-        catalog.AddPresentation("NavigationList", "Navigate");
-        catalog.AddPresentation("ActionBar", "Actions");
+    private void RegisterFoundationPresentations()
+    {
+        AddPresentation("Gallery", "Browse", "Select");
+        AddPresentation("List", "Browse", "Select");
+        AddPresentation("TextField", "Search");
+        AddPresentation("FilterBar", "Filter");
+        AddPresentation("Value", "Select");
+        AddPresentation("Side", "Inspect");
+        AddPresentation("Sheet", "Inspect");
+        AddPresentation("Route", "Inspect", "Navigate");
+        AddPresentation("Form", "Configure");
+        AddPresentation("Status", "Monitor");
+        AddPresentation("NavigationList", "Navigate");
+        AddPresentation("ActionBar", "Actions");
+    }
 
+    private void RegisterFoundationNamedSymbols()
+    {
         foreach (string pattern in new[] { "Catalog", "MasterDetail", "Prompt", "Workspace" })
-            catalog._patterns.Add(pattern, BuiltIn($"pattern/{pattern}"));
+            _patterns.Add(pattern, BuiltIn($"pattern/{pattern}"));
         foreach (string region in new[] { "Navigation", "Utility", "Primary", "Secondary", "Context", "Actions", "Footer", "Overlay" })
-            catalog._regions.Add(region, BuiltIn($"region/{region}"));
+            _regions.Add(region, BuiltIn($"region/{region}"));
         foreach (string profile in new[] { "Wide", "Medium", "Compact", "Controller" })
-            catalog._profiles.Add(profile, BuiltIn($"profile/{profile}"));
+            _profiles.Add(profile, BuiltIn($"profile/{profile}"));
         foreach (string state in new[] { "Hover", "Pressed", "Focused", "Selected", "Checked", "Disabled", "Enter", "Exit", "Congested", "Offline", "Empty", "Loading", "Success", "Error" })
-            catalog._states.Add(state, BuiltIn($"state/{state}"));
+            _states.Add(state, BuiltIn($"state/{state}"));
+    }
 
-        catalog.AddProperty(UiDefinitionKind.Presentation, "use", UiSemanticType.PresentationPattern, UiPropertyEffects.Recompose);
-        catalog.AddProperty(UiDefinitionKind.Presentation, "view", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
-        UiPropertySymbol density = catalog.AddProperty(
+    private void RegisterFoundationPresentationProperties()
+    {
+        AddProperty(UiDefinitionKind.Presentation, "use", UiSemanticType.PresentationPattern, UiPropertyEffects.Recompose);
+        AddProperty(UiDefinitionKind.Presentation, "view", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
+        UiPropertySymbol density = AddProperty(
             UiDefinitionKind.Presentation,
             "density",
             UiSemanticType.EnumValue,
             UiPropertyEffects.Recompose);
-        catalog.AddEnumValue(density, "Default");
-        catalog.AddEnumValue(density, "Compact");
-        catalog.AddEnumValue(density, "Comfortable");
-        catalog.AddProperty(UiDefinitionKind.Presentation, "prefer", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
-        catalog.AddProperty(UiDefinitionKind.Presentation, "fallback", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
-        catalog.AddProperty(UiDefinitionKind.Presentation, "width", UiSemanticType.Length, UiPropertyEffects.Measure | UiPropertyEffects.Arrange);
-        UiPropertySymbol itemSizing = catalog.AddProperty(
+        AddEnumValue(density, "Default");
+        AddEnumValue(density, "Compact");
+        AddEnumValue(density, "Comfortable");
+        AddProperty(UiDefinitionKind.Presentation, "prefer", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
+        AddProperty(UiDefinitionKind.Presentation, "fallback", UiSemanticType.Presentation, UiPropertyEffects.Recompose);
+        AddProperty(UiDefinitionKind.Presentation, "width", UiSemanticType.Length, UiPropertyEffects.Measure | UiPropertyEffects.Arrange);
+        UiPropertySymbol itemSizing = AddProperty(
             UiDefinitionKind.Presentation,
             "itemSizing",
             UiSemanticType.EnumValue,
             UiPropertyEffects.Measure | UiPropertyEffects.Arrange);
-        catalog.AddEnumValue(itemSizing, "Uniform");
-        catalog.AddEnumValue(itemSizing, "Adaptive");
+        AddEnumValue(itemSizing, "Uniform");
+        AddEnumValue(itemSizing, "Adaptive");
+    }
 
-        catalog.AddProperty(UiDefinitionKind.Visual, "surface", UiSemanticType.SurfaceToken, UiPropertyEffects.Render);
-        catalog.AddProperty(UiDefinitionKind.Visual, "foreground", UiSemanticType.ColorToken, UiPropertyEffects.Render);
-        catalog.AddProperty(UiDefinitionKind.Visual, "radius", UiSemanticType.RadiusToken, UiPropertyEffects.Render);
-        catalog.AddProperty(UiDefinitionKind.Visual, "padding", UiSemanticType.SpaceToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
-        catalog.AddProperty(UiDefinitionKind.Visual, "offset.y", UiSemanticType.Length, UiPropertyEffects.Arrange | UiPropertyEffects.Render, animatable: true);
-        catalog.AddProperty(UiDefinitionKind.Visual, "motion", UiSemanticType.MotionToken, UiPropertyEffects.Render);
-        catalog.AddProperty(UiDefinitionKind.Visual, "border", UiSemanticType.Border, UiPropertyEffects.Render);
-        catalog.AddProperty(UiDefinitionKind.Visual, "typography", UiSemanticType.TypographyToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
-        catalog.AddProperty(UiDefinitionKind.Visual, "elevation", UiSemanticType.ElevationToken, UiPropertyEffects.Render);
-        catalog.AddProperty(UiDefinitionKind.Visual, "transform", UiSemanticType.TransformToken, UiPropertyEffects.Arrange | UiPropertyEffects.Render, animatable: true);
-        catalog.AddProperty(UiDefinitionKind.Visual, "opacity", UiSemanticType.Opacity, UiPropertyEffects.Render, animatable: true);
-        catalog.AddProperty(UiDefinitionKind.Visual, "prompt.foreground", UiSemanticType.ColorToken, UiPropertyEffects.Render);
-        catalog.AddProperty(UiDefinitionKind.Visual, "prompt.typography", UiSemanticType.TypographyToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
-        catalog.AddProperty(UiDefinitionKind.Visual, "prompt.spacing", UiSemanticType.SpaceToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
+    private void RegisterFoundationVisualProperties()
+    {
+        AddProperty(UiDefinitionKind.Visual, "surface", UiSemanticType.SurfaceToken, UiPropertyEffects.Render);
+        AddProperty(UiDefinitionKind.Visual, "foreground", UiSemanticType.ColorToken, UiPropertyEffects.Render);
+        AddProperty(UiDefinitionKind.Visual, "radius", UiSemanticType.RadiusToken, UiPropertyEffects.Render);
+        AddProperty(UiDefinitionKind.Visual, "padding", UiSemanticType.SpaceToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
+        AddProperty(UiDefinitionKind.Visual, "offset.y", UiSemanticType.Length, UiPropertyEffects.Arrange | UiPropertyEffects.Render, animatable: true);
+        AddProperty(UiDefinitionKind.Visual, "motion", UiSemanticType.MotionToken, UiPropertyEffects.Render);
+        AddProperty(UiDefinitionKind.Visual, "border", UiSemanticType.Border, UiPropertyEffects.Render);
+        AddProperty(UiDefinitionKind.Visual, "typography", UiSemanticType.TypographyToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
+        AddProperty(UiDefinitionKind.Visual, "elevation", UiSemanticType.ElevationToken, UiPropertyEffects.Render);
+        AddProperty(UiDefinitionKind.Visual, "transform", UiSemanticType.TransformToken, UiPropertyEffects.Arrange | UiPropertyEffects.Render, animatable: true);
+        AddProperty(UiDefinitionKind.Visual, "opacity", UiSemanticType.Opacity, UiPropertyEffects.Render, animatable: true);
+        AddProperty(UiDefinitionKind.Visual, "prompt.foreground", UiSemanticType.ColorToken, UiPropertyEffects.Render);
+        AddProperty(UiDefinitionKind.Visual, "prompt.typography", UiSemanticType.TypographyToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
+        AddProperty(UiDefinitionKind.Visual, "prompt.spacing", UiSemanticType.SpaceToken, UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render);
+    }
 
+    private void RegisterFoundationTokens()
+    {
         foreach (string name in new[] { "Canvas", "Raised", "Secondary", "Hover", "Pressed", "Disabled", "Popup", "Modal" })
-            catalog.AddToken($"Surface.{name}", UiSemanticType.SurfaceToken);
+            AddToken($"Surface.{name}", UiSemanticType.SurfaceToken);
         foreach (string name in new[] { "Primary", "Secondary", "Muted", "Accent", "Danger", "Success", "InputPrompt" })
-            catalog.AddToken($"Text.{name}", UiSemanticType.ColorToken);
-        catalog.AddToken("Accent", UiSemanticType.ColorToken);
+            AddToken($"Text.{name}", UiSemanticType.ColorToken);
+        AddToken("Accent", UiSemanticType.ColorToken);
         foreach (string name in new[] { "XS", "S", "M", "L", "XL" })
-            catalog.AddToken($"Space.{name}", UiSemanticType.SpaceToken);
+            AddToken($"Space.{name}", UiSemanticType.SpaceToken);
         foreach (string name in new[] { "S", "M", "L", "XL" })
-            catalog.AddToken($"Radius.{name}", UiSemanticType.RadiusToken);
+            AddToken($"Radius.{name}", UiSemanticType.RadiusToken);
         foreach (string name in new[] { "None", "Fast", "Normal", "Slow" })
-            catalog.AddToken($"Motion.{name}", UiSemanticType.MotionToken);
+            AddToken($"Motion.{name}", UiSemanticType.MotionToken);
         foreach (string name in new[] { "Body", "Label", "Title", "InputPrompt" })
-            catalog.AddToken($"Typography.{name}", UiSemanticType.TypographyToken);
+            AddToken($"Typography.{name}", UiSemanticType.TypographyToken);
         foreach (string name in new[] { "Subtle", "Strong", "Focus" })
-            catalog.AddToken($"Border.{name}", UiSemanticType.Border);
+            AddToken($"Border.{name}", UiSemanticType.Border);
         foreach (string name in new[] { "None", "Low", "High" })
-            catalog.AddToken($"Elevation.{name}", UiSemanticType.ElevationToken);
+            AddToken($"Elevation.{name}", UiSemanticType.ElevationToken);
         foreach (string name in new[] { "None", "Raised", "Pressed" })
-            catalog.AddToken($"Transform.{name}", UiSemanticType.TransformToken);
+            AddToken($"Transform.{name}", UiSemanticType.TransformToken);
         foreach (string name in new[] { "Hidden", "Disabled", "Visible" })
-            catalog.AddToken($"Opacity.{name}", UiSemanticType.Opacity);
-
-        return catalog;
+            AddToken($"Opacity.{name}", UiSemanticType.Opacity);
     }
 
     public bool TryGetProperty(UiDefinitionKind kind, string name, out UiPropertySymbol? property)

@@ -106,41 +106,65 @@ internal sealed class UiHostPlacementEngine
 
         UiRect safe = viewport.Inset(new UiThickness(metrics.EdgeInset));
         if (policy.Kind == UiHostKind.Overlay)
-        {
-            if (policy.CustomPolicy == UiProvisionalHostPolicies.OverlayCenteredId)
-            {
-                UiSize centeredSize = Constrain(desired, minimum.Width, minimum.Height, safe);
-                return Center(safe, centeredSize, usedFallback: false, desired);
-            }
-
-            if (policy.CustomPolicy != UiProvisionalHostPolicies.OverlayTopRightId)
-                return new UiHostPlacementResult(viewport, UiHostPlacementKind.Fill, false, false);
-
-            UiSize overlaySize = Constrain(desired, minimum.Width, minimum.Height, safe);
-            return new UiHostPlacementResult(
-                new UiRect(
-                    safe.Right - overlaySize.Width,
-                    safe.Y,
-                    overlaySize.Width,
-                    overlaySize.Height),
-                UiHostPlacementKind.TopRight,
-                false,
-                overlaySize.Width + 0.01f < desired.Width || overlaySize.Height + 0.01f < desired.Height);
-        }
-
+            return PlaceOverlay(policy, safe, viewport, desired, minimum);
         if (policy.Kind == UiHostKind.Sheet)
+            return PlaceSheet(safe, desired, minimum, metrics);
+        return PlacePopupOrWindow(policy, context, safe, desired, minimum, metrics);
+    }
+
+    private static UiHostPlacementResult PlaceOverlay(
+        UiHostPolicy policy,
+        UiRect safe,
+        UiRect viewport,
+        UiSize desired,
+        UiSize minimum)
+    {
+        if (policy.CustomPolicy == UiProvisionalHostPolicies.OverlayCenteredId)
         {
-            float height = Math.Min(
-                safe.Height,
-                Math.Max(minimum.Height, Math.Min(desired.Height, safe.Height * metrics.SheetMaximumHeightRatio)));
-            var bounds = new UiRect(safe.X, safe.Bottom - height, safe.Width, height);
-            return new UiHostPlacementResult(
-                bounds,
-                UiHostPlacementKind.SheetBottom,
-                false,
-                height + 0.01f < desired.Height);
+            UiSize centeredSize = Constrain(desired, minimum.Width, minimum.Height, safe);
+            return Center(safe, centeredSize, usedFallback: false, desired);
         }
 
+        if (policy.CustomPolicy != UiProvisionalHostPolicies.OverlayTopRightId)
+            return new UiHostPlacementResult(viewport, UiHostPlacementKind.Fill, false, false);
+
+        UiSize overlaySize = Constrain(desired, minimum.Width, minimum.Height, safe);
+        return new UiHostPlacementResult(
+            new UiRect(
+                safe.Right - overlaySize.Width,
+                safe.Y,
+                overlaySize.Width,
+                overlaySize.Height),
+            UiHostPlacementKind.TopRight,
+            false,
+            overlaySize.Width + 0.01f < desired.Width || overlaySize.Height + 0.01f < desired.Height);
+    }
+
+    private static UiHostPlacementResult PlaceSheet(
+        UiRect safe,
+        UiSize desired,
+        UiSize minimum,
+        UiHostPlacementMetrics metrics)
+    {
+        float height = Math.Min(
+            safe.Height,
+            Math.Max(minimum.Height, Math.Min(desired.Height, safe.Height * metrics.SheetMaximumHeightRatio)));
+        var bounds = new UiRect(safe.X, safe.Bottom - height, safe.Width, height);
+        return new UiHostPlacementResult(
+            bounds,
+            UiHostPlacementKind.SheetBottom,
+            false,
+            height + 0.01f < desired.Height);
+    }
+
+    private static UiHostPlacementResult PlacePopupOrWindow(
+        UiHostPolicy policy,
+        UiHostPlacementContext context,
+        UiRect safe,
+        UiSize desired,
+        UiSize minimum,
+        UiHostPlacementMetrics metrics)
+    {
         float minimumWidth = policy.Kind == UiHostKind.Window
             ? Math.Max(minimum.Width, metrics.WindowMinimumWidth)
             : minimum.Width;
