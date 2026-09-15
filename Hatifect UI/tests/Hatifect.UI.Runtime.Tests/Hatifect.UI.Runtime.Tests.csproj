@@ -22,6 +22,12 @@
   <ItemGroup>
     <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiAutomatedAcceptanceCheckLedger.cs"
              Link="Stardew/UiAutomatedAcceptanceCheckLedger.cs" />
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/AcceptanceScenario.cs"
+             Link="Stardew/AcceptanceScenario.cs" />
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiAcceptanceScenarioCatalog.cs"
+             Link="Stardew/UiAcceptanceScenarioCatalog.cs" />
+    <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiAcceptanceScenarioRunner.cs"
+             Link="Stardew/UiAcceptanceScenarioRunner.cs" />
     <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiAutomatedAcceptanceScenarioRegistry.cs"
              Link="Stardew/UiAutomatedAcceptanceScenarioRegistry.cs" />
     <Compile Include="../../Hatifect.UI.Stardew/Diagnostics/UiRuntimeFingerprint.cs"
