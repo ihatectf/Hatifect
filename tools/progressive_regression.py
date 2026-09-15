@@ -66,6 +66,19 @@ INTEGRATION_COMMANDS = {
     "ui": (["./tools/hatifect-test", "ui"], "ui-host-free"),
 }
 
+# Restore the caller's mask in a fresh interpreter, then replace that same
+# process with the stage. A preexec_fn would run Python after fork with locks
+# inherited from other threads; leaving SIGINT blocked breaks child cancellation.
+RESTORE_MASK_AND_EXEC = """\
+import json, os, signal, sys
+signal.pthread_sigmask(signal.SIG_SETMASK, json.loads(sys.argv[1]))
+try:
+    os.execvpe(sys.argv[2], sys.argv[2:], os.environ)
+except OSError as error:
+    print(f'HATIFECT_REGRESSION_EXEC_BLOCKED: {error}', file=sys.stderr)
+    sys.exit(2)
+"""
+
 
 class RegressionSelectionError(ValueError):
     """The requested regression selection cannot be made safely."""
@@ -611,6 +624,7 @@ def build_plan(
     root: Path = ROOT,
     head: str | None = None,
     discover_worktree: bool = False,
+    full_if_clean: bool = False,
 ) -> dict[str, Any]:
     mapping = load_mapping(mapping_path)
     requested_paths = sorted(
@@ -623,6 +637,8 @@ def build_plan(
         raise RegressionSelectionError("regression selection input exceeds its count bound")
     if scenario_kind is not None and scenario is None:
         raise RegressionSelectionError("--scenario-kind requires --scenario")
+    if full_if_clean and not paths and not scenario and not tests:
+        final = True
     if not paths and not scenario and not tests and not final:
         raise RegressionSelectionError("provide a changed path, exact test, scenario, or --final")
     try:
@@ -1046,7 +1062,8 @@ def _execute(
     execution_failed = False
     try:
         process = subprocess.Popen(
-            command,
+            [sys.executable, "-c", RESTORE_MASK_AND_EXEC,
+             json.dumps(sorted(int(value) for value in previous_signal_mask)), *command],
             cwd=root,
             env=environment,
             stdout=subprocess.PIPE,
@@ -1402,6 +1419,8 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--scenario-kind", choices=("smoke", "ui"))
         command.add_argument("--test", action="append", default=[], metavar="TEST_ID")
         command.add_argument("--final", action="store_true")
+        command.add_argument("--full-if-clean", action="store_true",
+                             help="select the full gate when no change, test or scenario context exists")
         if mode == "run":
             command.add_argument(
                 "--results-directory",
@@ -1421,6 +1440,7 @@ def main(argv: list[str] | None = None) -> int:
             exact_tests=args.test,
             final=args.final,
             discover_worktree=True,
+            full_if_clean=args.full_if_clean,
         )
         if args.mode == "plan":
             sys.stdout.buffer.write(_canonical_bytes(plan))

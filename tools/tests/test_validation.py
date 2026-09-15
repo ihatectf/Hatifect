@@ -346,6 +346,76 @@ class ValidationTests(unittest.TestCase):
         tests = self.project("Hatifect.Flow.Tests", references=(production,), test=True)
         return test_inventory.Inventory(self.solution(production, tests))
 
+    def test_default_test_routes_to_progressive_without_agent_configuration(self) -> None:
+        # An empty checkout has no AGENTS.md, .agents or .codex to select a runner.
+        for status in (0, 1, 2):
+            with self.subTest(status=status), patch.object(validation, "ROOT", self.root), \
+                    patch.object(validation.progressive_regression, "main", return_value=status) as progressive, \
+                    patch.object(validation, "Run") as direct:
+                actual = validation.main(["test", "--results-directory", str(self.root / "evidence")])
+
+            self.assertEqual(status, actual)
+            progressive.assert_called_once_with([
+                "run", "--full-if-clean", "--results-directory", str(self.root / "evidence"),
+            ])
+            direct.assert_not_called()
+            self.assertEqual([], list(self.root.iterdir()))
+
+    def test_bare_test_uses_progressive_default_evidence_directory(self) -> None:
+        with patch.object(validation.progressive_regression, "main", return_value=0) as progressive, \
+                patch.object(validation, "Run") as direct:
+            self.assertEqual(0, validation.main(["test"]))
+        progressive.assert_called_once_with(["run", "--full-if-clean"])
+        direct.assert_not_called()
+
+    def test_explicit_scopes_projects_and_build_flags_keep_direct_execution(self) -> None:
+        inventory = self.basic_graph()
+        cases = (
+            (["all"], ["Hatifect.UI.Tests", "Hatifect.Flow.Tests"], True, None),
+            (["ui"], ["Hatifect.UI.Tests"], True, None),
+            (["flow"], ["Hatifect.Flow.Tests"], True, None),
+            (["ca", "--platform"], ["Hatifect.ChestsAnywhereOverlay.Tests"], True, None),
+            (["--host-free"], ["Hatifect.UI.Tests", "Hatifect.Flow.Tests"], True, None),
+            (["--platform"], list(item.name for item in inventory.projects.values()), True, None),
+            (["--no-build"], ["Hatifect.UI.Tests", "Hatifect.Flow.Tests"], False, None),
+            (["--project", "Hatifect.Flow.Tests.csproj", "--test-filter", "Example.Tests.One"],
+             ["Hatifect.Flow.Tests"], True, "Example.Tests.One"),
+        )
+        for arguments, names, build, test_filter in cases:
+            with self.subTest(arguments=arguments), patch.object(validation, "ROOT", self.root), \
+                    patch.object(validation, "Run") as run_type, \
+                    patch.object(validation, "resolve_dotnet", return_value="/sdk/dotnet"), \
+                    patch.object(validation.progressive_regression, "main") as progressive:
+                self.assertEqual(0, validation.main(["test", *arguments]))
+
+            run = run_type.return_value
+            self.assertEqual(names, [item.name for item in run.tests.call_args.args[0]])
+            self.assertEqual(("/sdk/dotnet", test_filter), run.tests.call_args.args[1:])
+            self.assertEqual(int(build), run.build.call_count)
+            run.static.assert_not_called()
+            progressive.assert_not_called()
+
+    def test_tooling_scope_and_full_gate_do_not_reenter_progressive(self) -> None:
+        self.basic_graph()
+        for arguments in (["test", "tools"], ["check"]):
+            with self.subTest(arguments=arguments), patch.object(validation, "ROOT", self.root), \
+                    patch.object(validation, "Run") as run_type, \
+                    patch.object(validation, "resolve_dotnet", return_value="/sdk/dotnet"), \
+                    patch.object(validation.progressive_regression, "main") as progressive:
+                self.assertEqual(0, validation.main(arguments))
+            run = run_type.return_value
+            if arguments[0] == "check":
+                run.static.assert_called_once_with()
+                self.assertEqual(1, run.build.call_count)
+                self.assertEqual(["Hatifect.UI.Tests", "Hatifect.Flow.Tests"],
+                                 [item.name for item in run.tests.call_args.args[0]])
+                run.python_tests.assert_not_called()
+            else:
+                run.python_tests.assert_called_once_with()
+                run.build.assert_not_called()
+                run.tests.assert_not_called()
+            progressive.assert_not_called()
+
     def game_reference_metadata(self, game: Path) -> str:
         return json.dumps({
             "Properties": {"GamePath": str(game), "TargetFramework": "net6.0"},
