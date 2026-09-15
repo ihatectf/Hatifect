@@ -69,8 +69,8 @@ public sealed class UiLexer
         }
 
         _column = indentation;
-        bool blank = _position >= _source.Length || _source[_position] is '\r' or '\n';
-        if (!blank)
+        bool isBlankLine = _position >= _source.Length || _source[_position] is '\r' or '\n';
+        if (!isBlankLine)
             EmitIndentation(indentation, lineStart);
 
         while (_position < _source.Length && _source[_position] is not '\r' and not '\n')
@@ -136,8 +136,8 @@ public sealed class UiLexer
 
     private void EmitIndentation(int indentation, int lineStart)
     {
-        int current = _indents[^1];
-        if (indentation > current)
+        int currentIndentation = _indents[^1];
+        if (indentation > currentIndentation)
         {
             _indents.Add(indentation);
             _tokens.Add(Token(UiSyntaxKind.IndentToken, string.Empty, indentation, lineStart, indentation, _line, 0));
@@ -164,8 +164,8 @@ public sealed class UiLexer
         _column++;
         while (_position < _source.Length)
         {
-            char c = _source[_position];
-            if (!char.IsLetterOrDigit(c) && c is not '_' and not '-') break;
+            char character = _source[_position];
+            if (!char.IsLetterOrDigit(character) && character is not '_' and not '-') break;
             _position++;
             _column++;
         }
@@ -180,15 +180,15 @@ public sealed class UiLexer
         bool seenDot = false;
         while (_position < _source.Length)
         {
-            char c = _source[_position];
-            if (c == '.' && !seenDot && char.IsDigit(Peek(1) ?? '\0'))
+            char character = _source[_position];
+            if (character == '.' && !seenDot && char.IsDigit(Peek(1) ?? '\0'))
             {
                 seenDot = true;
                 _position++;
                 _column++;
                 continue;
             }
-            if (!char.IsDigit(c)) break;
+            if (!char.IsDigit(character)) break;
             _position++;
             _column++;
         }
@@ -224,20 +224,20 @@ public sealed class UiLexer
         bool terminated = false;
         while (_position < _source.Length && _source[_position] is not '\r' and not '\n')
         {
-            char c = _source[_position++];
+            char character = _source[_position++];
             _column++;
-            if (c == '"')
+            if (character == '"')
             {
                 terminated = true;
                 break;
             }
-            if (c == '\\' && _position < _source.Length)
+            if (character == '\\' && _position < _source.Length)
             {
                 char escaped = _source[_position++];
                 _column++;
                 value.Append(escaped switch { 'n' => '\n', 'r' => '\r', 't' => '\t', _ => escaped });
             }
-            else value.Append(c);
+            else value.Append(character);
         }
 
         string text = _source[start.._position];
