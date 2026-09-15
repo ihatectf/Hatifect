@@ -72,20 +72,7 @@ internal static class CheckpointJsonSchema
         }
         if (shape.Fields is not null)
         {
-            int count = 0;
-            foreach (JsonProperty field in element.EnumerateObject())
-            {
-                if (!shape.Fields.TryGetValue(field.Name, out Shape? child))
-                {
-                    throw new InvalidDataException("Checkpoint JSON contains an unknown property.");
-                }
-                Validate(field.Value, child);
-                count++;
-            }
-            if (count != shape.Fields.Count)
-            {
-                throw new InvalidDataException("Checkpoint JSON is missing a required property.");
-            }
+            ValidateFields(element, shape.Fields);
         }
         else if (shape.Item is not null)
         {
@@ -93,6 +80,24 @@ internal static class CheckpointJsonSchema
             {
                 Validate(item, shape.Item);
             }
+        }
+    }
+
+    private static void ValidateFields(JsonElement element, Dictionary<string, Shape> fields)
+    {
+        int count = 0;
+        foreach (JsonProperty field in element.EnumerateObject())
+        {
+            if (!fields.TryGetValue(field.Name, out Shape? child))
+            {
+                throw new InvalidDataException("Checkpoint JSON contains an unknown property.");
+            }
+            Validate(field.Value, child);
+            count++;
+        }
+        if (count != fields.Count)
+        {
+            throw new InvalidDataException("Checkpoint JSON is missing a required property.");
         }
     }
 
