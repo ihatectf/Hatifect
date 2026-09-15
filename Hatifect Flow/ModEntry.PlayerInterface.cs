@@ -23,7 +23,7 @@ public sealed partial class ModEntry
         try
         {
             bool free = Context.IsPlayerFree, authority = IsGameAuthority(), menuOpen = Game1.activeClickableMenu is not null;
-            _chestAcceptance?.ObserveOrdinaryEntry(free, authority, menuOpen, _gameSession is not null);
+            _diagnostics?.ObserveOrdinaryEntry(free, authority, menuOpen, _gameSession is not null);
             if (!free || !authority || menuOpen || _gameSession is not { } session) return;
             Helper.Input.SuppressActiveKeybinds(_config.OpenNetwork);
             IUiSemanticHostApi api = _flowHostUi
@@ -32,7 +32,7 @@ public sealed partial class ModEntry
             Game1.currentLocation.Objects.TryGetValue(tile, out StardewValley.Object? item);
             session.PreparePlayerTarget(Game1.currentLocation.NameOrUniqueName, (int)tile.X, (int)tile.Y, item as Chest);
             OpenPlayerNetwork(session, api);
-            _chestAcceptance?.ConfirmOrdinaryOpening();
+            _diagnostics?.ConfirmOrdinaryOpening();
         }
         catch (Exception error)
         {
@@ -45,7 +45,7 @@ public sealed partial class ModEntry
 
     private NetworkExperience OpenPlayerNetwork(FlowGameSession session, IUiSemanticHostApi api)
     {
-        var application = _chestAcceptance?.ForOrdinaryEntry(session) ?? session;
+        var application = _diagnostics?.ForOrdinaryEntry(session) ?? session;
         var experience = new NetworkExperience(new UiSymbolId("Hatifect.Flow", "network"), application,
             LocalizedContentManager.CurrentLanguageCode == LocalizedContentManager.LanguageCode.ru,
             key => ItemRegistry.GetDataOrErrorItem(key).DisplayName);
