@@ -24,17 +24,32 @@ public sealed class UiBindingContext
     {
         IReadOnlyList<UiGraphDiagnostic> diagnostics = UiGraphBinder.Validate(graph);
         if (diagnostics.Count != 0) throw new UiGraphValidationException(diagnostics);
+
+        ImportGraphNodes(graph);
+        ImportGraphRoles(graph);
+        Graph = graph;
+    }
+
+    private void ImportGraphNodes(UiSemanticGraph graph)
+    {
         var presented = new HashSet<UiSymbolId>(graph.PresentedNodes);
         foreach (UiSemanticNode node in graph.Nodes)
         {
             _graphNodes.Add(node.Alias, node);
-            if (presented.Contains(node.Id)) DeclareElementCore(node.Id, node.Alias, node.Label, node.Capabilities.ToArray(),
-                node.DataType is null && node.Inputs.Count == 0 && node.Alias == node.Label
-                    && UiGraphBinder.IsCanonicalLegacyName(OwnerId, node.Id, "element", node.Alias));
+            if (!presented.Contains(node.Id)) continue;
+
+            bool legacyName = node.DataType is null &&
+                              node.Inputs.Count == 0 &&
+                              node.Alias == node.Label &&
+                              UiGraphBinder.IsCanonicalLegacyName(OwnerId, node.Id, "element", node.Alias);
+            DeclareElementCore(node.Id, node.Alias, node.Label, node.Capabilities.ToArray(), legacyName);
         }
+    }
+
+    private void ImportGraphRoles(UiSemanticGraph graph)
+    {
         foreach (UiGraphRole role in graph.Roles) DeclareRoleCore(role.Id, role.Alias,
             UiGraphBinder.IsCanonicalLegacyName(OwnerId, role.Id, "role", role.Alias));
-        Graph = graph;
     }
 
     public UiSymbolId OwnerId { get; }
