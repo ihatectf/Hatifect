@@ -1,6 +1,6 @@
 # Standalone Window acceptance
 
-Status: **implementation/scoped/review PASS; common gates and native acceptance pending**. Source `9cc3881593fb546101117283b34130033c5f1748`; owner baseline follow-up `3680157` changes only the reviewed Observation documentation hash. This is a bounded prerequisite for F18/M3, not completion of U05, U06, U07 or physical input acceptance.
+Status: **implementation/scoped/review PASS; common gates and native acceptance pending**. Source `9cc3881593fb546101117283b34130033c5f1748`; owner baseline follow-up `3680157` changes only the reviewed Observation documentation hash. This is a bounded prerequisite for «Настройка станций и маршрутов»/«Первая игровая альфа», not completion of «Обновление интерфейса без лишних пересчётов», «Общие компоненты, темы и подсказки», «Простое создание диалогов и экранов» or physical input acceptance.
 
 ## Contract and ownership
 

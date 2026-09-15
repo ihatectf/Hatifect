@@ -1,6 +1,8 @@
 # Semantic reveal для native acceptance
 
-Статус: **implementation C/G/P/review PASS; native visibility IN_PROGRESS**. Source [`ba8dae4`](https://github.com/ihatectf/Hatifect/commit/ba8dae47561bd1ada720391bdd8e24ffdb460b0c), опубликован в `feature/ui-semantic-reveal`. Это UI-owned продолжение root overflow для F13. Полные U05/U06/F13 остаются открытыми.
+Статусы и следующие шаги в этом техническом отчёте относятся к указанным сборкам. Текущая очередь — в [плане разработки](ROADMAP.md).
+
+Статус: **implementation C/G/P/review PASS; native visibility IN_PROGRESS**. Source [`ba8dae4`](https://github.com/ihatectf/Hatifect/commit/ba8dae47561bd1ada720391bdd8e24ffdb460b0c), опубликован в `feature/ui-semantic-reveal`. Это UI-owned продолжение root overflow для «Управление диагностической перевозкой». Полные «Обновление интерфейса без лишних пересчётов»/«Общие компоненты, темы и подсказки»/«Управление диагностической перевозкой» остаются открытыми.
 
 ## Причина и контракт
 
@@ -53,6 +55,6 @@ Flow consumer сохраняет порядок элементов Network. По
 
 ## Общая интеграция GQ
 
-Source `c2a9931c701fdecb29eb463541af44c805d50a3b` переносит семь exact postimages `ba8dae4` поверх общей версии с R01-a. C `run-17bg7fbk` — PASS1677 .NET +389 Python; G `run-82ai1c75` — PASS2040 .NET +389 Python. Все658 tracked files совпали с frozen source manifest. P `hatifect-ui-ca-isolated.8934bsfn` — PASS101;47 projected files,8 packages с exact source commit, package DLL равны Release producer,4 consumer cache DLL проверены,2 CA DLL,UI source absent. Сохранены1445 files и их hashes.
+Source `c2a9931c701fdecb29eb463541af44c805d50a3b` переносит семь exact postimages `ba8dae4` поверх общей версии с «Владение ресурсами интерфейса» (подэтап a). C `run-17bg7fbk` — PASS1677 .NET +389 Python; G `run-82ai1c75` — PASS2040 .NET +389 Python. Все658 tracked files совпали с frozen source manifest. P `hatifect-ui-ca-isolated.8934bsfn` — PASS101;47 projected files,8 packages с exact source commit, package DLL равны Release producer,4 consumer cache DLL проверены,2 CA DLL,UI source absent. Сохранены1445 files и их hashes.
 
-Evidence: `artifacts/f13-root-common/c-c2a9931-audit.json`, `g-c2a9931-audit.json`, `p-combined-c2a9931-hatifect-ui-ca-isolated.8934bsfn-audit.json`, `source-c2a9931.json`. Все три процесса завершились с exit0. Это общий implementation checkpoint; новый native visible Result, исправление Scale75 и полные F13/U05/U06/Q01 остаются открытыми. Historical13 composed PNG ecfab просмотрены GQ:9 Parcel states без найденных visual defects,2 Network result messages вне viewport; общий historical visual FAIL сохранён.
+Evidence: `artifacts/f13-root-common/c-c2a9931-audit.json`, `g-c2a9931-audit.json`, `p-combined-c2a9931-hatifect-ui-ca-isolated.8934bsfn-audit.json`, `source-c2a9931.json`. Все три процесса завершились с exit0. Это общий implementation checkpoint; новый native visible Result, исправление Scale75 и полные «Управление диагностической перевозкой»/«Обновление интерфейса без лишних пересчётов»/«Общие компоненты, темы и подсказки»/«Проверка текущей сборки в игре» остаются открытыми. Historical13 composed PNG ecfab просмотрены GQ:9 Parcel states без найденных visual defects,2 Network result messages вне viewport; общий historical visual FAIL сохранён.

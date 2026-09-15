@@ -1,712 +1,374 @@
-# Roadmap Hatifect: UI, Flowline и инструменты разработки
+# План разработки Hatifect
 
-> Hatifect — единственная namespace/assembly/package/SMAPI/CLI/env identity.
-> Исторические acceptance SHA доказывают только проверенный ими кандидат и не заменяют
-> новую приёмку текущей версии.
+Обновлено 15 сентября 2026. Этот документ описывает актуальную очередь; результаты конкретных проверок привязаны к указанным исходникам и не подтверждают более поздние DLL.
 
-Дата: **2026-09-05**. Исходная база: `2f08a4f4db36ef0b1ba58e385fc0ab5044cae867` в монорепозитории Hatifect.
+**Сначала заканчиваем рефакторинг читаемости, затем продолжаем разработку возможностей. Первая альфа пока не принята.**
 
-Это полный предлагаемый порядок развития сохранённой базы: от ближайшего сквозного изменения до модернизированного UI framework и первой ограниченной поставки реальных перевозок. Документ фиксирует направление и зависимости. Он не объявляет будущие API реализованными и не меняет действующие публичные контракты, форматы persistence, acceptance-файлы или настройки локальная среда. Такие изменения входят в явно поставленные задачи соответствующего этапа.
+Это единственный актуальный план. Вместо числовых шифров используем названия задач и постоянные ссылки: например, [обновление без лишних пересчётов](#ui-incremental-updates) или [настройка маршрутов](#flow-route-setup). Старые планы и общий журнал статусов удалены из рабочей документации. Нужные результаты собраны в [отчёте о принятых работах](accepted-foundations.md) и отдельных технических отчётах.
 
-Roadmap утверждена пользователем для последовательной реализации до всех acceptance criteria. Переходы между срезами уже разрешены. На 2026-09-06 `B01` — **DONE**, commit `de766c5`: [аудит текущей базы](ROADMAP_BASELINE.md), C gate `artifacts/validation/run-u7blhl0v/summary.json` PASS (947 .NET + 296 Python). `B02` — **DONE**, commit `1fd9d57`: [минимальный semantic-v2 / D01](SEMANTIC_V2.md), C gate `artifacts/validation/run-vion_3x9/summary.json` PASS (947 .NET + 296 Python). `U01` — **DONE**, commit `856ff52`: typed graph, explicit identity/alias/label, v1/v2 wire и реальные Flow/CA fixtures; C 1 097 .NET + 301 Python, U 439, G 1 251 .NET + 301 Python, финальный P 81 CA tests на восьми alpha.32 packages. Evidence и границы в [ROADMAP-STATUS.md](ROADMAP-STATUS.md). `U02` — **DONE**, commit `356e52e`, alpha.36: atomic multi-source publication и CA/Parcel/Network consumers, bounded typed deltas/reset/history, current selection/focus/scroll rendering и Update-only preparation подтверждены C/U/G/P/PERF. Стоимость structural/cold Reset остаётся O(N), root copy Update — O(N/128); это явно измеренные ограничения. Итоговые evidence и implementation commit приведены в [ROADMAP-STATUS.md](ROADMAP-STATUS.md#u02-e-bounded-update-preparation-and-u02-acceptance). `F11` — **DONE**, integration commit `5f2d10c`: C 1 014 .NET + 301 Python, G 1 174 .NET + 301 Python, свежий `flow.chest.roundtrip` PASS 8 (`7336456e-5400-4a77-aed6-4109aedc7c9f`); подробности в [отчёте Flow](ROADMAP-STATUS.md). `F12` — **DONE** на общем source `08ecdb9`: [read-only Flow acceptance](F12_ACCEPTANCE.md), C/F/U/G/P и native15/7,19 rendered states, U04 dependency закрыта; `U03` — **DONE** на source `9b6028c` ([typed actions acceptance](U03_ACCEPTANCE.md); общая публикация и новая build-identity проблема отдельно); `U04` — **DONE** (owner source `04def9e`, итоговая [приёмка](U04_ACCEPTANCE.md); общая alpha47 acceptance отдельно); `U05` — **IN_PROGRESS** у задачи UI, общая приёмка её новых срезов ещё не выполнена; остальные UI ID пока **PLANNED**; Flow foundation `cdf9d2e` и оставшаяся acceptance F11–F20 перечислены в [отчёте Flow](ROADMAP-STATUS.md). Наличие частичной основы не означает DONE. Статус DONE появляется только со ссылкой на итоговый commit/PR и выполненную проверку. Календарные обещания и количество PR пока не установлены.
+«Принято» означает выполнение исходных условий на указанной сборке, а не готовность любых будущих DLL. «В работе» означает, что реализация или обязательная проверка ещё не закончена. Старые отказы и успешные запуски относятся только к своим сборкам.
 
-## Приоритет первой альфы M3/Q02 — 2026-09-08
+## Сейчас: завершить рефакторинг читаемости
 
-Exact локальный candidate `57c9ef4`: canonical prepare **PASS**, исходная chest/recovery/save-switch/
-PERF matrix, production Window EN/RU×75/100/125/150, controller profile и настоящая CA coexistence —
-**23 PASS scenarios, 255/255 checks**.
-Проверены actual PNG всех восьми профилей, exact 21-file/14-DLL архив, SHA-256 и побайтно равная
-изолированная установка. Physical `flow.ui.player.input` `76906d54…` — **BLOCKED** до первого шага,
-поскольку macOS не выдал post-event Accessibility Python runtime. Это оставляет Q02
-**IN_PROGRESS**. [Runtime/archive evidence и следующий шаг](Q02_RUNTIME_57C9EF4.md),
-[инструкция установки](Q02_ALPHA_INSTALL.md).
+- [ ] Закончить проход по размещению элементов, виртуализации и игровым окнам UI.
+- [ ] Закончить проход по сложным сценариям Flowline и интеграций.
+- [ ] Проверить общий diff: понятные имена, последовательные функции, разумная вложенность, отсутствие лишнего дублирования.
+- [ ] Пройти применимые проверки и отметить участки, которые обоснованно оставлены без изменений.
 
-F13 RU75 diagnostic fix: после PASS G2168/P101/prepare14 и EN75(13checks) на `d881782` RU75 `e5751f10` обнаружил nested-clip первого Result. Перенесены точные два source-файла `6fdb045`: local-origin layout accumulation и проверяемый bounded maximum root offset; Reveal/Intersect и критерии видимости неизменны. Final affected78PASS проверены по actualTRX/SHA; прежние1049 относятся к предыдущему варианту. Общий pre-existing float associativity gap остаётся открытым, полного reviewPASS нет. [Причина, проверки и остаточный риск](UI_FRACTIONAL_LAYOUT.md). Следующий шаг — common G/P/prepare и свежий RU75; Q02/F13 не завершены.
+Работаем связанными пакетами. Уже понятный код не переписываем ради одинакового оформления. Новые возможности, публичные API и форматы сохранений в этот проход не добавляем; тесты не ослабляем. Рефакторинг сам по себе не завершает функциональные задачи ниже.
 
-Интеграция F13 visual profiles поверх U05 `83703ee`: восемь exact сценариев полного Network Window EN/RU×75/100/125/150, каждый сохраняет исходные11 checks и добавляет применение/восстановление профиля. Ordinary-input13 и прежние registry rows неизменны. Исправлен захват переходного original scale: обе leases ждут fresh settled native frame до записи настроек. Owner `run-ulqg9mb1` — 1020 PASS (771+249), tooling `run-jkdahian` — 393 PASS; root проверил actual outcomes,12 source SHA/preimages; UI повторный review PASS. Common G/P/prepare и восемь native rows — PENDING; normalized actions не доказывают физический ввод. Evidence: `artifacts/f13-root-common/flow-profiles-review/`. Следующий шаг: общий фиксированный кандидат, EN75 → RU75, затем остальные профили и исходная Q02.
+В этом проходе рефакторинга разделены подготовка и фиксация переноса груза, проверки истории извлечения, доставки и повторной отправки, измерение коллекций UI и размещение содержимого видимых элементов. Это отдельный завершённый участок рефакторинга, а не завершение всего прохода по UI и Flowline; игровые окна и оставшиеся сложные сценарии ещё требуют просмотра.
 
-Интеграция частичного U05: перенесены точные четыре файла owner commit `5253782a3641e984fc6f226d2786351ba96bf4d8` (immutable children и scene-owned structural index, четыре регрессии). Owner RED воспроизвёл два дефекта; GREEN `run-zqiuuyd6` — 1040 PASS / 7 actual TRX. Root сверил все outcomes, SHA исходников и preimages. Allocation одного successive Compare: 323064 → 236904 B; cold Compare: 323112 → 354448 B. Это частичный результат, не завершение U05 и не игровой PERF. Common G/P/prepare/runtime для нового состава — PENDING. Evidence: `artifacts/f13-root-common/u05-structural-review/{green-evidence-audit,integration-preflight}.json`. Следующий шаг: соединить проверенные Flow visual profiles и выполнить общую приёмку; исходные критерии Q02 сохраняются.
+Перед публикацией накопленные изменения перенесены на `develop` от `2eab96b`, без повторного включения уже опубликованных ускорений и удалённой агентской конфигурации. Совместный кандидат прошёл `hatifect-check --platform --performance-profile fast`: 2428 .NET-тестов и 683 Python-теста, без ошибок и пропусков; независимое ревью не выявило блокирующих замечаний. Этот результат относится к совместному кандидату, а обязательный CI каждого PR проверяет его собственный состав. Проверки сборки и тестов не заменяют игровую и визуальную приёмку фактических DLL. Следующий срез — сложные сценарии игровых окон UI и оставшаяся координация Flowline.
 
-Итог кандидата `027273a`: **G2136/392/13, P101, prepare14 и CI34257864644 — PASS**. Native ordinary-input `edb6540e` — **FAIL** после NewDay и неожиданного Saving/Saved во время ожидания входа; raw K/SMAPI events/entry attempts остались нулевыми при активной игре без suppression. Cleanup и689 source/14 DLL проверены; старый запрос физической K завершён вместе с тестовой игрой. Подготовлен и проверен по составу архив кандидата21файл/14DLL, но Q02/первая установка не приняты. [Полный результат, SHA архива и ограничения](Q02_INPUT_027273A.md). Следующий готовый шаг: интеграция частичного UI U05 после owner RED/GREEN (1040 PASS, семь actual TRX; source/evidence проверены root) и отдельные точные профили полного Network EN/RU×75/100/125/150; ordinary input сохраняется открытым.
+## Уже принято
 
-Следующий отдельный кандидат ввода после `71db76f`: один harness-файл `FlowPlayerNativeInputCapture.cs` добавляет bounded pre-window telemetry активности игры, raw K, SMAPI state/suppression, ButtonsChanged и configured keybind. Приёмка и production guards не меняются; инжекции нет. Owner `run-q9mwh1hk` — PASS992 (771+221), два actual TRX и SHA `40117901…` проверены. Root review: без блокирующих замечаний; native **PENDING**. Evidence: `artifacts/f13-root-common/input-telemetry-final/review.json`. Следующий шаг — общий G/prepare и свежий `flow.ui.player.input`, чтобы установить причину отсутствия ordinary-entry event.
+| Этап | Что принято и где подтверждено |
+| --- | --- |
+| Аудит исходной базы | Сопоставление кода, контрактов, пакетов и пробелов. Коммит `de766c5`; [результаты аудита](accepted-foundations.md#аудит-исходной-базы). Старая таблица пробелов не является текущим планом. |
+| Базовый контракт интерфейса | Одна семантическая модель и общий runtime, правила совместимости и первый пример Flowline. `1fd9d57`; [контракт](SEMANTIC_V2.md). |
+| Типы и связи данных интерфейса | Стабильные идентификаторы, независимые имена и подписи, проверка связей и обмен в форматах v1/v2. `856ff52`; [приёмка](accepted-foundations.md#типы-и-связи-данных-интерфейса). |
+| Согласованное обновление данных | Атомарная публикация связанных данных, изменения коллекций, сохранение выбора, фокуса и прокрутки. `356e52e`; [приёмка и ограничения стоимости](accepted-foundations.md#согласованное-обновление-данных). |
+| Действия и их завершение | Типизированные запросы и результаты, сообщения пользователю, безопасное завершение после закрытия окна, обновления UI или смены сохранения. `9b6028c`; [приёмка](ui-actions-acceptance.md). |
+| Адаптация интерфейса к окружению | Выбор представления, объяснение решения и согласованная локализация. `04def9e`; [приёмка](ui-environment-acceptance.md). Физический ввод и производительность будущих экранов проверяются отдельно. |
+| Обмен данными с редактором | Метаданные, протокол, объяснение выбора представления и проверка ответов клиентом. [Итоговая приёмка](editor-protocol-acceptance.md). Предпросмотр и готовый рабочий процесс автора ещё впереди. |
+| Данные и команды Flowline | Неизменяемые снимки, типизированные команды, ревизии и уведомления. `5f2d10c`; [приёмка](accepted-foundations.md#данные-и-команды-flowline). |
+| Просмотр состояния Flowline | Живой экран, пустое и недоступное состояние, ошибки, открытие и закрытие. `08ecdb9`; [приёмка](flow-live-screen-acceptance.md). Это ещё не весь путь отправки груза. |
+| Согласованность предметов и сохранения | Выбрана модель сохранения для поддерживаемых сундуков одиночной игры. [Гарантии и ограничения](FLOW_PROVIDER_CONSISTENCY.md). |
+| Чтение сундуков и предметов | Адаптер поддерживаемых сундуков и свойств предметов. [Точный состав поддержки](<../Hatifect Flow/README.md>). Произвольные хранилища других модов не обещаны. |
+| Перенос предметов и восстановление | Реальные операции и выбранные сценарии отказа, повтора и восстановления. [Модель согласованности](FLOW_PROVIDER_CONSISTENCY.md). Моделирование ошибки в тесте не заменяет реальную проверку аварии. |
+| Перевозки в игровой сессии | Сохранение, повторная загрузка, изоляция сессий, пауза и ограниченная обработка очереди. [Приёмка](accepted-foundations.md#перевозки-в-игровой-сессии). |
+| Ресурсные ограничения Flowline | Диагностика, измерения и ограниченное хранение истории. `6d0ac14` / `a0520d2`; [ресурсный профиль](FLOW_RESOURCE_PROFILE.md). После 256 грузов за жизнь сохранения новые грузы отклоняются; очистка истории не реализуется без отдельного решения. |
 
-Обновление общей приёмки `57a9bb6`: **G/P/prepare и исходная chest-матрица PASS** — 2136 .NET +392 Python +13 metadata, P101, 11 native сценариев/116 обязательных checks +2 budget checks. Сверены 688 source SHA, все14 runtime DLL и восемь package DLL; crash/restart, cancellation/return, save isolation и Flow PERF прошли на одном составе. CI34253211868 attempt2 — SUCCESS. [Точные request IDs, метрики и ограничения](Q02_RUNTIME_57A9BB6.md). Обычный ввод f681231f — **BLOCKED**, причина недоставленного события ещё не установлена. Следующий шаг — отдельная pre-window telemetry, затем свежий ordinary-input игровой путь. Полная Q02, UI locale/scale/controller/coexistence и устанавливаемая поставка остаются открыты.
+## Осталось до первой альфы
 
-По обновлённой авторизации пользователя ближайшая поставка — проверенная устанавливаемая одиночная альфа: обычный игровой вход → две поддерживаемые станции на сундуках → маршрут через UI → выбор и отправка реальных предметов → видимый результат и допустимое recovery → сохранение и продолжение после перезапуска. Полная модернизация остаётся в этой roadmap для следующих поставок; исходные acceptance criteria не сокращаются.
+Цель: игрок без консоли открывает Flowline, выбирает два поддерживаемых сундука, создаёт маршрут, отправляет предметы, видит результат или понятный отказ, сохраняется и продолжает после перезапуска.
 
-Критический путь: закрыть F13 (видимые результаты Network, масштаб75, ввод и свежая игровая приёмка), затем соединить UI **U05 → U06 → U07** с Flow **F18 → F19** и выполнить **Q02** с зависимостями I01/Q01. U08–U10, оставшийся R01–R04 и T02–T03 до альфы выполняются только при необходимости для этого пути или для исправления выявленного блокирующего дефекта. Q02 требует исходной adapter failure/save/restart/save-switch матрицы, coexistence с CA, EN/RU/input/scale, видимости на экране и PERF; semantic observations не заменяют визуальную или физическую проверку.
+Порядок после рефакторинга: завершить обновление UI и общие компоненты → дать простой способ создания экранов → закончить пользовательские сценарии Flowline и Chests Anywhere → проверить одну итоговую сборку. Независимую приёмку диагностической перевозки можно готовить параллельно при неизменном проверяемом составе.
 
-GQ владеет общей интеграцией, фиксированным составом кандидата и итоговой поставкой; UI — framework, отображением и вводом; FLOWLINE — игровым сценарием, доменом и адаптером. Общий контракт сохраняет одного владельца. Следующие изменения готовятся отдельно от принимаемого кандидата. Evidence переиспользуется только при неизменных относящихся к проверке исходниках, файлах сборки и среде. Тяжёлые сборки согласуются между задачами; во время игры/PERF другие потоки работают с кодом, ревью или документацией.
+<a id="ui-incremental-updates"></a>
 
-Выход Q02 включает устанавливаемый архив, точный inventory/dependencies, инструкцию первого запуска, известные ограничения, evidence для фактических DLL и проверенную изолированную установку. Текущий `hatifect-release-check` проверяет boot/title, fake Flow и UI/CA; его PASS сам по себе не покрывает реальный путь F18/F19 и всю приёмку Q02. Полная готовность альфы пока **не подтверждена**.
+### Обновление интерфейса без лишних пересчётов — в работе
 
-Общий F13 source `866b1d0` исправляет lifetime диагностического native menu при смене масштаба. Scoped187, G2048 .NET +390 Python +13 metadata, P101 и свежий isolation15 прошли; все19 composed PNG просмотрены, включая масштаб75 без прежнего выхода за границу. Actions11 и видимые результаты Network относятся к предыдущему source `4a7d710`. Физический ввод и полная игровая приёмка остаются открыты; **F13 IN_PROGRESS**. [Точные результаты, идентичность DLL и ограничения](F13_ACCEPTANCE.md#общая-приёмка-isolation-на-866b1d0).
+**Есть:** повторное использование измерений, ограниченный индекс высот, уведомления об изменении данных и часть индекса сцены.
+**Осталось:** связать изменения данных с пересборкой сцены, размещением, вводом и виртуализацией. Изменение текста, геометрии, изображения или семантики должно запускать только нужную работу. Неизменный кадр не обходит всю модель; локальное изменение коллекции не сбивает фокус и прокрутку соседних элементов. Проверить ограничения кэшей, скрытые окна, снятие обработчиков и расходы на показательном наборе данных.
+**Подробности:** [реализация и измерения](ui-incremental-updates.md), [общая приёмка](game-validation-alpha47-combined-acceptance.md), [дробное размещение](UI_FRACTIONAL_LAYOUT.md).
+**Зависимости:** «Согласованное обновление данных», «Адаптация интерфейса к окружению». **Владелец:** UI Runtime. **Проверки:** C, U, G, RUNTIME, PERF.
 
-F18 обычный игровой вход, актуальная цель-сундук и standalone Window интегрированы в `d03b736` поверх UI Window `da0061d`. Общий source `2a007f2` также включает Observation gate и исправление канонической локали: G `run-vh7meisw` — PASS2078 .NET +390 Python +13 metadata, P `hatifect-ui-ca-isolated.hpscocgd` — PASS101,8 packages,47 projection files. Source опубликован; [CI `34240493430`](https://github.com/ihatectf/Hatifect/actions/runs/34240493430) завершился SUCCESS на точном `2a007f26d42ac8dcb00d2c5df87cab91834d2993`. Native Observation10 на owner `42c7f66` относится к overlay, а не обычному Flow Window. F18 остаётся **IN_PROGRESS**: целостный сценарий открытия, ввода двух станций и маршрута, реального груза и сохранения ещё не выполнен; UI готовит наблюдение standalone host через существующие optional facets.
+<a id="ui-common-components"></a>
 
-F19-a интегрирован отдельно в `d0ce245`: typed send сохраняет точные RouteUnavailable/RouteSearchLimit из одного поиска маршрута до inventory admission. Owner scoped `run-0126k_jc` — PASS964 (771 Flow +193 Stardew), actual TRX и3 source hashes сверены; новый тест проверяет stale priority, два отказа без изменения snapshot/XML и успешную доставку после восстановления связи. Owner дополнительно усилил тест проверками внутренних payload/cargo/shipments/pending/custody/receipts, физических вызовов и количества поисков маршрута; test-only diff интегрирован после повторного owner scoped `run-8ozn014q` — PASS964. Проверены все964 individual TRX results, SHA двух TRX и трёх исходных файлов; production F19 не изменён. Прежний `run-0126k_jc` относится к первоначальной версии теста. Общие проверки этого следующего состава и native видимость EN/RU причин остаются открыты. Усиленный тест закреплён отдельным коммитом `582048c`. Полный F19 и Q02 не закрыты. Аудиты обоих составов находятся в `artifacts/f13-root-common/`; текущие файлы сборки нельзя считать прошедшими старый runtime только по неизменному поведению исходников.
+### Общие компоненты, темы и подсказки — в работе
 
-Локальный F19-b candidate `acb1279` сохраняет через typed Network/Send точные `StationLimit`, `LifetimeLinkLimit` и `RetainedCargoLimit` вместо общего `ActionUnavailable`; semantic UI имеет точные EN/RU объяснения. Flow tests PASS797 и Stardew adapter tests PASS249 с ненулевыми actual results: тесты насыщают все32 станции,128 lifetime links и256 retained cargo, проверяют отсутствие revision/inventory/custody side effects, сохранение lifetime-link отказа после reload и прежние прямые `FlowResourceLimitException`/diagnostic counters. Публичный enum расширен только добавлением значений; Core/Persistence и формат сейва не изменены, public API baseline PASS. Общий G/P/prepare, exact native видимость этих причин и оставшиеся real-provider failures ещё не проверены; F19/Q02 остаются **IN_PROGRESS**. Следующий шаг — зафиксировать состав с GQ, выполнить объединённую проверку и пройти физический/native сценарий вместе с исходной матрицей. Ветка и коммиты остаются только в локальном Git.
+**Есть:** состояния, подсказки управления, плотность размещения, справка для полей и элементов, задержка подсказок и показ ошибок проверки.
+**Осталось:** завершить применение в Flowline и Chests Anywhere. Согласовать общие правила текста, отступов, плотности, смысловых цветов, слоёв, иконок и управления. Базовый набор включает размещение и прокрутку, текст, кнопки, списки и выбор, поля и формы, подсказки, пустое состояние, загрузку и ошибки. Проверить английский/русский, масштаб, темы, клавиатуру, мышь, контроллер и доступность без частных размеров в потребителях API. Семантика доступности и обход контроллером входят в контракт компонента с первого применения. Состав тем и анимаций уточняется решением «Состав публичного интерфейса».
+**Не повторять:** уже реализованные подсказки и состояния; [состояния](ui-common-components-status-component.md), [управление](ui-common-components-input-prompts.md), [общие правила](ui-common-components-consumer-status-policy.md), [плотность](ui-common-components-typed-density.md), [подсказки](ui-common-components-tooltips.md), [строки](ui-common-components-collection-row-prompts.md), [поля](ui-common-components-form-field-help.md), [дополнительные элементы](ui-common-components-contribution-help.md), [элементы коллекций](ui-common-components-collection-item-help.md), [задержка](ui-common-components-tooltip-delay.md), [ошибки](ui-common-components-validation-help.md).
+**Зависимости:** «Адаптация интерфейса к окружению», «Обновление интерфейса без лишних пересчётов». **Владелец:** UI Runtime/Planning/Stardew. **Проверки:** C, U, G, RUNTIME, VISUAL.
 
-Локальный F19-e owner `35cbcb0`, integration `65c5726`, закрывает consumer-side подтверждение изменившегося стека: refresh сохраняет выбор только для той же пары slot/fingerprint; изменение количества, metadata или позиции снимает выбор, поэтому retry не может молча принять новый физический стек. Typed Send и owning inventory lease остаются окончательной проверкой; первый stale attempt только показывает локализованный `StateChanged` и обновляет список, а явный повторный выбор отправляет новый fingerprint один раз. Semantic IDs, public API и provider contract не изменены; обход ограничен максимум 128 опубликованными slots и выполняется только на cold refresh. На owner source focused NetworkExperience — PASS10, полный host-free Flow suite — PASS800 без failures/skips. На общем exact checkpoint `5d017ae` Flow platform `run-nkn2dnv2` — **PASS 803 + 254**, G `run-d974rh23` — **PASS 2 366 .NET + 503 Python**, CA platform — **PASS102**, isolated P — **PASS** 8 packages / 47 files / 102 tests. [Полное evidence и границы](Q02_INTEGRATION_5D017AE.md). Exact prepare/runtime и native видимость остаются открыты; Q02/F13/F18/F19/U06 — **IN_PROGRESS**. Коммиты существуют только локально.
+<a id="ui-simple-authoring"></a>
 
-Docs-only exact candidate `046267e` сохранил код checkpoint `5d017ae`. Canonical prepare `run-r7i4ztb4` прошёл release source contract, metadata и UI packages, затем получил внешний `NU1301` на CA restore до build; это **BLOCKED**, а не runtime evidence. Следующий готовый шаг — повторить prepare на неизменном SHA при доступном repository-signature endpoint, затем пройти normalized/original matrix. Physical input отдельно требует `CGPreflightPostEventAccess()=true`; remote Git остаётся неизменным.
+### Простое создание диалогов и экранов — запланировано
 
-Общий кандидат `3ba57ab` объединяет F19, игровой driver `ca60214` и hosted Window observation/actions `1b6e161`; комментарии API сверены без изменения сигнатур, обновлены две SHA baseline. G `run-xtx8d3yb` — PASS2094 .NET +391 Python +13 metadata, сверены 676 source SHA. P `hatifect-ui-ca-isolated.6_28gm7m` — PASS101, восемь пакетов, 47 projection files; prepare `run-afbf0v4s` — PASS, все14 установленных DLL совпали с producer и сохранены. Первый `flow.ui.player` request `0a7f36d7-156f-4ea9-b08f-66ad519463f1` — **FAIL**: через один native composite proxy созданы две реальные станции и маршрут, но Reveal результата после создания маршрута вернул false; до отправки и сохранений сценарий не дошёл (loads1, saving0, saved0). Просмотрены пять composed PNG; видимость результатов регистрации подтверждена. Cleanup проверен по исходным SHA настроек и отсутствию рабочей копии сейва. Полная приёмка F13/F18/F19/Q02 остаётся открытой; следующий готовящийся шаг — owning UI исправление Reveal и свежий полный повтор сценария. Prepared forms/normalized actions не доказывают обычный K-вход или физический ввод. Evidence: `artifacts/f13-root-common/native-player-first-audit.json`, `combined-3ba57ab-run-xtx8d3yb-audit.json`, `prepare-3ba57ab-audit.json`.
+**Есть:** полный Experience builder, привязки данных и действия.
+**Осталось:** дать `UiQuick` для сообщения, подтверждения, выбора, простой формы и уведомления; `UiView` — для небольшого декларативного экрана. Оба способа используют одну промежуточную модель и один runtime. Неоднозначные связи указываются явно. Проверить диалог, форму и собственный экран: действие должно одинаково выполняться и завершаться во всех способах создания UI. Закреплять API после проверки понятности на реальных задачах.
+**Зависимости:** «Действия и их завершение», «Общие компоненты, темы и подсказки». **Владелец:** UI Experience/Language/Semantics. **Проверки:** C, U, P, RUNTIME.
 
-Диагностический follow-up `ecd7ddf` (owner `84c13cd`): четыре файла добавляют bounded failure trace без изменения критериев clipping, owner guards и лимита64 inputs. Проверены семь actual TRX /1027 PASS и exact source SHA. Prepare `run-q1w8ls3y` — PASS,677 source SHA и14 deployed-to-producer DLL сверены. Свежий `flow.ui.player` request `5f906fea-81f8-4a74-9900-07f5b34d7826` — **FAIL**: `root-input-point-unavailable` после3 inputs; offset392.8 при maximum702.89996, Result Y810.10004/H40 полностью ниже viewport bottom696. Исчерпание максимальной прокрутки этим trace не подтверждается; следующий owning UI шаг — выбор root input point и regression, затем свежий повтор. Сохранены29 файлов, process exit0/cleanup и фактические SHA восстановленных настроек проверены. В этом диагностическом прогоне PNG отдельно не оценивались. Evidence: `artifacts/f13-root-common/native-player-trace-audit.json`, `prepare-ecd7ddf-audit.json`. CI34244678273 предыдущего `d34730f` завершён SUCCESS. Отдельная граница поставки: восемь DLL из P на `3ba57ab` не совпали с подготовленными runtime DLL; причины и бинарная эквивалентность не доказаны. Следующую пакетную и runtime сборку проверять с одинаковым явно выбранным SDK и сравнением SHA. Полные F13/F18/F19/Q02 сохраняют IN_PROGRESS.
+<a id="flow-diagnostic-controls"></a>
 
+### Управление диагностической перевозкой — в работе
 
-Reveal gap fix `b38b483` (owner `cb9158d`) — **PASS в bounded native сценарии**. После causal RED `run-x1v0x5dk` (605 PASS/1 точный root-input-point-unavailable) interval sweep находит свободный root-input промежуток между коллекциями; прежние девять probes, clipping, owner guards и budgets сохранены. UI scoped `run-lcwfmpf6` — PASS1028, семь actual TRX и два source SHA проверены. Prepare `run-81unfob2` отказал на NuGet NU1301 в sandbox; разрешённый повтор `run-f_271v8o` — PASS. Native `flow.ui.player` request `d3a0deaf-c028-4a25-a3ff-0f47f9f1ebd9` на runtime source `b38b483` — PASS11: две станции/маршрут, целый груз8 и частичный5 с остатком8, два Saving/Saved и три загрузки, повторное окно Delivered без дубликатов. Все10 composed PNG просмотрены, включая actual last Result после создания маршрута;38 файлов сохранены,677 source SHA/14 DLL и cleanup проверены. Это EN100, prepared forms/selection и normalized Tab/Enter; обычный K-вход, физический ввод, полный restart/failure/save-switch, RU/scale/PERF и текущие G/P/Q02 остаются открыты. В reopened PNG обнаружена устаревшая console-target подсказка; Flow готовит обычную игровую подсказку отдельно. Следующий шаг — общий G/P на согласованном SDK и отдельный `flow.ui.player.input` через production keybind с CUA/SMAPI evidence. [Черновик первого запуска](FLOWLINE_ALPHA_QUICKSTART.md). Evidence: `artifacts/f13-root-common/native-player-gap-fixed-audit.json`, `prepare-b38b483-audit.json`, `reveal-gap-integration-audit.json`.
+**Есть:** создание, отправка, отмена, повтор и ограниченные проверки запросов/результатов на тестовой сессии.
+**Осталось:** подтвердить в игре повторные нажатия, устаревший или закрытый экран, выполняющуюся операцию, понятные отказы и обновление других открытых представлений. Проверить язык, масштаб и применимые способы ввода. Не обещать отмену после запрещённой доменом границы. Подготовка тестовых данных остаётся изолированной и не становится API настоящих хранилищ.
+**Подробности:** [условия приёмки](flow-diagnostic-controls-acceptance.md). Программная подача действий не заменяет подтверждение физического ввода.
+**Зависимости:** «Просмотр состояния Flowline», «Действия и их завершение». **Владелец:** Flow Application/UI. **Проверки:** C, F, U, G, RUNTIME.
 
-Общие проверки source `cf0915c` после Reveal fix — **G/P PASS**: G `run-9j9nkm0a` — 2097 .NET +391 Python +13 metadata; P `hatifect-ui-ca-isolated.l1ealxc6` — 101 CA tests,8 packages и47 projection files. Проверены677 source SHA и individual TRX, сохранены1332 файла изолированной проверки. Это evidence указанного состава; native PASS11 выше относится к runtime `b38b483`. Аудиты: `artifacts/f13-root-common/combined-cf0915c-run-9j9nkm0a-audit.json`, `p-combined-cf0915c-hatifect-ui-ca-isolated.l1ealxc6-audit.json`.
+<a id="flow-route-setup"></a>
 
-Следующий кандидат F13/M3 — [ordinary Window input observation](UI_WINDOW_INPUT_OBSERVATION.md), owner `c00266f`: шесть UI-файлов интегрированы с сохранением existing actions scenario; пять postimages совпадают точно, controller получил только дополнительный bypass. Проверены семь actual TRX /1036 PASS, включая11 новых input-gate cases, и SHA всех шести исходников. Root evidence: `artifacts/f13-root-common/window-input-c00266f/verified-owner.json`, `integration.json`. Наблюдатель не вводит данные и не открывает окно: следующий шаг — соединить Flow production-keybind fixture, выполнить общий G/P/prepare и свежий K/CUA сценарий. Ввод через ОС (`os-injected`) не доказывает аппаратное происхождение или controller acceptance. Общие и native проверки нового состава **PENDING**; F13/U05/U06/U07/Q02 не закрыты.
+### Настройка станций и маршрутов — в работе
 
-Flow ordinary-input candidate интегрирован поверх `0ee3841`: ровно16 файлов по `artifacts/f13-root-common/player-input-final/owner-manifest.json`, preimage/postimage SHA сверены. Production keybind сохраняет authority/free/menu/session guards; только exact harness подставляет журнал команд и наблюдение успешного Show. Новая подсказка выбора сундука не требует консоли. `flow.ui.player.input` сохраняет восемь исходных roundtrip checks и добавляет пять checks обычного входа, ввода, действий, видимых результатов и повторного окна; исходная Q02 матрица11 сценариев/116 checks не изменена. Owner scoped `run-tik3mwji` — **991 PASS**, два actual TRX,22 reader cases, включая strict float-edge containment без epsilon; прежний `run-tsk1iay9` — FAIL983/8 из-за неполной схемы test bounds и сохранён отдельно. Общие G/P/prepare и native input нового состава **PENDING**. Evidence: `artifacts/f13-root-common/player-input-run-tik3mwji/actual-results.json`, `player-input-final/integration.json`. Следующий шаг — зафиксировать общий состав и пройти G/P/prepare, затем K/CUA: source probe/register → destination register → empty-target reopen/route/whole8/partial5 → прежние сохранения/загрузки и видимый Delivered. Полная Q02 и аппаратный/controller ввод остаются открыты.
+**Есть:** игровое окно, клавиша открытия, захват целевого сундука, станции и направленные связи.
+**Осталось:** пройти обычным вводом путь от чистого допустимого состояния до двух станций и маршрута, сохранить его и открыть снова. Во время настройки игрок видит доступность и ограничения выбранных контейнеров, станций и связей. Перевести экран на простой способ создания UI. Изменения сохраняемой сети принадлежат доменной логике и поддерживают повтор/восстановление; нельзя имитировать недостающую операцию изменением снимка. Явно определить ограничения переименования, перепривязки и удаления занятой станции. Неподдерживаемые операции не обещать.
+**Подробности:** [пользовательская приёмка](flowline-player-acceptance.md), [проверка обычного ввода](FLOWLINE_NATIVE_INPUT_ACCEPTANCE.md).
+**Зависимости:** «Управление диагностической перевозкой», «Перевозки в игровой сессии», «Простое создание диалогов и экранов». **Владелец:** Flow Application/UI + adapter. **Проверки:** C, F, U, G, RUNTIME, VISUAL.
 
-Follow-up к `c75de6e`: независимый review обнаружил, что UI action boundary может перехватить exception журнала и последующие пять Applied-команд скрывают предыдущую ошибку. Пять owning harness-файлов сохраняют первое исключение, проверяют его каждый tick/при admission/reopen/terminal и через две retired session captures. Доменные Rejected/Conflict остаются допустимыми. Owner scoped `run-vqx6l9sd` — **992 PASS** (771 Flow +221 Stardew;22 reader и6 journal cases), actual TRX и reviewed5 SHA сверены; evidence `artifacts/f13-root-common/player-input-sticky-final/integration-audit.json`. Общие G на `c75de6e` завершились **FAIL до .NET suites**: `run-e6vpofgd` restore NU1301 в sandbox; разрешённый повтор `run-h1epb2l9` build NU1900, сохранённый в UI Stardew assets/cache. Python392 и metadata13 в повторе прошли; эти результаты не означают G PASS. CI [34252112116](https://github.com/ihatectf/Hatifect/actions/runs/34252112116) на exact `c75de6e` — SUCCESS. Следующий шаг — принудительный restore проблемного проекта с включённым NuGet audit, затем G/P/prepare и native на исправленном общем составе. Native `c75de6e` не запускался; Q02 остаётся открытым.
+<a id="flow-player-delivery"></a>
 
-Диагностика Accessibility-блокировки на `6a02ee3`: свежий `hatifect-live-prepare` (`run-5in4hofi`, кандидат `31a86077...`, runtime `e201e7ba...`) и `save.bootstrap` (`f5a4eb25-abd2-42ac-901e-9a1637b07f89`) прошли PASS. Первый `flow.ui.player.input` (`690da531...`, затем повтор `f1ee2090...`) — **BLOCKED**: `semantic-test-driver` немедленно отказывал с `CGPreflightPostEventAccess()=false`. Автономная проверка из Terminal.app вернула `true`, подтвердив зависимость разрешения от идентичности процесса-инициатора. Повтор из доверенного Terminal.app прошёл Accessibility-проверку: запрос `ff9fa26d-e344-4c36-89f2-5605a944a7a6` выполнил `move-pointer` на `(671,414)` и физический `key K`, подтверждённые в `artifacts/runtime/ff9fa26d.../diagnostics/semantic-test-driver.json`. TCC/Accessibility и raw-K delivery остаются независимыми блокерами.
+### Отправка груза и работа с ошибками — в работе
 
-Тот же запрос `ff9fa26d...` остановился на шаге `wait-source-opening` (timeout 20s): `diagnostics/flow-player-input-progress.json` показывает `entryAttempts:[]`, `openings:[]`, `inputTelemetry.latest={RawKDown:false, SmapiKSuppressed:false}`, `kPressedTotal:0/kReleasedTotal:0` при `GameActive:true` — синтетический `CGEventPost` keyboard-down не долетел до raw-состояния клавиатуры в игре, хотя тот же механизм успешно доставил pointer-move. Это воспроизводит ранее задокументированный (`edb6540e`, `f681231f` и др.) разрыв независимо от Accessibility permission, что сужает его причину до low-level доставки клавиатуры (вероятно, MonoGame/SDL на macOS читает keyboard state через путь, отдельный от того, которым идёт синтетический pointer-move) и исключает TCC как причину именно этого разрыва. `smapi.log` не показывает игрового краша до отмены запроса harness'ом; финальные Steam-teardown ошибки в логе относятся к принудительному завершению процесса при `.cancel-requested`, а не к самостоятельному падению игры. Полный сценарий отменён (`state=Cancelled status=BLOCKED`); Q02/F13/F18/F19 остаются открытыми. Runtime executor этой диагностики остановлен штатно. Следующий готовый шаг — исследование low-level HID-пути клавиатуры на стороне MonoGame/SMAPI adapter (в т.ч. альтернативные API инъекции, например `IOHIDPostEvent` вместо `CGEventPost`); pointer-only сценарии (например F13 visual-profile матрица) Accessibility-блокировкой больше не ограничены и могут проверяться независимо.
+**Есть:** целая стопка или выбранное количество, история, подробности, возврат и восстановление. Изменившийся предмет нужно выбрать заново.
+**Осталось:** подтвердить путь «выбрать → проверить возможность → отправить → наблюдать → получить результат». Игрок видит доступность станции, состояние груза, вместимость, причины ожидания и отказа, ресурсные пределы и только разрешённые отмену, повтор и согласование состояния. Успешный путь и ошибки проходят английский/русский, ввод и масштаб. Восстановление не требует правки журнала или сохранения вручную. Время доставки не обещается без модели; диагностический такт не является игровым ETA.
+**Зависимости:** «Настройка станций и маршрутов». **Владелец:** Flow Application/UI. **Проверки:** C, F, U, G, RUNTIME, VISUAL.
 
-Найден источник расхождения с историческим `b38b483` ("PASS11", реальный ввод K сработал): этот commit не является предком `develop` (`git merge-base --is-ancestor b38b483 HEAD` → `no`), он живёт только на отдельных `feature/*` ветках (`feature/merge-all-20260909` и др.), общий предок с `develop` — `54ed9e9`. Текущая `develop` заново реализовала автоматизацию ввода начиная с `f475132` ("Automate ordinary Flow Window input on macOS", #22) новым внешним semantic-model движком (`macos_native_input_driver.py` + `semantic_test_driver.py`), а не унаследовала C#-side механизм `UiNativeInputGate.cs`/`UiAutomatedAcceptanceController.NativeInput.cs` со старой ветки. Это осознанный архитектурный выбор нового движка: `SEMANTIC_MODEL_AUTOTESTS.md` явно запрещает "Hatifect action-automation APIs или эквивалентные product backdoors" — то есть возврат к in-process инъекции не рассматривается как решение, только легитимный внешний OS-level ввод.
+<a id="chests-anywhere-integration"></a>
 
-Разбор нового движка нашёл конкретный пробел: до открытия первой семантической UI (шаг `open-source-window`, `key K`) сценарий выполняет только `move` (перемещение указателя без клика) — в протоколе не было ни одного примитива для настоящего клика по абсолютной экранной точке до появления первого семантического элемента (`click`/`activate` резолвят через selector, которому ещё неоткуда взяться). Обычный игрок к моменту нажатия K уже кликал/взаимодействовал с окном игры, получив реальный OS-level key-window focus; полностью автоматизированный сценарий этого никогда не делает. Добавлен новый примитив `clickPoint` (op на уровне `source`/`path`, как у `move`, но выполняющий калиброванный клик через новый `Controller.click_local` в `macos_native_input_driver.py`) и шаг `click-source-window` перед `open-source-window` в `flow.ui.player.input.json`. Статически проверено: `python3 -m unittest discover -s tools/tests` — 458/458 PASS (включая все 10 кейсов `test_semantic_test_driver.py`, `test_workflow_is_semantic_not_coordinate_or_timing_playback` подтверждает отсутствие сырых координат в спеке), `./tools/hatifect-check` — PASS (1762 .NET + 458 Python), C#-код не менялся. Живая проверка гипотезы — **BLOCKED**: три последовательные попытки (`27c24ddf...`, `d45dc8fa...`, `745a54d4...`) на новом, отдельно поднятом runtime executor снова упёрлись в тот же `CGPreflightPostEventAccess()=false`, хотя ранее (см. выше, `ff9fa26d`) тот же механизм у другого экземпляра supervisor однажды успешно прошёл проверку. Гипотеза "перезапуск worker достаточен" не подтвердилась стабильно — Accessibility-грант для этой GUI-сессии, по всей видимости, привязан к экземпляру supervisor-процесса, а не к стабильной identity бандла; конкретный триггер пока не установлен. `clickPoint`/`click_local` остаются непроверенными живым прогоном. Следующий шаг — либо стабилизировать Accessibility-грант для этой сессии независимо (внешний Terminal-путь уже подтверждён рабочим), либо повторить проверку из среды с уже подтверждённым доверием.
+### Интеграция Chests Anywhere — в работе
 
-Локальный Window capture-retention кандидат `b23f54c96aee60a8a27f4ec73bb006e9d58a873a` (документирующий HEAD `eeed8f358473d1293c4aab275e77ee24fe0deb4f`) устраняет отдельный дефект evidence после фактически завершённого пути `7470e72d...`: обязательные пять probe phases и пять action-result публикаций получают резерв в bounded истории128, результаты двух Register различаются surface epoch, ожидающее действие переживает потерю focus до следующей accepted scene, а необязательные stable frames не выполняют Result scan. Public API, wire format, Flow semantics и hard capacity не изменены. Focused Stardew suite на точном code source — **PASS107/107**; `git diff --check` чист. Exact platform `run-0u3u38v3` подтвердил architecture/public API,503 Python tests, UI packages, restore и игровые references, затем остановился на недоступном NuGet audit endpoint: `NU1900` повышен до build error даже после разрешённого повтора через `rtk proxy`; это **BLOCKED**, а не PASS. Полный G `run-vi9q00y4` (2316 .NET +503 Python), normalized player11, chest roundtrip8 и native Accessibility-block `a8624e82...` относятся к predecessor `756369c` и не переносятся на новый source. Native текущего кандидата — **NOT_PROVEN**; F13/F18/F19/Q02 остаются **IN_PROGRESS**. Следующий готовый шаг: обеспечить `CGPreflightPostEventAccess()=true` для `/Library/Frameworks/Python.framework/Versions/3.14/bin/python3`, повторить G/P/prepare на неизменном локальном кандидате и выполнить `flow.ui.player.input` с `failure == null`, не более128 captures, всеми пятью phase и пятью action-result evidence и финальным Delivered, после чего повторить исходную EN/RU/scale/controller/CA/save/restart/save-switch матрицу. Remote Git остаётся неизменным по явному ограничению пользователя.
+**Есть:** точные UI-пакеты, согласованная публикация данных, типизированные действия и отдельные проверки изоляции/работы в игре.
+**Осталось:** перейти на новый способ создания экранов, сохранив навигацию, передачу управления и восстановление игрового меню. Удалить только согласованную внутреннюю адаптацию старых объявлений, а не публичную совместимость или необходимое взаимодействие со сторонним модом. Проверить сборку без исходников UI, точные пакеты, единственного поставщика UI DLL, положительные и отрицательные конфигурации CA, закрытие/повторное открытие и возврат ввода.
+**Зависимости:** «Простое создание диалогов и экранов», «Просмотр состояния Flowline». **Владелец:** UI producer + CA adapter/experience. **Проверки:** C, U, G, P, RUNTIME, VISUAL.
 
-Общий локальный checkpoint `c5174a8` соединяет этот UI source с F19 resource feedback `acb1279`. G `run-0rgtui7v` — **PASS** 2 329 .NET + 503 Python; применимый P — **PASS** 101 CA tests / восемь UI packages / 47 projection files; prepare `run-4llj99cx` — **PASS**. Production Window `flow.ui.player` прошёл 11/11 normalized assertions, а исходная chest-матрица — 116/116 обязательных checks плюс два budget assertions; все 12 PASS-runs привязаны к точному SHA, восстановили runtime options и тестовые сейвы и завершились без teardown errors. Exact `flow.ui.player.input` request `521bde15...` остаётся **BLOCKED** до первого шага из-за `CGPreflightPostEventAccess()=false`; он не проверил новое retention-поведение. [Полная матрица и границы evidence](Q02_RUNTIME_C5174A8.md). F13/F18/F19/Q02 остаются **IN_PROGRESS**. Следующий шаг: выдать Accessibility указанному Python runtime, повторить physical-input на неизменном кандидате, затем закрыть EN/RU/scale/controller/CA и собрать/проверить installable archive. Git остаётся только локальным.
+<a id="game-validation"></a>
 
-После этого checkpoint локально интегрированы два F18/F19 feedback-среза. Owner `ff4562d`, integration `1a83a2b`, различает для typed Send временно занятый/недоступный source provider (`ProviderUnavailable`), изменившийся или несериализуемый стек (`Conflict/StateChanged`) и стек активной отправки (`OperationPending`); отказ происходит до payload/parcel/tag/physical mutation, а прямой внутренний Send сохраняет совместимый `InvalidOperationException`. Owner `ffe59ff`, integration `aca70b0`, различает для typed Network занятый target, изменившуюся topology, некорректные параметры и rebind источника с незавершённым грузом. Тесты проверяют неизменные revision/topology/items/tags и отсутствие fault; exact Stardew adapter suite содержит 254 PASS, architecture — 26 проектов / пять rule groups PASS, public API baseline PASS. Два первых canonical `flow --platform` run дошли до build и были **BLOCKED** внешним `NU1900` до test stage. Последующий exact Flow run `run-7pzafv_n` на локальной интеграции `3a34cbb` — **PASS** 797 Core/Persistence и 254 Stardew adapter tests; общий G `run-jaeobkd2` — **PASS** 2 334 .NET и 503 Python tests без failures/skips. Код после этих прогонов не менялся, последующие commits до `b890832` затрагивали только документацию. Поскольку Flow DLL изменилась после `c5174a8`, прежние prepare/runtime результаты всё равно не переносятся на новый состав. Следующий шаг — exact prepare и native/original matrix на одном зафиксированном локальном SHA. F13/F18/F19/Q02 остаются **IN_PROGRESS**; remote Git не изменяется.
+### Проверка текущей сборки в игре — в работе
 
-Exact local checkpoint `e9cfffc` после F19 admission-feedback: чистый `hatifect-live-prepare` `run-58sg01xm` и `save.bootstrap` `5a3e51fd...` — **PASS**. `flow.ui.player.input` `b0e6af20...` — **BLOCKED до первого semantic step**: `CGPreflightPostEventAccess()=false`, `currentStep=null`, `events=[]`, Flow progress отсутствует; working-copy cleanup и восстановление обоих isolated options — PASS. Read-only `IOHIDCheckAccess(kIOHIDRequestTypePostEvent)` также вернул Denied, а Apple SDK требует для этого API пользовательский grant, поэтому он не даёт доступного обхода. `clickPoint`, raw K, capture retention и F19 UI results этим request не проверены. Полный отчёт: [Q02_RUNTIME_E9CFFFC.md](Q02_RUNTIME_E9CFFFC.md). Следующий готовый шаг — повторить неизменный exact candidate из процесса с уже подтверждённым `CGPreflightPostEventAccess()=true`, затем по фактической telemetry либо принять focus-гипотезу, либо продолжить low-level keyboard investigation; Q02/F13/F18/F19 остаются **IN_PROGRESS**.
+**Есть:** прошлые проверки UI, CA и Flowline, исправления захвата, размера окна и проверки DLL, измерения.
+**Осталось:** зафиксировать одну сборку и окружение: контрольные суммы, версии игры/SMAPI/CA, архитектуру/runtime, язык и масштаб. Проверить UI/CA и жизненный цикл диагностического Flowline, отдельно — физический ввод и ручные наблюдения, включая Search/Backspace. Результат — воспроизводимая база и список актуальных дефектов. Каждый найденный дефект получает ограниченное исправление, а не расширяет автоматически весь рефакторинг.
+**Подробности:** [ввод в игре](game-validation-native-input.md).
+**Зависимости:** «Аудит исходной базы». **Владелец:** UI/Flow/CA hosts + harness. **Проверки:** G, P, RUNTIME, VISUAL, PERF.
 
-## 1. Результат, к которому идём
+<a id="alpha-release"></a>
 
-**Для автора мода:** типобезопасно описать состояние, действия и смысл интерфейса; быстро собрать простой диалог; при необходимости управлять композицией или точной геометрией; получить единые ввод, focus, lifecycle, темы и диагностику. Один semantic IR и один runtime обслуживают все способы авторства.
+### Приёмка первой альфы — в работе
 
-**Для игрока:** пользоваться предсказуемым интерфейсом на EN/RU, при разных масштабах и размерах окна, с мышью, клавиатурой и контроллером. Flowline показывает состояние транспорта, объясняет недоступные действия и позволяет управлять перевозками в пределах подтверждённых возможностей provider.
+**Есть:** на `57c9ef4` выполнены 23 игровых сценария / 255 проверок, английский/русский и масштабы, профиль контроллера, совместимость с CA, проверка архива и изолированной установки.
+**Осталось:** завершить обычный ввод и повторить полную приёмку на окончательных DLL: настройку и перевозку, реальные отказы адаптера, сохранение/загрузку, изоляцию сессий, совместную работу Flowline/CA, язык, ввод, масштаб и производительность. Успешно пройти единый `release.sh`, проверить точный состав архива, зависимости и инструкции установки; описать ограничения. Без проверки настоящих предметов это демонстрация тестовой перевозки, а не готовая альфа.
+**Подробности:** [последняя описанная сборка](alpha-release-runtime-57c9ef4.md), [установка](alpha-installation.md).
+**Зависимости:** «Отправка груза и работа с ошибками», «Интеграция Chests Anywhere», «Проверка текущей сборки в игре». **Владелец:** Flow/UI/CA + release tooling. **Проверки:** C, G, P, RUNTIME, VISUAL, PERF.
 
-**Для разработчика Hatifect:** менять общий контракт вместе с владельцем и consumer; получать воспроизводимые проверки, preview и объяснение planner; обновлять UI с контролируемым переносом состояния; диагностировать отказ без потери принадлежности груза или смешивания сейвов.
+### Что сейчас мешает объявить альфу готовой
 
-Расширенная цель UI включает semantic-v2, несколько authoring API, общую библиотеку компонентов, transactional hot reload, editor tooling и документированный extension contract. Первый реальный маршрут Flowline может выйти раньше полного набора этих возможностей: точная компоновка, большой каталог компонентов и полноценный editor не являются предпосылкой двухстанционной перевозки.
+- Последняя описанная проверка физического ввода остановилась из-за разрешения macOS на отправку событий. Его нужно проверить для фактического процесса заново. Отдельно встречалась проблема доставки клавиши K даже после успешной предварительной проверки.
+- Профиль контроллера, программные действия, события ОС и ввод человеком — разные доказательства. Одно не подменяет другое.
+- На `57c9ef4` архив и установка проверены, но единый `release.sh` прерывался при восстановлении NuGet. Это исторический отказ, не диагноз нынешней сети; требуется успешный итоговый запуск.
+- Изменения после игровой сборки `57c9ef4` не являются новой игровой приёмкой; игровые и визуальные проверки требуются для фактических публикационных DLL.
 
-## 2. Что уже есть и чего ещё нет
+## После первой альфы
 
-Текущие исходники, [архитектура](../ARCHITECTURE.md), [руководство разработки](DEVELOPMENT.md) и исполняемые проверки имеют приоритет над историческими планами. Таблица ниже описывает исходную базу `2f08a4f`; актуальные отличия `55b8360` и доказательства для каждого ID приведены в [B01](ROADMAP_BASELINE.md). В частности, уже появились optional standalone host API, публичная collection metadata, typed forms, три темы, парный live reload и расширенный LSP server; это не закрывает полный semantic-v2 и соответствующие acceptance criteria.
+Эти работы остаются в плане. До альфы они нужны только при зависимости её обязательного сценария или для исправления блокирующего дефекта.
 
-| Область | Сохранённая база | Следующее развитие |
-|---|---|---|
-| UI pipeline | Language → Semantics → Experience; Planning, Runtime, Stardew host, Tooling/Server и DevTools | Согласованный semantic-v2 и его использование всеми способами авторства |
-| Данные UI | `IUiSemanticSource<T>`, `UiState<T>`, stable IDs; collection state с внутренней revision, replacement и сохранением selection | Публично определённая модель версий/дельт, типизированные связи, согласованное чтение нескольких источников |
-| Действия UI | Синхронные `UiActionDefinition`, `CanExecute`, `TryExecute` | Типизированные вход/результат, ошибки, выполнение, отмена и защита от устаревшего завершения |
-| Planning | Профили, capabilities, deterministic planning, provenance | Явные отношения, environment facets, проверка покрытия семантики и структурированное объяснение решений |
-| Runtime | Layout, scenes/reconciliation, focus/input, portals, виртуализация, runtime Terminal hosts | Инкрементальная обработка нового контракта без повторного создания этих подсистем |
-| Hot reload | `UiAssetSlot<TDefinition>`: атомарный Last Known Good для одного Presentation/Visual asset | Подготовка согласованного bundle, перенос состояния, переключение всех участвующих hosts и rollback |
-| Публичный UI host | `IUiSemanticSurfaceApi` v1: overlay над конкретным активным native menu | Явно выбранный способ размещения самостоятельного Flowline UI; текущий overlay не объявляется универсальным window API |
-| CA Overlay | Внешний consumer точных UI NuGet packages; отдельный адаптер стороннего API | Проверка и миграция consumer при развитии UI, сохранение package isolation |
-| Flowline | Десять инкрементов Core/Persistence/host с deterministic fake provider и save isolation | Application boundary, рабочий UI, реальные inventory adapters и production session |
-| UI Flowline | Отдельный read-only `ParcelExperience`, непосредственно проецирующий `Parcel` через constant sources | Snapshot projection, lifecycle, уведомления и команды через application boundary |
-| Поставка | Три модуля, 13 runtime DLL: UI 8, Flowline 3, CA 2 | Явное обновление состава/зависимостей при включении Flow semantic UI |
-
-В Flowline сохранены: (1) транспортная модель и deterministic scheduling; (2) atomic fake ports, cargo identity и receipts; (3) checkpoints и writer lease; (4) durable provider и журнал intent/receipt; (5) admission; (6) station registration; (7) cargo provisioning; (8) capacity updates; (9) host lifecycle и logical clock; (10) привязка сейва к PairId/NetworkId и fencing старой сессии. Продолжение нумеруется `F11`–`F20`; это новые работы, а не утверждение об их завершении.
-
-Низкоуровневые `Revision`/`ProviderRevision` уже существуют. Недостаёт общего application contract для consumer. Наличие fake-provider recovery не доказывает согласованность произвольного игрового inventory с игровым сейвом после crash.
-
-Опорные исходники и тесты:
-
-- [Состояние и типизированные источники UI](<../Hatifect UI/Hatifect.UI.Experience/State/UiSemanticSource.cs>), [коллекции](<../Hatifect UI/Hatifect.UI.Experience/State/UiSemanticCollectionSource.cs>), [действия](<../Hatifect UI/Hatifect.UI.Experience/Actions/UiActionDefinition.cs>), [semantic builder](<../Hatifect UI/Hatifect.UI.Experience/UiExperienceBuilder.cs>).
-- [Публичная игровая UI-граница](<../Hatifect UI/Hatifect.UI.Experience/Hosting/UiSemanticSurfaceContracts.cs>), [planner tests](<../Hatifect UI/tests/Hatifect.UI.Planning.Tests/PresentationPlannerTests.cs>), [Last Known Good slot](<../Hatifect UI/Hatifect.UI.Runtime/HotReload/UiAssetSlot.cs>).
-- [Flow host](<../Hatifect Flow/Hatifect.Flow.Persistence/DurableFlowHost.cs>), [durable session](<../Hatifect Flow/Hatifect.Flow.Persistence/DurableFlowSession.cs>), [save isolation tests](<../Hatifect Flow/tests/Hatifect.Flow.Tests/DurableSaveSessionStoreTests.cs>), [host tests](<../Hatifect Flow/tests/Hatifect.Flow.Tests/DurableFlowHostTests.cs>), [ParcelExperience](<../Hatifect Flow/Hatifect.Flow.UI.Semantic/ParcelExperience.cs>).
-- [UI package authority](../Hatifect.UI.Packages.json), [runtime inventory](../Hatifect.Release.json), [performance budgets](<../Hatifect UI/PERFORMANCE_BUDGETS.json>), [host acceptance](<../Hatifect UI/HOST_ACCEPTANCE_REQUIREMENTS.json>).
-
-Исторические UI+CA runtime-отчёты относятся к прежнему имени и сборке. Они полезны как список сценариев, но не дают PASS новой поставке. Физический ввод, ручная визуальная приёмка и итоговый performance report должны подтверждаться для конкретного кандидата. Старые Storage/Bootstrap, отдельный продуктовый Terminal и pipe runtime в этот план не возвращаются; runtime Terminal hosts нынешнего UI сохраняются.
-
-## 3. Архитектура следующего этапа
-
-### Владельцы и направление зависимостей
-
-| Владелец | Что ему принадлежит | Граница с соседями |
-|---|---|---|
-| Flow Core / Application | Доменные правила, запросы, результаты команд и immutable read model | Не зависит от UI, SMAPI, Stardew или CA |
-| Flow Persistence | Durable execution, envelopes, recovery, save identity и lease | Реализует сохранение/восстановление; UI не получает доступ к journal/runtime mutation callbacks |
-| Flow game host / adapters | Игровые события, main-thread access, inventory capabilities, начало/окончание сессии | Переводит игровой мир в domain/application contract |
-| Flow semantic experience | Выбор данных, пользовательские намерения и локальное состояние представления | Читает snapshots, вызывает команды; не задаёт частные размеры/цвета для исправления framework |
-| UI Language / Semantics / Experience | Идентичность, типы, источники, отношения, действия и authoring | Все способы авторства понижаются в общий IR |
-| UI Planning / Runtime | Представление, visual policy, layout, input, focus, lifecycle, rendering | Один набор правил для Flowline, CA и сторонних consumer |
-| UI Stardew host | Native menu/window/overlay integration, ресурсы платформы | Наружу выдаёт capability и непрозрачную session handle |
-| Tooling / DevTools | Metadata, diagnostics, preview, объяснение planner, измерения | Использует тот же compiler/IR и не содержит второй реализации семантики |
-| CA adapter | Совместимость CA, подписки и handoff native menu | Сторонний API остаётся в адаптере; UI поставляется отдельно |
-
-Сначала расширяем существующие owning projects. Новый assembly нужен только при доказанной границе зависимости, поставки или публичного API. Не создаём отдельный проект для каждого DTO или команды.
-
-```mermaid
-flowchart LR
-    App[Flow application contracts] --> Domain[Flow domain]
-    Durable[Persistence implementation] --> App
-    Game[Game host and inventory adapter] --> App
-    Game --> Durable
-    View[Flow semantic experience] --> App
-    View --> Semantic[UI semantic model]
-    Quick[Quick authoring] --> Semantic
-    Declarative[View authoring] --> Semantic
-    Exact[Exact authoring] --> Semantic
-    Semantic --> IR[Canonical IR]
-    Planner[Planning] --> IR
-    Runtime[One runtime] --> Planner
-    Runtime --> IR
-    Host[Stardew host] --> Runtime
-    Tools[Tooling and preview] --> IR
-```
-
-Стрелка означает «использует». Схема показывает целевые логические зависимости, а не новый список `ProjectReference`. Application contracts принадлежат существующей Flow application-области, а не UI. Точный граф assemblies остаётся в solution и architecture checks.
-
-### Связь Flowline и UI
-
-Предлагаемый контракт `F11` должен определить следующие свойства; конкретные C# имена выбираются в его дизайне:
-
-1. Snapshot содержит идентичность сессии/сейва, revision, необходимые представлению immutable значения, capabilities и причины недоступности действий. Вложенная коллекция `IReadOnlyList<T>` не считается глубоко immutable, если `T` изменяется после публикации.
-2. Команда имеет типизированные параметры, адресата, идентичность сессии и определённое правило проверки ожидаемой revision. Политика повторного запроса зависит от эффекта: operation/request ID и durable idempotency вводятся там, где это требуется, а не имитируются флагом UI.
-3. Результат различает выполненное действие, доменный отказ, конфликт/устаревшую сессию и инфраструктурный сбой. Snapshot/revision после действия отражает согласованное состояние владельца; pending intent не изображается как законченная перевозка.
-4. Revision notification означает «доступно новое состояние». Подписка имеет владельца и освобождается при закрытии. Контракт исключает потерю обновления между initial read и subscribe: согласованная подписка со snapshot либо subscribe → read → recheck.
-5. Изменения могут объединяться до одного UI update. Пропущенная дельта восстанавливается полным snapshot; очередь уведомлений ограничена. UI не сканирует весь persistence на каждом draw.
-6. Save switch, fault и dispose делают старый session token недействительным. Старые callbacks и завершения команд не меняют новый экран. Ошибка UI observer не откатывает успешно сохранённую доменную операцию и не вызывает reentrant mutation.
-
-Различаем три понятия: **Flow session/revision** определяют доменное состояние; **UI source version** определяет изменение проекции; **UI generation** определяет экземпляр runtime/bundle. Их нельзя объединять в один счётчик или переносить из старого сейва в новый.
-
-### Миграция UI
-
-`UiQuick`, `UiView`, `UiExact` и расширенный `UiExperience` — рабочие названия предложенных authoring-поверхностей. Сегодняшний `UiExperienceBuilder` и `IUiSemanticSurfaceApi` v1 остаются исходной точкой совместимости.
-
-В `B02` сравниваем additive evolution и явно версионированный breaking contract. Предпочтительно сохранять рабочий consumer через ограниченный compatibility bridge в общий IR. Если bridge скрывает неоднозначность или размножает runtime, выбираем явную миграцию в одном сквозном изменении. Срок и условие удаления bridge фиксируются сразу; новые consumer не строятся на заведомо уходящей форме API.
-
-Для `UiExact` требуется отдельное решение: текущая [архитектура](../ARCHITECTURE.md) оставляет геометрию/visual policy framework и запрещает частную стилизацию в consumer C#. Предлагаемый exact authoring должен быть явным framework contract с общими input, hit testing, scale и accessibility правилами. До решения `D02` это направление не разрешает обойти действующую границу.
-
-## 4. Вехи и порядок
-
-Веха означает проверяемый результат. Работы одного потока могут идти параллельно независимому потоку, но зависимые изменения общего контракта интегрируются последовательно.
-
-| Веха | Результат | Работы и условие выхода |
-|---|---|---|
-| M0 — согласованная основа | Есть актуальная карта поведения и решение о минимальном v2 | B01, B02; Q01 начинает новый runtime baseline |
-| M1 — живой read-only Flow UI | Открытие экрана, актуальные данные и безопасное закрытие/смена сейва | U01, U02, U04, F11, F12; выполнен сценарий на новом build |
-| M2 — удобное авторство и управление fake flow | Базовые Quick/View, общие компоненты, actions; CA работает на обновлённом контракте | U03, U05–U07, F13, I01; fake provider явно обозначен |
-| M3 — ограниченная реальная перевозка | Две станции и один поддерживаемый provider; настройка, отправка, наблюдение и recovery | F14–F19, Q02; выбранные D03/D04, failure matrix и свежая runtime-приёмка |
-| M4 — полный цикл разработки UI | Prepare/reload/rollback, перенос состояния, preview и editor feedback | R01–R04, T01–T03; может развиваться параллельно M3 |
-| M5 — расширенный framework и готовая поставка | Exact, согласованный каталог и extension contract, подтверждённые эксплуатационные ограничения | U08–U10, F20, Q03; объём выбран через D02/D05/D06 |
-
-**Ближайшая последовательность:** B01 → B02 → U01 → U02/U04 → F12, причём F11 начинается после B02 и становится второй обязательной входной зависимостью F12. Это первый сквозной результат, после которого уточняются удобство authoring и стоимость дальнейшей миграции. F14 можно исследовать после B01; реализация реальных inventory не блокирует M1.
-
-```mermaid
-flowchart TD
-    B01[B01 baseline] --> B02[B02 contracts]
-    B02 --> U01[U01 semantic v2]
-    U01 --> U02[U02 state]
-    U01 --> U04[U04 planner]
-    B02 --> F11[F11 application boundary]
-    U02 --> F12[F12 read-only UI]
-    U04 --> F12
-    F11 --> F12
-    F12 --> M2[M2 authoring and fake controls]
-    B01 --> F14[F14 provider consistency]
-    F14 --> Real[F15-F17 real provider and session]
-    M2 --> Product[F18-F19 transport UI]
-    Real --> Product
-    Product --> M3[M3 real transport acceptance]
-    U02 --> Dev[R01-R04 and T01-T03]
-    Dev --> M4[M4 development workflow]
-    M3 --> M5[M5 final scope and release]
-    M4 --> M5
-```
+<a id="reload-resource-ownership"></a>
 
-Диаграмма укрупнённая; точные предпосылки находятся в таблице работ. Если работает один implementer, это очередь с возможностью переключения на независимый готовый пакет. Если работают несколько — у общего контракта один integration owner, пользовательские задачи живут в отдельных worktree. Постоянные ветки UI/Flowline не нужны.
+### Владение ресурсами интерфейса — в работе
 
-## 5. Каталог работ
+**Есть:** проверка потока-владельца ресурсов, описание кэша активации и владения выполнением действий.
+**Осталось:** составить полный перечень владельцев окон, обработчиков, подписок, незавершённых операций, кэшей и ресурсов платформы/GPU. У каждого ресурса ровно один владелец. Определить общую идентичность поколения UI, границы потоков и завершения, правила повторной очистки и однократных действий. Закрытое поколение не принимает новые эффекты, повторное освобождение безопасно. Перезагрузка UI не пересоздаёт доменную сессию Flowline.
+**Подробности:** [текущий перечень владельцев](reload-resource-ownership.md).
+**Зависимости:** «Согласованное обновление данных», «Действия и их завершение». **Владелец:** UI Runtime/host. **Проверки:** C, U, G.
 
-В таблице перечислены владельцы и обязательные проверки. Проверки обозначены в разделе 7. Зависимость означает завершённый контракт/результат, пригодный для интеграции; само появление черновика не разблокирует production implementation.
+<a id="reload-preparation"></a>
 
-| ID | Работа | Зависимости | Owning layer | Проверка |
-|---|---|---|---|---|
-| B01 | Актуальная карта базы и разрывов | — | Architecture, subsystem owners | C |
-| B02 | Минимальный semantic-v2 и совместимость | B01 | UI Experience/Semantics + consumers | C, U, P при API-коде |
-| U01 | Типы, identity и relation graph | B02 | UI Experience/Semantics | C, U, P |
-| U02 | Версии состояния и collection deltas | U01 | UI Experience/Runtime | C, U, P, PERF |
-| U03 | Типизированные действия и async lifecycle | U02 | UI Experience/Runtime/host | C, U, P, G, RUNTIME |
-| U04 | Environment facets и объяснимый planner | U01 | UI Planning/Semantics | C, U, P, PERF |
-| U05 | Инкрементальный runtime и общие состояния | U02, U04 | UI Runtime | C, U, G, RUNTIME, PERF |
-| U06 | Tokens, темы и базовые компоненты | U04, U05 | UI Runtime/Planning/Stardew | C, U, G, RUNTIME, VISUAL |
-| U07 | Quick/View authoring | U03, U06 | UI Experience/Language/Semantics | C, U, P, RUNTIME |
-| U08 | Exact authoring | U07; D02 | UI Language/Planning/Runtime | C, U, P, G, VISUAL, PERF |
-| U09 | Полный согласованный каталог компонентов | U07; D05 | UI framework | C, U, P, RUNTIME, VISUAL |
-| U10 | Расширения framework | U03, U06, R04; D05 | UI contracts/Runtime | C, U, P, RUNTIME |
-| R01 | Ownership и generations | U02, U03 | UI Runtime/host | C, U, G |
-| R02 | Подготовка согласованного bundle | R01, U04 | Compiler/Runtime/Tooling | C, U |
-| R03 | Перенос совместимого UI state | R02, U05 | UI Runtime | C, U, G, RUNTIME |
-| R04 | Commit/rollback всех участвующих hosts | R03 | UI Runtime/Stardew | C, U, G, RUNTIME, PERF |
-| T01 | Общая metadata и tooling protocol | U01, U04 | UI Tooling/Tooling.Server | C, U |
-| T02 | Preview и матрица окружений | T01, U06, R02 | UI Tooling/DevTools/host | C, U, G, VISUAL |
-| T03 | Editor workflow и примеры | T01, T02, U07 | UI Tooling + выбранный editor client | C, U, MANUAL |
-| F11 | Snapshots, команды, revision boundary | B02 | Flow Application/Persistence/host | C, F |
-| F12 | Read-only Flow experience в host | F11, U02, U04 | Flow UI + UI host | C, F, U, G, P, RUNTIME |
-| F13 | Управление и диагностика fake session | F12, U03 | Flow Application/UI | C, F, U, G, RUNTIME |
-| F14 | Provider contract и модель согласованности | B01 | Flow Application/Persistence/adapters | C, F; D03/D04 |
-| F15 | Item semantics и read-only game adapter | F14 | Flow game adapter | C, F, G, RUNTIME |
-| F16 | Реальные transfer effects и recovery | F15 | Flow Persistence + game adapter | C, F, G, RUNTIME |
-| F17 | Production transport session | F11, F16 | Flow host/Persistence | C, F, G, RUNTIME, PERF |
-| F18 | Настройка станций и маршрута через UI | F13, F17, U07 | Flow Application/UI + adapter | C, F, U, G, RUNTIME, VISUAL |
-| F19 | Отправка, наблюдение и восстановление | F18 | Flow Application/UI | C, F, U, G, RUNTIME, VISUAL |
-| F20 | Ограничения, диагностика и обслуживание | F17; D06 | Flow Core/Persistence/tools | C, F, G, PERF, RUNTIME |
-| I01 | CA на обновлённом UI contract | U07, F12 | UI producer + CA adapter/experience | C, U, G, P, RUNTIME, VISUAL |
-| Q01 | Свежая runtime-база Hatifect | B01 | UI/Flow/CA hosts + harness | G, P, RUNTIME, VISUAL, PERF |
-| Q02 | Приёмка реального Flow MVP | F19, I01, Q01 | Flow/UI/CA + release tooling | C, G, P, RUNTIME, VISUAL, PERF |
-| Q03 | Приёмка полной модернизации и поставка | Q02, U08, U09, U10, R04, T03, F20 | Все owners + release tooling | C, G, P, RUNTIME, VISUAL, PERF, MANUAL |
+### Подготовка обновления интерфейса — запланировано
 
-### B01–B02: исходная точка и контракты
+До изменения активного UI целиком найти ресурсы, скомпилировать и связать объявления, проверить типы, зависимости и возможность активации. Подготовленный набор получает одну контрольную сумму и список окон. Ошибка оставляет прежний UI рабочим и сообщает конкретную причину. Обновляются объявления и ресурсы; замена уже загруженных .NET-сборок или произвольного C# не обещается.
+**Зависимости:** «Владение ресурсами интерфейса», «Адаптация интерфейса к окружению». **Владелец:** Compiler/Runtime/Tooling. **Проверки:** C, U.
 
-**B01.** Сверить код, README, публичный baseline, package inventory, поведенческие тесты и доступные runtime evidence. Для каждого заявленного поведения указать реализовано/частично/отсутствует и конкретное доказательство. Проверить текущую базу канонической командой. Выход: согласованная таблица разрывов; исторические провалы и успехи не выдаются за результат нового build.
+<a id="reload-state-preservation"></a>
 
-**B02.** Подготовить минимальную спецификацию semantic-v2: stable identity, типы и nullability, отношения, версии state, действия, migration path и первый Flow example. Зафиксировать решение `D01`, область public API, требования к CA и способ размещения первого Flow UI. Выход: конкретный пример модели и consumer mapping, по которым можно независимо реализовать U01 и F11. Не проектировать заранее все виджеты и все синтаксисы; расширение проверяется сквозным примером.
+### Сохранение состояния при обновлении — запланировано
 
-Результат B02: [SEMANTIC_V2.md](SEMANTIC_V2.md) фиксирует D01, все семь relation kinds, типизированные projection input slots, explicit identity / schema-v2 migration, atomic publication, action lifecycle и минимальный Flow application mapping с причинами availability. Независимый read-only review закрыл три замечания после исправлений. C: `./tools/hatifect-check`, `artifacts/validation/run-vion_3x9/summary.json` — PASS, 947 .NET + 296 Python. Предыдущий `run-mf2tlgrc` завершён как FAIL после диагностированного нативного ожидания dotnet (`build-hang.sample.txt`); он не является успешным evidence. C# API в B02 не меняется; U/P/G/RUNTIME/VISUAL/PERF будущих срезов этим результатом не подтверждаются. Следующий готовый UI срез — U01; независимый Flow owner реализует F11 по той же спецификации.
+До применения проверить план переноса по стабильным идентификаторам, роли и совместимости типов: поиск, выбор, прокрутка, фокус и поддерживаемые редактирование/каретка/композиция текста. Переименование псевдонима (alias) не меняет стабильный идентификатор. Для удаления и смены типа определить безопасное поведение. Проверить совместимые и несовместимые изменения; данные одного сохранения не переносятся в другую сессию Flowline. Произвольные runtime-объекты не сериализуются ради «сохранить всё».
+**Зависимости:** «Подготовка обновления интерфейса», «Обновление интерфейса без лишних пересчётов». **Владелец:** UI Runtime. **Проверки:** C, U, G, RUNTIME.
 
-### U01–U04: semantic-v2
+<a id="reload-atomic-switch"></a>
 
-**U01.** Расширить существующие typed sources и identity до явно проверяемого semantic graph. Описать связи collection → selection → details, query/filter → collection, form → validation/action, action → target. Отличать стабильный ID от отображаемого alias и label. Неоднозначные ссылки, несовместимые типы, отсутствующие required capabilities и недопустимые циклы дают адресные diagnostics. Выход: один Flow read model и CA fixture проходят новый binding; негативные примеры отклоняются до activation. Совместимость consumer входит в этот же сквозной срез.
+### Одновременное обновление открытых окон — запланировано
 
-Результат U01: **DONE**, `856ff52`. Все семь отношений проходят binding; invalid graph, types, capabilities, provenance и циклы отклоняются до activation. Legacy canonical v1 wire сохранён, v2 сохраняет независимые ID/alias/labels и projection inputs. C/U/G/P и независимый review отражены в [отчёте](ROADMAP-STATUS.md#u01-typed-semantic-graph-and-lossless-binding). Runtime/visual следующих срезов этим результатом не заменяются.
+Переключать участвующие окна в одной точке обновления. Ошибка до переключения сохраняет старое поколение; допустимый откат возвращает весь согласованный набор. Проверить сбои подготовки, переноса, переключения и освобождения на двух открытых поверхностях, позднее завершение операций и повторные обновления без роста ресурсов. Измерить паузу переключения и пиковую память. Старые ресурсы освобождаются после безопасной передачи владения. Обновление не повторяет доменные команды и не отменяет уже выполненные внешние эффекты.
+**Зависимости:** «Сохранение состояния при обновлении». **Владелец:** UI Runtime/Stardew. **Проверки:** C, U, G, RUNTIME, PERF.
 
-**U02.** Определить source version, publication boundary, typed collection delta и полный reset. Согласовать insert/remove/move/update, item content version, selection/focus anchors, обработку устаревшей или пропущенной дельты. Обработать batch из нескольких связанных источников без смешанного кадра; ограничить буферизацию. Выход: reorder сохраняет выбранный stable ID, удаление выбранного элемента даёт определённый fallback, повторная delta не дублирует элемент, reset восстанавливает согласованность. Простая замена snapshot остаётся поддержанным путём для небольших данных.
+<a id="editor-preview"></a>
 
-Результат U02-a: проверенный implementation commit `c5db895`; полный U02 **IN_PROGRESS**. Experience/Runtime публикуют связанные sources одним immutable view; typed changes ограничены, capture не копирует коллекцию, CA использует запросы до mutation и единый commit. C — PASS (1 153 .NET + 315 Python), G — PASS (1 350 .NET + 315 Python), P — PASS (90 CA tests, восемь alpha.33 packages). [Подробные evidence и ограничения](ROADMAP-STATUS.md#u02-a-publication-collection-changes-and-atomic-ca). Полный U02 требует атомарного Flow read model, окончательных focus/scroll fallbacks и оставшихся update measurements.
+### Предпросмотр интерфейса — запланировано
 
-U02-b, промежуточный Flow checkpoint `22f56fd`: ParcelExperience переводит backing read model и все поля в один commit, сохраняя следующий Pump для command result. C — PASS (1 168 .NET + 323 Python), включая 15 новых atomic/lifecycle cases. [Evidence](ROADMAP-STATUS.md#u02-b-atomic-parcel-projection-checkpoint). NetworkExperience и остальные критерии U02 продолжаются.
+Запускать тот же компилятор, выбор представления и runtime, что используются в игре, с управляемыми тестовыми данными. Переключать язык, размер окна, масштаб, ввод, тему, уменьшенную анимацию, размер данных, пустое состояние, загрузку и ошибки. Изолированное обновление опирается на подготовку набора, реальные открытые окна — на общее переключение. Сопоставить результат с игрой и описать ограничения платформы. Эталонные изображения при несовпадении автоматически не заменяются.
+**Зависимости:** «Обмен данными с редактором», «Общие компоненты, темы и подсказки», «Подготовка обновления интерфейса». **Владелец:** UI Tooling/DevTools/host. **Проверки:** C, U, G, VISUAL.
 
-U02-b2, Network checkpoint `0fa2aa7`: единая публикация read model, history/details, route/recovery, cached inventory, forms/validation и command result; pending ввод сохраняется при новой доменной ревизии и отказе подготовки. C — PASS (1 212 .NET + 323 Python), включая 42 новых Network cases и два Parcel action fences. [Evidence](ROADMAP-STATUS.md#u02-b2-atomic-network-projection-and-preserved-request-intent). Остаются focus/scroll fallback и update measurements.
+<a id="editor-workflow"></a>
 
-U02-c, checkpoint `4482856`: Runtime сохраняет logical focus и scroll anchor при обновлении коллекций, раскрывает target при явной навигации, обрабатывает empty/refill и внешние uniform sources без reverse lookup. C — PASS (1 248 .NET +326 Python), G — PASS (1 445 .NET +326 Python), P — PASS (90 CA tests, восемь alpha.34 packages);36 новых cases и замеры100/1000/10000. [Evidence и измеренные ограничения](ROADMAP-STATUS.md#u02-c-retained-collection-focus-scroll-anchors-and-measured-update-costs). Полный U02 **IN_PROGRESS**: Runtime follow-up U02-d исправляет render/accessibility при reuse layout; следующая оптимизация устраняет полную подготовку коллекции для единичной delta. Большие обновления пока не подтверждают общий performance budget.
+### Работа автора в редакторе — запланировано
 
-U02-d, checkpoint `56c9e7f`, alpha.35: renderer/accessibility используют текущий captured selection и reconciled focus при сохранённом layout. Border без заливки виден при keyboard focus и empty/refill; prepared-state planner сохраняет совместимость. C — PASS (1263 .NET +330 Python), G — PASS (1460 .NET +330 Python), P — PASS (90 CA tests, восемь alpha.35 packages);15 новых cases. [Evidence](ROADMAP-STATUS.md#u02-d-current-collection-rendering-and-accessibility-on-retained-geometry). Следующий готовый шаг — оптимизация подготовки единичной typed delta; полный U02 остаётся **IN_PROGRESS**.
+Выбрать первый редактор и довести дополнение кода, подсказки типов, переходы к определению и использованиям, переименование без смены идентификатора, ошибки, быстрые исправления и форматирование. Добавить предпросмотр и объяснение выбранного представления. Новый автор по инструкции создаёт панель, находит и исправляет ошибку привязки и проверяет несколько окружений. Нужны примеры Quick/View/Experience, Flowline/CA и руководство по переходу; Exact добавляется к полному выпуску после реализации точной геометрии. Удобство оценивается наблюдением за работой, не количеством строк.
+**Зависимости:** «Обмен данными с редактором», «Предпросмотр интерфейса», «Простое создание диалогов и экранов». **Владелец:** UI Tooling + выбранный editor client. **Проверки:** C, U, MANUAL.
 
-U02-e, checkpoint `356e52e`, alpha.36: **DONE** для полного U02. Update-only batch проверяет каждую операцию, проецирует final values затронутых индексов и копирует только private immutable blocks/root. Эквивалентная explicit delta сохраняет advancement version/history; old captures/selection/supporting metadata остаются согласованными. C — PASS1278 .NET +342 Python, U — PASS559, G — PASS1493 .NET +342 Python, P — PASS90 на восьми alpha.36 packages, ordinary-GC Runtime — PASS263 с600 samples на каждый размер/операцию. Для Update10k p95/p99 —0.004500/0.005458ms, средние allocations6264B. Reset10k —7.287292/7.929292ms и около2.76MB; это cold preparation, не общий PASS frame budget. [Acceptance trace, implementation и полные evidence](ROADMAP-STATUS.md#u02-e-bounded-update-preparation-and-u02-acceptance). Следующий UI ID — U03; U04 также готов по зависимости U01.
+<a id="ui-exact-layout"></a>
 
-**U03.** Ввести typed request/result и состояния действия: доступно, выполняется, выполнено, отклонено/ошибка, отменено — в форме, согласованной контрактом. Определить concurrency policy каждого действия, повторный invoke, `CanExecute` и сообщения пользователю. UI cancellation отменяет ожидание/работу только в пределах контракта; уже committed доменный эффект не «откатывается» закрытием окна. Выход: позднее завершение после close, reload или save switch не меняет новую сессию; исключения наблюдаемы; callbacks возвращаются на owning thread; подписки освобождаются.
+### Точная геометрия интерфейса — запланировано
 
-U03-a, checkpoint `320e5c9`, alpha.37: **IN_PROGRESS**. Реализована foundation typed actions/results/availability и private per-host dispatcher с bounded RejectWhileRunning/RestartLatest/Queue, owning-thread callbacks и retirement fence. Targeted Runtime `run-obcov48y` — PASS296, из них33 новых cases. C `run-f6ivev8y` — PASS1314 .NET +342 Python; G `run-jk6ztvip` — PASS1533 .NET +342 Python. Independent source review — PASS после двух исправлений; P — PASS90 на восьми alpha.37 packages. Production host binding, legacy unit adapter, reload/save-switch wiring, consumer и обязательная RUNTIME acceptance относятся к U03-b; этот checkpoint не закрывает полный U03.
+После решения о геометрии дать `UiExact`: координаты, слои, canvas и пиксельный масштаб внутри framework. Определить измерение и размещение, преобразование координат, обрезку, совпадение изображения и области нажатия, порядок фокуса, смысловые подписи и поведение для компактного окна, контроллера и доступности. Сохраняются общие ресурсы, ввод и жизненный цикл. Неподдерживаемое окружение получает явное поведение; точная отрисовка не обходит проверку нажатий и доступность.
+**Зависимости:** «Простое создание диалогов и экранов»; «Правила точной геометрии». **Владелец:** UI Language/Planning/Runtime. **Проверки:** C, U, P, G, VISUAL, PERF.
 
-U03-b, checkpoint `8a3545d`, alpha.38: **IN_PROGRESS**, bounded prerequisite — Terminal сохраняет активную Transient-модель при focus/text/profile/theme/locale recompose. Explicit Open по-прежнему создаёт новый экземпляр; неуспешный route не заменяет committed model, availability проверяется заново. Шесть новых cases проверяют identity и callback retirement/reentry, включая повторное открытие того же Cached model; сохранены два воспроизведения дефектов. Итоговый scoped Runtime `run-dfnhqwa0` — PASS302 после закрытия review P2. Финальные C/G/P и source review фиксируются в [журнале U03-b](ROADMAP-STATUS.md#u03-b-transient-terminal-model-identity); host action binding и полный U03 RUNTIME остаются следующим шагом.
+<a id="ui-component-catalog"></a>
 
-U03-b action admission, checkpoint `6444272`, alpha.39: **IN_PROGRESS**. Private execution теперь отдельно retired, имеет non-pumping availability refresh и захватывает immutable request после admission guards. Исходный дефект повторного Invoke после отдельного Retire воспроизведён (`run-ivilw1u2`, FAIL1/303); новый scoped Runtime `run-j4ur_lil` — PASS315, включая13 новых cases. Это следующий prerequisite production binding; публичные action/surface signatures и legacy вызовы не меняются. Итоговые gates, review и ограничения — в [журнале admission](ROADMAP-STATUS.md#u03-b-action-admission-and-independent-retirement).
+### Каталог компонентов интерфейса — запланировано
 
-U03-b host scene acceptance, checkpoint `22935f3`, integration `9756790`, alpha.40: **IN_PROGRESS** для полного U03, bounded prerequisite выполнен. Runtime.Update принимает подготовленные scene/layout/input/frame/accessibility вместе; callback не видит частично опубликованное состояние и не может повторно изменить хост или input во время подготовки. После отклонённой коллекции восстановление anchor использует последний принятый порядок. Исходные отказы сохранены (`run-8zhv4pf4`, FAIL 2/317); scoped Runtime `run-rfis2wif` — PASS 327, включая 12 новых cases. После интеграции Q01 и исправления позднего отказа диагностики: C — PASS 1 362 .NET +355 Python, G — PASS 1 600 .NET +355 Python, P — PASS 90; свежие matrix/aggregate — PASS 8/28, late-only fault — ожидаемый FAIL. Итоговый commit, проверки и ограничения — в [журнале host acceptance](ROADMAP-STATUS.md#u03-b-host-scene-acceptance). Следующий готовый шаг — отзыв host/portal runtime при закрытии и fencing validation callbacks, затем production binding/Update pump и полный U03 RUNTIME.
+Сначала сверить существующие компоненты, затем добавлять выбранные пробелы по семействам с реальным применением. Кандидаты: размещение/слои/прокрутка и виртуальные списки, сетки, деревья; кнопки, переключатели, ползунки, списки выбора, вкладки, поля текста/чисел/клавиш/цвета/поиска; игровые ячейки, сетки и подсказки предметов, валюта, портреты, управление; формы, браузеры, инспекторы, связанные списки и подробности, панели команд, настройки, прогресс и состояния. Для каждого опубликованного компонента нужны пример, ограничения и проверки ввода, языка, масштаба, темы, состояний и обновления. Непроверенные семейства остаются экспериментальными.
+**Зависимости:** «Простое создание диалогов и экранов»; «Состав публичного интерфейса». **Владелец:** UI framework. **Проверки:** C, U, P, RUNTIME, VISUAL.
 
-U03-b host retirement, checkpoint `8a45917`, alpha.41: **IN_PROGRESS**. Закрытие отзывает root и вложенные portal runtime до освобождения владельца; подготовленный Update не публикуется после retirement. Terminal проверяет актуальность принятой сцены после composition/validation, включая вложенное открытие той же Cached-модели или Recompose. Present повторно проверяет владельца и регистрацию после callbacks. Legacy input проверяет владельца между CanExecute и Execute, сохраняя публичный direct TryExecute. Исходные FAIL 6/347 и FAIL 1/360 сохранены; scoped Runtime `run-uj1x9r24` — PASS 360, включая 19 новых cases. C — PASS 1 381 .NET +355 Python, G — PASS 1 619 .NET +355 Python, P — PASS 90 и восемь точных пакетов; независимое review — PASS. Итоговый commit и ограничения фиксируются в [журнале retirement](ROADMAP-STATUS.md#u03-b-host-retirement-and-validation-fences). Полный U03 всё ещё требует production binding, Update pump и lifecycle/RUNTIME acceptance.
+<a id="ui-extensions"></a>
 
-U03-b follow-up [`ae8ef7d`](https://github.com/ihatectf/Hatifect/commit/ae8ef7d14a15f614bb704d1fc89bb62ae3199fd7): дополнительное воспроизведение выявило оставшийся P2 в alpha.41 — смена принятой сцены внутри CanExecute сохраняла разрешение на старый эффект. Private input guard теперь сверяет AcceptedVersion до и после callback, сохраняя active/preparing/disposal checks. Три регрессии Open(other), Open(same Cached) и Recompose сначала дали FAIL 3/363, после исправления scoped Runtime — PASS 363/363; сохранение новой сцены и последующее корректное действие проверяются вместе. [Проверки и границы исправления](ROADMAP-STATUS.md#u03-b-legacy-admission-scene-version-repair). Полный U03 остаётся IN_PROGRESS; исправление передано владельцу UI для интеграции в следующий согласованный candidate.
+### Расширения интерфейса — запланировано
 
-U03-b production binding, checkpoint `790288b`, integration `9b8f5e6`, alpha.42: **IN_PROGRESS**. Immutable typed Bind подключён к Experience action groups и Runtime host input; host подготавливает bounded registration map и принимает её вместе со сценой, сохраняя pending work при отказе. Publication/host/removal retirement, admission version fences и captured action presentation проверены через actual input/Pump. Scoped Runtime `run-iqs3dniu` — **PASS395**, включая32 новых binding cases и3 перенесённые регрессии FLOWLINE. После последней harness-интеграции C — PASS1431 .NET +363 Python; для неизменного UI-кандидата G — PASS1672 .NET +362 Python, повторный P — PASS90 с восемью точными producer DLL; первый mismatch-набор сохранён как не прошедший byte-аудит; source/integration review — PASS. Evidence и ограничения фиксируются в [журнале binding](ROADMAP-STATUS.md#u03-b-production-action-binding-and-captured-presentation). Owning Stardew Update, explicit Open/Hide/reload/save-switch generations, concrete typed consumer и RUNTIME ещё обязательны для полного U03.
+Определить типизированный контракт источников данных, возможностей, ограничений, ролей темы, разрешённых примитивов отрисовки, намерений и данных доступности. Владелец поколения управляет регистрацией и освобождением; расширение не получает внутренний runtime, произвольные игровые подписки или право изменять закрытое окно. Внешний пример собирается только из пакетов, переживает обновление и понятно отклоняет несовместимую версию. Это не песочница безопасности для чужого C#.
+**Зависимости:** «Действия и их завершение», «Общие компоненты, темы и подсказки», «Одновременное обновление открытых окон»; «Состав публичного интерфейса». **Владелец:** UI contracts/Runtime. **Проверки:** C, U, P, RUNTIME.
 
-U03-b owning Update pump, checkpoint `8987a83`, integration `6138bdc`, alpha.43: **IN_PROGRESS** для полного U03; ограниченный production Pump/retirement срез завершён. Stardew menu.update и overlay.UpdateTicked доставляют результаты root/portal на owning thread, включая HUD, временно перекрытый native menu. Вся удаляемая portal-группа отключается до cancellation; общий Runtime.Update охватывает явное обновление и interaction recomposition. Pump принимает input/frame/accessibility вместе и повторяет неудачную подготовку. Runtime — **PASS435**, C — **PASS1457 .NET +363 Python**, G — **PASS1698 .NET +365 Python** на итоговом варианте после принятия GQ verifier `c36a0d1`, P — **PASS90** с восемью точными alpha.43 DLL. Свежий `semantic.actions.pump` — **PASS4**, восемь probes подтверждают completion, close/reopen, HUD Hide и смену native owner; source/evidence review — PASS. [Причины, regressions, fingerprint и границы](ROADMAP-STATUS.md#u03-b-owning-update-pump-and-portal-retirement). Следующий шаг — action generation при успешном explicit Open/reload; failed reload сохраняет pending work. Concrete typed consumer и полный save-switch/reload RUNTIME остаются обязательными.
+<a id="full-release"></a>
 
-U03-b explicit Terminal generations, checkpoint [`ed44663`](https://github.com/ihatectf/Hatifect/commit/ed44663b1dda1819ea95ed5c3f9a526dda1cf91b), alpha.44: **IN_PROGRESS** для полного U03; ограниченный Open/Follow срез завершён. Успешное явное открытие создаёт новое поколение действий, в том числе для того же Cached model; scene, action map, Terminal metadata и отключение старых порталов принимаются до cancellation callbacks. Неудачная подготовка и обычная theme/locale/focus recomposition сохраняют pending work. Девять новых cases: исходные8 FAIL/1 PASS →9 PASS; полный Runtime — **PASS444**. C `run-1s3sgwvd` — **PASS1466 .NET +365 Python**, G `run-1h63c5rf` — **PASS1707 .NET +365 Python**, P — **PASS90**, восемь точных alpha.44 DLL. [Контракт, проверки и ограничения](ROADMAP-STATUS.md#u03-b-explicit-terminal-action-generations). Следующий готовый шаг — успешный active reload с атомарным принятием asset metadata; rejected reload сохраняет pending. Concrete typed consumer, сообщения и полный reload/save-switch RUNTIME ещё обязательны.
+### Приёмка полного выпуска — ожидает зависимостей
 
-Общая alpha.44 integration GQ опубликована в `develop` как [`bea00ad`](https://github.com/ihatectf/Hatifect/commit/bea00adf9c409421415a8b370c29fd3c7ac656b4), ограниченный checkpoint **DONE**: обязательная приёмка **PASS**, exact [CI34056007173](https://github.com/ihatectf/Hatifect/actions/runs/34056007173) **SUCCESS** во всех10jobs; production e954c6d, native fixture4f9b388 и общая post-load correction [`fe51271`](https://github.com/ihatectf/Hatifect/commit/fe51271c86c40198a431703ed248da91028da765). Финальные C/G — PASS1466/1707 .NET +366 Python,17actualTRX; P — PASS90,8package DLL равны producer/game. Сохранённый aggregate FAIL с actual pause=true сменился GREEN28 при unfocused pause=false/fade=-0.0304. Fresh Terminal/keyboard/pump/Flow/isolation/crash-return — PASS8/2/4/6/7/15; все8 EN/RU×scale PNG просмотрены. Отдельный PERF — PASS2,620frames,p95/p99 0.052125/0.395959ms,4446.477B/frame,misses0,14наблюдений без .NET builds. Config bytes/modes восстановлены, golden hashes неизменны. [Точные source identities, причинный RED→GREEN и evidence](Q01_ALPHA44_INTEGRATION.md). Следующий шаг — общая приёмка локально интегрируемой alpha45 frozen environment foundation/capture;17versions принадлежат GQ. Full U03/Q01/U04 и физический Backspace не закрыты; alpha46 host wiring/reload остаётся у UI.
+Проверить весь согласованный объём: способы создания экранов, каталог, расширения, редактор и предпросмотр, обновление и откат нескольких окон, ресурсы и производительность. Согласовать версии и руководство по переходу, собрать архив, проверить изолированную установку, описать известные проблемы и поддержанные конфигурации. Готовый архив не означает публикацию: merge, публикация и release требуют отдельной авторизации.
+**Зависимости:** «Приёмка первой альфы», «Точная геометрия интерфейса», «Каталог компонентов интерфейса», «Расширения интерфейса», «Одновременное обновление открытых окон», «Работа автора в редакторе», «Ресурсные ограничения Flowline». **Владелец:** Все owners + release tooling. **Проверки:** C, G, P, RUNTIME, VISUAL, PERF, MANUAL.
 
-U03 actual save-switch, source [`889f9b1`](https://github.com/ihatectf/Hatifect/commit/889f9b1bc21fb1b0ec4f3e082e20bddfb072ebf9): полный U03 **IN_PROGRESS**, bounded owner acceptance подтверждена без version bump. Native — PASS18: четыре настоящих title transitions, пять загрузок двух owned worlds, четыре public owners, старые completions без callbacks и свежая доставка на owning thread. C/G — PASS1 528/1 801 .NET +372 Python; P — PASS90 с восемью одинаковыми package/producer/game DLL. [Реализация, source identities, evidence и ограничения](U03_SAVE_SWITCH_ACCEPTANCE.md). Следующий общий шаг — интеграция GQ; следующий UI prerequisite — bounded TestHarness observation принятого UI для F12. Полный U03 ещё требует typed consumer и сообщений.
+## Решения и границы
 
-U03 action messages и typed CA, source `f8ea1e6` / `c262196`, проверенный candidate `ab320dc`: **IN_PROGRESS**. Experience разделяет безопасные локализованные сообщения и diagnostic exception; Runtime использует один принятый action snapshot для frame/accessibility и повторяет отклонённую подготовку. Все восемь CA command IDs используют immutable capture и publication owner. C — **PASS1619 .NET +381 Python**, G — **PASS1939 +381**, P — **PASS101**; native messages/pump — **PASS4**, восемь EN/RU PNG просмотрены, независимый review выявил **VISUAL FAIL** для отсутствующего RU glyph многоточия; исправление `68b57e4` подтверждено RED5/65→GREEN65 и свежим native `25cb2662` PASS4 с читаемым RU многоточием; PERF — **PASS2**, 620 кадров в действующих бюджетах. [Контракты, source identities, фактические проверки и ограничения](U03_ACTION_MESSAGES.md). Следующий шаг — нативная приёмка CA через типизированные bindings: прежний CA-сценарий вызывает session facades и эту проверку не заменяет. Полный U03 пока не завершён.
+| Решение | Состояние |
+| --- | --- |
+| Совместимость публичного API | Принято: один общий runtime и промежуточная модель. Поддерживаемые публичные перегрузки остаются; удаляется только оговорённая внутренняя адаптация старых Flowline/CA объявлений. [Контракт](SEMANTIC_V2.md). |
+| Правила точной геометрии | Открыто: выбрать координатный контракт, границу оформления и поведение для компактного окна, контроллера и доступности. Имя UiExact пока не готовый API. |
+| Границы первой перевозки | Принято для MVP: одиночная игра, поддерживаемые обычные/большие сундуки и ограниченные свойства предметов. [Точная поддержка](<../Hatifect Flow/README.md>). |
+| Гарантии сохранения предметов | Принято для выбранного адаптера: изменения согласованы с игровым сохранением, принадлежность груза и подтверждения операций проверяются; неоднозначное восстановление блокирует небезопасный повтор. Нет обещания exactly-once произвольному хранилищу. |
+| Состав публичного интерфейса | Открыто: выбрать компоненты, темы, доступность и стабильные/экспериментальные API. Vanilla, нейтральная Vanilla, тёмная, светлая и высококонтрастная темы — предложенные семейства, не обещанный готовый набор. |
+| Хранение истории перевозок | Принято: ограниченная история и отказ после 256 грузов за жизнь сохранения, без compaction. Очистка требует отдельной безопасной границы восстановления и доказанной миграции. |
 
+## Как проверять и вести план
 
-U03 typed CA native acceptance, candidate `3229889`: ограниченный срез реализован и проверен; полный U03 **IN_PROGRESS** до сверки исходных критериев и общей интеграции. Optional exact-harness API направляет Tab/Enter через owning input; все восемь CA действий и retirement проходят native `2845c6c5` **PASS 5**. Native обнаружил rounding defect в общем layout; regression RED 1/528 → GREEN 528, minimum tolerance согласован без изменения consumer policy. C — **PASS 1623 +381**, G — **PASS 1952 +381**, P — **PASS 101**, свежие messages/Pump — **PASS 4**, PERF — **PASS 2** (620 кадров, p95/p99 0.052959/0.421459 мс). Независимые source/TRX/package/native/visual проверки прошли. [Контракты, точные identities, failures и ограничения](U03_ACTION_MESSAGES.md#typed-native-input-and-final-candidate). Следующий шаг — финальный audit полного U03 по уже реализованным reload/save-switch и новым consumer/messages, затем следующий готовый UI срез. Физический ввод Q01 этим не закрывается.
+В каждой карточке указаны владелец, зависимости и минимальные обязательные проверки. Уточнения API и форматов сохранения согласуются отдельно; выполнение строки плана не разрешает скрыто менять контракт.
 
-U03 final acceptance, source `9b6028c0561c5e1a8225bcdec7f1bcce64d81ead`: **DONE** по исходным критериям. [Итоговая приёмка](U03_ACCEPTANCE.md): C — 1 623 .NET +388 Python, G — 1 952 .NET +388 Python, P — 101 CA tests и восемь точных alpha.47 packages; fresh common save-switch/reload/Pump/typed CA — PASS18/18/4/5, все восемь message PNG просмотрены. Independent Sol audit: все исходные требования SATISFIED, находок нет. Поздние callbacks/handlers старых owners равны нулю, committed effects и исходные настройки сохранены. Проверенная поставка с fingerprint `5fc2c211…` сохранена отдельно. Более поздний aggregate сообщил behavioral PASS, но подготовка изменила DLL metadata при неизменных исходниках: package identity для него FAIL, причина и исправление описаны в [build-identity follow-up](BUILD_SOURCE_IDENTITY.md); этот результат не переименован в PASS и общая публикация ещё не выполнена. Следующий готовый Flow шаг — F13; UI продолжает U05, физический ввод остаётся Q01.
+| Обозначение | Проверка |
+| --- | --- |
+| C | `./tools/hatifect-check`: статика, Python, сборка и тесты без игры |
+| U / F | `./tools/hatifect-test ui` / `./tools/hatifect-test flow`: проверки соответствующей части |
+| G | `./tools/hatifect-check --platform`; отдельная проверка CA при необходимости |
+| P | `./tools/hatifect-isolated-ui-ca` из текущих точных пакетов UI |
+| RUNTIME | Изолированные сценарии в игре на фактических DLL |
+| VISUAL | Изображение, геометрия и области нажатия, язык, масштаб и фокус |
+| PERF | Фиксированные условия, нагрузка, выделение памяти и задержки |
+| MANUAL | Воспроизводимый сценарий автора, редактора или ввода вне автоматических проверок |
 
-**U04.** Развить profiles/provenance в environment facets: viewport, scale, input mode, locale, theme и необходимые accessibility preferences. Planner детерминированно выбирает допустимое представление с проверкой покрытия обязательной семантики. Trace объясняет применённое правило, альтернативы/причины отказа и происхождение значения, а его сбор не создаёт неограниченную историю на каждом кадре. Выход: одна Experience работает в нескольких окружениях; невозможная комбинация даёт явную diagnostic/fallback policy, а не тихо теряет действие или поле.
+Локально используется явно выбранный fast-профиль. Обычный `hatifect-check` и публичный CI сохраняют безопасное поведение. Нет необходимости повторять полный запуск после каждого файла без новой причины. Ноль тестов, пропуски или старые результаты не считаются успехом.
 
-U04 итоговая owner-приёмка, source [`04def9e`](https://github.com/ihatectf/Hatifect/commit/04def9e302c89eb948219db99206b8733ce59f16), documentation handoff `4806ce7`, 2026-09-08: **DONE**. Независимый GQ reviewer подтвердил свежие raw C1548/G1830 .NET +373 Python, Planning118, P90/44 projection/8 producer-package DLL, native environment25 и PERF2/620frames. Actual Flow consumer проверен по19 completed observations; общая Flow матрица на08ecdb9 дополнительно прошла15 checks и просмотр всех19 composed PNG. [Соответствие исходным критериям, fingerprints, сохранность evidence и границы измерений](U04_ACCEPTANCE.md). U03 и общая alpha47 integration/push остаются IN_PROGRESS; полный Flow frame budget и физический controller input не заявлены. По зависимостям готовы F12 acceptance и U05; UI продолжает завершение U03 messages/typed CA.
+Обязательные матрицы сохраняются:
 
-История промежуточных U04 checkpoints ниже сохраняет статусы на момент соответствующей проверки.
-
-U04 foundation, checkpoint `b89c792`: **IN_PROGRESS**. Semantics/Planning и Runtime Invocation принимают immutable environment; все обязательные capabilities проверяются в compiler и planner, несовместимые explicit assignments и подмена identity отклоняются. Legacy profile API сохранён. C — **PASS1489 .NET +365 Python**, итоговый G — **PASS1731 .NET +365 Python**, P — **PASS90**, bounded Planning PERF — PASS для четырёх элементов. [Точные проверки и ограничения](ROADMAP-STATUS.md#u04-a-environment-planning-and-invocation-foundation). Следующий шаг — Stardew capture и доставка environment через действующие hosts с сохранением Experience/reload lifecycle, затем native environment matrix. F12 ожидает завершённый U04; этот checkpoint не закрывает игровой этап.
+- UI: английский/русский, 75/100/125/150%, выбранные размеры окон и темы, мышь/клавиатура/контроллер/текст, пустое состояние, загрузка, ошибки, отключённые и выполняющиеся действия, успех; открытие/закрытие/повтор, смена сохранения и обновление во время ввода.
+- Flowline: успешный путь, повторные и устаревшие запросы, отказ адаптера/вместимости/приёма груза, сохранения A→B→A, поддержанные аварии и откаты, внешнее изменение стопки/сундука, восстановление и длительная работа в пределах ресурсов.
+- [Бюджеты UI](<../Hatifect UI/PERFORMANCE_BUDGETS.json>): 600 измерительных кадров; p95 ≤ 2 мс, p99 ≤ 4 мс; ≤ 16384 байт на кадр в установившемся режиме; доля промахов кэша ≤ 0,2. Новые пороги не назначаются редактурой документации.
 
-U04 Stardew capture, checkpoint `29373a2`: **IN_PROGRESS** для полного U04. Adapter собирает applied scale и logical viewport, input, locale и выбранную theme/accessibility policy, переиспользуя неизменный снимок. Идентичность custom locales сохраняется; пустой английский asset suffix нормализуется в `en`. Scoped — **PASS50**, C — **PASS1490 .NET +365 Python**, G — **PASS1763 .NET +365 Python**, P — **PASS90**. [Проверки и исправленный locale edge](ROADMAP-STATUS.md#u04-b-stardew-environment-capture). Следующий шаг — подключение adapter в existing hosts/Terminal и согласованная locale projection; фактическая native матрица и полный U04 ещё не закрыты.
-
-Общая alpha.45 integration GQ, source [`92f4890`](https://github.com/ihatectf/Hatifect/commit/92f48904e766f1c3fac479d84c85a57502d41b75): ограниченная интеграция **DONE**, приёмка **PASS**, опубликовано в `develop` как [`12e7aab`](https://github.com/ihatectf/Hatifect/commit/12e7aabf816a8e67a4f64846d2fb90231e1d76b1); exact [CI34058056333](https://github.com/ihatectf/Hatifect/actions/runs/34058056333) — **SUCCESS**, все 10 jobs. Frozen f4b7386 объединён с опубликованной alpha.44 bea00ad; все17version authorities переведены GQ. Все11 source/test postimages сохранены. Собственные C/G — **PASS1499/1772 .NET +366 Python**,17actualTRX; P90 с8 exact package/game DLL; ordinary-GC Planning118 и два bounded PERF cases — PASS. Fresh UI/CA aggregate/Flow/isolation/native PERF — **PASS28/6/7/2**;620frames,p95/p99 0.049166/0.367626ms,4604.155B/frame,layout misses0. Все8 EN/RU×scale PNG просмотрены; options восстановлены,4owned save copies удалены,golden неизменён. [Область, совместимость и проверки](U04_ALPHA45_INTEGRATION.md). Native host wiring/reload остаётся отдельным alpha.46; полный U04 и зависимый F12 не закрыты.
-
-U03-b active reload и U04 host wiring, source [`902d834`](https://github.com/ihatectf/Hatifect/commit/902d83488e501e971ddc24f0fcd852f9068899df), alpha46 candidate [`0cd356f`](https://github.com/ihatectf/Hatifect/commit/0cd356f0fd252a0744fe6a871e46ba631193f876): полный U03/U04 — **IN_PROGRESS**, ограниченный срез прошёл собственную приёмку. Успешный reload принимает assets/host metadata до cancellation; rejected reload сохраняет pending. Четыре host передают один environment snapshot, rejected/reentrant preparation сохраняет принятое состояние. C — **PASS1528 .NET +366 Python**, G — **PASS1801 +366**, P — **PASS90**, свежие native reload/environment — **PASS18/25** на одном exact fingerprint. [Контракт, результаты и ограничения](U03_U04_HOST_ACCEPTANCE.md). GQ принял frozen handoff `b6f60b4` для общей интеграции поверх опубликованной alpha.45 `12e7aab`; результаты собственных проверок объединённого worktree приведены ниже. [Статус общей приёмки](U03_U04_ALPHA46_INTEGRATION.md). Следующий UI срез — actual A→title→B save-switch с pending actions; concrete typed consumer, сообщения и оставшаяся U04 planner/consumer/PERF acceptance ещё обязательны.
-
-Общая alpha.46 GQ, corrected source [`61e8a94`](https://github.com/ihatectf/Hatifect/commit/61e8a941bbb2936e2b41f029e931b2ee8d30fe8e): ограниченная интеграция **DONE**, приёмка **PASS**, опубликована в `develop` как [eb193b7](https://github.com/ihatectf/Hatifect/commit/eb193b7b98b35e8a446d1fef683c032588ece30a); exact [CI34062754345](https://github.com/ihatectf/Hatifect/actions/runs/34062754345) — **SUCCESS**, все 10 jobs. Финальные C1528 +366 / G1801 +366, P90 и восемь package/producer/game DLL; fresh reload/environment/UI-CA/Flow/isolation/PERF — **PASS18/25/28/6/7/2**. Все восемь EN/RU × scale PNG просмотрены, options восстановлены, шесть save copies очищены, golden неизменён. Исходные environment FAIL и исправления игрового Auto/custom-locale restoration сохранены с отдельными source identities; native custom-start — NOT_RUN. [Полные команды, результаты, RED→GREEN и ограничения](U03_U04_ALPHA46_INTEGRATION.md). Следующий шаг GQ — интеграция UI save-switch `889f9b1` / `d044f22` и завершение review FLOWLINE text/Parcel `485c815`. Общий alpha.47 version bump принадлежит GQ; полные U03/U04/F12 не закрыты.
-
-U04 common text projection, checkpoint [`905acf7`](https://github.com/ihatectf/Hatifect/commit/905acf7fc33fcbe752ef4eba003723c8efbc831a): ограниченный общий контракт проверен; полный U04/F12 — **IN_PROGRESS**. Experience принимает immutable exact-locale labels и typed read-only formatter; Runtime использует один captured locale/publication snapshot и сохраняет source/action identities. Исправлены invariant-locale drift и stale outer refresh после принятого вложенного обновления host. Scoped Runtime — **PASS455**, C — **PASS1520 .NET +365 Python**, G — **PASS1793 .NET +365 Python**, P — **PASS90** с восемью точными producer DLL; independent source/evidence review — PASS. [Контракт автора](UI_TEXT_PROJECTION.md), [коммиты, regressions и evidence](ROADMAP-STATUS.md#u04-c-retained-experience-text-projection). Следующий шаг — Flow Parcel migration и UI-owned native propagation; полная игровая матрица остаётся обязательной. Версию объединённой поставки назначает владелец интеграции после alpha.46.
-
-Общая alpha.47 GQ — **IN_PROGRESS**: frozen Flow text/Parcel `485c815` принят как `e999f44`, UI save-switch `889f9b1` как `c269a50`; owner evidence проверены независимо. Все 17 version authorities принадлежат GQ и переведены на alpha.47. Общий source `61a125a` прошёл C1584/G1876 .NET +374 Python; все 17 TRX и 93 source hashes проверены. Первый G с одним двухсекундным fake-process timeout сохранён как FAIL, неизменный повтор прошёл; причина задержки не доказана. Новые P/native и публикация ещё не выполнены. [Состав, конкретные run IDs и границы приёмки](U03_U04_F12_ALPHA47_INTEGRATION.md). Exact admission интегрирован как `1725dc6`: C1584/G1876 +380 Python, 17 actual TRX и 94 source hashes подтверждены. Observation portal-count finding закрыт в `87fe76a`: source/scoped/C1540/G1814 +373 и свежий native PASS10 проверены GQ. UI headings `b8b97eb` прошёл independent source/scoped/C1548/G1822 +373/P90; Flow native `70bef1d0` на `ce8c996` прошёл15 protocol checks и19states, все19PNG просмотрены. Title/labels видимы, но route arrow заменяется font fallback: visual FAIL, UI ведёт owning correction. Исправленные observation/headings и actual Flow lifecycle `ce8c996` интегрированы как `e355323`. Общий C `run-s5i3g9jv` — **FAIL**:1406 executed/1405 passed/1 watcher timeout, Python381PASS; причина исследуется, тест не ослаблен. Owning glyph correction `04def9e` прошёл independent source/scoped/C1548/G1830 +373 и свежий Flow native `246b8118` на `5a40424` — **PASS15**,19states; все19PNG просмотрены, `->` виден, source/DLL/restoration/golden сверены. [Исправление и точная область проверки](U04_NATIVE_TEXT_FALLBACK.md). Exact glyph source/test принимаются поверх `e355323`; финальные общие gates и публикация ещё обязательны, полный U03/U04/F12 остаётся открытым.
-
-Обновление общей alpha.47 приёмки GQ, source `08ecdb94102fb7311c1fe21eabc9843f7e4888ef`, 2026-09-08: **IN_PROGRESS**. C/G — PASS1604/1913 .NET +381 Python, 17 actual TRX и117 source postimages; P90 с8 exact alpha.47 package/producer/game DLL. Свежие Flow UI/names/basic — PASS15/7/6; все19 Flow composed PNG просмотрены, title/labels/values и `->` видимы, options восстановлены, owned copies удалены, golden неизменён. [Точные команды, request IDs, fingerprints, границы и оставшаяся матрица](U03_U04_F12_ALPHA47_INTEGRATION.md#текущее-состояние-общей-приёмки-2026-09-08). Следующий шаг — принять завершённый U03 messages/typed CA candidate с corrected literal ellipsis и выполнить его общую приёмку. Native typed CA input, физический Backspace, оставшиеся runtime/PERF gates и публикация ещё не закрыты; исторические FAIL сохранены.
-
-Общая alpha.47/U05-a/b/c, source `925345c90808697dc9881cf70c6c34afdb528ef8`: [совместная приёмка](Q01_ALPHA47_COMBINED_ACCEPTANCE.md). C1632/G1972 .NET +389Python +13metadata, P101/8packages/47projection и exact task CI34218450749 — PASS/SUCCESS. Все13 автоматизированных runtime-сценариев завершены успешно,8 message/19 Flow/8 matrix PNG просмотрены; standalone PERF620frames,p95/p99 0.065084/1.499583ms,5189.987B/frame,misses0. Native physical input b91f5a8b — FAIL: событий ввода не поступило, owned process exit0 и cleanup подтверждены. U03 сохраняет DONE; полные U05/Q01/F13 остаются IN_PROGRESS. Task branch опубликована; develop publication pending. Далее — публикация проверенного checkpoint и интеграция F13-a/b с owning root-layout correction и native-policy regression; Scale75 Network остаётся отдельным открытым условием.
-
-### U05–U10: runtime, авторство и компоненты
-
-**U05.** Подключить новые state/delta к существующим reconciliation, layout, input, focus и virtualization. Сохранить целевые invalidation effects: текст/measure, arrangement, drawing, semantic recomposition не подменяются общей перестройкой по любому событию. Выход: неизменный кадр не сканирует полную модель; collection change ограничен нужной областью; scroll/focus не скачут при обновлении соседнего элемента. Проверить bounded caches, скрытые hosts и lifecycle снятия обработчиков.
-
-U05-a measurement reuse — **DONE в owner-ветке**, полный U05 — **IN_PROGRESS**. [`f0f68cf`](https://github.com/ihatectf/Hatifect/commit/f0f68cfcdcfaf7110f1b1841b25c5016829e4ecd) сохраняет неизменившиеся измерения при revision; item/geometry cache заменяет текущий version/text без хеширования текста в key и накопления исторических content slots. Внешний source с ContentVersion0 защищён exact text comparison. Scoped Runtime532, C1627/G1956 .NET +386 Python, P101 — **PASS**; свежий native `18887925` — **PASS2**,620frames,p95 0.063374ms,p99 0.447958ms. Independent source review finding исправлен и закрыт. Public API/consumer policy не меняются; общий candidate принимает срез отдельно. [Результат, raw evidence, authoring failures и ограничения](U05_INCREMENTAL_RUNTIME.md). Продолжение U05-b/U05-c и их текущая acceptance приведены ниже; полный scene/lifecycle acceptance остаётся обязательным.
-
-U05-b bounded height index: source `e992b6a`, scoped536/C1631/G1960 +386 Python PASS; isolated101 tests выполнены, но package source identity **FAIL** (SDK8 packed-refs,8 отсутствующих repository commits). Общий metadata fix принадлежит GQ, standalone native на этом source не выполнялся. U05-c source notifications — **DONE в owner-ветке**, [`62be88a`](https://github.com/ihatectf/Hatifect/commit/62be88a5915f747f08073d6ff6f54093c509f8d0): active-menu Show подписывается на sources, Changed только помечает epoch, SynchronizeState coalesces pending update, failed Show допускает retry, retirement снимает обработчики. Scoped79/C1631/G1971 +386 Python/P101 — **PASS**; fresh reload18/environment25/CA5/PERF2 — **PASS**,8 package/producer/game DLL и source identity совпадают. [Exact evidence, tests, historical failures и ограничения](U05_INCREMENTAL_RUNTIME.md#u05-c-active-menu-source-notifications). Полный U05 **IN_PROGRESS**; далее reviewed metadata fix для U05-b и аудит оставшейся scene/delta/lifecycle acceptance перед общим integration candidate.
-
-**U06.** Оформить общий token/theme contract: типографика, spacing/density, цвета смысловых состояний, surface layers, icons и input prompts. Предлагаемые семейства — Vanilla, нейтральная Vanilla, dark, light и high contrast; окончательная матрица выбирается в D05. Базовый набор для M2: layout/scroll, text, button, selection/list, field/form validation, tooltip и empty/loading/error/status. Выход: Flow и CA используют общую policy; EN/RU и scale проходят проверку без частных размеров в consumer. Accessibility semantics и controller traversal входят в контракт компонента с первого применения.
-
-U06-a semantic status component — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
-Source `bd03e59b4c0fd2ddb9cd5caa7a0064b1418acbe5` добавляет публичный `UiStatus` для
-Status/Empty/Loading/Success/Error, общие domain states и theme tokens, accessibility Status/Alert и
-исключение read-only status из controller traversal. Смена только kind даёт Render invalidation без
-layout. Старый `Monitor<T>` совместим. C — **PASS**: 503 Python + 1,881 .NET; P — **PASS**:
-8 packages, 47 projected files, 101 CA tests, 2 CA DLL, UI source отсутствует. Game-linked/native,
-EN/RU/scale consumer matrix не выполнялась и не переносится с других source. [Контракт, точные run
-IDs и ограничения](U06_STATUS_COMPONENT.md). Далее — общий input-prompt contract и первый Flow/CA
-consumer срез; tooltip, density и оставшиеся theme families также открыты.
-
-U06-b framework input prompts — **DONE в локальной owner-ветке**, полный U06 — **IN_PROGRESS**.
-Source `d8e6eb7f6840a99afde371db33bee6a16ed0f2a9` выводит `Enter`/`A` из принятого input mode для
-action/form/route/Terminal buttons, сохраняет consumer labels без device-текста, публикует отдельный
-accessibility shortcut и использует типизированные `Text.InputPrompt`, `Typography.InputPrompt` и
-`Space.S`. Изменение prompt даёт Measure/Arrange/Render без consumer reactivation; измеренная
-геометрия хранится в layout snapshot и не вызывает text metrics в render. Focused12+1,
-Runtime677 и Semantics65 — **PASS**. C `run-ku2f7tb5` — **PASS503 Python + 1,890 .NET**; P —
-**PASS**:8 packages,47 projected files,101 CA tests,2 CA DLL, UI source отсутствует. Первый C RED
-`run-jjaw6fa_` сохраняет четыре нарушения Measure/Render; исправление подтверждено final evidence.
-[Контракт, evidence и ограничения](U06_INPUT_PROMPTS.md). Далее — Flow/CA consumer observation и
-native EN/RU/scale/controller; tooltip, density, collection-row prompts и оставшиеся theme families
-также открыты.
-
-U06-c typed consumer status policy — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
-Owner source `a0e558b5424e75e5afadfd5b6d81d569e32773bc`, CA test correction
-`ed75d218e9c0a12bcabbf372932b33a7193942d0`; общий локальный merge `6ec779c`. Flow Network и CA
-публикуют канонический `UiStatus` с сохранением semantic IDs, локализованного текста и без частной
-геометрии/цветов. Common G — **PASS 2,366 .NET + 503 Python**, Flow platform — **PASS 803+254**,
-CA platform — **PASS102**, P — **PASS** 8 packages/47 files/102 CA tests. Native
-EN/RU/scale/controller остаётся открытым. [Контракт и evidence](U06_CONSUMER_STATUS_POLICY.md).
-
-U06-d typed collection density — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
-Source `470da48` заменяет свободную строку закрытыми catalog values
-Default/Compact/Comfortable, передаёт stable identity через Planning и применяет один allocation-free
-коэффициент в layout/virtualization. UI scope
-`run-j6h6d81k` — **PASS 1,102/1,102**; exact C `run-8lewjf7s` — **PASS 1,908 .NET + 503 Python**;
-P `hatifect-ui-ca-isolated.1c3pd0fs` — **PASS** 8 packages/47 files/102 CA tests. Public API,
-21 semantic-contract tests — **PASS**. Native visual не заявляется до
-consumer asset. [Результат и ограничения](U06_TYPED_DENSITY.md).
-
-U06-e semantic tooltips — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
-Source `1e0a660a3c1b21f42e78cd9430c35a7b82430ad5` добавляет локализованную semantic help для
-стабильных element/action IDs. Runtime показывает не более одной theme-owned подсказки для hover или
-keyboard/controller focus, хранит измерение в layout, выполняет viewport clamp без изменения
-основного дерева и публикует отдельное accessibility description. UI scope `run-aricgabx` —
-**PASS 1,117/1,117**; exact C `run-4jh9cnaw` — **PASS 1,920 .NET + 503 Python**; P
-`hatifect-ui-ca-isolated.1lbrxvoj` — **PASS** 8 packages/47 files/102 CA tests. Public API baseline v1
-и 21 semantic-contract tests — **PASS**. Collection-row/form-field/contribution help, display delay и
-native consumer visual matrix остаются открыты. [Контракт, evidence и ограничения](U06_TOOLTIPS.md).
-
-U06-f collection-row input prompts — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
-Source `373c854a216cb190f3f6457d32470188ad00d03a` распространяет общий `Enter`/`A` prompt на
-материализованные строки selectable collections; read-only Browse не получает ложную активацию.
-Layout один раз измеряет prompt, резервирует правую колонку и включает её метрики в bounded
-measurement/height scopes; render не вызывает text metrics, accessibility item сохраняет label и
-публикует отдельный Shortcut. UI `run-02rxmeze` — **PASS 1,122/1,122**; exact C `run-1qvq7nhn` —
-**PASS 1,925 .NET + 503 Python**; P `hatifect-ui-ca-isolated.kqcnyr0z` — **PASS** 8 packages/47
-files/102 CA tests. Public API baseline v1 и 21 semantic-contract tests — **PASS**. Consumer/native
-EN/RU/scale/controller observation и form-field help остаются открыты.
-[Контракт, RED→GREEN и evidence](U06_COLLECTION_ROW_PROMPTS.md).
-
-U06-g semantic form-field help — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
-Source `f2794599df67e9786ae493e7a1450a24812a5f42` расширяет существующий `Tooltip(target, text)` на
-поля уже объявленной form. Text/number input и все focusable toggle/choice options получают
-локализованную help с сохранением field semantic ID; accessibility оставляет label в Name и
-публикует help как Description. Focus/hover использует общий U06-e overlay без нового layout.
-UI `run-ctapqcpm` — **PASS 1,125/1,125**; exact C `run-l34vwaar` — **PASS 1,928 .NET + 503
-Python**; P `hatifect-ui-ca-isolated.hzglotde` — **PASS** 8 packages/47 files/102 CA tests. Public API
-baseline v1 и 21 semantic-contract tests — **PASS**. Collection-item help, contribution metadata,
-delay policy и consumer/native матрица остаются открыты.
-[Контракт, RED→GREEN и evidence](U06_FORM_FIELD_HELP.md).
+Завершение записывается один раз в соответствующей карточке: результат, исходники/коммит или контрольная сумма рабочей копии, команды и ненулевые числа тестов, идентичность DLL при проверке игры, ограничения и следующий доступный шаг. Старые результаты не выдаются за новый запуск. Статусы проверок — PASS/FAIL/BLOCKED/NOT_APPLICABLE.
 
-U06-h semantic contribution help — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
-Source `a2fe8c84c70119c3708145587e3be8ee06015aab`, общий локальный merge
-`7c3f001cb324dc4dfbd524efbfbcdf6e920a05cb` добавляют immutable `UiLocalizedText` metadata для
-action/route/section contributions через совместимые overloads.
-Composer разрешает help по captured locale и передаёт её contributed button в общий U06-e overlay;
-activation, registration ownership, layout и renderer не меняются. UI `run-1xt4uyt1` — **PASS
-1,127/1,127**; exact C `run-4yonlzfc` — **PASS 1,930 .NET + 503 Python**; P
-`hatifect-ui-ca-isolated.f79c_0ld` — **PASS** 8 packages/47 files/102 CA tests. Public API baseline v1
-и 21 semantic-contract tests — **PASS**. Collection-item help, delay policy и consumer/native
-матрица остаются открыты. [Контракт, RED→GREEN и evidence](U06_CONTRIBUTION_HELP.md).
+Короткое задание: название этапа → желаемый результат → исходники и владелец → зависимости и решения → конкретный остаток → допустимые изменения API/сохранения → критерии и проверки → что отложено.
+Передача работы: этап и статус → коммит/PR → что изменилось → результаты проверок → ограничения → следующий готовый шаг.
 
-U06-i semantic collection item help — **DONE в локальном `develop`**, полный U06 — **IN_PROGRESS**.
-Source `35dc94660415e2f31c6d6110b0339c4b17856e78`, общий локальный merge
-`30281a934a2cfaaec9e51c468437ac3e52eee48a` добавляют
-immutable локализованную help в static/mutable/selectable/published collection snapshots через
-совместимые overloads. Layout разрешает и измеряет её только для materialized window, сохраняет
-измерения в bounded LRU 1,024 на active collection и публикует O(1) индекс видимых item IDs; render
-не вызывает text metrics. Selectable row использует hover/focus, read-only Browse — hover без
-activation; accessibility сохраняет label как Name и help как Description. UI `run-7344afe2` —
-**PASS 1,131/1,131**; exact C `run-xj7bplfh` — **PASS 1,934 .NET + 503 Python**; P
-`hatifect-ui-ca-isolated.dhhxog2i` — **PASS** 8 packages/47 files/102 CA tests. Public API baseline v1,
-21 semantic-contract tests и architecture — **PASS**. Display delay, validation-error help,
-consumer/native матрица и Flow/CA adoption остаются открыты.
-[Контракт, RED→GREEN и evidence](U06_COLLECTION_ITEM_HELP.md).
+## Что не включается автоматически
 
-U06-j theme-owned tooltip display delay — **DONE в локальном `develop`**, полный U06 —
-**IN_PROGRESS**. Source `53a388e2115678f9374041812b67095f7402fdcc`, общий локальный merge
-`e079a2eb6458c57519e2df22e99c7611cf8be0c8` сохраняют мгновенную keyboard/controller focus help и
-показывают pointer help после `Motion.Normal` активной темы (160 ms в base themes). Смена цели
-перезапускает dwell, уход сразу возвращает focused help; zero-duration theme остаётся допустимой.
-Порог строит один frame без layout/text measurement/collection traversal, а unchanged ticks не
-строят frame. Menu использует elapsed `GameTime`, overlay — 60 Hz quantum только внутри existing
-input-routing gate. Focused Runtime `run-zxgg_4x6` — **PASS 701/701**; exact C `run-x8mdn5e9` —
-**PASS 1,936 .NET + 503 Python**; G `run-keui6nvt` — **PASS 2,399 .NET + 503 Python**; P
-`hatifect-ui-ca-isolated.c_do62d1` — **PASS** 8 packages/47 files/102 CA tests. Public API v1/7,
-21 semantic-contract tests и architecture — **PASS**. Fade animation, validation-error help,
-consumer/native matrix и Flow/CA adoption остаются открыты.
-[Контракт, RED→GREEN и evidence](U06_TOOLTIP_DELAY.md).
+Multiplayer, работа перевозок вне загруженной игры, произвольные хранилища/предметы других модов, клонирование сохранений и новые транспортные классы не входят в первую альфу. Перезагрузка UI не заменяет загруженные .NET-сборки и не откатывает внешние эффекты. Метаданные доступности сами по себе не доказывают поддержку системного screen reader.
 
-U06-k semantic validation error help — **DONE в локальном `develop`**, полный U06 —
-**IN_PROGRESS**. Source `338e1c0111e177148e80b23ca32b4f8e1af58e93`, общий локальный merge
-`f1bf63e38dbff0da91358a0a54996de89e83f98e` заменяют static field help текущей внешней или typed
-validation error на каждом focusable control, сохраняя field semantic ID. Inline error остаётся в
-форме и публикуется как accessibility `Alert`; tooltip description использует raw error, а локально
-созданный inline alert сохраняет `Label: error`. Оба presentation используют theme `Text.Danger`,
-очистка ошибки возвращает локализованную help, а смена текста перезапускает pointer dwell через
-существующий bounded key. Focused Runtime `run-9u3q3kmk` — **PASS 703/703**; UI
-`run-viprhjc4` — **PASS 1,135/1,135**; exact C `run-c82nn1et` — **PASS 1,938 .NET + 503
-Python**; P `hatifect-ui-ca-isolated.zepm1frk` — **PASS** 8 packages/47 files/102 CA tests. Public
-API v1/7, 21 semantic-contract tests и architecture 26 projects/5 rule groups — **PASS**.
-Consumer/native matrix, Flow/CA adoption, fade animation и оставшиеся component/theme families
-остаются открыты. [Контракт, RED→GREEN и evidence](U06_VALIDATION_HELP.md).
+Новые значительные зависимости, смена .NET/SMAPI, облачная оркестрация, публикация и изменение Git-истории требуют отдельной области задачи. Направление разработки сохраняется: единый семантический UI, разные способы создания экранов, согласованное обновление, инструменты автора и каталог компонентов.
 
-**U07.** Построить `UiQuick` recipes для alert/confirm/select/простого form/notification и `UiView` для небольшого декларативного layout с typed bindings/actions. Синтаксис может выводить отношения только когда вывод однозначен; явное описание остаётся доступным. Оба входа компилируются в тот же IR, что полная Experience. Выход: примеры простого диалога, формы и небольшого custom screen; одно и то же действие имеет одинаковый lifecycle во всех формах авторства. Сравнить объём и понятность authoring на реальных задачах, затем закрепить API.
+## Условия сохранения принятых возможностей
 
-**U08.** После D02 добавить `UiExact`: explicit geometry/layers/canvas и pixel scaling внутри framework. Определить measure/arrange, coordinate transform, clipping, render/hitbox agreement, focus order, semantic labels и fallback для compact/controller/accessibility. Выход: точное представление использует общие lifecycle/resources/input, а неподдерживаемое окружение получает явно заданное поведение. Не публиковать exact drawing как способ обходить hit testing или доступность.
+<details>
+<summary>Контракты уже завершённых этапов — для проверки последующих изменений</summary>
 
-**U09.** Закрыть согласованный каталог по отдельным семействам; один небольшой семейный срез имеет собственный consumer и acceptance. Предлагаемый полный набор: Stack/Grid/Frame/Layer/SplitPane/Scroll и виртуальные list/grid/tree; buttons/toggles/radio/slider/dropdown/segmented/tabs/text/number/keybind/color/search; игровые item slot/grid/tooltip/currency/portrait/prompts; semantic Form/Browser/Inspector/MasterDetail/CommandBar/Settings/progress/state composites. Сначала инвентаризировать существующее, затем дополнять пробелы. Выход: для каждого опубликованного компонента есть пример, input/locale/scale/theme/state/reload matrix и известные ограничения. Непроверенные семейства остаются experimental и не считаются выполненным каталогом.
+Эти условия не становятся новой очередью. Они сохранены, чтобы рефакторинг и будущие изменения не потеряли уже принятые гарантии.
 
-**U10.** Определить typed extension contract: semantic source, capability, constraints, theme role, поддерживаемые draw primitives, intents и accessibility metadata. Generation owner контролирует registration/dispose; extension не получает private runtime, произвольные игровые подписки или право обновлять закрытую host session. Выход: пример внешнего расширения собирается только с packages, переживает reload и имеет диагностируемый отказ при несовместимой версии. Extension API не является обещанием sandbox для произвольного чужого C#.
+<a id="base-audit"></a>
 
-### R01–R04: транзакционный hot reload
+### Аудит исходной базы
 
-**R01.** Ввести ownership manifest активной generation: hosts, callbacks, subscriptions, async operations, caches и platform/GPU resources. Зафиксировать thread boundaries и терминальные состояния. Выход: resources имеют одного владельца; закрытая generation не принимает новые effects, а повторный dispose безопасен. UI generation не владеет Flow domain session и не пересоздаёт её при reload.
+Сверить код, README, публичный baseline, package inventory, поведенческие тесты и доступные runtime evidence. Для каждого заявленного поведения указать реализовано/частично/отсутствует и конкретное доказательство. Проверить текущую базу канонической командой. Выход: согласованная таблица разрывов; исторические провалы и успехи не выдаются за результат нового build.
 
-R01-a resource-affinity candidate — **IN_PROGRESS**: internal texture catalog captures owner thread and rejects foreign Register/Resolve/Dispose/lease release before effects; rejected lease release preserves owner retry. Four targeted cases reproduced the gap (4FAIL/528PASS), then Runtime `run-o__2988d` **PASS532**; independent source review **NO_FINDINGS**. Public shape/layout/common generation identity unchanged; C `run-z_y2tqv1` **PASS1717 .NET+389 Python**, G `run-gicute3_` **PASS2077 .NET+389 Python**, actual TRX audited. Full R01 is not DONE: ownership manifest and broader generation criteria remain open. [Cause, tests and limitations](R01_RESOURCE_OWNERSHIP.md).
+Зависимости: —. Владелец: Architecture, subsystem owners. Проверки: C.
 
-R01-a общая интеграция `d270ba4ac2c53c89eccae04669abec72bff16aa2`: **C/G/P PASS** — 1662/2022 .NET +389 Python, 101 isolated CA tests, восемь exact packages и 47 файлов проекции. Проверены 17 actual TRX, четыре новых R01 cases и 654 source hashes. Первоначальный C restore NU1301 сохранён отдельно; повтор с сетевым доступом прошёл без изменения signature policy. [Общая приёмка и ограничения](R01_RESOURCE_OWNERSHIP.md#common-integration). Публикация/remote CI pending; полный R01 **IN_PROGRESS**. Следующий R01 шаг — manifest существующих activation/session owners; Scale75, Network result visibility и физический Q01 этим не закрываются.
+<a id="ui-contract"></a>
 
-**R02.** Подготавливать candidate bundle целиком: resolve assets, compile/bind/validate, проверить dependencies и возможность activation до изменения активной generation. Bundle имеет согласованную identity/fingerprint и перечень участвующих hosts. Явно определить границу reload: declarative/semantic definitions и assets; замена уже загруженной .NET assembly и произвольного C# не обещается без отдельного исследования. Выход: синтаксическая, type или resource ошибка оставляет активный bundle работоспособным с адресной diagnostic.
+### Базовый контракт интерфейса
 
-**R03.** Составлять migration plan по stable IDs, роли и совместимости типа: query, selection, scroll anchor, focus, editing/caret/composition state там, где поддержано. Rename alias не меняет identity; исчезнувший или несовместимый элемент получает документированный fallback. Сначала проверить план, затем применять. Выход: тесты совместимого изменения и смены типа/удаления узла; save-specific state не переносится между Flow sessions. Не сериализовать произвольные runtime объекты ради «сохранить всё».
+Подготовить минимальную спецификацию semantic-v2: stable identity, типы и nullability, отношения, версии state, действия, migration path и первый Flow example. Зафиксировать решение `«Совместимость публичного API»`, область public API, требования к CA и способ размещения первого Flow UI. Выход: конкретный пример модели и consumer mapping, по которым можно независимо реализовать «Типы и связи данных интерфейса» и «Данные и команды Flowline». Не проектировать заранее все виджеты и все синтаксисы; расширение проверяется сквозным примером.
 
-**R04.** Переключать участвующие hosts в одной определённой update boundary. Подготовленные hosts видят одну generation; ошибка до точки commit сохраняет старую, ошибка в допустимой rollback-фазе возвращает весь согласованный набор. Граница необратимых effects описывается отдельно: reload не запускает повторно доменные команды, а уже выполненные внешние effects не входят в UI rollback. Выход: fault injection по фазам prepare/migrate/commit/retire, две одновременно открытые поверхности, late async completion, многократный reload без роста ресурсов. Измеряются pause commit и peak memory; old resources освобождаются после безопасной передачи ownership.
+Зависимости: «Аудит исходной базы». Владелец: UI Experience/Semantics + consumers. Проверки: C, U, P при API-коде.
 
-### T01–T03: инструменты автора
+<a id="ui-data-model"></a>
 
-**T01.** Развить имеющиеся metadata и stdio tooling protocol: symbols/types/capabilities, definitions/references, diagnostics, source spans и planner trace. Версионирование protocol отдельно от public runtime API. Выход: server и compiler согласны на валидных/невалидных fixtures; client понимает unsupported capability и не трактует partial response как успешную компиляцию.
+### Типы и связи данных интерфейса
 
-**T02.** Создать воспроизводимый preview на том же compiler/planner/runtime с управляемыми fixture sources. Переключать locale, viewport, scale, input profile, theme, reduced motion, empty/loading/error и размер данных. После R02 preview может активировать изолированный candidate; переключение реальных открытых hosts опирается на R04. Выход: соответствие preview и in-game поведения проверено на выбранных примерах; ограничения платформенного preview явно обозначены. Снимки/golden assets не заменяются автоматически при визуальном несовпадении.
+Расширить существующие typed sources и identity до явно проверяемого semantic graph. Описать связи collection → selection → details, query/filter → collection, form → validation/action, action → target. Отличать стабильный ID от отображаемого alias и label. Неоднозначные ссылки, несовместимые типы, отсутствующие required capabilities и недопустимые циклы дают адресные diagnostics. Выход: один Flow read model и CA fixture проходят новый binding; негативные примеры отклоняются до activation. Совместимость consumer входит в этот же сквозной срез.
 
-**T03.** Выбрать один первый editor client и довести completion, type hints, go-to-definition/references, rename alias без смены ID, inline diagnostics, quick fixes и format. Добавить запуск preview и переход к planner explanation. Выход: новый автор по инструкции создаёт panel, находит ошибку binding, исправляет её и проверяет несколько окружений. Документация включает Quick/View/Experience, migration guide и примеры Flow/CA; после U08 в Q03 добавляется Exact. Численные ergonomics targets фиксируются после наблюдения, не подгоняются счётчиком строк.
+Зависимости: «Базовый контракт интерфейса». Владелец: UI Experience/Semantics. Проверки: C, U, P.
 
-### F11–F13: первая связь Flowline с UI
+<a id="ui-state-updates"></a>
 
-**F11.** Реализовать описанный в разделе 3 application boundary поверх действующей модели. Минимум чтения: session state, доступные станции, parcels/shipments и состояния, необходимые первому экрану. Минимум команд — выбранная существующая операция с понятной durable семантикой; не публиковать generic `Action<FlowRuntime>` наружу. Выход: immutable snapshots, revision/subscription contract, typed results и ownership проверены без игры; stale revision, повторный запрос, observer failure и session close имеют определённый результат. Persistence envelopes не меняются ради UI; если durable request identity потребует изменения формата, это отдельное явно включённое решение/миграция.
+### Согласованное обновление данных
 
-Результат F11: `e31c1ef` и `ff43d0b` интегрированы в `5f2d10c` с общей SDK/editor базой. Проверены immutable cached snapshots, session/revision fences, повторные команды, observer failure/reentry, subscribe-before-read и восстановление после ошибки чтения, owner-derived availability и typed rejection reasons. C `run-9ryxhfgj` — PASS (1 014 .NET + 301 Python); G `run-wxasxwxo` — PASS (1 174 .NET + 301 Python), включая 657 Flow и 65 игровых Flow tests. Fresh isolated runtime `7336456e-5400-4a77-aed6-4109aedc7c9f` — PASS 8, без исключений. UI package/API и persistence format этим срезом не изменены. [Подробное evidence](ROADMAP-STATUS.md#f11-combined-integration-checks).
+Определить source version, publication boundary, typed collection delta и полный reset. Согласовать insert/remove/move/update, item content version, selection/focus anchors, обработку устаревшей или пропущенной дельты. Обработать batch из нескольких связанных источников без смешанного кадра; ограничить буферизацию. Выход: reorder сохраняет выбранный stable ID, удаление выбранного элемента даёт определённый fallback, повторная delta не дублирует элемент, reset восстанавливает согласованность. Простая замена snapshot остаётся поддержанным путём для небольших данных.
 
-**F12.** Заменить прямое наблюдение domain `Parcel` snapshot-проекцией и подключить read-only Flow experience к поддержанному UI host. Выбрать конкретную точку открытия; при необходимости расширить public host capability вместе с реализацией/consumer. Включить semantic DLL и корректную UI dependency в release inventory, проверяя единственного поставщика UI DLL. Выход: экран открывается, обновляется после доменного изменения, показывает unavailable/empty/faulted state, закрывается и переживает A → B → A без старых данных и утечки подписок. Пока источник fake, экран обозначает диагностический режим.
+Зависимости: «Типы и связи данных интерфейса». Владелец: UI Experience/Runtime. Проверки: C, U, P, PERF.
 
-F12 итоговая общая приёмка, source `08ecdb94102fb7311c1fe21eabc9843f7e4888ef`, 2026-09-08: **DONE**. Независимый review сопоставил исходные критерии с owning implementation и actual common C1604/G1913 .NET +381 Python, P90, Flow UI15/19 completed observations, names7 и basic6. Подтверждены общий ShowParcel/active-menu host, coherent update, empty/unavailable/faulted, diagnostic title, close/reopen/A→B→A, отсутствие stale effects/subscribers и единственный UI provider в release inventory. Все19 composed PNG просмотрены;98 native hashes сохранны. [Полная таблица требований, команды, fingerprints и границы](F12_ACCEPTANCE.md). Следующий зависимый F13 ожидает U03 messages/typed consumer; физический ввод и оставшаяся общая alpha47 acceptance/push остаются открыты.
+<a id="ui-actions"></a>
 
-История промежуточных F12 checkpoints ниже сохраняет состояние до выполненной общей приёмки.
+### Действия и их завершение
 
-Готовность после F20: snapshot/publication и supported host уже существуют; published U02 alpha.36 закрывает свою зависимость, U04 остаётся незавершённым. [Проверка исходников и оставшаяся приёмка F12](FLOW_UI_READINESS.md) фиксирует пробелы empty/faulted, смены локали и фактического UI lifecycle. Это подготовка к зависимому срезу, без объявления нового runtime PASS или завершения F12.
+Ввести typed request/result и состояния действия: доступно, выполняется, выполнено, отклонено/ошибка, отменено — в форме, согласованной контрактом. Определить concurrency policy каждого действия, повторный invoke, `CanExecute` и сообщения пользователю. UI cancellation отменяет ожидание/работу только в пределах контракта; уже committed доменный эффект не «откатывается» закрытием окна. Выход: позднее завершение после close, reload или save switch не меняет новую сессию; исключения наблюдаемы; callbacks возвращаются на owning thread; подписки освобождаются.
 
-F12-a, retained Parcel text: ограниченный consumer checkpoint [`6e75c5c`](https://github.com/ihatectf/Hatifect/commit/6e75c5c7cc2ec31b2b0ae5b5a58c7a590fbc5551) проверен; полный F12 — **IN_PROGRESS**. Parcel использует U04 `UiLocalizedText` и typed captured facts вместо пяти строк на языке конструктора; исходный результат команды повторно форматируется без replay. Итоговый scoped F — **PASS741**, включая16 новых locale/capture cases; архитектурная граница — PASS26/5. [Поведение, исторические failures и оставшиеся проверки](ROADMAP-STATUS.md#f12-a-retained-parcel-text). C — **PASS1536 .NET +365 Python**, G — **PASS1809 .NET +365 Python**, P — **PASS90** на immutable source. Следующий готовый consumer шаг — видимые empty/faulted states; native item capture и UI lifecycle остаются обязательными частями F12.
+Зависимости: «Согласованное обновление данных». Владелец: UI Experience/Runtime/host. Проверки: C, U, P, G, RUNTIME.
 
-F12-b, empty/faulted projection: ограниченный checkpoint [`8639b46`](https://github.com/ihatectf/Hatifect/commit/8639b46400aa89a7bacf66b0178972ff19fb7f77) проверен; полный F12 — **IN_PROGRESS**. Consumer сохраняет видимый экран с причиной отсутствия отправления/ошибки, очищает недоступные cargo/route и отдельно проверяет допустимость команд. Owner Dispose теперь публикует окончательный Closed даже после Faulted. Scoped F — **PASS749**, включая8 новых cases; устранены исходные4 regression failures и найденный review сбой закрытия после ошибки. [Поведение и проверки](ROADMAP-STATUS.md#f12-b-visible-empty-and-faulted-parcel-states). C — **PASS1544 .NET +365 Python**, G — **PASS1817 .NET +365 Python**. Следующий шаг — native opening; фактическая F12 матрица ещё обязательна.
+<a id="ui-environment"></a>
 
-F12-c, opening без выбранного отправления: source [`b06805d`](https://github.com/ihatectf/Hatifect/commit/b06805d4a17a6530ff4fe618c2df835502f50b66), полный F12 — **IN_PROGRESS**. `show` выбирает сохранённый/первый реальный ID либо показывает пустой экран с EN/RU подсказкой; неизвестный непустой ID получает missing-state, пустой GUID отклоняется. Подготовка experience предшествует закрытию предыдущей поверхности. Scoped F — **PASS755**, шесть новых selection cases; C — **PASS1550 .NET +365 Python**, G — **PASS1823 .NET +365 Python**. [Точный объём и оставшаяся native acceptance](ROADMAP-STATUS.md#f12-c-opening-without-a-selected-parcel). Следующий шаг — locale-explicit native item capture и combined F12 UI lifecycle; обязательная runtime-проверка этого открытия ещё не выполнена.
+### Адаптация интерфейса к окружению
 
-F12-d, native item names: source [`3810b10`](https://github.com/ihatectf/Hatifect/commit/3810b1014eb1cc7d8a2d26fc21b43441fbb85cef), регистрация `d7047ac`. Ограниченный срез проверен; полный F12 — **IN_PROGRESS**. Parcel захватывает обычные имена предметов из точных EN/RU assets, сохраняя native fallback для неподдерживаемых форм. Scoped — **PASS152**, включая19 новых cases; C — **PASS1550 .NET +367 Python**, G — **PASS1842 .NET +367 Python**. Реальный `flow.ui.names` — **PASS7**, process exit0: две локали, неизменный retained catalog, восстановленный исходный язык, неизменный сейв и очистка одной временной копии. [Границы поддержки, source и evidence](ROADMAP-STATUS.md#f12-d-exact-native-item-name-capture). Следующий шаг — actual Flow UI open/update/close и A → B → A на combined environment-enabled candidate; names-only приёмка не закрывает эту матрицу.
+Развить profiles/provenance в environment facets: viewport, scale, input mode, locale, theme и необходимые accessibility preferences. Planner детерминированно выбирает допустимое представление с проверкой покрытия обязательной семантики. Trace объясняет применённое правило, альтернативы/причины отказа и происхождение значения, а его сбор не создаёт неограниченную историю на каждом кадре. Выход: одна Experience работает в нескольких окружениях; невозможная комбинация даёт явную diagnostic/fallback policy, а не тихо теряет действие или поле.
 
-F12 shared harness admission `flow.ui.isolation`: **IN_PROGRESS**. UI/shared tools закрепляют точный Flow-owned scenario,15 обязательных checks,оба модуля,420s,две request-owned копии и очистку с проверкой роли. Source [`eca000f`](https://github.com/ihatectf/Hatifect/commit/eca000f29b4afa46d2d476540941a19ae612d866): scoped — **PASS7**, tools — **PASS379**, C/G — **PASS1538/1812 .NET +379 Python**, независимые source/evidence review — PASS. Actual combined consumer native ещё не принят: initial settings failure исследует FLOWLINE; observation portal-count и title/label presentation проверяет UI. [Протокол, тесты и границы приёмки](F12_FLOW_ISOLATION_ADMISSION.md). Следующий шаг — immutable source в FLOWLINE и свежий сценарий на его actual driver; полный F12 не закрыт. GQ перенёс exact admission в локальный alpha.47 candidate: общий tools `run-39pndd1i` — **PASS380**, прежние сценарии и tests сохранены; общий source `1725dc6` завершил C `run-ln70m4xo` — PASS1584 .NET +380 Python и G `run-bqfypci7` — PASS1876 .NET +380 Python, process exit0/17 actual TRX/94 source hashes подтверждены. Actual consumer native на окончательной общей сборке остаётся обязательным.
+Зависимости: «Типы и связи данных интерфейса». Владелец: UI Planning/Semantics. Проверки: C, U, P, PERF.
 
-**F13.** Добавить ограниченное управление fake transport: выбранные операции create/dispatch/cancel/retry и объяснение отказов в рамках существующей доменной семантики. Окончательный набор определяется в срезе; UI не обещает возврат груза после точки, где cancel запрещён. Выход: повторный click, устаревший экран, running operation и domain rejection отображаются корректно; изменение видно другим открытым projections. Harness создаёт fixtures в изолированной среде; тестовые команды provisioning не становятся production inventory API.
+<a id="editor-protocol"></a>
 
-F13 — **IN_PROGRESS**, опубликованный checkpoint F13-a [`7d62ab5`](https://github.com/ihatectf/Hatifect/commit/7d62ab509ac6987df76938c4f34612669b3de16f) на базе `203788f`: Dispatch/Cancel/Retry используют U03 typed host actions с захватом publication/session/revision, повторной проверкой перед единственным domain effect и исходным `FlowCommandResult` до успешного Pump. Отказ и недоступность сохраняют локализованный reason; retirement, reentry и повторный click не повторяют эффект. Scoped F `run-44k3yqtv` — **PASS768** (13 новых cases); C `run-_bw4rs5h` — **PASS1713 .NET +388 Python**, проверены все семь actual TRX. Независимый bounded source/test review не нашёл доказанных дефектов. G `run-_qxi68gc` — **PASS2042 .NET +388 Python**; после коррекции ожидания disposed-handle native probe повторный platform Flow `run-ch9uafob` — **PASS928**. Native этого checkpoint ещё не принят. [Объём, evidence и оставшиеся критерии](F13_ACCEPTANCE.md). Следующий шаг — native action/result matrix и create через существующий NetworkExperience поверх изолированного fake owner; полный F13 не завершён.
+### Обмен данными с редактором
 
-F13-b, diagnostic create foundation — **IN_PROGRESS**: bounded IFlowNetworkApplication façade использует реальный FlowRuntime/FlowApplication и существующий FlowSendCommand, без production inventory API. Один lifetime create, session/revision/fingerprint/quantity/route guards, reentry, actual rejected delivery/retry и inactive-owner fences покрыты20 новыми cases. G `run-okzctzow` — PASS2056 .NET +388 Python до последней guard-коррекции; после неё platform Flow.Stardew `run-y5l7rw6h` — PASS180, C `run-819ojiny` — PASS1713 .NET +388 Python. Native create и action matrix остаются открыты; следующий шаг — отдельный flow.ui.actions через существующий NetworkExperience host. [Точный объём и ограничения](F13_ACCEPTANCE.md#f13-b-подготовка-fake-create).
+Развить имеющиеся metadata и stdio tooling protocol: symbols/types/capabilities, definitions/references, diagnostics, source spans и planner trace. Версионирование protocol отдельно от public runtime API. Выход: server и compiler согласны на валидных/невалидных fixtures; client понимает unsupported capability и не трактует partial response как успешную компиляцию.
 
-### F13 prerequisite — bounded semantic Reveal, общая интеграция
+Зависимости: «Типы и связи данных интерфейса», «Адаптация интерфейса к окружению». Владелец: UI Tooling/Tooling.Server. Проверки: C, U.
 
-Source `c2a9931` (owner `ba8dae4`): optional exact-harness Reveal API интегрирован поверх R01-a; [контракт и evidence](UI_SEMANTIC_REVEAL.md). Общие C/G/P — PASS1677/2040 .NET +389 Python и101 isolated CA tests,8 exact-source packages. Native visible Result — **IN_PROGRESS**; historical Network result visibility **FAIL** не заменяется semantic success. Следующий шаг — consumer Reveal и свежие completed-draw PNG совместно с native scale/profile correction; полные F13/U05/U06/Q01 не закрыты.
+<a id="flow-application-contract"></a>
 
-### F14–F17: реальный provider и production session
+### Данные и команды Flowline
 
-**F14.** Подготовить decision record о согласованности: кто владеет физическим inventory, когда его изменение попадает в game save, где фиксируются intent/receipt, как определяется custody и что происходит при crash/rollback одной стороны. Сопоставить текущие `ICargoPort`/durable provider contracts с реальным игровым API. Возможные направления для сравнения: save-coordinated операции, контролируемое Flow custody/escrow, provider с доказуемым atomic durable contract. Не выбирать по названию; привести timeline каждой границы отказа и маленький воспроизводимый spike. Выход: D03/D04, поддерживаемые guarantees, unsupported cases, протокол retry/reconciliation и условия, при которых transport прекращает работу с объяснимой ошибкой. Не обещать exactly-once для произвольного игрового inventory.
+Реализовать application boundary, описанный в архитектуре и семантическом контракте поверх действующей модели. Минимум чтения: session state, доступные станции, parcels/shipments и состояния, необходимые первому экрану. Минимум команд — выбранная существующая операция с понятной durable семантикой; не публиковать generic `Action<FlowRuntime>` наружу. Выход: immutable snapshots, revision/subscription contract, typed results и ownership проверены без игры; stale revision, повторный запрос, observer failure и session close имеют определённый результат. Persistence envelopes не меняются ради UI; если durable request identity потребует изменения формата, это отдельное явно включённое решение/миграция.
 
-**F15.** Реализовать read-only adapter для одного выбранного типа inventory. Определить stable station/container identity, item identity, stack/quality/metadata, допустимые типы предметов, capacity/admission и owner-thread access. Проверить исчезновение/перемещение контейнера, внешнее изменение содержимого и отсутствие capability. Выход: game objects не пересекают Core/Persistence boundary; повторный snapshot детерминирован для неизменного состояния; неподдерживаемый item не принимается молча. Первый provider и item subset выбираются в D03.
+Зависимости: «Базовый контракт интерфейса». Владелец: Flow Application/Persistence/host. Проверки: C, F.
 
-**F16.** Ввести реальное извлечение/размещение по протоколу F14. Каждая стадия имеет operation identity, определённое custody и результат повторного вызова. Проверить частичный stack, изменение inventory между проверкой и effect, отсутствие capacity, повтор delivery и восстановление после каждой подтверждённой границы. Выход: на поддерживаемой failure matrix груз не теряется и не появляется дважды; неподдерживаемое/неоднозначное состояние сохраняет evidence и блокирует небезопасный effect. Crash tests и unit fault injection обозначаются раздельно: одно не доказывает другое.
+<a id="flow-live-screen"></a>
 
-**F17.** Подключить provider к реальной save-scoped transport session: load/save/title/dispose, logical clock, pause, due-work budget, lease и fencing. Согласовать порядок game-save hooks с persistence протоколом; повторное событие не запускает второй transport. Выход: реальный маршрут между двумя станциями, save/reload, A → B → A, повторное открытие и отказ provider проходят изолированные runtime-сценарии. Idle/paused state сохраняет ограниченную стоимость и не превращается в постоянный checkpoint loop.
+### Просмотр состояния Flowline
 
-Статус F17: **DONE** в пределах выбранного ordinary-chest single-player provider. Lifecycle/isolation `c9837fe` и PERF `ece74db` подтверждены исходными игровыми reports и fingerprint; pause/idle — по600 samples,0B, p95/p99 в фиксированных пределах, due work — max64/240 transitions/160 effects. Интеграция с UI alpha.35 прошла G1478 .NET +337 Python, C1263 .NET +338 Python; отдельный regression закрывает возможность ослабить manifest checks/requiredMods. Commit и evidence перечислены в [ROADMAP-STATUS.md](ROADMAP-STATUS.md#combined-alpha35-and-f17-b-performance). Новая игровая приёмка объединённого UI candidate этим не заявляется. F20 завершён отдельным ресурсным профилем ниже; F12/F13/F18/F19 сохраняют свои UI dependencies.
+Заменить прямое наблюдение domain `Parcel` snapshot-проекцией и подключить read-only Flow experience к поддержанному UI host. Выбрать конкретную точку открытия; при необходимости расширить public host capability вместе с реализацией/consumer. Включить semantic DLL и корректную UI dependency в release inventory, проверяя единственного поставщика UI DLL. Выход: экран открывается, обновляется после доменного изменения, показывает unavailable/empty/faulted state, закрывается и переживает A → B → A без старых данных и утечки подписок. Пока источник fake, экран обозначает диагностический режим.
 
-### F18–F20: пользовательский продукт Flowline
+Зависимости: «Данные и команды Flowline», «Согласованное обновление данных», «Адаптация интерфейса к окружению». Владелец: Flow UI + UI host. Проверки: C, F, U, G, P, RUNTIME.
 
-**F18.** Дать игроку согласованный путь настройки первого маршрута: выбрать поддерживаемые контейнеры, зарегистрировать станции, связать их и увидеть доступность/ограничения. UI использует capabilities и typed commands; новые durable topology/configuration mutations сначала реализуются у владельца, включая retry/recovery. Выход: маршрут можно создать из чистого допустимого состояния без диагностических команд, сохранить и открыть снова; удаление/изменение используемой станции имеет явно выбранную политику. Нельзя подменить недостающую доменную операцию изменением snapshot.
+<a id="flow-save-consistency"></a>
 
-**F19.** Завершить путь «выбрать груз → проверить возможность → отправить → наблюдать → получить результат/объяснение проблемы». Показывать station availability, cargo/parcel state, capacity/admission, причину ожидания/отказа и только разрешённые cancel/retry/reconcile actions. ETA отображается лишь при наличии определённой модели; диагностический logical tick не выдаётся за обещанное игровое время доставки. Выход: happy path и отказ проходят EN/RU, input/scale matrix; recovery UI не требует ручного редактирования journal/save.
+### Согласованность предметов и сохранения
 
-**F20.** Измерить routing/dispatch/checkpoint costs, длины очередей, receipt growth и восстановление на выбранных масштабах. Добавить ограниченную диагностику и документировать ресурсные пределы. Решить D06: если существующих bounded limits достаточно для MVP, сначала явно показываем backpressure и предел; если нужно удалять receipts/compacting journal, отдельно доказываем безопасный recovery horizon и вводим совместимую миграцию. Выход: длительная сессия не растёт бесконтрольно, переполнение имеет корректный результат, отчёт позволяет воспроизвести проблему. Агрессивная compaction не считается обязательной без подтверждённой потребности.
+Подготовить decision record о согласованности: кто владеет физическим inventory, когда его изменение попадает в game save, где фиксируются intent/receipt, как определяется custody и что происходит при crash/rollback одной стороны. Сопоставить текущие `ICargoPort`/durable provider contracts с реальным игровым API. Возможные направления для сравнения: save-coordinated операции, контролируемое Flow custody/escrow, provider с доказуемым atomic durable contract. Не выбирать по названию; привести timeline каждой границы отказа и маленький воспроизводимый spike. Выход: «Границы первой перевозки»/«Гарантии сохранения предметов», поддерживаемые guarantees, unsupported cases, протокол retry/reconciliation и условия, при которых transport прекращает работу с объяснимой ошибкой. Не обещать exactly-once для произвольного игрового inventory.
 
-Статус F20 — **DONE** в пределах выбранного ordinary-chest single-player provider: F20-a [6d0ac14](https://github.com/ihatectf/Hatifect/commit/6d0ac1407f70c70ccb03126d1ceea49f1caa6f58) и F20-b [a0520d2](https://github.com/ihatectf/Hatifect/commit/a0520d20ea89422c06a929a6f3fca20557eb1bfe). G1507 .NET +348 Python, C1269 .NET +348 Python; actual resources PASS12 и PERF PASS9 на одном fingerprint. Очереди32/128/256,75 route queries,16 попыток и шесть save/title cycles подтверждают предельные journals и отсутствие роста после отказов/на idle. D06 выбирает bounded retention с явным отказом после256 lifetime cargo без compaction; активные tick/save/restore расходы и ограничения приведены в [ресурсном профиле](FLOW_RESOURCE_PROFILE.md), commit/evidence — в [отчёте F20-b](ROADMAP-STATUS.md#f20-b-measured-resources-and-d06-retention-decision). Следующая Flow implementation зависит от завершённых UI contracts: F12 ждёт U04, F13 — F12/U03, F18/F19 — U07 и ранние Flow UI этапы. Полная roadmap не завершена.
+Зависимости: «Аудит исходной базы». Владелец: Flow Application/Persistence/adapters. Проверки: C, F; «Границы первой перевозки»/«Гарантии сохранения предметов».
 
-### I01 и Q01–Q03: интеграция и приёмка
+<a id="flow-chest-adapter"></a>
 
-**I01.** Использовать новый semantic/authoring contract в CA, сохранив смысл navigator, handoff и native menu restoration. Ранние U01–U07 уже поддерживают собираемость affected consumer; эта работа завершает продуктовую миграцию и удаляет согласованный временный bridge там, где выполнено его условие. Выход: exact package restore, build без UI source tree, один владелец runtime DLL, положительные и отрицательные CA configurations, close/reopen и input restoration. Не оставлять migration debt скрытым в adapter reflection.
+### Чтение сундуков и предметов
 
-**Q01.** Снять baseline текущего Hatifect runtime с fingerprint, версиями игры/SMAPI/CA, architecture/runtime, locale, scale и измерениями. Проверить текущие UI/CA scenarios и Flow fake lifecycle; отдельно зафиксировать физический ввод и ручные наблюдения. Выход: исходная измеренная база и список актуальных дефектов. Найденный дефект имеет отдельный bounded fix, а не автоматически считается частью переписывания semantic-v2.
+Реализовать read-only adapter для одного выбранного типа inventory. Определить stable station/container identity, item identity, stack/quality/metadata, допустимые типы предметов, capacity/admission и owner-thread access. Проверить исчезновение/перемещение контейнера, внешнее изменение содержимого и отсутствие capability. Выход: game objects не пересекают Core/Persistence boundary; повторный snapshot детерминирован для неизменного состояния; неподдерживаемый item не принимается молча. Первый provider и item subset выбираются в «Границы первой перевозки».
 
-Q01 current build-identity follow-up — **IN_PROGRESS**: [потеря SDK metadata при packed refs](BUILD_SOURCE_IDENTITY.md) исправлена локальным commit `ff87f5232ae7a342a0942f104dca325919a99b5a`. Recovery прошёл independent Sol review, 13 регрессий и реальную loose→packed Git/SDK проверку: DLL/PDB побайтно одинаковы, commit и SourceLink сохранены. Финальный G `run-qqxxiq7u` — PASS1 952 .NET +389 Python +13 metadata; P `dm1v4_rk` — PASS101/47 projection/8 exact packages, 1 445 файлов сохранены. C `run-k270ugto` сохраняет отдельный allocation-test FAIL; повторный UI без сборки — PASS868, причину исследует UI owner. Общая runtime identity после дальнейшей интеграции, окончательный C и публикация ещё обязательны. Исторический aggregate `bcbf231d` сохраняет behavioral PASS28 и package-identity **FAIL**. Проверенные U03 snapshots не переименованы; физический Backspace остаётся открытым.
+Зависимости: «Согласованность предметов и сохранения». Владелец: Flow game adapter. Проверки: C, F, G, RUNTIME.
 
-Q01 — **IN_PROGRESS**: [база из терминала локальная среда](Q01_RUNTIME_BASELINE.md) сохранена на alpha.35 / `7a9e590`, включая UI/CA, fake Flow lifecycle/isolation, отрицательные CA-сценарии и измерения 620 кадров. [Исправление захвата](Q01_CAPTURE_FIX.md), [`85a786f`](https://github.com/ihatectf/Hatifect/commit/85a786f479895bd23046cf0d0f7ebc615cc90324), **DONE**: кадр снимается после композиции world/UI, отдельно сохраняется UI-слой. [Исправление HUD fixture](Q01_OVERLAY_FIXTURE.md), [`37b735e`](https://github.com/ihatectf/Hatifect/commit/37b735eee598e33970b1622ac76941cbbcdd7b81), **DONE**: standalone ждёт изолированный мир и завершение load fade; текст overlay подтверждён изображением. На объединённой alpha.36/F20 прошли C (1 281 .NET +342 Python), G (1 500 .NET +342 Python), P (90 CA tests, восемь пакетов), UI/CA aggregate и fake Flow lifecycle/isolation. Старые FAIL и их причины сохранены в отчётах.
+<a id="flow-item-transfer"></a>
 
-Q01 checkpoint [первого кадра меню и реального окна](Q01_WINDOW_VIEWPORT.md) — **DONE** в ограниченном объёме: [`3f3029b`](https://github.com/ihatectf/Hatifect/commit/3f3029baf1f73d12024cb3879e546ed48446edfa) синхронизирует viewport перед Draw; [`edbe9e8`](https://github.com/ihatectf/Hatifect/commit/edbe9e80713d27f0553bcd5d3d33686283718d0c) исправляет runtime help до подготовки deployment. Standalone до/после подтверждает границы 1470×956 вместо устаревших 1280×720. Нативная обрезка воспроизведена в borderless на macOS и отсутствует в изолированном окне 1280×720; это ограничение среды, а не исправленный engine defect. Объединение `aa04181` с alpha.37/F20 прошло C (1 317 .NET +351 Python), G (1 555 .NET +351 Python), P (90 CA tests, восемь пакетов) и четыре свежих runtime-сценария (44 assertions); native window и 620 кадров проверены на новом fingerprint. Этот checkpoint ещё не включал стабильные отрисованные состояния EN/RU × scale/theme и отдельную проверку нативного ввода; их дальнейшие результаты приведены ниже.
+### Перенос предметов и восстановление
 
-Q01 checkpoint [отрисованной матрицы и resize](Q01_RENDERED_MATRIX.md) — **DONE** в ограниченном объёме: [`ae2f829`](https://github.com/ihatectf/Hatifect/commit/ae2f829ec0be02f302df522247d20dd8e557f825) проверяет по два стабильных кадра EN/RU × 75/100/125/150% × Dark, сохраняет восемь изображений и устраняет сбой координат полноэкранного меню при resize. Интеграция [`b3265fa`](https://github.com/ihatectf/Hatifect/commit/b3265fa3b7f23b2794588f56afcc51d59148859f) сохраняет alpha.39/U03: C — 1 350 .NET +351 Python, G — 1 588 .NET +351 Python, P — 90 CA tests и восемь точных пакетов. Свежие standalone и aggregate прошли 8/28 assertions; все восемь кадров просмотрены, настройки восстановлены перед CA/performance. Отказ записи PNG и diagnostic JSON дал ожидаемый FAIL, сохранил исходную причину и завершил игру без ошибки teardown. Это диагностический fixture реализованной Dark-темы; полная продуктовая локализация и все состояния UI/Flow/CA этим не объявляются проверенными. Следующий готовый шаг — отдельная проверка нативного ввода. Физический ввод и macOS borderless-ограничение сохраняются; полный Q01 остаётся **IN_PROGRESS**.
+Ввести реальное извлечение/размещение по протоколу «Согласованность предметов и сохранения». Каждая стадия имеет operation identity, определённое custody и результат повторного вызова. Проверить частичный stack, изменение inventory между проверкой и effect, отсутствие capacity, повтор delivery и восстановление после каждой подтверждённой границы. Выход: на поддерживаемой failure matrix груз не теряется и не появляется дважды; неподдерживаемое/неоднозначное состояние сохраняет evidence и блокирует небезопасный effect. Crash tests и unit fault injection обозначаются раздельно: одно не доказывает другое.
 
-Q01 [проверка нативного ввода и исправления Search/Backspace](Q01_NATIVE_INPUT.md) — **IN_PROGRESS**: commits `14db772` и `edad4b1` на интеграции alpha.40. Исправлены alias ID строк Inspector, видимость пустого Search и обработка команд Back/Tab/Enter; отдельный native fixture сохраняет реальные события и отрисованные состояния. C — PASS 1 377 .NET +355 Python, G — PASS 1 618 .NET +355 Python; P — PASS90, UI/CA aggregate — PASS28 на том же fingerprint. Свежий native запуск подтвердил pointer/Tab/text; системный Backspace удалил один символ, но отдельное SMAPI-нажатие не зафиксировано, поэтому общий результат FAIL сохранён. Следующий шаг — завершить физическую проверку Backspace; полный Q01 не закрыт. GQ ведёт интеграцию/harness/приёмку, продуктовые UI и Flowline срезы остаются у соответствующих задач.
+Зависимости: «Чтение сундуков и предметов». Владелец: Flow Persistence + game adapter. Проверки: C, F, G, RUNTIME.
 
-Совместная alpha.41, integration `9006131`: C — PASS 1 396 .NET +355 Python, G — PASS 1 637 .NET +355 Python, P — PASS90; свежие UI/CA aggregate и fake Flow/isolation — PASS28/6/7. Условие unattended-прогона — отключённая пауза вне фокуса только в изолированной конфигурации; исходные настройки восстановлены. Первоначальный FAIL и незавершённый физический Backspace сохранены в [отчёте Q01](Q01_NATIVE_INPUT.md).
+<a id="flow-game-session"></a>
 
-Q01 [фоновые runtime-запуски](Q01_BACKGROUND_RUNTIME.md), commit [`4c860dd`](https://github.com/ihatectf/Hatifect/commit/4c860dd53c1be9cfc53b670c6f3f81d4a65ff2c1): **DONE** в ограниченном объёме harness. Runner временно отключает паузу вне фокуса в двух изолированных XML и восстанавливает байты/права после owned process, включая crash/reload. C — PASS1 396 .NET +362 Python; свежие UI/CA, boot без файлов настроек и Flow crash-after-save — PASS28/1/9. Контрольные суммы подтвердили восстановление конфигурации; общий Q01 остаётся **IN_PROGRESS** до завершения физического ввода. Ограничение принудительного завершения самого executor и точные fingerprints приведены в отчёте.
+### Перевозки в игровой сессии
 
-Q01 follow-up [`74f8010`](https://github.com/ihatectf/Hatifect/commit/74f8010ad937fba376e30bca703c23478f92f097) закрывает выявленный P2 изоляции резервных копий: оба каталога evidence проверяются до первой записи, symlink отклоняется без изменения внешнего каталога и исходных настроек. Два исходных FAIL subtests сохранены; direct-runtime — PASS37, tools — PASS363, C — PASS1 396 .NET +363 Python, независимое review — PASS. [Причина, проверки и границы](Q01_BACKGROUND_RUNTIME.md#проверка-каталогов-резервных-копий). Полный Q01 остаётся IN_PROGRESS; физическая приёмка ввода ещё не завершена.
+Подключить provider к реальной save-scoped transport session: load/save/title/dispose, logical clock, pause, due-work budget, lease и fencing. Согласовать порядок game-save hooks с persistence протоколом; повторное событие не запускает второй transport. Выход: реальный маршрут между двумя станциями, save/reload, A → B → A, повторное открытие и отказ provider проходят изолированные runtime-сценарии. Idle/paused state сохраняет ограниченную стоимость и не превращается в постоянный checkpoint loop.
 
-Q01 [общая регрессия alpha.42](Q01_ALPHA42_INTEGRATION.md), UI source `9b8f5e6`, опубликованная harness integration `db9332c`: C — PASS1 431 .NET +363 Python, G неизменного UI candidate — PASS1 672 .NET +362 Python; GQ P — PASS90 с восемью packaged DLL, совпадающими с игровой поставкой. Fresh UI/CA aggregate, fake Flow и isolation — PASS28/6/7. Отдельный PERF после harness guard — PASS2, 620 frames, p95/p99 0.048083/0.366583ms, 4605.484B/frame; исходные настройки восстановлены. CI exact `db9332c` — SUCCESS. Проверка относится к diagnostic/fake fixtures; полные U03/Q01 остаются IN_PROGRESS. Следующий общий шаг — приёмка готового product candidate либо физический Backspace при доступности пользователя.
+Зависимости: «Данные и команды Flowline», «Перенос предметов и восстановление». Владелец: Flow host/Persistence. Проверки: C, F, G, RUNTIME, PERF.
 
-Q01 [проверка идентичности package DLL](Q01_PACKAGE_IDENTITY.md), [`c36a0d1`](https://github.com/ihatectf/Hatifect/commit/c36a0d133d847f2a9a8bd25fe1478d13963e1c5a): ограниченный tooling fix — **DONE**. Завершённый feed отклоняется при отсутствующем или изменившемся final Release producer; прежний ложный PASS подтверждён двумя regression cases и replay сохранённых alpha.42 пакетов. Scoped PASS7, tools PASS365, C на хосте PASS1 431 .NET +365 Python, fresh P PASS90 с восемью совпадающими DLL. Исходные sandbox file-watch FAIL сохранены отдельно; неизменённый тест и полный C прошли на хосте. Причина исторической смены metadata ещё не установлена, compiler/source-revision policy не менялась. Следующий общий шаг — приёмка проверенного U03/alpha.43; физический Backspace и полный Q01 остаются IN_PROGRESS.
+<a id="flow-resource-limits"></a>
 
-Q01 [общая приёмка alpha.43](Q01_ALPHA43_INTEGRATION.md), corrected integration [`6c30713`](https://github.com/ihatectf/Hatifect/commit/6c307137287a9a5634c4383d9773cc873bf1a068): ограниченный checkpoint — **DONE**. Сохранены U03 owning Pump/portal retirement, FLOWLINE regression ancestry и GQ verifier. Новый P2 повторного keyboard Acquire после failed Hide исправлен в owning UI и подтверждён exact native RED→GREEN. C неизменного host-free C# — PASS1457 .NET +365 Python; final G — PASS1698 .NET +365 Python, P — PASS90 и восемь DLL, совпадающих с игровой поставкой. Fresh keyboard/pump/UI-CA/Flow/isolation — PASS2/4/28/6/7; отдельный PERF — PASS2,620frames,p95/p99 0.048542/0.518625ms,4609.006B/frame,misses0,11 наблюдений без dotnet/MSBuild. Все восемь EN/RU×scale×Dark PNG просмотрены, options bytes/modes восстановлены. Полные U03/Q01 остаются IN_PROGRESS; следующий общий шаг — приёмка переданного alpha.44 action-generation checkpoint, физический Backspace по-прежнему не завершён.
+### Ресурсные ограничения Flowline
 
-Q01 CI follow-up [`3043c67`](https://github.com/ihatectf/Hatifect/commit/3043c67): публикация `dc79fc7` обнаружила race временной метки в общем process harness (CI34048617203 FAIL). Метка теперь фиксируется перед Popen; real-process regression RED→GREEN, tools PASS366, host C PASS1457 .NET +366 Python и fresh `flow.chest.crash-after-return` PASS15. [Причина и evidence](Q01_ALPHA43_INTEGRATION.md#ci--временная-граница-запуска-процесса). Exact CI публикации `f035f4c`, [run34049870307](https://github.com/ihatectf/Hatifect/actions/runs/34049870307), — **SUCCESS**, все10 jobs. Следующий готовый checkpoint — alpha.44. Полные U03/Q01 IN_PROGRESS.
+Измерить routing/dispatch/checkpoint costs, длины очередей, receipt growth и восстановление на выбранных масштабах. Добавить ограниченную диагностику и документировать ресурсные пределы. Решить «Хранение истории перевозок»: если существующих bounded limits достаточно для MVP, сначала явно показываем backpressure и предел; если нужно удалять receipts/compacting journal, отдельно доказываем безопасный recovery horizon и вводим совместимую миграцию. Выход: длительная сессия не растёт бесконтрольно, переполнение имеет корректный результат, отчёт позволяет воспроизвести проблему. Агрессивная compaction не считается обязательной без подтверждённой потребности.
 
-Q01 [бюджет запуска process fixture](PROCESS_HARNESS_STARTUP.md), source `0041788d19dd5f0f8b868312985933f787f4ca93`: ограниченное исправление теста — **DONE**. Штатно разрешённый macOS запуск завершился за 3.065 секунды, превысив прежний двухсекундный бюджет проверки stdout/stderr; точный executable получил OS `allowed`. Бюджет этого success fixture увеличен до 10 секунд, внешний watchdog до 15; production supervisor и отдельные короткие timeout/cancellation tests сохранены. Scoped tools PASS381; C `run-_l7idcr5` — PASS1604 .NET +381 Python, семь actual TRX; независимый source/scoped review без находок. Старые FAIL остаются в evidence. UI принял точное исправление как `ab320dc` и прошёл C: 1 619 .NET + 381 Python; GQ перенёс его поверх `79da4aa`, свежий tools `run-ck0vhowb` — PASS: 381 тест, без ошибок и пропусков. Полный C итогового общего candidate остаётся обязательным; общая alpha.47, native bootstrap и физический Backspace этим не закрываются. Полный Q01 остаётся **IN_PROGRESS**.
+Зависимости: «Перевозки в игровой сессии»; «Хранение истории перевозок». Владелец: Flow Core/Persistence/tools. Проверки: C, F, G, PERF, RUNTIME.
 
-**Q02.** Собрать и проверить ограниченный M3 candidate. Acceptance включает путь настройки/перевозки, реальный adapter failure matrix, game save/reload, session isolation, coexistence Flow UI/CA, locale/input/scale и performance. Выход: свежие evidence для конкретных runtime DLL, release inventory, installation/dependency check и описание известных ограничений. Без реальной inventory проверки статус «fake transport demo», а не готовый Flow MVP.
-
-**Q03.** Проверить полный согласованный объём модернизации: authoring forms, component catalog, extension contract, editor/preview, multi-host reload/rollback, ресурсы и performance. Согласовать versions и migration guide, собрать локальный release archive и проверить установку в изоляции. Выход: воспроизводимая поставка с known issues и support matrix. Merge в общую ветку, публикация и release выполняются отдельным явно авторизованным действием; готовность архива не означает публикацию.
-
-## 6. Решения, которые нельзя спрятать в реализации
-
-Это будущие decision gates, а не запрос подтверждений при чтении roadmap. До соответствующей implementation-задачи нужно подготовить конкретный контракт, consumer example и evidence; имеющаяся явная авторизация задачи учитывается и повторно не запрашивается.
-
-| ID | Решение | Рекомендуемая исходная позиция | Что требуется для выбора |
-|---|---|---|---|
-| D01 | Совместимость semantic-v2 и host API | Эволюция существующего IR/runtime; небольшой bridge только при однозначной семантике | API diff, Flow example, CA migration, package/version plan, удаление bridge |
-| D02 | Exact geometry и граница visual policy | Отдельный framework authoring mode с общими input/accessibility правилами | Примеры pixel layout, compact/controller fallback и изменение связанных инструкций/контракта в явно заданной задаче |
-| D03 | Объём первого реального Flow MVP | Single-player, два поддерживаемых stationary inventories, ограниченный item subset; только после проверки осуществимости | Inventory API evidence, пользовательский путь, типы предметов, политика перемещения/удаления контейнера |
-| D04 | Game save ↔ Flow durable consistency | Guarantees в пределах проверяемой failure matrix | Commit timeline, crash/reload experiment, custody rules, обработка неоднозначности |
-| D05 | Объём первого публичного UI release | Сначала набор, нужный Flow/CA и учебным примерам; расширенный каталог по отдельным slices | Component matrix, theme/accessibility scope, authoring observations, список stable/experimental APIs |
-| D06 | Throughput, retention и compaction | **DECIDED:** bounded retention и отказ после256 lifetime cargo; compaction не вводится | [Предельный runtime-профиль F20](FLOW_RESOURCE_PROFILE.md); history reclamation требует отдельного recovery horizon и migration proof |
-
-Финальные API names, смена major version, численные дополнительные acceptance-пороги и конкретный editor client остаются решениями своих задач. В roadmap не меняются существующие budget/acceptance JSON ради соответствия предложению.
-
-## 7. Проверки и доказательства
-
-| Код | Команда / вид проверки | Когда обязателен |
-|---|---|---|
-| C | `./tools/hatifect-check` | Каноническая общая проверка: instructions/config, architecture, Python tests, build и .NET без игры |
-| U | `./tools/hatifect-test ui` | Затронуто поведение UI; targeted feedback до общего check |
-| F | `./tools/hatifect-test flow` | Затронуты Flow Core/Persistence/application contracts |
-| G | `./tools/hatifect-check --platform`; для CA также `./tools/hatifect-test ca --platform` | Изменён игровой adapter/host или полный граф |
-| P | `./tools/hatifect-isolated-ui-ca` из текущих packages | Изменён UI package boundary, публичный producer contract или CA consumer |
-| RUNTIME | Изолированный harness и сценарии текущей сборки | Заявлено новое runtime/lifecycle/input/transport поведение или release acceptance |
-| VISUAL | Наблюдение в игре/preview, размеры, hitboxes, локализация, scale, focus | UI representation, themes, components и финальная визуальная приёмка |
-| PERF | Замер на фиксированном окружении + отчёт о hot paths | Изменены update/draw/layout/dispatch, ресурсы, большие коллекции или reload |
-| MANUAL | Воспроизводимый пользовательский/editor сценарий | Authoring usability, физический ввод и неподдающаяся текущей автоматизации часть acceptance |
-
-Таблица работ задаёт minimum intended evidence; applicability уточняется по фактическому diff. Не надо повторять весь общий check после каждого короткого targeted test без новых изменений. Любая затронутая package/host-граница добавляет соответствующую проверку, даже если её не было в начальной карточке.
-
-Действующие UI бюджеты находятся в JSON: 600 measurement frames; UI-thread p95 ≤ 2 ms, p99 ≤ 4 ms; steady allocation ≤ 16 384 bytes/frame; measure/arrange cache miss ratio ≤ 0,2. Это существующая authority, а не новые цели roadmap. Новые measurements cold/warm open, reload prepare/commit/peak memory, lists 100/1 000/10 000 и Flow throughput предлагаются как расширение измерений; сначала фиксируются условия и baseline, затем отдельно утверждаются дополнительные пороги.
-
-Матрица UI: EN/RU; scales 75/100/125/150%; выбранные viewports; pointer/keyboard/controller/text entry; supported themes; empty/loading/error/disabled/pending/success; open/close/reopen; save switch; reload при активном вводе. Не требуется полный декартов перебор всего каталога: выбираются представительные комбинации, все критические переходы и явно заданные release requirements.
-
-Матрица Flow: happy path; duplicate request; stale revision/session; provider rejection; capacity/admission change; save A → B → A; fault до/после каждого durable boundary; восстановление; исчезновение inventory; внешнее изменение item stack; game-save rollback; long-running bounded behavior. Поддерживаемая подматрица фиксируется в D03/D04, а ограничения отражаются в capability и UI.
-
-Для сквозной задачи evidence содержит commit/tree и runtime fingerprint, команды/exit codes, фактические nonzero test counts, версии окружения, сценарии и наблюдаемый результат. **PASS** — выполнено успешно; **FAIL** — нарушено требование; **BLOCKED** — требуемая стадия недоступна; **NOT_APPLICABLE** — стадия не относится к данному изменению. Новому документу roadmap runtime/visual дают NOT_APPLICABLE; будущему runtime feature отсутствие игровой проверки не даёт PASS.
-
-Тесты проверяют observable transitions и инварианты: сохранение/принадлежность груза, актуальность данных, lifecycle, отсутствие stale effects, layout/hitbox agreement. Не добавляем тесты, которые фиксируют текст roadmap, число строк или повторяют implementation. Reviewer делает второй проход по контрактам/исходникам и итоговому diff; независимый reviewer сообщает findings отдельно и не исправляет код в своей read-only роли.
-
-## 8. Как вести разработку
-
-Основная единица работы — **небольшой сквозной результат**: contract → owning implementation → consumer → verification → handoff. Каталог выше содержит и bounded slices, и семейства работ; U09, T03, F16 и Q03 особенно вероятно потребуют нескольких PR. Число строк каталога не является оценкой количества PR или времени.
-
-Каждый результат имеет одного владельца реализации. Независимое исследование и review получают ограниченную область и ожидаемое доказательство. Общие файлы и контракт не редактируются параллельно несколькими исполнителями; интеграция и итоговая проверка остаются частью того же изменения.
-
-## 9. Риски и управление объёмом
-
-| Риск | Ранний признак | Действие |
-|---|---|---|
-| Два расходящихся UI runtime | Quick/Exact вводят собственные focus/layout/hosts | Остановить разделение, понизить authoring в общий IR; разделять syntax, а не runtime ownership |
-| Слишком большой «v2 сразу» | Первый Flow screen ждёт весь каталог/editor | Ограничить B02/U01 реальным M1 consumer; расширять после измерения |
-| Скрытая mutable связь Flow/UI | Snapshot хранит живой runtime/Parcel graph, action зовёт persistence callback | Исправить F11 ownership и контракт; projection остаётся consumer |
-| Потеря обновления или stale async effect | Экран отстаёт после subscribe/save switch/reload | Проверить session token, read/subscribe handshake, version reset и generation fencing |
-| Ложная гарантия реального provider | Fake receipt назван доказательством game-save atomicity | Заблокировать production write до F14/F16 evidence; показать capability/ограничение |
-| Неполный reload rollback | Часть hosts новая, часть старая, effects повторились | Пересмотреть commit boundary и ownership; доменные effects вынести из UI reload |
-| CA работает только рядом с UI source | ProjectReference или случайные DLL маскируют API mismatch | Проверить exact packages и isolated consumer; исправить owner/dependency inventory |
-| Performance заметили в конце | Полный snapshot/layout на draw, неограниченные receipts/caches | Измерять U02/U05/F17 и сохранять bounded budgets с первого среза |
-| Stale roadmap | DONE без commit/evidence, API в тексте отсутствует в коде | Обновлять status и next slice в том же PR; историю не превращать в текущую authority |
-
-За пределами первого Flow MVP: multiplayer authority/synchronization, offline catch-up, клонирование/ветвление сейвов, произвольные modded inventories/items, сложные транспортные классы и большие пользовательские network editors. Их дизайн начинается после устойчивой production session и отдельного scope. Если single-player нельзя надёжно отличить в host, ограничение должно проверяться capability/активацией, а не только предупреждением в README.
-
-За пределами гарантии UI hot reload: произвольная замена загруженных .NET assemblies, rollback сторонних внешних effects и автоматическая миграция любых C# объектов. Поддержку screen readers/assistive platform bridge нельзя объявлять только по наличию semantic labels; фактическая поддержка платформы входит в выбранный accessibility scope и его проверку.
-
-Переезд на другой .NET/SMAPI runtime, новые значительные зависимости, облачная оркестрация и возвращение удалённых продуктов не следуют автоматически из этого roadmap. Текущие compatibility targets остаются действующими до отдельной задачи.
-
-## 10. Память проекта, handoff и начало следующей задачи
-
-Этот документ — долгоживущая карта работ. [ARCHITECTURE.md](../ARCHITECTURE.md) описывает реализованные границы; [DEVELOPMENT.md](DEVELOPMENT.md) — действующий процесс и команды. Конкретные принятые решения добавляются отдельными небольшими документами рядом с roadmap только по мере появления; archive/chat не являются единственным местом хранения нового решения.
-
-В завершённом PR обновляются: статус затронутого ID, actual result, decision link, affected contracts/consumers, validation evidence и следующий готовый slice. Для отложенной работы указывается причина и зависимость. Не менять все будущие статусы при одном успешном эксперименте.
-
-Шаблон задания:
-
-```text
-Roadmap ID и результат для пользователя:
-Исходный commit/branch и область владения:
-Предпосылки и связанные решения:
-Owning contract/implementation и affected consumers:
-Разрешённая область API/persistence изменений:
-Конкретные observable acceptance cases:
-Команды и runtime/visual evidence, применимые к этому slice:
-Что явно отложено:
-Риски и спорные решения для design / implementation / review:
-```
-
-Шаблон handoff:
-
-```text
-ID: PLANNED / IN_PROGRESS / DONE / BLOCKED
-Commit/PR:
-Что теперь работает и на каком consumer:
-Изменённые контракты и migration impact:
-Проверки: команда, exit, counts, artifact/fingerprint, PASS/FAIL/BLOCKED/N/A
-Оставшиеся ограничения и decision gates:
-Следующий готовый ID и почему его зависимости выполнены:
-```
-
-Первое implementation-задание после сверки B01/B02: **минимальный semantic-v2 contract и независимый Flow application boundary, достаточные для read-only экрана со stable identity, обновлениями и безопасным lifecycle**. Оно разбивается на U01/U02/U04/F11 и затем F12, с общим integration owner. Предварительный provider design F14 может идти отдельно. Это даёт проверяемую основу для дальнейшей модернизации UI и реального Flowline.
-
-## 11. Происхождение плана
-
-Roadmap объединяет текущую Hatifect baseline и сохранённое обсуждение модернизации UI из задачи «Сравни HATIFECT и StardewUI»: semantic-v2, Quick/View/Exact/Experience, единый IR/runtime, generations, editor/preview и каталог компонентов. Эти направления были предложениями; старые оценки в 24–28/35–50 задач не перенесены как актуальная оценка.
-
-План не делает непроверенного заявления, что framework уже удобнее или быстрее стороннего UI: такое сравнение требует согласованных сценариев и измерений.
+</details>

@@ -1,4 +1,4 @@
-# Flowline M3 — ordinary entry and native input acceptance
+# Flowline «Первая игровая альфа» — ordinary entry and native input acceptance
 
 Status: prepared operator/runner sequence, NOT_RUN. This supplements `flow.ui.player`; it does not relabel that prepared-form scenario as ordinary entry. GQ owns the fixed combined candidate and runtime slot. UI owns focus, geometry, text routing and the adapter for existing native-input diagnostics. No new public input API is required by this plan.
 
@@ -42,7 +42,7 @@ Use a nonempty unsupported fixture only in the explicit target-rejection subcase
 
 ## Failure and recovery card
 
-Retain original F13 create/dispatch/cancel/retry/refusal/stale/retired criteria. In real inventories, exercise cancel before extraction, full destination→DeliveryRejected→free space→permitted Retry, and permitted Return with full-source refusal/retry. Preserve full item XML and exact cargo/parcel/receipt identity across retries. Unknown outcome keeps the recovery fence and must not replay; only known receipt reconciliation is permitted. Failures expected by the fixture are distinguished from unexpected host/Pump/input errors. An unexpected error forces terminal FAIL even if a later frame renders correctly.
+Retain original «Управление диагностической перевозкой» create/dispatch/cancel/retry/refusal/stale/retired criteria. In real inventories, exercise cancel before extraction, full destination→DeliveryRejected→free space→permitted Retry, and permitted Return with full-source refusal/retry. Preserve full item XML and exact cargo/parcel/receipt identity across retries. Unknown outcome keeps the recovery fence and must not replay; only known receipt reconciliation is permitted. Failures expected by the fixture are distinguished from unexpected host/Pump/input errors. An unexpected error forces terminal FAIL even if a later frame renders correctly.
 
 For stale/repeated input, record both actual native gestures and resulting command/effect counts. A direct supplemental stale-command call may prove the owner layer, but cannot be labelled as the physical gesture itself. A native text-input change to a focused field is legitimate even when the global K entry guard rejects reopening; target/Window/domain invariants are the guard criteria.
 
@@ -50,6 +50,6 @@ For stale/repeated input, record both actual native gestures and resulting comma
 
 Keep EN/RU,75/100/125/150%, keyboard/pointer and controller coverage, real save/restart/switching and CA coexistence on the fixed combined candidate. Record a row for each original required case, with request/DLL identity, input origin, screenshots, domain/inventory deltas and verdict. Do not reduce the original matrix to this first EN100 run or to profile-only controller captures. Every remaining original row stays OPEN until matching evidence exists.
 
-`flow.ui.player` first smoke proves only prepared real Window actions plus the existing real-chest save/reload scenario. This run card covers the ordinary trigger/forms/search/input gap. It is not currently an implemented new scenario ID, a new public API, or an assertion that a human operator is present. Before its run, attach the existing native-input protocol to the ordinary Window through the UI owner and add the bounded Flow command/inventory supplement, then use the already authorized canonical harness. GQ owns final Q02 acceptance.
+`flow.ui.player` first smoke proves only prepared real Window actions plus the existing real-chest save/reload scenario. This run card covers the ordinary trigger/forms/search/input gap. It is not currently an implemented new scenario ID, a new public API, or an assertion that a human operator is present. Before its run, attach the existing native-input protocol to the ordinary Window through the UI owner and add the bounded Flow command/inventory supplement, then use the already authorized canonical harness. GQ owns final acceptance of the first alpha.
 
 Execution coordination update: GQ has confirmed a successful CUA surface inventory and will own interaction with the real game window after the Reveal correction. The initial pointer/keyboard segment therefore declares `os-injected`; no human-input or controller-chord evidence follows from this capability check. UI event/frame observation and the Flow command journal remain required before the scenario runs. This does not change any original matrix row or count as a completed input run.

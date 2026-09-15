@@ -1,6 +1,8 @@
-# Flowline resource profile — F20
+# Flowline resource profile — «Ресурсные ограничения Flowline»
 
-Status: **DONE for the bounded ordinary-chest single-player provider**. F20-a diagnostics and this F20-b profile establish the existing retention limits, overflow behavior and actual runtime costs. This is not acceptance of the future F18/F19 UI or unlimited save throughput. Publication is recorded in [ROADMAP-STATUS.md](ROADMAP-STATUS.md).
+Статусы и следующие шаги в этом техническом отчёте относятся к указанным сборкам. Текущая очередь — в [плане разработки](ROADMAP.md).
+
+Status: **DONE for the bounded ordinary-chest single-player provider**. «Ресурсные ограничения Flowline» (подэтап a) diagnostics and this «Ресурсные ограничения Flowline» (подэтап b) profile establish the existing retention limits, overflow behavior and actual runtime costs. This is not acceptance of the future «Настройка станций и маршрутов»/«Отправка груза и работа с ошибками» UI or unlimited save throughput. Publication is recorded in [прежний журнал проверок (история Git)](accepted-foundations.md).
 
 ## Reproduction and measurement boundary
 
@@ -40,7 +42,7 @@ After load7, direct and typed sends reject cargo257 without tagging or removing 
 
 `hatifect_flow diagnostics` reads these owners and shows remaining capacity. It does not capture a checkpoint, search routes, acquire an inventory lease or perform an effect. Its per-port custody is the transport journal projection; actual chest contents may have changed after delivery. Admission refusal counts belong to the current load.
 
-D06 decision: **retain the bounded limits for this MVP and refuse new admissions when full**. Saturation tests, actual save/load measurements and the final idle window show that this workload reaches a fixed retained size; compaction is not needed to prevent growth beyond these limits. It does not reclaim cargo history or receipts. Any future compaction requires a separately proven recovery horizon and compatible migration; manual journal deletion is unsupported.
+«Хранение истории перевозок» decision: **retain the bounded limits for this MVP and refuse new admissions when full**. Saturation tests, actual save/load measurements and the final idle window show that this workload reaches a fixed retained size; compaction is not needed to prevent growth beyond these limits. It does not reclaim cargo history or receipts. Any future compaction requires a separately proven recovery horizon and compatible migration; manual journal deletion is unsupported.
 
 ## Verification
 
@@ -62,7 +64,7 @@ Evidence belongs to `${HOME}/Developer/Hatifect`. The actual game used .NET6.0.3
 - Resource request **`f68d1e6b-4737-4d6d-980c-3f3146f476c1` — PASS12**, process43885 exited0 after42.180s. Seven loads, six confirmed saves and six title closures completed. All75 route rows, queue scales32/128/256,16 work waves, exact physical XML, two cargo refusals and256 Retry plus256 Return refusals passed the final strict validator.
 - PERF regression **`a488defd-3448-4a8d-93b1-abe2e0831a5c` — PASS9** on the same deployed DLLs. Paused600 samples: p95/p99 **0.003250/0.003541ms**; idle600: **0.004375/0.005625ms**, both0 allocated bytes. The80-parcel queue completed240 operations/160 physical calls with max64 per tick.
 - Both original host reports bind Flow fingerprint **`b954c613428089e5cb84156dabd8742931997d99729bea15d6062ff86c52e44b`**. Source/report hashes, original process and SMAPI logs, metric extraction and golden validation are indexed in `artifacts/flowline-f20-resource-profile/`; original reports remain under their `artifacts/runtime/<request>/` directories.
-- The exact deployed archive has21 files and14 DLLs; SHA-256 **`3d81d338cd32b82ce70cbff1eff809ffe5841558eb39506b67be87858bab48d4`**. Every archive entry matches the tested isolated deployment. The generated acceptance report was removed from the deployment only after its bytes matched the retained raw report. Golden fixture validation passed after both runs. This archive is evidence for F20, not a claim of final Q03 release readiness.
+- The exact deployed archive has21 files and14 DLLs; SHA-256 **`3d81d338cd32b82ce70cbff1eff809ffe5841558eb39506b67be87858bab48d4`**. Every archive entry matches the tested isolated deployment. The generated acceptance report was removed from the deployment only after its bytes matched the retained raw report. Golden fixture validation passed after both runs. This archive is evidence for «Ресурсные ограничения Flowline», not a claim of final «Приёмка полного выпуска» release readiness.
 
 | Retained cargo / settled attempts | Destination receipts | Core bytes | Capture ms | WriteSaveData ms | ReadSaveData ms | Construct/restore ms |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -77,4 +79,4 @@ These are single operation observations, including the colder initial32-cargo ca
 
 The initial256-parcel wave took12 active ticks,768 operations and512 physical calls; maximum measured tick was24.735334ms with at most7,124,848 allocated bytes per tick. Each subsequent retry wave took4 ticks; the largest retry tick was5.398ms. These active costs include item serialization and host snapshot publication and can cause frame spikes; the zero-allocation claim applies only to steady idle/paused ticks. The resource idle window itself measured p95/p99 **0.003583/0.005875ms**, max0.013167ms and0 allocated bytes. At the final reload all4352 capabilities were retired,4352 receipts retained across the fixed stations,256 cargo remained in parcel custody, and further admission/attempts did not increase these counts.
 
-This evidence supports D06's bounded-first choice, with the explicit lifetime limit of256 cargo per save. It does not demonstrate a 60fps active-work guarantee or indefinite new admissions. Player-facing presentation of limits remains in the dependent F18/F19 UI work. No public API, persistence format or dependency is changed. Existing tests and acceptance budgets are not weakened; UI package-boundary and visual checks are NOT_APPLICABLE to the private scenario delegation.
+This evidence supports the bounded-retention choice, with the explicit lifetime limit of256 cargo per save. It does not demonstrate a 60fps active-work guarantee or indefinite new admissions. Player-facing presentation of limits remains in the dependent «Настройка станций и маршрутов»/«Отправка груза и работа с ошибками» UI work. No public API, persistence format or dependency is changed. Existing tests and acceptance budgets are not weakened; UI package-boundary and visual checks are NOT_APPLICABLE to the private scenario delegation.

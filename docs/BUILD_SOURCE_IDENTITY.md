@@ -1,17 +1,19 @@
 # Build source identity in linked worktrees
 
+Статусы и следующие шаги в этом техническом отчёте относятся к указанным сборкам. Текущая очередь — в [плане разработки](ROADMAP.md).
+
 Status: **IN_PROGRESS** for common integration/publication. The recovery hook
 passed independent review, 13 SDK regressions, a real loose/packed linked-worktree
 build comparison, full G and isolated P. A separate unstable UI allocation test
 failed C; its unchanged UI recheck and G passed. The original failure remains
 recorded and is being investigated by the UI owner. Fresh common runtime identity
-and publication remain required. The reviewed implementation is local commit
-`ff87f5232ae7a342a0942f104dca325919a99b5a`; it has not been pushed.
+and publication remain required. At the time of this report, the reviewed implementation
+was local commit `ff87f5232ae7a342a0942f104dca325919a99b5a` and had not been pushed.
 
 ## Failure and ownership
 
-The accepted U03 source checkpoint `9b6028c0561c5e1a8225bcdec7f1bcce64d81ead`
-has retained producer/package/runtime evidence in [U03 acceptance](U03_ACCEPTANCE.md).
+The accepted «Действия и их завершение» source checkpoint `9b6028c0561c5e1a8225bcdec7f1bcce64d81ead`
+has retained producer/package/runtime evidence in [«Действия и их завершение» acceptance](ui-actions-acceptance.md).
 Later aggregate request `bcbf231d-4f30-46d6-8767-eb05ab1ab0ea` passed 28 behavioral
 checks and exited 0, but preparation `run-k4n72nfn` changed all eight UI DLL hashes.
 The recorded HEAD and all 637 source hashes were unchanged. The new binaries lost
@@ -95,7 +97,7 @@ worktree. `packed-refs-repro/result.json` retains the original causal reproducti
 `hook-red.log` retains four failing cases out of seven before the hook existed.
 Later regression logs keep their own names and outcomes. The failed aggregate's
 36 raw files and 28 producer/game DLL snapshots are separately hash-verified in
-`all-identity-failure-retention.json`; they do not replace the accepted U03 evidence.
+`all-identity-failure-retention.json`; they do not replace the accepted «Действия и их завершение» evidence.
 
 Initial managed review denied `git status` with “Git полностью управляется
 пользователем. Работай только с файлами проекта.” A narrower explicit request for
@@ -119,7 +121,7 @@ worktree still recovered exact `9b6028c` (`actual-verified-repository.json`).
 Those C/G results retain their pre-correction identity in
 `build-metadata-pre-review-source.json`. They are superseded by the executed
 post-correction gates below. Final C closure, common runtime identity, publication
-and the existing Q01 physical Backspace acceptance remain required. Independent Sol review closed the concrete repository-selection findings after
+and the existing «Проверка текущей сборки в игре» physical Backspace acceptance remain required. Independent Sol review closed the concrete repository-selection findings after
 reading the corrected source and the successful 13-test log. This bounded review
 does not replace final C/G/P or runtime acceptance.
 
