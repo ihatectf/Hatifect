@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "routes": [
+    {"id": "architecture", "when": "Cross-system contracts, ownership, repository or solution structure", "instructions": ["ARCHITECTURE.md"], "skills": ["architecture", "project-setup"]},
+    {"id": "csharp", "when": "C# implementation after inspecting global.json and existing conventions", "instructions": ["docs/DEVELOPMENT.md"], "skills": ["dotnet-csharp"]},
+    {"id": "ui", "when": "Semantic UI, planning, rendering, experience or Stardew host", "instructions": ["Hatifect UI/AGENTS.md"], "skills": ["hatifect-semantic-ui", "dotnet-csharp"]},
+    {"id": "flowline", "when": "Flowline Core, Persistence, lifecycle or semantic experience", "instructions": ["Hatifect Flow/AGENTS.md"], "skills": ["hatifect-flowline", "dotnet-csharp"]},
+    {"id": "adapters", "when": "Chests Anywhere or future third-party adapters under Integrations", "instructions": ["Integrations/AGENTS.md"], "skills": ["hatifect-adapters", "dotnet-csharp"]},
+    {"id": "test-authoring", "when": "Design new tests; select language/framework guidance after inventory", "instructions": ["tools/AGENTS.md"], "skills": ["hatifect-test-authoring", "code-testing-agent", "code-testing-extensions"]},
+    {"id": "test-execution", "when": "Select or run the smallest trustworthy repository test scope", "instructions": ["docs/DEVELOPMENT.md"], "skills": ["hatifect-test-selection", "run-tests"]},
+    {"id": "diagnostics", "when": "Failure envelope, semantic events, bounded artifact triage or live-harness diagnostics", "instructions": ["docs/FAILURE_ENVELOPE.md"], "skills": ["hatifect-diagnostics"]},
+    {"id": "runtime", "when": "Isolated executor, SMAPI, semantic UI or live acceptance evidence", "instructions": ["docs/RUNTIME.md"], "skills": ["hatifect-runtime-testing", "hatifect-diagnostics"]},
+    {"id": "review", "when": "Independent C# diff and contract review", "instructions": ["ARCHITECTURE.md"], "skills": ["code-review"]},
+    {"id": "build", "when": "SDK, MSBuild, build organization or build failure diagnosis", "instructions": ["tools/AGENTS.md"], "skills": ["dotnet-tooling", "directory-build-organization", "binlog-failure-analysis"]},
+    {"id": "ci", "when": "GitHub Actions or canonical validation tooling", "instructions": ["tools/AGENTS.md"], "skills": ["dotnet-devops", "quality-ci"]},
+    {"id": "performance", "when": "Tick, draw, layout, routing or synchronization hot paths", "instructions": ["ARCHITECTURE.md"], "skills": ["analyzing-dotnet-performance"]},
+    {"id": "codex", "when": "Codex configuration, roles, instructions or project skill authoring", "instructions": ["tools/AGENTS.md"], "skills": ["openai-docs", "skill-creator"]}
+  ]
+}

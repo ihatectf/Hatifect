@@ -3,7 +3,7 @@
 import importlib.util
 from pathlib import Path
 
-_spec = importlib.util.spec_from_file_location("hatifect_semantic_ui_engine", Path(__file__).with_name("semantic_driver_ui.py"))
+_spec = importlib.util.spec_from_file_location("hatifect_semantic_ui_engine", Path(__file__).with_name("semantic_agent_ui.py"))
 if _spec is None or _spec.loader is None:
     raise RuntimeError("The checked-in semantic UI engine is unavailable.")
 _engine = importlib.util.module_from_spec(_spec)

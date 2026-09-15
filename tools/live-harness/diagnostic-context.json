@@ -1,0 +1,460 @@
+{
+  "components": {
+    "chests-anywhere": {
+      "directDependencies": [
+        "semantic-ui"
+      ],
+      "primarySourceFiles": [
+        "Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/UI/Semantic/SemanticChestsAnywhereOverlayAcceptanceScenarios.cs"
+      ],
+      "scenarioTestFiles": [
+        "Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/tests/Hatifect.ChestsAnywhereOverlay.Tests/ChestsAnywhereAcceptanceCompletionTests.cs"
+      ],
+      "secondaryExpansionCandidates": [
+        "Integrations/AGENTS.md"
+      ]
+    },
+    "deployment-preparer": {
+      "directDependencies": [
+        "live-harness"
+      ],
+      "primarySourceFiles": [
+        "tools/hatifect-live-prepare"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_deployment_identity.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "tools/live-harness/deployment_identity.py"
+      ]
+    },
+    "flow-runtime": {
+      "directDependencies": [
+        "live-harness"
+      ],
+      "primarySourceFiles": [
+        "Hatifect Flow/Diagnostics/FlowHostAcceptance.cs",
+        "Hatifect Flow/Diagnostics/FlowChestRoundtripAcceptance.cs"
+      ],
+      "scenarioTestFiles": [
+        "Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/FlowUiAcceptanceWorldTests.cs"
+      ],
+      "secondaryExpansionCandidates": [
+        "Hatifect Flow/AGENTS.md"
+      ]
+    },
+    "flow-ui": {
+      "directDependencies": [
+        "flow-runtime",
+        "semantic-ui"
+      ],
+      "primarySourceFiles": [
+        "Hatifect Flow/Diagnostics/FlowHostAcceptance.cs",
+        "Hatifect Flow/Diagnostics/FlowPlayerNativeInputCapture.cs"
+      ],
+      "scenarioTestFiles": [
+        "Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/FlowUiAcceptanceNetworkTests.cs",
+        "Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/FlowUiAcceptanceArtifactTests.cs"
+      ],
+      "secondaryExpansionCandidates": [
+        "Hatifect Flow/AGENTS.md"
+      ]
+    },
+    "harness-preflight": {
+      "directDependencies": [
+        "live-harness",
+        "scenario-manifest"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/validate.py",
+        "tools/live-harness/user_session_runtime.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_capability_preflight.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/CAPABILITY_PREFLIGHT.md"
+      ]
+    },
+    "harness-validator": {
+      "directDependencies": [
+        "live-harness"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/validate.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_failure_envelope.py",
+        "tools/tests/test_semantic_event_stream.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/FAILURE_ENVELOPE.md",
+        "docs/SEMANTIC_EVENTS.md"
+      ]
+    },
+    "live-harness": {
+      "directDependencies": [],
+      "primarySourceFiles": [
+        "tools/live-harness/validate.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_live_harness.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "tools/AGENTS.md"
+      ]
+    },
+    "native-input-driver": {
+      "directDependencies": [
+        "semantic-test-agent"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/macos_native_input_driver.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_macos_native_input_driver.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "tools/live-harness/SEMANTIC_TESTS.md"
+      ]
+    },
+    "reproduction-planner": {
+      "directDependencies": [
+        "harness-validator"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/reproduction.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_reproduction.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/TARGETED_REPRODUCTION.md"
+      ]
+    },
+    "runtime-cleanup": {
+      "directDependencies": [
+        "runtime-executor"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/direct_runtime.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_direct_runtime.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/RUNTIME.md"
+      ]
+    },
+    "runtime-environment": {
+      "directDependencies": [
+        "user-session-runtime"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/user_session_runtime.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_user_session_runtime.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/CAPABILITY_PREFLIGHT.md"
+      ]
+    },
+    "runtime-executor": {
+      "directDependencies": [
+        "user-session-runtime",
+        "runtime-process"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/direct_runtime.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_direct_runtime.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/RUNTIME.md"
+      ]
+    },
+    "runtime-options": {
+      "directDependencies": [
+        "runtime-executor"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/direct_runtime.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_direct_runtime.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/RUNTIME.md"
+      ]
+    },
+    "runtime-process": {
+      "directDependencies": [
+        "runtime-executor"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/run_process.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_direct_runtime.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/RUNTIME.md"
+      ]
+    },
+    "runtime-worker": {
+      "directDependencies": [
+        "runtime-executor"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/user_session_supervisor.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_user_session_supervisor.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/RUNTIME.md"
+      ]
+    },
+    "save-provisioner": {
+      "directDependencies": [
+        "live-harness"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/save_provisioning.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_save_provisioning.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/RUNTIME.md"
+      ]
+    },
+    "save-provisioning": {
+      "directDependencies": [
+        "live-harness"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/save_provisioning.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_save_provisioning.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/RUNTIME.md"
+      ]
+    },
+    "scenario-manifest": {
+      "directDependencies": [
+        "live-harness"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/scenarios.json"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_live_harness.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "tools/live-harness/SEMANTIC_TESTS.md"
+      ]
+    },
+    "semantic-test-agent": {
+      "directDependencies": [
+        "scenario-manifest"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/semantic_test_agent.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_semantic_test_agent.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "tools/live-harness/SEMANTIC_TESTS.md"
+      ]
+    },
+    "semantic-ui": {
+      "directDependencies": [
+        "scenario-manifest"
+      ],
+      "primarySourceFiles": [
+        "Hatifect UI/Hatifect.UI.Stardew/Diagnostics/UiAutomatedAcceptanceController.cs",
+        "Hatifect UI/Hatifect.UI.Stardew/Diagnostics/UiAutomatedAcceptanceScenarioRegistry.cs"
+      ],
+      "scenarioTestFiles": [
+        "Hatifect UI/tests/Hatifect.UI.Runtime.Tests/UiAutomatedAcceptanceScenarioContractTests.cs",
+        "Hatifect UI/tests/Hatifect.UI.Runtime.Tests/UiAutomatedAcceptanceScenarioRegistryTests.cs"
+      ],
+      "secondaryExpansionCandidates": [
+        "Hatifect UI/AGENTS.md"
+      ]
+    },
+    "user-session-runtime": {
+      "directDependencies": [
+        "runtime-executor"
+      ],
+      "primarySourceFiles": [
+        "tools/live-harness/user_session_runtime.py"
+      ],
+      "scenarioTestFiles": [
+        "tools/tests/test_user_session_runtime.py"
+      ],
+      "secondaryExpansionCandidates": [
+        "docs/RUNTIME.md"
+      ]
+    }
+  },
+  "formatVersion": 1,
+  "scenarioRules": [
+    {
+      "component": "chests-anywhere",
+      "context": {
+        "directDependencies": [
+          "semantic-ui"
+        ],
+        "primarySourceFiles": [
+          "Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/UI/Semantic/SemanticChestsAnywhereOverlayAcceptanceScenarios.cs"
+        ],
+        "scenarioTestFiles": [
+          "Integrations/Chests Anywhere/Hatifect Chests Anywhere Overlay/tests/Hatifect.ChestsAnywhereOverlay.Tests/ChestsAnywhereAcceptanceCompletionTests.cs"
+        ],
+        "secondaryExpansionCandidates": [
+          "docs/SEMANTIC_EVENTS.md"
+        ]
+      },
+      "kinds": [
+        "ui"
+      ],
+      "pattern": "semantic.chests-anywhere-overlay*"
+    },
+    {
+      "component": "flow-ui",
+      "context": {
+        "directDependencies": [
+          "flow-runtime",
+          "semantic-ui"
+        ],
+        "primarySourceFiles": [
+          "Hatifect Flow/Diagnostics/FlowHostAcceptance.cs"
+        ],
+        "scenarioTestFiles": [
+          "Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/FlowUiAcceptanceNetworkTests.cs",
+          "Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/FlowUiAcceptanceArtifactTests.cs"
+        ],
+        "secondaryExpansionCandidates": [
+          "docs/RUNTIME.md"
+        ]
+      },
+      "kinds": [
+        "smoke"
+      ],
+      "pattern": "flow.ui.*"
+    },
+    {
+      "component": "flow-runtime",
+      "context": {
+        "directDependencies": [
+          "live-harness"
+        ],
+        "primarySourceFiles": [
+          "Hatifect Flow/Diagnostics/FlowHostAcceptance.cs",
+          "Hatifect Flow/Diagnostics/FlowChestRoundtripAcceptance.cs"
+        ],
+        "scenarioTestFiles": [
+          "Hatifect Flow/tests/Hatifect.Flow.Stardew.Tests/FlowUiAcceptanceWorldTests.cs"
+        ],
+        "secondaryExpansionCandidates": [
+          "docs/RUNTIME.md"
+        ]
+      },
+      "kinds": [
+        "smoke"
+      ],
+      "pattern": "flow.*"
+    },
+    {
+      "component": "semantic-ui",
+      "context": {
+        "directDependencies": [
+          "scenario-manifest"
+        ],
+        "primarySourceFiles": [
+          "Hatifect UI/Hatifect.UI.Stardew/Diagnostics/UiAutomatedAcceptanceController.cs"
+        ],
+        "scenarioTestFiles": [
+          "Hatifect UI/tests/Hatifect.UI.Runtime.Tests/UiAutomatedAcceptanceScenarioContractTests.cs"
+        ],
+        "secondaryExpansionCandidates": [
+          "docs/SEMANTIC_EVENTS.md"
+        ]
+      },
+      "kinds": [
+        "ui"
+      ],
+      "pattern": "semantic.*"
+    },
+    {
+      "component": "semantic-ui",
+      "context": {
+        "directDependencies": [
+          "scenario-manifest"
+        ],
+        "primarySourceFiles": [
+          "Hatifect UI/Hatifect.UI.Stardew/Diagnostics/UiAutomatedAcceptanceController.cs"
+        ],
+        "scenarioTestFiles": [
+          "tools/tests/test_live_harness.py"
+        ],
+        "secondaryExpansionCandidates": [
+          "docs/RUNTIME.md"
+        ]
+      },
+      "kinds": [
+        "smoke"
+      ],
+      "pattern": "runtime.*"
+    },
+    {
+      "component": "semantic-ui",
+      "context": {
+        "directDependencies": [
+          "scenario-manifest"
+        ],
+        "primarySourceFiles": [
+          "Hatifect UI/Hatifect.UI.Stardew/Diagnostics/UiAutomatedAcceptanceController.cs"
+        ],
+        "scenarioTestFiles": [
+          "tools/tests/test_save_provisioning.py"
+        ],
+        "secondaryExpansionCandidates": [
+          "docs/RUNTIME.md"
+        ]
+      },
+      "kinds": [
+        "smoke"
+      ],
+      "pattern": "save.bootstrap"
+    },
+    {
+      "component": "semantic-ui",
+      "context": {
+        "directDependencies": [
+          "scenario-manifest"
+        ],
+        "primarySourceFiles": [
+          "Hatifect UI/Hatifect.UI.Stardew/Diagnostics/UiAutomatedAcceptanceController.cs"
+        ],
+        "scenarioTestFiles": [
+          "tools/tests/test_live_harness.py"
+        ],
+        "secondaryExpansionCandidates": [
+          "docs/SEMANTIC_EVENTS.md"
+        ]
+      },
+      "kinds": [
+        "ui"
+      ],
+      "pattern": "all"
+    }
+  ]
+}

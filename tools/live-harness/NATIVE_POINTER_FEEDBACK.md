@@ -7,7 +7,7 @@ contract, not the scenario DSL or public Hatifect API.
 ## Observed failure
 
 In the reported `flow.ui.player.input` run `5c41bf48-b189-4024-8978-ecd933a9cdcb`,
-the Ready probe completed and the driver resolved the editable name node. The
+the Ready probe completed and the agent resolved the editable name node. The
 pointer reached `(735, 356)` inside the field's bounds and clip. Both the UI
 observer and Flow input counters remained at zero mouse presses/releases; the
 UI continued to completed frame 1224 / render sequence 1199 with no focus.
@@ -25,7 +25,7 @@ required; host-free tests do not establish the OS-level cause or live success.
 `SemanticInteractions` requires a current request-validated rendered frame with
 `observation.pointerPressed`, `observation.pointerReleased`, and the game-local
 `pointer`. Counters are nonnegative integers, not booleans. Before a new click,
-press/release counters must balance; another input/hardware transition is not
+press/release counters must balance; another agent/hardware transition is not
 silently attributed to the owned attempt.
 
 The backend provides `hold_left_button(x, y)` as a context manager. It allocates
@@ -60,7 +60,7 @@ local/screen point and last observed frame stamp. Events distinguish a sent down
 an observed down and the completed emission of the click pair. A missing down
 reports `native mouse-down acknowledgement`; a missing up in focus/select reports
 `native mouse-up acknowledgement`; absent focus after delivery reports a
-TextField focus timeout. the driver never retries a click to force success.
+TextField focus timeout. The agent never retries a click to force success.
 
 Run:
 
@@ -82,7 +82,7 @@ and observer counters rather than an instantaneous native click.
 
 The subsequent native run `955548d4-3fd9-4072-bf01-48fb459cd613` reached
 `phase=Complete`, retained Ready/Pointer/Text/Backspace/Tab captures and filled
-`src_955548`. It then stopped at `registerSource-activate`. the driver reported
+`src_955548`. It then stopped at `registerSource-activate`. The agent reported
 local target `(494, 65)` but posted screen point `(253, -228)`; the last observed
 pointer was also `(253, -228)` and press/release counts stayed `(2, 2)`.
 

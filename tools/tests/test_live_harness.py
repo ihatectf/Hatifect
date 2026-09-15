@@ -81,6 +81,12 @@ class LiveHarnessTests(unittest.TestCase):
                 owners[check_id] = scenario_id
         self.assertEqual(list(owners), resolved["checks"])
         self.assertEqual(len(owners), len(resolved["checks"]))
+        self.assertEqual(resolved["checkOwners"], owners)
+        self.assertEqual(set(resolved["checkOwners"]), set(resolved["checks"]))
+        self.assertEqual(
+            len(resolved["checkOwners"]),
+            len(set(resolved["checkOwners"])),
+        )
         declared_checks = [
             check_id
             for scenario_id, scenario in self.scenarios.items()
@@ -1094,11 +1100,17 @@ class LiveHarnessTests(unittest.TestCase):
         self.assertIn('--isolated-root "$isolated_root"', runner)
         self.assertIn('--artifact-directory "$artifact_dir"', runner)
         self.assertIn('--result "$result"', runner)
-        self.assertIn('deployment_marker="$isolated_root/deployment.json"', runner)
         self.assertIn('save_provisioner="$TOOLS_DIR/live-harness/save_provisioning.py"', runner)
-        self.assertIn('validate-required-mods "$kind" "$scenario" "$isolated_root/Mods"', runner)
-        self.assertIn("HARNESS-ENV-MODS", runner)
+        self.assertIn('python3 "$user_session_runtime" preflight', runner)
         self.assertIn('"$save_provisioner" plan', runner)
+        self.assertLess(
+            runner.index('python3 "$user_session_runtime" preflight'),
+            runner.index('"$save_provisioner" plan'),
+        )
+        self.assertLess(
+            runner.index('python3 "$user_session_runtime" preflight'),
+            runner.index('semantic_validator record-event'),
+        )
         self.assertNotIn('HATIFECT_SMAPI_TEST_SAVE', runner)
         self.assertIn('submit', runner)
         self.assertIn('exec python3 "$user_session_runtime"', runner)
@@ -1124,6 +1136,102 @@ class LiveHarnessTests(unittest.TestCase):
 
         self.assertFalse((ROOT / "tools" / "hatifect-runtime-broker").exists())
         self.assertFalse((ROOT / "tools" / "live-harness" / "runtime_broker.py").exists())
+
+    def test_failed_capability_preflight_stops_every_downstream_process(self) -> None:
+        request_id = "11111111-1111-4111-8111-111111111111"
+        with tempfile.TemporaryDirectory(
+            prefix="hatifect-preflight-runner-test."
+        ) as directory:
+            repository = Path(directory) / "repository"
+            tools = repository / "tools"
+            live_harness = tools / "live-harness"
+            live_harness.mkdir(parents=True)
+            shutil.copy2(ROOT / "tools" / "_common.sh", tools / "_common.sh")
+            shutil.copy2(
+                ROOT / "tools" / "hatifect-live-runner",
+                tools / "hatifect-live-runner",
+            )
+            for name in (
+                "validate.py",
+                "user_session_runtime.py",
+                "save_provisioning.py",
+                "semantic-test-agent.py",
+                "macos_native_input_driver.py",
+            ):
+                (live_harness / name).write_text("", encoding="utf-8")
+            fake_bin = Path(directory) / "bin"
+            fake_bin.mkdir()
+            calls = Path(directory) / "calls.txt"
+            fake_python = fake_bin / "python3"
+            fake_python.write_text(
+                "#!/bin/bash\n"
+                "set -eu\n"
+                f"if [[ \"${{1:-}}\" == \"-c\" ]]; then exec {sys.executable!s} \"$@\"; fi\n"
+                "printf '%s\\n' \"$*\" >> \"$HATIFECT_TEST_CALLS\"\n"
+                "case \"${1:-}:${2:-}\" in\n"
+                "  *validate.py:assert-contained) printf '%s\\n' \"$4\" ;;\n"
+                "  *validate.py:check-scenario)\n"
+                "    if [[ \"${5:-}\" == \"--field\" && \"${6:-}\" == \"timeoutSeconds\" ]]; then printf '1200\\n'; fi ;;\n"
+                "  *user_session_runtime.py:preflight) exit 2 ;;\n"
+                "  *) printf 'UNEXPECTED_DOWNSTREAM %s\\n' \"$*\" >> \"$HATIFECT_TEST_CALLS\"; exit 99 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            fake_python.chmod(0o700)
+            smapi_marker = Path(directory) / "smapi-called"
+            fake_smapi = Path(directory) / "smapi"
+            fake_smapi.write_text(
+                f"#!/bin/bash\nprintf called > {smapi_marker!s}\n",
+                encoding="utf-8",
+            )
+            fake_smapi.chmod(0o700)
+            isolated = repository / ".smapi-test" / "isolated"
+            isolated.mkdir(parents=True)
+            artifact = repository / "artifacts" / "runtime" / request_id
+            result = artifact / "result.json"
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
+                    "HATIFECT_TEST_CALLS": str(calls),
+                    "HATIFECT_SMAPI_PATH": str(fake_smapi),
+                    "HATIFECT_SMAPI_TEST_ROOT": str(isolated),
+                }
+            )
+
+            completed = subprocess.run(
+                [
+                    str(tools / "hatifect-live-runner"),
+                    "smoke",
+                    "flow.ui.player.input",
+                    str(result),
+                    str(artifact),
+                ],
+                cwd=repository,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            observed = calls.read_text(encoding="utf-8").splitlines()
+            smapi_was_called = smapi_marker.exists()
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertTrue(
+            any(
+                "user_session_runtime.py preflight" in call
+                for call in observed
+            )
+        )
+        self.assertFalse(
+            any(
+                "save_provisioning.py" in call
+                or "semantic-test-agent.py" in call
+                or "user_session_runtime.py submit" in call
+                for call in observed
+            )
+        )
+        self.assertFalse(smapi_was_called)
 
     def test_ui_test_prepares_before_starting_direct_runner(self) -> None:
         wrapper = (ROOT / "tools" / "hatifect-ui-test").read_text(
