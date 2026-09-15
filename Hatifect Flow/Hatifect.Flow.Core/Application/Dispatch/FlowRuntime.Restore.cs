@@ -316,49 +316,75 @@ internal sealed partial class FlowRuntime
                 Parcel parcel = execution.Snapshot;
                 Shipment shipment = _runtime._shipments[parcel.ShipmentId];
                 CargoBatch batch = _runtime._cargo.Get(parcel.CargoId);
-                Require(batch.Manifest == parcel.Manifest, "Parcel cargo manifest mismatch.");
                 bool terminal = parcel.State is ParcelState.Cancelled or ParcelState.Delivered or ParcelState.Returned;
-                Require(terminal || batch.ClaimedBy == parcel.Id, "live Parcel has no exclusive cargo claim.");
-                Require(parcel.State == ParcelState.Created ? parcel.Version == 0 : parcel.Version > 0,
-                    "state and sequence disagree.");
-                Require(parcel.State != ParcelState.Reserved || parcel.Version == 1,
-                    "reserved sequence is not its first transition.");
-                Require(parcel.State != ParcelState.ExtractionUncertain || parcel.Version == 2,
-                    "uncertain extraction sequence mismatch.");
-                bool beforeDeparture = parcel.State is ParcelState.Created or ParcelState.Reserved
-                    or ParcelState.Cancelled or ParcelState.ExtractionUncertain;
-                Require(!beforeDeparture || (execution.Hop == 0 && parcel.CurrentStation == shipment.Origin),
-                    "pre-departure cursor moved.");
-                Require(parcel.State != ParcelState.Created || execution.Plan is null, "Created Parcel has an admitted route.");
-                Require(parcel.State is not (ParcelState.Created or ParcelState.Reserved)
-                    || execution.TransferTick == 0, "transfer time precedes first departure.");
-                Require(execution.Plan is not null || execution.TransferTick == 0, "transfer without an admitted route.");
-                Require(parcel.State is ParcelState.Created or ParcelState.Reserved or ParcelState.Cancelled
-                    || execution.TransferTick >= 1, "execution started before its first departure.");
-                if (parcel.State is not (ParcelState.Created or ParcelState.Cancelled))
-                {
-                    Require(execution.Plan is not null, "executing Parcel has no admitted route.");
-                }
-                bool uncertain = parcel.State is ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain;
-                Require(uncertain == (parcel.PendingTransfer is not null), "state and pending transfer disagree.");
+                ValidateCargoClaim(parcel, batch, terminal);
+                ValidateExecutionState(parcel);
+                ValidateExecutionTimeline(execution, parcel, shipment);
                 ValidateHistory(parcel);
                 ValidateSchedule(execution);
                 if (terminal)
                 {
                     continue; // Historical CargoId may already be dispatched by a newer Parcel.
                 }
-                CargoOwner expected = parcel.State switch
-                {
-                    ParcelState.Created or ParcelState.Reserved => CargoOwner.AtStation(shipment.Origin),
-                    ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain => CargoOwner.InTransfer(parcel.PendingTransfer!.Id),
-                    _ => CargoOwner.InParcel(parcel.Id)
-                };
-                Require(batch.Owner == expected, "execution state and authoritative owner disagree.");
+                ValidateCargoOwner(parcel, shipment, batch);
                 RestoreCapacity(execution);
             }
         }
 
+        private static void ValidateCargoClaim(Parcel parcel, CargoBatch batch, bool terminal)
+        {
+            Require(batch.Manifest == parcel.Manifest, "Parcel cargo manifest mismatch.");
+            Require(terminal || batch.ClaimedBy == parcel.Id, "live Parcel has no exclusive cargo claim.");
+        }
+
+        private static void ValidateExecutionState(Parcel parcel)
+        {
+            Require(parcel.State == ParcelState.Created ? parcel.Version == 0 : parcel.Version > 0,
+                "state and sequence disagree.");
+            Require(parcel.State != ParcelState.Reserved || parcel.Version == 1,
+                "reserved sequence is not its first transition.");
+            Require(parcel.State != ParcelState.ExtractionUncertain || parcel.Version == 2,
+                "uncertain extraction sequence mismatch.");
+        }
+
+        private static void ValidateExecutionTimeline(Execution execution, Parcel parcel, Shipment shipment)
+        {
+            bool beforeDeparture = parcel.State is ParcelState.Created or ParcelState.Reserved
+                or ParcelState.Cancelled or ParcelState.ExtractionUncertain;
+            Require(!beforeDeparture || (execution.Hop == 0 && parcel.CurrentStation == shipment.Origin),
+                "pre-departure cursor moved.");
+            Require(parcel.State != ParcelState.Created || execution.Plan is null, "Created Parcel has an admitted route.");
+            Require(parcel.State is not (ParcelState.Created or ParcelState.Reserved)
+                || execution.TransferTick == 0, "transfer time precedes first departure.");
+            Require(execution.Plan is not null || execution.TransferTick == 0, "transfer without an admitted route.");
+            Require(parcel.State is ParcelState.Created or ParcelState.Reserved or ParcelState.Cancelled
+                || execution.TransferTick >= 1, "execution started before its first departure.");
+            if (parcel.State is not (ParcelState.Created or ParcelState.Cancelled))
+            {
+                Require(execution.Plan is not null, "executing Parcel has no admitted route.");
+            }
+            bool uncertain = parcel.State is ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain;
+            Require(uncertain == (parcel.PendingTransfer is not null), "state and pending transfer disagree.");
+        }
+
+        private static void ValidateCargoOwner(Parcel parcel, Shipment shipment, CargoBatch batch)
+        {
+            CargoOwner expected = parcel.State switch
+            {
+                ParcelState.Created or ParcelState.Reserved => CargoOwner.AtStation(shipment.Origin),
+                ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain or ParcelState.ReturnUncertain => CargoOwner.InTransfer(parcel.PendingTransfer!.Id),
+                _ => CargoOwner.InParcel(parcel.Id)
+            };
+            Require(batch.Owner == expected, "execution state and authoritative owner disagree.");
+        }
+
         private void ValidateHistory(Parcel parcel)
+        {
+            ValidateExtractionHistory(parcel);
+            ValidateDepositHistory(parcel);
+        }
+
+        private void ValidateExtractionHistory(Parcel parcel)
         {
             var extractKey = new TransferKey(parcel.Id.Value, (int)PortTransferKind.Extract, 1);
             _transfers.TryGetValue(extractKey, out PortTransfer? extract);
@@ -390,6 +416,10 @@ internal sealed partial class FlowRuntime
                 Require(_runtime._authority.IsActive(extract) == (parcel.PendingTransfer == extract),
                     "extraction capability retirement mismatch.");
             }
+        }
+
+        private void ValidateDepositHistory(Parcel parcel)
+        {
             bool deliveryState = parcel.State is ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted
                 or ParcelState.Delivered or ParcelState.DeliveryUncertain or ParcelState.ReturnRequested
                 or ParcelState.Returned or ParcelState.ReturnRejected or ParcelState.ReturnFaulted or ParcelState.ReturnUncertain;
@@ -409,25 +439,28 @@ internal sealed partial class FlowRuntime
                 if (attempt < parcel.DeliveryAttempts)
                 {
                     Require(result != PortResult.Applied, "a completed deposit was retried.");
+                    continue;
                 }
-                else
-                {
-                    Require(parcel.State switch
-                    {
-                        ParcelState.Delivered => !returning && result == PortResult.Applied,
-                        ParcelState.DeliveryRejected => !returning && result == PortResult.Rejected,
-                        ParcelState.DeliveryFaulted => !returning && result == PortResult.Missing,
-                        ParcelState.DeliveryUncertain => !returning && parcel.PendingTransfer == deposit,
-                        ParcelState.ReturnRequested => !returning && result != PortResult.Applied,
-                        ParcelState.Returned => returning && result == PortResult.Applied,
-                        ParcelState.ReturnRejected => returning && result == PortResult.Rejected,
-                        ParcelState.ReturnFaulted => returning && result == PortResult.Missing,
-                        ParcelState.ReturnUncertain => returning && parcel.PendingTransfer == deposit,
-                        _ => false
-                    }, "latest deposit and execution state disagree.");
-                }
+
+                Require(MatchesLatestDeposit(parcel, deposit, result, returning),
+                    "latest deposit and execution state disagree.");
             }
         }
+
+        private static bool MatchesLatestDeposit(Parcel parcel, PortTransfer deposit, PortResult result, bool returning)
+            => parcel.State switch
+            {
+                ParcelState.Delivered => !returning && result == PortResult.Applied,
+                ParcelState.DeliveryRejected => !returning && result == PortResult.Rejected,
+                ParcelState.DeliveryFaulted => !returning && result == PortResult.Missing,
+                ParcelState.DeliveryUncertain => !returning && parcel.PendingTransfer == deposit,
+                ParcelState.ReturnRequested => !returning && result != PortResult.Applied,
+                ParcelState.Returned => returning && result == PortResult.Applied,
+                ParcelState.ReturnRejected => returning && result == PortResult.Rejected,
+                ParcelState.ReturnFaulted => returning && result == PortResult.Missing,
+                ParcelState.ReturnUncertain => returning && parcel.PendingTransfer == deposit,
+                _ => false
+            };
 
         private PortResult Result(PortTransfer transfer) => _receipts.GetValueOrDefault(Key(transfer.Id), PortResult.Missing);
 
@@ -543,6 +576,16 @@ internal sealed partial class FlowRuntime
 
         private void ValidateCargoLineage()
         {
+            Dictionary<CargoId, SortedDictionary<int, Parcel>> history = IndexDispatchHistory();
+            foreach (CargoBatch batch in _runtime._cargo.Batches)
+            {
+                history.TryGetValue(batch.Id, out SortedDictionary<int, Parcel>? dispatches);
+                ValidateCargoDispatchHistory(batch, dispatches);
+            }
+        }
+
+        private Dictionary<CargoId, SortedDictionary<int, Parcel>> IndexDispatchHistory()
+        {
             var history = new Dictionary<CargoId, SortedDictionary<int, Parcel>>();
             foreach (Execution execution in _runtime._parcels.Values)
             {
@@ -554,63 +597,69 @@ internal sealed partial class FlowRuntime
                 }
                 dispatches.Add(parcel.CargoDispatch, parcel);
             }
-            foreach (CargoBatch batch in _runtime._cargo.Batches)
+            return history;
+        }
+
+        private void ValidateCargoDispatchHistory(CargoBatch batch, SortedDictionary<int, Parcel>? dispatches)
+        {
+            Require((dispatches?.Count ?? 0) == batch.DispatchCount, "cargo dispatch history has gaps.");
+            StationId settled = batch.RegistrationStation;
+            long settledAfter = 0;
+            int expected = 1;
+            bool live = false;
+            if (dispatches is not null)
             {
-                history.TryGetValue(batch.Id, out SortedDictionary<int, Parcel>? dispatches);
-                Require((dispatches?.Count ?? 0) == batch.DispatchCount, "cargo dispatch history has gaps.");
-                StationId settled = batch.RegistrationStation;
-                long settledAfter = 0;
-                int expected = 1;
-                bool live = false;
-                if (dispatches is not null)
+                foreach (KeyValuePair<int, Parcel> entry in dispatches)
                 {
-                    foreach (KeyValuePair<int, Parcel> entry in dispatches)
+                    Parcel parcel = entry.Value;
+                    Shipment shipment = _runtime._shipments[parcel.ShipmentId];
+                    Require(entry.Key == expected && shipment.Origin == settled && !live,
+                        "cargo dispatch history is discontinuous or overlaps.");
+                    Execution execution = _runtime._parcels[parcel.Id];
+                    ValidateRedispatchTime(parcel, execution, settledAfter);
+                    expected++;
+                    if (parcel.State is ParcelState.Delivered or ParcelState.Returned)
                     {
-                        Parcel parcel = entry.Value;
-                        Shipment shipment = _runtime._shipments[parcel.ShipmentId];
-                        Require(entry.Key == expected && shipment.Origin == settled && !live,
-                            "cargo dispatch history is discontinuous or overlaps.");
-                        Execution execution = _runtime._parcels[parcel.Id];
-                        if (parcel.State == ParcelState.Reserved)
-                        {
-                            Require(parcel.PendingOperation!.DueTick > settledAfter,
-                                "redispatch departure precedes the previous settlement.");
-                        }
-                        else if (execution.TransferTick > 0)
-                        {
-                            long earliest = checked(settledAfter + 1);
-                            if (parcel.State is ParcelState.Delivered or ParcelState.DeliveryRejected
-                                or ParcelState.DeliveryFaulted or ParcelState.DeliveryUncertain or ParcelState.ReturnRequested
-                                or ParcelState.Returned or ParcelState.ReturnRejected or ParcelState.ReturnFaulted or ParcelState.ReturnUncertain)
-                            {
-                                foreach (Link link in execution.Plan!.Links)
-                                {
-                                    earliest = checked(earliest + link.TransitTicks);
-                                }
-                            }
-                            Require(execution.TransferTick >= earliest,
-                                "cargo execution predates its custody or admitted transit.");
-                        }
-                        expected++;
-                        if (parcel.State is ParcelState.Delivered or ParcelState.Returned)
-                        {
-                            settled = parcel.State == ParcelState.Returned ? shipment.Origin : shipment.Destination;
-                            settledAfter = execution.TransferTick;
-                        }
-                        else if (parcel.State == ParcelState.Cancelled)
-                        {
-                            // A pre-extraction cancellation has no transfer tick.
-                            // Keep the earlier known bound without inventing one.
-                            settledAfter = Math.Max(settledAfter, execution.TransferTick);
-                        }
-                        else
-                        {
-                            live = true;
-                        }
+                        settled = parcel.State == ParcelState.Returned ? shipment.Origin : shipment.Destination;
+                        settledAfter = execution.TransferTick;
+                    }
+                    else if (parcel.State == ParcelState.Cancelled)
+                    {
+                        // A pre-extraction cancellation has no transfer tick.
+                        // Keep the earlier known bound without inventing one.
+                        settledAfter = Math.Max(settledAfter, execution.TransferTick);
+                    }
+                    else
+                    {
+                        live = true;
                     }
                 }
-                Require(live || (batch.ClaimedBy is null && batch.Owner == CargoOwner.AtStation(settled)),
-                    "settled cargo location is not explained by its dispatch history.");
+            }
+            Require(live || (batch.ClaimedBy is null && batch.Owner == CargoOwner.AtStation(settled)),
+                "settled cargo location is not explained by its dispatch history.");
+        }
+
+        private static void ValidateRedispatchTime(Parcel parcel, Execution execution, long settledAfter)
+        {
+            if (parcel.State == ParcelState.Reserved)
+            {
+                Require(parcel.PendingOperation!.DueTick > settledAfter,
+                    "redispatch departure precedes the previous settlement.");
+            }
+            else if (execution.TransferTick > 0)
+            {
+                long earliest = checked(settledAfter + 1);
+                if (parcel.State is ParcelState.Delivered or ParcelState.DeliveryRejected
+                    or ParcelState.DeliveryFaulted or ParcelState.DeliveryUncertain or ParcelState.ReturnRequested
+                    or ParcelState.Returned or ParcelState.ReturnRejected or ParcelState.ReturnFaulted or ParcelState.ReturnUncertain)
+                {
+                    foreach (Link link in execution.Plan!.Links)
+                    {
+                        earliest = checked(earliest + link.TransitTicks);
+                    }
+                }
+                Require(execution.TransferTick >= earliest,
+                    "cargo execution predates its custody or admitted transit.");
             }
         }
 

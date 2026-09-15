@@ -22,7 +22,17 @@ internal sealed partial class UiEditorAnalysis
         Syntax = syntax;
         Bindings = bindings;
         Language = language;
-        _scopes = new UiBlockSyntax?[text.LineCount];
+        _scopes = BuildScopeMap(text, syntax);
+        Symbols = BuildSymbols();
+        _occurrences = Symbols.Where(symbol => symbol.Id != null).GroupBy(symbol => symbol.Id!.Value)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<UiEditorSymbol>)Array.AsReadOnly(group.ToArray()));
+        Outline = BuildOutline();
+        SemanticTokens = BuildSemanticTokens();
+    }
+
+    private static UiBlockSyntax?[] BuildScopeMap(UiEditorText text, UiDocumentSyntax syntax)
+    {
+        var scopes = new UiBlockSyntax?[text.LineCount];
         var headers = new Dictionary<int, UiBlockSyntax>();
         var pending = new Stack<UiStatementSyntax>(syntax.Statements.Reverse());
         while (pending.TryPop(out UiStatementSyntax? statement))
@@ -44,14 +54,10 @@ internal sealed partial class UiEditorAnalysis
             }
             if (!blank)
                 while (parents.Count > 0 && indent <= parents.Peek().Indent) parents.Pop();
-            _scopes[line] = parents.Count > 0 && indent > parents.Peek().Indent ? parents.Peek().Block : null;
+            scopes[line] = parents.Count > 0 && indent > parents.Peek().Indent ? parents.Peek().Block : null;
             if (headers.TryGetValue(line, out UiBlockSyntax? header)) parents.Push((indent, header));
         }
-        Symbols = BuildSymbols();
-        _occurrences = Symbols.Where(symbol => symbol.Id != null).GroupBy(symbol => symbol.Id!.Value)
-            .ToDictionary(group => group.Key, group => (IReadOnlyList<UiEditorSymbol>)Array.AsReadOnly(group.ToArray()));
-        Outline = BuildOutline();
-        SemanticTokens = BuildSemanticTokens();
+        return scopes;
     }
 
     internal UiEditorText Text { get; }

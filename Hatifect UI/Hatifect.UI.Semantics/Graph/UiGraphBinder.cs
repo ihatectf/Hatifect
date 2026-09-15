@@ -21,139 +21,155 @@ public static class UiGraphBinder
         var invalidTypes = new HashSet<UiSymbolId>();
         if (!graph.OwnerId.IsValid) Error("UIG001", "A valid graph owner is required.", graph.OwnerId);
 
-        foreach (UiSemanticNode node in graph.Nodes)
-        {
-            Register(node.Id, graph.OwnerId);
-            bool legacyName = node.DataType is null && node.Inputs.Count == 0 && node.Alias == node.Label
-                && IsCanonicalLegacyName(graph.OwnerId, node.Id, "element", node.Alias);
-            if ((!IsAlias(node.Alias) && !legacyName) || !aliases.Add(node.Alias))
-                Error("UIG002", "Node alias must be a unique authoring identifier.", node.Id);
-            if (string.IsNullOrWhiteSpace(node.Label)) Error("UIG003", "Node label is required.", node.Id);
-            if (!nodes.TryAdd(node.Id, node)) continue;
-            indegrees.Add(node.Id, 0);
-            edges.Add(node.Id, new List<UiSymbolId>());
-            var caps = new HashSet<UiSymbolId>();
-            foreach (UiSymbolId capability in node.Capabilities)
-                if (!capability.IsValid || !caps.Add(capability)) Error("UIG004", "Invalid or duplicate capability.", node.Id);
-            if (node.DataType is { } type)
-            {
-                CheckType(type, node.Id);
-                if ((Has(node, "Browse") || Has(node, "Navigate")) && type.Shape != UiDataShape.Collection)
-                    Error("UIG005", "Browse/Navigate requires a collection data source.", node.Id);
-                if (Has(node, "Select") && type.Shape is not (UiDataShape.Collection or UiDataShape.Selection))
-                    Error("UIG005", "Select requires a collection or stable-ID selection source.", node.Id);
-                if (Has(node, "Search") && type != UiDataTypes.String)
-                    Error("UIG005", "Search requires a required string source.", node.Id);
-            }
-            var names = new HashSet<string>(StringComparer.Ordinal);
-            foreach (UiProjectionInput input in node.Inputs)
-            {
-                Register(input.Id, node.Id);
-                if (!IsAlias(input.Name) || !names.Add(input.Name)) Error("UIG006", "Invalid or duplicate input name.", input.Id);
-                CheckType(input.AcceptedType, input.Id);
-                slots.TryAdd(input.Id, (node.Id, input));
-                if (node.DataType is null) Error("UIG007", "Opaque declarations cannot have typed inputs.", node.Id, input: input.Id);
-            }
-        }
-        aliases.Clear();
-        foreach (UiGraphRole role in graph.Roles)
-        {
-            Register(role.Id, graph.OwnerId);
-            if ((!IsAlias(role.Alias) && !IsCanonicalLegacyName(graph.OwnerId, role.Id, "role", role.Alias)) || !aliases.Add(role.Alias))
-                Error("UIG002", "Role alias must be a unique authoring identifier.", role.Id);
-        }
-        var presented = new HashSet<UiSymbolId>();
-        foreach (UiSymbolId id in graph.PresentedNodes)
-            if (!nodes.ContainsKey(id) || !presented.Add(id)) Error("UIG008", "Presented node is missing or duplicated.", id);
+        ValidateNodesAndInputs();
+        ValidateRolesAndPresentedNodes();
+        ValidateRelations();
+        ValidateFinalGraphConstraints();
+        return errors.AsReadOnly();
 
-        foreach (UiSemanticRelation relation in graph.Relations)
+        void ValidateNodesAndInputs()
         {
-            Register(relation.Id, graph.OwnerId);
-            if (relation.Provenance is { } provenance
-                && (string.IsNullOrWhiteSpace(provenance.SourceName) || provenance.DeclarationId is { IsValid: false }
-                    || provenance.Span.Start < 0 || provenance.Span.Length < 0 || provenance.Span.Line < 0 || provenance.Span.Column < 0
-                    || (long)provenance.Span.Start + provenance.Span.Length > int.MaxValue))
-                RelationError("UIG028", "Provenance requires a source name, valid optional declaration ID and nonnegative bounded span.", relation);
-            if (!relationKeys.Add((relation.Kind, relation.Source, relation.Target, relation.TargetInput)))
-                RelationError("UIG025", "The same semantic relation is already declared.", relation);
-            if (relation.Kind is UiRelationKind.Details or UiRelationKind.Validation or UiRelationKind.Submission
-                && !fixedInputs.Add((relation.Kind, relation.Target)))
-                RelationError("UIG026", "This target accepts a single producer for this relation kind.", relation);
-            if (relation.Kind == UiRelationKind.ActionTarget && !actionTargets.Add(relation.Source))
-                RelationError("UIG026", "An action accepts a single target binding.", relation);
-            if (!Enum.IsDefined(typeof(UiRelationKind), relation.Kind)) { RelationError("UIG010", "Unknown relation kind.", relation); continue; }
-            if (!nodes.TryGetValue(relation.Source, out UiSemanticNode? source) || !nodes.TryGetValue(relation.Target, out UiSemanticNode? target))
-            { RelationError("UIG011", "Relation endpoint does not exist.", relation); continue; }
-            if (source.DataType is not { } from || target.DataType is not { } to)
-            { RelationError("UIG012", "Typed relations require explicit descriptors at both endpoints.", relation); continue; }
-            // Invalid/deep descriptors must never reach recursive record equality or assignability.
-            if (invalidTypes.Contains(source.Id) || invalidTypes.Contains(target.Id)) continue;
-            if (relation.Mapping is { } mapped) CheckType(mapped, relation.Id);
-            if (invalidTypes.Contains(relation.Id)) continue;
-
-            bool inputRelation = relation.Kind is UiRelationKind.Query or UiRelationKind.Filter;
-            if (inputRelation)
+            foreach (UiSemanticNode node in graph.Nodes)
             {
-                if (relation.TargetInput is not { } input || !slots.TryGetValue(input, out var slot) || slot.Owner != target.Id)
-                    RelationError("UIG013", "Query/filter must address an input owned by its target.", relation);
-                else
+                Register(node.Id, graph.OwnerId);
+                bool legacyName = node.DataType is null && node.Inputs.Count == 0 && node.Alias == node.Label
+                    && IsCanonicalLegacyName(graph.OwnerId, node.Id, "element", node.Alias);
+                if ((!IsAlias(node.Alias) && !legacyName) || !aliases.Add(node.Alias))
+                    Error("UIG002", "Node alias must be a unique authoring identifier.", node.Id);
+                if (string.IsNullOrWhiteSpace(node.Label)) Error("UIG003", "Node label is required.", node.Id);
+                if (!nodes.TryAdd(node.Id, node)) continue;
+                indegrees.Add(node.Id, 0);
+                edges.Add(node.Id, new List<UiSymbolId>());
+                var caps = new HashSet<UiSymbolId>();
+                foreach (UiSymbolId capability in node.Capabilities)
+                    if (!capability.IsValid || !caps.Add(capability)) Error("UIG004", "Invalid or duplicate capability.", node.Id);
+                if (node.DataType is { } type)
                 {
-                    producers.TryGetValue(input, out int count);
-                    producers[input] = count + 1;
-                    if (!invalidTypes.Contains(input) && !slot.Input.AcceptedType.Accepts(from))
-                        RelationError("UIG014", "Source type is incompatible with the addressed input.", relation);
+                    CheckType(type, node.Id);
+                    if ((Has(node, "Browse") || Has(node, "Navigate")) && type.Shape != UiDataShape.Collection)
+                        Error("UIG005", "Browse/Navigate requires a collection data source.", node.Id);
+                    if (Has(node, "Select") && type.Shape is not (UiDataShape.Collection or UiDataShape.Selection))
+                        Error("UIG005", "Select requires a collection or stable-ID selection source.", node.Id);
+                    if (Has(node, "Search") && type != UiDataTypes.String)
+                        Error("UIG005", "Search requires a required string source.", node.Id);
+                }
+                var names = new HashSet<string>(StringComparer.Ordinal);
+                foreach (UiProjectionInput input in node.Inputs)
+                {
+                    Register(input.Id, node.Id);
+                    if (!IsAlias(input.Name) || !names.Add(input.Name)) Error("UIG006", "Invalid or duplicate input name.", input.Id);
+                    CheckType(input.AcceptedType, input.Id);
+                    slots.TryAdd(input.Id, (node.Id, input));
+                    if (node.DataType is null) Error("UIG007", "Opaque declarations cannot have typed inputs.", node.Id, input: input.Id);
                 }
             }
-            else if (relation.TargetInput is not null) RelationError("UIG013", "This relation kind does not accept a projection input.", relation);
-            if (relation.Kind != UiRelationKind.Submission && relation.Mapping is not null)
-                RelationError("UIG015", "Only Submission accepts a form mapping declaration.", relation);
+        }
+        void ValidateRolesAndPresentedNodes()
+        {
+            aliases.Clear();
+            foreach (UiGraphRole role in graph.Roles)
+            {
+                Register(role.Id, graph.OwnerId);
+                if ((!IsAlias(role.Alias) && !IsCanonicalLegacyName(graph.OwnerId, role.Id, "role", role.Alias)) || !aliases.Add(role.Alias))
+                    Error("UIG002", "Role alias must be a unique authoring identifier.", role.Id);
+            }
+            var presented = new HashSet<UiSymbolId>();
+            foreach (UiSymbolId id in graph.PresentedNodes)
+                if (!nodes.ContainsKey(id) || !presented.Add(id)) Error("UIG008", "Presented node is missing or duplicated.", id);
+        }
+        void ValidateRelations()
+        {
+            foreach (UiSemanticRelation relation in graph.Relations)
+            {
+                Register(relation.Id, graph.OwnerId);
+                if (relation.Provenance is { } provenance
+                    && (string.IsNullOrWhiteSpace(provenance.SourceName) || provenance.DeclarationId is { IsValid: false }
+                        || provenance.Span.Start < 0 || provenance.Span.Length < 0 || provenance.Span.Line < 0 || provenance.Span.Column < 0
+                        || (long)provenance.Span.Start + provenance.Span.Length > int.MaxValue))
+                    RelationError("UIG028", "Provenance requires a source name, valid optional declaration ID and nonnegative bounded span.", relation);
+                if (!relationKeys.Add((relation.Kind, relation.Source, relation.Target, relation.TargetInput)))
+                    RelationError("UIG025", "The same semantic relation is already declared.", relation);
+                if (relation.Kind is UiRelationKind.Details or UiRelationKind.Validation or UiRelationKind.Submission
+                    && !fixedInputs.Add((relation.Kind, relation.Target)))
+                    RelationError("UIG026", "This target accepts a single producer for this relation kind.", relation);
+                if (relation.Kind == UiRelationKind.ActionTarget && !actionTargets.Add(relation.Source))
+                    RelationError("UIG026", "An action accepts a single target binding.", relation);
+                if (!Enum.IsDefined(typeof(UiRelationKind), relation.Kind)) { RelationError("UIG010", "Unknown relation kind.", relation); continue; }
+                if (!nodes.TryGetValue(relation.Source, out UiSemanticNode? source) || !nodes.TryGetValue(relation.Target, out UiSemanticNode? target))
+                { RelationError("UIG011", "Relation endpoint does not exist.", relation); continue; }
+                if (source.DataType is not { } from || target.DataType is not { } to)
+                { RelationError("UIG012", "Typed relations require explicit descriptors at both endpoints.", relation); continue; }
+                // Invalid/deep descriptors must never reach recursive record equality or assignability.
+                if (invalidTypes.Contains(source.Id) || invalidTypes.Contains(target.Id)) continue;
+                if (relation.Mapping is { } mapped) CheckType(mapped, relation.Id);
+                if (invalidTypes.Contains(relation.Id)) continue;
 
-            bool valid = relation.Kind switch
-            {
-                UiRelationKind.Selection => from.Shape == UiDataShape.Collection && to.Shape == UiDataShape.Selection
-                    && to.Nullable && from.ItemType == to.ItemType && Has(target, "Select"),
-                UiRelationKind.Details => from.Shape == UiDataShape.Selection && to.Shape == UiDataShape.Scalar
-                    && to.Nullable && from.ItemType is { } item && to.Accepts(item) && Has(target, "Inspect"),
-                UiRelationKind.Query => from == UiDataTypes.String && Has(source, "Search")
-                    && to.Shape == UiDataShape.Collection && Has(target, "Browse"),
-                UiRelationKind.Filter => from.Shape != UiDataShape.Action && Has(source, "Filter") && to.Shape == UiDataShape.Collection && Has(target, "Browse"),
-                UiRelationKind.Validation => from.Shape == UiDataShape.Form && to.Shape == UiDataShape.Validation && from.TypeId == to.TypeId,
-                UiRelationKind.Submission => from.Shape == UiDataShape.Form && to.Shape == UiDataShape.Action
-                    && relation.Mapping is { } mapping && to.InputType is { } accepted && accepted.Accepts(mapping),
-                UiRelationKind.ActionTarget => from.Shape == UiDataShape.Action && from.TargetType is { } expected
-                    && expected.Accepts(to) && from.TargetCapability is { } required && target.Capabilities.Contains(required),
-                _ => false
-            };
-            if (!valid) RelationError("UIG016", "Relation types, nullability or required capabilities do not match.", relation);
-            if (relation.Kind == UiRelationKind.Selection && !selectionOwners.Add(target.Id))
-                RelationError("UIG017", "A selection must have a single collection owner.", relation);
-            if (relation.Kind is not (UiRelationKind.Submission or UiRelationKind.ActionTarget))
-            {
-                edges[source.Id].Add(target.Id);
-                indegrees[target.Id]++;
+                bool inputRelation = relation.Kind is UiRelationKind.Query or UiRelationKind.Filter;
+                if (inputRelation)
+                {
+                    if (relation.TargetInput is not { } input || !slots.TryGetValue(input, out var slot) || slot.Owner != target.Id)
+                        RelationError("UIG013", "Query/filter must address an input owned by its target.", relation);
+                    else
+                    {
+                        producers.TryGetValue(input, out int count);
+                        producers[input] = count + 1;
+                        if (!invalidTypes.Contains(input) && !slot.Input.AcceptedType.Accepts(from))
+                            RelationError("UIG014", "Source type is incompatible with the addressed input.", relation);
+                    }
+                }
+                else if (relation.TargetInput is not null) RelationError("UIG013", "This relation kind does not accept a projection input.", relation);
+                if (relation.Kind != UiRelationKind.Submission && relation.Mapping is not null)
+                    RelationError("UIG015", "Only Submission accepts a form mapping declaration.", relation);
+
+                bool valid = relation.Kind switch
+                {
+                    UiRelationKind.Selection => from.Shape == UiDataShape.Collection && to.Shape == UiDataShape.Selection
+                        && to.Nullable && from.ItemType == to.ItemType && Has(target, "Select"),
+                    UiRelationKind.Details => from.Shape == UiDataShape.Selection && to.Shape == UiDataShape.Scalar
+                        && to.Nullable && from.ItemType is { } item && to.Accepts(item) && Has(target, "Inspect"),
+                    UiRelationKind.Query => from == UiDataTypes.String && Has(source, "Search")
+                        && to.Shape == UiDataShape.Collection && Has(target, "Browse"),
+                    UiRelationKind.Filter => from.Shape != UiDataShape.Action && Has(source, "Filter") && to.Shape == UiDataShape.Collection && Has(target, "Browse"),
+                    UiRelationKind.Validation => from.Shape == UiDataShape.Form && to.Shape == UiDataShape.Validation && from.TypeId == to.TypeId,
+                    UiRelationKind.Submission => from.Shape == UiDataShape.Form && to.Shape == UiDataShape.Action
+                        && relation.Mapping is { } mapping && to.InputType is { } accepted && accepted.Accepts(mapping),
+                    UiRelationKind.ActionTarget => from.Shape == UiDataShape.Action && from.TargetType is { } expected
+                        && expected.Accepts(to) && from.TargetCapability is { } required && target.Capabilities.Contains(required),
+                    _ => false
+                };
+                if (!valid) RelationError("UIG016", "Relation types, nullability or required capabilities do not match.", relation);
+                if (relation.Kind == UiRelationKind.Selection && !selectionOwners.Add(target.Id))
+                    RelationError("UIG017", "A selection must have a single collection owner.", relation);
+                if (relation.Kind is not (UiRelationKind.Submission or UiRelationKind.ActionTarget))
+                {
+                    edges[source.Id].Add(target.Id);
+                    indegrees[target.Id]++;
+                }
             }
         }
-        foreach (var (id, slot) in slots)
+        void ValidateFinalGraphConstraints()
         {
-            producers.TryGetValue(id, out int count);
-            if (count > 1 || (slot.Input.Required && count != 1))
-                Error("UIG018", slot.Input.Required ? "Required input needs exactly one producer." : "Optional input accepts at most one producer.", slot.Owner, input: id);
-        }
-        foreach (UiSemanticNode node in graph.Nodes)
-            if (node.DataType is { Shape: UiDataShape.Action, TargetType: not null } && !actionTargets.Contains(node.Id))
-                Error("UIG027", "An action with a target contract requires an ActionTarget binding.", node.Id);
+            foreach (var (id, slot) in slots)
+            {
+                producers.TryGetValue(id, out int count);
+                if (count > 1 || (slot.Input.Required && count != 1))
+                    Error("UIG018", slot.Input.Required ? "Required input needs exactly one producer." : "Optional input accepts at most one producer.", slot.Owner, input: id);
+            }
+            foreach (UiSemanticNode node in graph.Nodes)
+                if (node.DataType is { Shape: UiDataShape.Action, TargetType: not null } && !actionTargets.Contains(node.Id))
+                    Error("UIG027", "An action with a target contract requires an ActionTarget binding.", node.Id);
 
-        // Kahn's traversal avoids recursive stack growth on large authored graphs.
-        var ready = new Queue<UiSymbolId>(indegrees.Where(pair => pair.Value == 0).Select(pair => pair.Key));
-        while (ready.TryDequeue(out UiSymbolId id))
-            foreach (UiSymbolId target in edges[id])
-                if (--indegrees[target] == 0) ready.Enqueue(target);
-        foreach (UiSemanticRelation relation in graph.Relations)
-            if (relation.Kind is not (UiRelationKind.Submission or UiRelationKind.ActionTarget)
-                && indegrees.TryGetValue(relation.Source, out int left) && left > 0
-                && indegrees.TryGetValue(relation.Target, out int right) && right > 0)
-                RelationError("UIG019", "Data dependency belongs to or is blocked by a cycle.", relation);
-        return errors.AsReadOnly();
+            // Kahn's traversal avoids recursive stack growth on large authored graphs.
+            var ready = new Queue<UiSymbolId>(indegrees.Where(pair => pair.Value == 0).Select(pair => pair.Key));
+            while (ready.TryDequeue(out UiSymbolId id))
+                foreach (UiSymbolId target in edges[id])
+                    if (--indegrees[target] == 0) ready.Enqueue(target);
+            foreach (UiSemanticRelation relation in graph.Relations)
+                if (relation.Kind is not (UiRelationKind.Submission or UiRelationKind.ActionTarget)
+                    && indegrees.TryGetValue(relation.Source, out int left) && left > 0
+                    && indegrees.TryGetValue(relation.Target, out int right) && right > 0)
+                    RelationError("UIG019", "Data dependency belongs to or is blocked by a cycle.", relation);
+        }
 
         void Register(UiSymbolId id, UiSymbolId owner)
         {

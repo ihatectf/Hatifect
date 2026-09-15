@@ -537,19 +537,15 @@ def _test_inventory_scopes(inventory: Inventory, root: Path) -> list[dict[str, A
     return scopes
 
 
-def _omitted_scopes(
-    stages: list[dict[str, Any]], inventory: Inventory, root: Path, areas: set[str]
-) -> list[dict[str, Any]]:
-    inventory_scopes = _test_inventory_scopes(inventory, root)
-    selected = {stage["scopeId"] for stage in stages}
-    full_host_free = "full-host-free" in selected
-    python_all = full_host_free or "python-tooling" in selected
-    covered_projects: set[str] = set()
+def _covered_project_scopes(
+    selected: set[str], inventory: Inventory, full_host_free: bool
+) -> set[str]:
+    covered: set[str] = set()
     for name, (command, scope_id) in INTEGRATION_COMMANDS.items():
         if scope_id not in selected:
             continue
         includes_platform = "--platform" in command
-        covered_projects.update(
+        covered.update(
             f"dotnet-project:{project.path}"
             for project in inventory.projects.values()
             if project.is_test
@@ -557,21 +553,64 @@ def _omitted_scopes(
             and (includes_platform or not inventory.is_platform(project))
         )
     if full_host_free:
-        covered_projects.update(
+        covered.update(
             f"dotnet-project:{project.path}"
             for project in inventory.projects.values()
             if project.is_test and not inventory.is_platform(project)
         )
-    exact_python_modules = {
+    return covered
+
+
+def _exact_test_parent_scopes(stages: list[dict[str, Any]]) -> set[str]:
+    exact_scopes = {
         "python-module:" + ".".join(stage["scopeId"].removeprefix("python:").split(".")[:3])
         for stage in stages
         if stage["scopeId"].startswith("python:")
     }
-    exact_dotnet_projects = {
+    exact_scopes.update(
         f"dotnet-project:{match.group('project')}"
         for stage in stages
         if (match := DOTNET_TEST_RE.fullmatch(stage["scopeId"])) is not None
-    }
+    )
+    return exact_scopes
+
+
+def _scope_owning_area(scope: dict[str, Any], inventory: Inventory) -> str | None:
+    if scope["kind"] == "python-module":
+        return "tooling"
+    if scope["kind"] != "dotnet-assembly":
+        return None
+    project_path = scope["scopeId"].removeprefix("dotnet-project:")
+    project = inventory.projects.get(project_path)
+    return project.module if project is not None else None
+
+
+def _omission_reason(
+    scope: dict[str, Any],
+    exact_scopes: set[str],
+    full_host_free: bool,
+    areas: set[str],
+    inventory: Inventory,
+) -> str:
+    scope_id = scope["scopeId"]
+    if scope_id in exact_scopes:
+        return "PARTIALLY_COVERED_BY_EXACT_TEST"
+    if full_host_free and scope["platformRequired"]:
+        return "PLATFORM_TEST_NOT_IN_HOST_FREE_FULL_GATE"
+    if _scope_owning_area(scope, inventory) in areas:
+        return "OWNING_AREA_NOT_REACHED"
+    return "OUTSIDE_SELECTED_SCOPE"
+
+
+def _omitted_scopes(
+    stages: list[dict[str, Any]], inventory: Inventory, root: Path, areas: set[str]
+) -> list[dict[str, Any]]:
+    inventory_scopes = _test_inventory_scopes(inventory, root)
+    selected = {stage["scopeId"] for stage in stages}
+    full_host_free = "full-host-free" in selected
+    python_all = full_host_free or "python-tooling" in selected
+    covered_projects = _covered_project_scopes(selected, inventory, full_host_free)
+    exact_scopes = _exact_test_parent_scopes(stages)
     omitted: list[dict[str, Any]] = []
     for scope in inventory_scopes:
         scope_id = scope["scopeId"]
@@ -582,24 +621,7 @@ def _omitted_scopes(
         )
         if covered:
             continue
-        if scope_id in exact_python_modules or scope_id in exact_dotnet_projects:
-            reason = "PARTIALLY_COVERED_BY_EXACT_TEST"
-        elif full_host_free and scope["platformRequired"]:
-            reason = "PLATFORM_TEST_NOT_IN_HOST_FREE_FULL_GATE"
-        elif (
-            (scope["kind"] == "python-module" and "tooling" in areas)
-            or (
-                scope["kind"] == "dotnet-assembly"
-                and scope_id.removeprefix("dotnet-project:") in inventory.projects
-                and inventory.projects[
-                    scope_id.removeprefix("dotnet-project:")
-                ].module
-                in areas
-            )
-        ):
-            reason = "OWNING_AREA_NOT_REACHED"
-        else:
-            reason = "OUTSIDE_SELECTED_SCOPE"
+        reason = _omission_reason(scope, exact_scopes, full_host_free, areas, inventory)
         omitted.append({**scope, "reason": reason})
     if not full_host_free:
         omitted.append(
