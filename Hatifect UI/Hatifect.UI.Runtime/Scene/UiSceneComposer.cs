@@ -357,14 +357,13 @@ internal sealed class UiSceneComposer
         UiSymbolId? selectedNode = selectedId is { } selectedItem
             ? ItemNodeId(nodeId, selectedItem)
             : null;
-        var activeVisuals = new Dictionary<UiSymbolId, UiVisualResolution>();
+        Dictionary<UiSymbolId, UiVisualResolution>? activeVisuals = null;
         if (interaction != null)
         {
-            foreach (UiSymbolId activeNode in ActiveItemNodes(interaction))
-            {
-                UiVisualResolution activeVisual = stateVisuals.Resolve(activeNode, activeNode == selectedNode, interaction);
-                activeVisuals.Add(activeNode, activeVisual);
-            }
+            activeVisuals = new Dictionary<UiSymbolId, UiVisualResolution>();
+            AddActiveItemVisual(activeVisuals, interaction.Hovered, selectedNode, interaction, stateVisuals);
+            AddActiveItemVisual(activeVisuals, interaction.Focused, selectedNode, interaction, stateVisuals);
+            AddActiveItemVisual(activeVisuals, interaction.Pressed, selectedNode, interaction, stateVisuals);
         }
         return new UiCollectionSceneNode(
             nodeId,
@@ -766,12 +765,16 @@ internal sealed class UiSceneComposer
             navigation);
     }
 
-    private static IEnumerable<UiSymbolId> ActiveItemNodes(UiInteractionSnapshot interaction)
+    private static void AddActiveItemVisual(
+        Dictionary<UiSymbolId, UiVisualResolution> activeVisuals,
+        UiSymbolId? candidate,
+        UiSymbolId? selectedNode,
+        UiInteractionSnapshot interaction,
+        UiCollectionStateVisuals stateVisuals)
     {
-        var unique = new HashSet<UiSymbolId>();
-        if (interaction.Hovered is { } hovered && unique.Add(hovered)) yield return hovered;
-        if (interaction.Focused is { } focused && unique.Add(focused)) yield return focused;
-        if (interaction.Pressed is { } pressed && unique.Add(pressed)) yield return pressed;
+        if (candidate is not { } activeNode || activeVisuals.ContainsKey(activeNode)) return;
+        UiVisualResolution visual = stateVisuals.Resolve(activeNode, activeNode == selectedNode, interaction);
+        activeVisuals.Add(activeNode, visual);
     }
 
     private static UiSymbolId ItemNodeId(UiSymbolId collection, UiSymbolId item)

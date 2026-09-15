@@ -21,20 +21,7 @@ internal static class UiEditorQuickFixes
         var seen = new HashSet<(int Start, string Text)>();
         UiDiagnostic[] errors = document.Diagnostics.Where(d => d.Severity == UiDiagnosticSeverity.Error).ToArray();
         var errorCounts = errors.GroupBy(d => (d.Id, d.Message)).ToDictionary(group => group.Key, group => group.Count());
-        var propertyAnchors = new Dictionary<int, UiTextSpan>();
-        var pending = new Stack<(UiStatementSyntax Statement, UiTextSpan? Matrix)>(
-            document.Analysis.Syntax.Statements.Reverse().Select(s => (s, (UiTextSpan?)null)));
-        while (pending.TryPop(out var item))
-        {
-            if (item.Statement is UiAssignmentSyntax assignment)
-                propertyAnchors[assignment.Value.Span.Start] = item.Matrix ?? assignment.Property.Span;
-            else if (item.Statement is UiBlockSyntax block)
-            {
-                UiTextSpan? matrix = document.Analysis.DefinitionKind == UiDefinitionKind.Presentation
-                    && block.Target?.Segments.Count > 1 ? block.Target.Segments[^1].Span : null;
-                for (int i = block.Statements.Count - 1; i >= 0; i--) pending.Push((block.Statements[i], matrix));
-            }
-        }
+        Dictionary<int, UiTextSpan> propertyAnchors = FindPropertyAnchors(document.Analysis);
         UiBindingContext context = UiBindingContextMetadataWire.CreateBindingContext(document.Analysis.Bindings);
         int attempts = 0;
         int inspected = 0;
@@ -60,9 +47,7 @@ internal static class UiEditorQuickFixes
                     document.Source.AsSpan(completion.Span.End));
                 UiDiagnostic[] remaining = compiler.Compile(edited, context, document.SourceName).Diagnostics
                     .Where(d => d.Severity == UiDiagnosticSeverity.Error).ToArray();
-                if (remaining.Length >= errors.Length || remaining.GroupBy(d => (d.Id, d.Message))
-                    .Any(group => !errorCounts.TryGetValue(group.Key, out int count)
-                        || group.Count() > count - (group.Key == (diagnostic.Id, diagnostic.Message) ? 1 : 0))) continue;
+                if (!RemovesDiagnosticWithoutNewErrors(remaining, diagnostic)) continue;
                 fixes.Add(new UiEditorQuickFix(completion.Span, completion.Label, diagnostic));
             }
         }
@@ -70,6 +55,33 @@ internal static class UiEditorQuickFixes
 
         bool Intersects(UiTextSpan span) => start == end ? span.Start <= start && start <= span.End
             : span.Start < end && start < span.End;
+
+        bool RemovesDiagnosticWithoutNewErrors(UiDiagnostic[] remaining, UiDiagnostic diagnostic)
+        {
+            if (remaining.Length >= errors.Length) return false;
+            return !remaining.GroupBy(d => (d.Id, d.Message))
+                .Any(group => !errorCounts.TryGetValue(group.Key, out int count)
+                    || group.Count() > count - (group.Key == (diagnostic.Id, diagnostic.Message) ? 1 : 0));
+        }
+    }
+
+    private static Dictionary<int, UiTextSpan> FindPropertyAnchors(UiEditorAnalysis analysis)
+    {
+        var anchors = new Dictionary<int, UiTextSpan>();
+        var pending = new Stack<(UiStatementSyntax Statement, UiTextSpan? Matrix)>(
+            analysis.Syntax.Statements.Reverse().Select(s => (s, (UiTextSpan?)null)));
+        while (pending.TryPop(out var item))
+        {
+            if (item.Statement is UiAssignmentSyntax assignment)
+                anchors[assignment.Value.Span.Start] = item.Matrix ?? assignment.Property.Span;
+            else if (item.Statement is UiBlockSyntax block)
+            {
+                UiTextSpan? matrix = analysis.DefinitionKind == UiDefinitionKind.Presentation
+                    && block.Target?.Segments.Count > 1 ? block.Target.Segments[^1].Span : null;
+                for (int i = block.Statements.Count - 1; i >= 0; i--) pending.Push((block.Statements[i], matrix));
+            }
+        }
+        return anchors;
     }
 
     private static int Distance(string source, string target)

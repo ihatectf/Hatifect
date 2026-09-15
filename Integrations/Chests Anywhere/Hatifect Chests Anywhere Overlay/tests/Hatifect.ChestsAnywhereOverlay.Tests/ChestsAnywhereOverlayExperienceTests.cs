@@ -90,6 +90,7 @@ public sealed partial class ChestsAnywhereOverlayExperienceTests
         Assert.Equal(ChestsAnywhereNavigatorIdentity.Category("a"), session.Categories.Value[0].Id);
         Assert.Equal(ChestsAnywhereNavigatorIdentity.Storage("a-first"), session.Storages.Value[1].Id);
         Assert.Equal("a-first", session.Storages.Value.Single(storage => storage.IsCurrent).Key);
+        Assert.Equal(ChestsAnywhereNavigatorIdentity.Storage("a-first"), session.Storages.SelectedItemId);
         Assert.True(session.Storages.Value.Single(storage => storage.Key == "a-first").IsFavorite);
     }
 

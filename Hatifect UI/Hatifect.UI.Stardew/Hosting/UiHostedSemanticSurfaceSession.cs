@@ -72,6 +72,14 @@ internal abstract partial class UiHostedSemanticSurfaceSession : IUiSemanticAppe
     private bool _disposing;
     private bool _disposed;
 
+    private readonly record struct PreparedSurfaceEnvironment(
+        RuntimeRect Viewport,
+        UiSemanticTheme Theme,
+        UiEnvironment Environment,
+        UiSceneComposer Composer,
+        long ConfigurationVersion,
+        long ChangeVersion);
+
     protected UiHostedSemanticSurfaceSession(IModHelper helper, UiSemanticSurfaceOptions options,
         UiExperienceDefinition? experience, UiSemanticHostKind kind, UiSemanticTerminalDefinition? terminal,
         UiSemanticSurfaceService? owner = null)
@@ -160,56 +168,85 @@ internal abstract partial class UiHostedSemanticSurfaceSession : IUiSemanticAppe
         UiSceneComposer composer = ResolveComposer(theme);
         long configurationVersion = _configurationVersion;
         long changeVersion = _changeVersion;
-        if (_terminal != null && _menu != null && _menu.CurrentSection == experience)
+        var preparation = new PreparedSurfaceEnvironment(viewport, theme, environment, composer,
+            configurationVersion, changeVersion);
+
+        if (TryReloadCurrentTerminalAssets(experience, assets, acceptAssets, profile, preparation)) return;
+        if (TryAcceptInactiveAssets(experience, assets, acceptAssets, preparation)) return;
+        ReloadVisibleAssets(experience, assets, acceptAssets, preparation);
+    }
+
+    private bool TryReloadCurrentTerminalAssets(UiSymbolId experience, UiTerminalSectionAssets assets,
+        Action acceptAssets, UiPresentationProfile profile, PreparedSurfaceEnvironment preparation)
+    {
+        if (_terminal == null || _menu == null || _menu.CurrentSection != experience) return false;
+
+        _menu.ReloadTerminal(assets, profile, preparation.Viewport, preparation.Environment.Locale, () =>
         {
-            _menu.ReloadTerminal(assets, profile, viewport, environment.Locale, () =>
-            {
-                AcceptEnvironment(environment, theme, composer, changeVersion);
-                acceptAssets();
-            }, environment, UiSemanticThemes.Resolve(theme), ValidateOwner);
-            return;
-        }
-        if (_terminal != null || _host == null && _overlay == null)
-        {
-            // A hidden surface or inactive section owns no current action generation to replace.
-            UiSemanticStardewMenu? previousMenu = _menu;
-            UiSemanticStardewHost? previousHost = _host;
-            UiSemanticStardewOverlaySession? previousOverlay = _overlay;
-            long? version = previousMenu?.CaptureInspectionContext().Runtime.AcceptedVersion;
-            ValidateAssets(experience, assets, environment, composer, viewport);
-            ValidateOwner();
-            if (!ReferenceEquals(previousMenu, _menu) || !ReferenceEquals(previousHost, _host) ||
-                !ReferenceEquals(previousOverlay, _overlay) ||
-                version != _menu?.CaptureInspectionContext().Runtime.AcceptedVersion)
-                throw new InvalidOperationException("The surface changed during inactive asset preparation.");
+            AcceptEnvironment(preparation.Environment, preparation.Theme, preparation.Composer,
+                preparation.ChangeVersion);
             acceptAssets();
-            return;
-        }
+        }, preparation.Environment, UiSemanticThemes.Resolve(preparation.Theme), ValidateOwner);
+        return true;
+
+        void ValidateOwner() => ValidatePreparedOwner(preparation.ConfigurationVersion);
+    }
+
+    private bool TryAcceptInactiveAssets(UiSymbolId experience, UiTerminalSectionAssets assets,
+        Action acceptAssets, PreparedSurfaceEnvironment preparation)
+    {
+        if (_terminal == null && (_host != null || _overlay != null)) return false;
+
+        // A hidden surface or inactive section owns no current action generation to replace.
+        UiSemanticStardewMenu? previousMenu = _menu;
+        UiSemanticStardewHost? previousHost = _host;
+        UiSemanticStardewOverlaySession? previousOverlay = _overlay;
+        long? version = previousMenu?.CaptureInspectionContext().Runtime.AcceptedVersion;
+        ValidateAssets(experience, assets, preparation.Environment, preparation.Composer, preparation.Viewport);
+        ValidatePreparedOwner(preparation.ConfigurationVersion);
+        if (!ReferenceEquals(previousMenu, _menu) || !ReferenceEquals(previousHost, _host) ||
+            !ReferenceEquals(previousOverlay, _overlay) ||
+            version != _menu?.CaptureInspectionContext().Runtime.AcceptedVersion)
+            throw new InvalidOperationException("The surface changed during inactive asset preparation.");
+        acceptAssets();
+        return true;
+    }
+
+    private void ReloadVisibleAssets(UiSymbolId experience, UiTerminalSectionAssets assets,
+        Action acceptAssets, PreparedSurfaceEnvironment preparation)
+    {
         UiInvocationResult? invocation = null;
         UiScene Prepare()
         {
-            invocation = new UiInvocationService(_registry).InvokeInEnvironment(experience, environment, assets.Presentation);
-            UiScene scene = composer.Compose(invocation, assets.Visual, _interaction, environment.Locale);
+            invocation = new UiInvocationService(_registry).InvokeInEnvironment(
+                experience, preparation.Environment, assets.Presentation);
+            UiScene scene = preparation.Composer.Compose(
+                invocation, assets.Visual, _interaction, preparation.Environment.Locale);
             ValidateOwner();
             return scene;
         }
         void Accept()
         {
             _invocation = invocation;
-            AcceptEnvironment(environment, theme, composer, changeVersion);
+            AcceptEnvironment(preparation.Environment, preparation.Theme, preparation.Composer,
+                preparation.ChangeVersion);
             acceptAssets();
         }
-        if (_overlay != null) _overlay.UpdatePrepared(Prepare, viewport, Accept, ValidateOwner, renewActionGeneration: true);
-        else _host!.Reload(Prepare, new UiHostPlacementContext(viewport), Accept, ValidateOwner);
+        if (_overlay != null)
+            _overlay.UpdatePrepared(Prepare, preparation.Viewport, Accept, ValidateOwner, renewActionGeneration: true);
+        else
+            _host!.Reload(Prepare, new UiHostPlacementContext(preparation.Viewport), Accept, ValidateOwner);
 
-        void ValidateOwner()
-        {
-            ThrowIfUnavailable();
-            RetireDetachedMenu();
-            ThrowIfUnavailable();
-            if (_configurationVersion != configurationVersion)
-                throw new InvalidOperationException("The requested surface environment changed during preparation.");
-        }
+        void ValidateOwner() => ValidatePreparedOwner(preparation.ConfigurationVersion);
+    }
+
+    private void ValidatePreparedOwner(long configurationVersion)
+    {
+        ThrowIfUnavailable();
+        RetireDetachedMenu();
+        ThrowIfUnavailable();
+        if (_configurationVersion != configurationVersion)
+            throw new InvalidOperationException("The requested surface environment changed during preparation.");
     }
 
     public void Show()
@@ -227,46 +264,9 @@ internal abstract partial class UiHostedSemanticSurfaceSession : IUiSemanticAppe
             UiSemanticTheme theme = _theme;
             UiEnvironment environment = CaptureEnvironment(viewport);
             UiSceneComposer composer = ResolveComposer(theme);
-            if (_terminal != null)
-            {
-                _host = _runtime.CreateTerminalHost(_registry, UiSemanticThemes.Resolve(theme),
-                    new UiHostPlacementContext(viewport), UiPresentationProfiles.Resolve(environment),
-                    _section, resolveAssets: descriptor => _assets.For(descriptor.Id),
-                    locale: environment.Locale, environment: environment);
-                AcceptEnvironment(environment, theme, composer, changeVersion);
-                _menu = new UiSemanticStardewMenu(_host, viewport, Recompose, OnPresentationClosed);
-            }
-            else
-            {
-                UiInvocationResult invocation = new UiInvocationService(_registry).InvokeInEnvironment(
-                    _options.Id, environment, _assets.For(_options.Id).Presentation);
-                UiScene scene = composer.Compose(invocation, _assets.For(_options.Id).Visual,
-                    _interaction, environment.Locale);
-                if (_kind == UiSemanticHostKind.Hud)
-                {
-                    _overlay = _runtime.CreateOverlay(_helper, scene,
-                        UiSemanticStardewOverlayRenderLayer.Hud, ComposeInteraction, OnPresentationClosed,
-                        next => Synchronize(next));
-                    _invocation = invocation;
-                    AcceptEnvironment(environment, theme, composer, changeVersion);
-                    _overlay.Rendered += OnRendered;
-                    _overlay.Show();
-                }
-                else
-                {
-                    _host = _runtime.CreateHost(scene, new UiHostPlacementContext(viewport), ComposeInteraction);
-                    _invocation = invocation;
-                    AcceptEnvironment(environment, theme, composer, changeVersion);
-                    _menu = new UiSemanticStardewMenu(_host, viewport, Recompose, OnPresentationClosed);
-                }
-            }
-            if (_menu != null)
-            {
-                _menu.Observation = _observation;
-                _menu.CloseOnCancel = _kind != UiSemanticHostKind.Modal;
-                _menu.Rendered += OnRendered;
-                Game1.activeClickableMenu = _menu;
-            }
+            if (_terminal != null) CreateTerminalPresentation(viewport, theme, environment, composer, changeVersion);
+            else CreateStandalonePresentation(viewport, theme, environment, composer, changeVersion);
+            PublishMenu();
             Subscribe();
             _dirty = _changeVersion != changeVersion;
         }
@@ -279,6 +279,51 @@ internal abstract partial class UiHostedSemanticSurfaceSession : IUiSemanticAppe
             }
             throw;
         }
+    }
+
+    private void CreateTerminalPresentation(RuntimeRect viewport, UiSemanticTheme theme,
+        UiEnvironment environment, UiSceneComposer composer, long changeVersion)
+    {
+        _host = _runtime!.CreateTerminalHost(_registry, UiSemanticThemes.Resolve(theme),
+            new UiHostPlacementContext(viewport), UiPresentationProfiles.Resolve(environment),
+            _section, resolveAssets: descriptor => _assets.For(descriptor.Id),
+            locale: environment.Locale, environment: environment);
+        AcceptEnvironment(environment, theme, composer, changeVersion);
+        _menu = new UiSemanticStardewMenu(_host, viewport, Recompose, OnPresentationClosed);
+    }
+
+    private void CreateStandalonePresentation(RuntimeRect viewport, UiSemanticTheme theme,
+        UiEnvironment environment, UiSceneComposer composer, long changeVersion)
+    {
+        UiInvocationResult invocation = new UiInvocationService(_registry).InvokeInEnvironment(
+            _options.Id, environment, _assets.For(_options.Id).Presentation);
+        UiScene scene = composer.Compose(invocation, _assets.For(_options.Id).Visual,
+            _interaction, environment.Locale);
+        if (_kind == UiSemanticHostKind.Hud)
+        {
+            _overlay = _runtime!.CreateOverlay(_helper, scene,
+                UiSemanticStardewOverlayRenderLayer.Hud, ComposeInteraction, OnPresentationClosed,
+                next => Synchronize(next));
+            _invocation = invocation;
+            AcceptEnvironment(environment, theme, composer, changeVersion);
+            _overlay.Rendered += OnRendered;
+            _overlay.Show();
+            return;
+        }
+
+        _host = _runtime!.CreateHost(scene, new UiHostPlacementContext(viewport), ComposeInteraction);
+        _invocation = invocation;
+        AcceptEnvironment(environment, theme, composer, changeVersion);
+        _menu = new UiSemanticStardewMenu(_host, viewport, Recompose, OnPresentationClosed);
+    }
+
+    private void PublishMenu()
+    {
+        if (_menu == null) return;
+        _menu.Observation = _observation;
+        _menu.CloseOnCancel = _kind != UiSemanticHostKind.Modal;
+        _menu.Rendered += OnRendered;
+        Game1.activeClickableMenu = _menu;
     }
 
     public void Hide()
@@ -402,36 +447,48 @@ internal abstract partial class UiHostedSemanticSurfaceSession : IUiSemanticAppe
         UiSceneComposer composer = ResolveComposer(theme);
         long changeVersion = _changeVersion;
         long configurationVersion = _configurationVersion;
-        void ValidateOwner()
-        {
-            ThrowIfUnavailable();
-            RetireDetachedMenu();
-            ThrowIfUnavailable();
-            if (_configurationVersion != configurationVersion)
-                throw new InvalidOperationException("The requested surface environment changed during preparation.");
-        }
+        var preparation = new PreparedSurfaceEnvironment(viewport, theme, environment,
+            composer, configurationVersion, changeVersion);
         if (_terminal != null)
         {
-            _menu?.RecomposeTerminal(UiPresentationProfiles.Resolve(environment), viewport, environment.Locale,
-                environment, () => AcceptEnvironment(environment, theme, composer, changeVersion),
-                UiSemanticThemes.Resolve(theme), ValidateOwner);
+            RecomposeTerminal(preparation);
             return;
         }
+        RecomposeStandalone(preparation);
+    }
+
+    private void RecomposeTerminal(PreparedSurfaceEnvironment preparation)
+    {
+        _menu?.RecomposeTerminal(UiPresentationProfiles.Resolve(preparation.Environment),
+            preparation.Viewport, preparation.Environment.Locale,
+            preparation.Environment, () => AcceptEnvironment(preparation.Environment, preparation.Theme,
+                preparation.Composer, preparation.ChangeVersion),
+            UiSemanticThemes.Resolve(preparation.Theme), ValidateOwner);
+
+        void ValidateOwner() => ValidatePreparedOwner(preparation.ConfigurationVersion);
+    }
+
+    private void RecomposeStandalone(PreparedSurfaceEnvironment preparation)
+    {
         UiInvocationResult? invocation = null;
         UiScene Prepare()
         {
-            invocation = ReferenceEquals(environment, _environment) ? _invocation! :
-                new UiInvocationService(_registry).InvokeInEnvironment(_options.Id, environment,
+            invocation = ReferenceEquals(preparation.Environment, _environment) ? _invocation! :
+                new UiInvocationService(_registry).InvokeInEnvironment(_options.Id, preparation.Environment,
                     _assets.For(_options.Id).Presentation);
-            return composer.Compose(invocation, _assets.For(_options.Id).Visual, _interaction, environment.Locale);
+            return preparation.Composer.Compose(invocation, _assets.For(_options.Id).Visual,
+                _interaction, preparation.Environment.Locale);
         }
         void Accept()
         {
             _invocation = invocation;
-            AcceptEnvironment(environment, theme, composer, changeVersion);
+            AcceptEnvironment(preparation.Environment, preparation.Theme, preparation.Composer,
+                preparation.ChangeVersion);
         }
-        if (_overlay != null) _overlay.UpdatePrepared(Prepare, viewport, Accept, ValidateOwner);
-        else _host?.UpdatePrepared(Prepare, new UiHostPlacementContext(viewport), Accept, ValidateOwner);
+        if (_overlay != null) _overlay.UpdatePrepared(Prepare, preparation.Viewport, Accept, ValidateOwner);
+        else _host?.UpdatePrepared(Prepare, new UiHostPlacementContext(preparation.Viewport), Accept, ValidateOwner);
+
+        void ValidateOwner() => ValidatePreparedOwner(preparation.ConfigurationVersion);
     }
 
     private UiEnvironment CaptureEnvironment(RuntimeRect viewport)

@@ -92,6 +92,13 @@ internal sealed partial class FlowRuntime
         if (!_ownedCommand || !_mutating || !ReferenceEquals(_preparingTransfer, transfer))
             throw new InvalidOperationException("Only the preparing transfer can capture a durable intent.");
         FlowCheckpoint snapshot = CaptureCheckpointValue();
+        snapshot = ProjectTransferIntentCheckpoint(snapshot, transfer);
+        _ = RestoreCheckpoint(snapshot);
+        return snapshot;
+    }
+
+    private FlowCheckpoint ProjectTransferIntentCheckpoint(FlowCheckpoint snapshot, PortTransfer transfer)
+    {
         int index = System.Array.FindIndex(snapshot.Parcels, parcel => parcel.Id == transfer.Id.ParcelId.Value);
         ParcelCheckpoint parcel = snapshot.Parcels[index];
         int state = (int)(transfer.Kind == PortTransferKind.Extract
@@ -105,9 +112,7 @@ internal sealed partial class FlowRuntime
         if (history.Count == _limits.MaxEvents) history.RemoveAt(0);
         history.Add(new EventCheckpoint(parcel.Id, parcel.Version + 1, parcel.TransferTick,
             (int)OperationKind.PortUncertain, state, new OwnerCheckpoint(null, null, CheckpointValues.Key(transfer.Id))));
-        snapshot = snapshot with { Events = history.ToArray() };
-        _ = RestoreCheckpoint(snapshot);
-        return snapshot;
+        return snapshot with { Events = history.ToArray() };
     }
 
     private void RequireCheckpointOwner(object owner)

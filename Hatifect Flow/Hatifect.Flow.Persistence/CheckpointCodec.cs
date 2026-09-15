@@ -95,6 +95,33 @@ internal static class CheckpointCodec
     {
         try
         {
+            ValidateTokens(json);
+            var documentReader = new Utf8JsonReader(json, new JsonReaderOptions { MaxDepth = 64 });
+            JsonDocument document = JsonDocument.ParseValue(ref documentReader);
+            try
+            {
+                CheckpointJsonSchema.Validate(document.RootElement);
+                return document;
+            }
+            catch
+            {
+                document.Dispose();
+                throw;
+            }
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidDataException("Checkpoint JSON is malformed or exceeds the depth limit.", error);
+        }
+        catch (InvalidOperationException error)
+        {
+            // JsonElement/Utf8JsonReader decode malformed Unicode escapes with
+            // InvalidOperationException on .NET 6, even after JSON tokenization.
+            throw new InvalidDataException("Checkpoint JSON contains invalid text encoding.", error);
+        }
+
+        static void ValidateTokens(ReadOnlySpan<byte> json)
+        {
             var reader = new Utf8JsonReader(json, new JsonReaderOptions { MaxDepth = 64 });
             var properties = new Stack<HashSet<string>>();
             int tokens = 0;
@@ -118,28 +145,6 @@ internal static class CheckpointCodec
                     throw new InvalidDataException("Checkpoint JSON contains duplicate property names.");
                 }
             }
-            var documentReader = new Utf8JsonReader(json, new JsonReaderOptions { MaxDepth = 64 });
-            JsonDocument document = JsonDocument.ParseValue(ref documentReader);
-            try
-            {
-                CheckpointJsonSchema.Validate(document.RootElement);
-                return document;
-            }
-            catch
-            {
-                document.Dispose();
-                throw;
-            }
-        }
-        catch (JsonException error)
-        {
-            throw new InvalidDataException("Checkpoint JSON is malformed or exceeds the depth limit.", error);
-        }
-        catch (InvalidOperationException error)
-        {
-            // JsonElement/Utf8JsonReader decode malformed Unicode escapes with
-            // InvalidOperationException on .NET 6, even after JSON tokenization.
-            throw new InvalidDataException("Checkpoint JSON contains invalid text encoding.", error);
         }
     }
 }

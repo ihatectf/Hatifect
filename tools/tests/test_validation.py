@@ -686,7 +686,7 @@ class ValidationTests(unittest.TestCase):
             run.tests(
                 (project,),
                 "/sdk/dotnet",
-                expected_counts={validation.RUNTIME_TEST_PROJECT: 703},
+                expected_counts={validation.RUNTIME_TEST_PROJECT: 712},
             )
 
         self.assertEqual(3, len(calls))
@@ -703,8 +703,8 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual([validation.RUNTIME_TEST_PROJECT], [stage["name"] for stage in run.stages])
         stage = run.stages[0]
         self.assertEqual("PASS", stage["status"])
-        self.assertEqual(703, stage["total"])
-        self.assertEqual([10, 9, 684], [shard["total"] for shard in stage["shards"]])
+        self.assertEqual(712, stage["total"])
+        self.assertEqual([10, 9, 693], [shard["total"] for shard in stage["shards"]])
 
     def test_runtime_shards_reject_count_drift_and_cross_shard_duplicates(self) -> None:
         runtime = self.project("Hatifect.UI.Runtime.Tests", test=True)
@@ -957,7 +957,7 @@ class ValidationTests(unittest.TestCase):
                 self.assertEqual(0, validation.main(arguments))
             run = run_type.return_value
             if arguments[0] == "check":
-                run.static.assert_called_once_with(679)
+                run.static.assert_called_once_with(683)
                 self.assertEqual(1, run.build.call_count)
                 self.assertEqual(["Hatifect.UI.Tests", "Hatifect.Flow.Tests"],
                                  [item.name for item in run.tests.call_args.args[0]])
@@ -975,7 +975,7 @@ class ValidationTests(unittest.TestCase):
         counts = {
             "hatifect-ui-tests": 2,
             "hatifect-flow-tests": 2,
-            validation.RUNTIME_TEST_PROJECT: 703,
+            validation.RUNTIME_TEST_PROJECT: 712,
         }
         with patch.object(validation, "ROOT", self.root), \
                 patch.object(validation.os, "cpu_count", return_value=10), \
@@ -988,7 +988,7 @@ class ValidationTests(unittest.TestCase):
         run.static_contracts.assert_called_once_with()
         run.static.assert_not_called()
         run.build_with_python_tests.assert_called_once()
-        self.assertEqual(679, run.build_with_python_tests.call_args.args[-1])
+        self.assertEqual(683, run.build_with_python_tests.call_args.args[-1])
         self.assertEqual(counts, run.tests.call_args.args[-1])
         profile = run_type.call_args.args[2]
         self.assertTrue(profile.python_build_overlap)

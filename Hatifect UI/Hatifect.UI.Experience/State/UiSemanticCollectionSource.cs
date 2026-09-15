@@ -319,23 +319,24 @@ public sealed class UiSelectableCollectionState<T> :
         if (!item.IsValid) throw new ArgumentException("A stable semantic item ID is required.", nameof(item));
         if (!_ids.Contains(item)) return false;
         if (_selectedItemId == item) return true;
-        long version = checked(_version + 1);
-        _selectedItemId = item;
-        _version = version;
-        _readSnapshot = new(_values, _items, _indices, _hasSupportingText, _revision, _selectedItemId, _version);
-        Changed?.Invoke();
+        PublishSelection(item);
         return true;
     }
 
     public bool ClearSelection()
     {
         if (_selectedItemId == null) return false;
-        long version = checked(_version + 1);
-        _selectedItemId = null;
-        _version = version;
-        _readSnapshot = new(_values, _items, _indices, _hasSupportingText, _revision, version: _version);
-        Changed?.Invoke();
+        PublishSelection(null);
         return true;
+    }
+
+    private void PublishSelection(UiSymbolId? selectedItemId)
+    {
+        long version = checked(_version + 1);
+        _selectedItemId = selectedItemId;
+        _version = version;
+        _readSnapshot = new(_values, _items, _indices, _hasSupportingText, _revision, _selectedItemId, _version);
+        Changed?.Invoke();
     }
 
     public void Replace(IReadOnlyList<T> values)
