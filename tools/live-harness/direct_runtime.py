@@ -270,9 +270,7 @@ def _ensure_private_directory(path: Path) -> Path:
 def _repository_identity(root: Path) -> tuple[Path, int, int]:
     resolved = root.resolve(strict=True)
     info = resolved.stat()
-    if not (resolved / "AGENTS.md").is_file() or not (
-        resolved / "tools" / "live-harness" / "scenarios.json"
-    ).is_file():
+    if not (resolved / "tools" / "live-harness" / "scenarios.json").is_file():
         raise DirectRuntimeError(f"Path is not a Hatifect repository root: {resolved}")
     return resolved, int(info.st_dev), int(info.st_ino)
 
