@@ -74,14 +74,17 @@ internal sealed class SaveBoundCargoPort : ICheckpointCargoPort
         RequireIdle();
         Validate(transfer);
         TransferKey key = CheckpointValues.Key(transfer.Id);
-        if (_receipts.TryGetValue(key, out PortResult prior)) return prior;
+        if (_receipts.TryGetValue(key, out PortResult prior))
+        {
+            return prior;
+        }
         if (!_authority!.IsActive(transfer) || _receipts.Count >= _maxReceipts)
+        {
             throw new InvalidOperationException("Transfer is retired or the receipt budget is exhausted.");
+        }
         _receipts.EnsureCapacity(_receipts.Count + 1);
         _inventory.EnsureCapacity(_inventory.Count + 1);
-        bool admitted = transfer.Kind == PortTransferKind.Extract
-            ? _acceptExtractions && _inventory.GetValueOrDefault(transfer.CargoId) == transfer.Manifest
-            : _acceptDeposits && !_inventory.ContainsKey(transfer.CargoId) && _inventory.Count < _maxCargo;
+        bool admitted = CanAdmit(transfer);
         _applying = true;
         try
         {
@@ -89,16 +92,41 @@ internal sealed class SaveBoundCargoPort : ICheckpointCargoPort
             // the game owner must persist a recovery fence and prohibit automatic replay/reconciliation.
             PortResult result = admitted ? _apply(transfer) : PortResult.Rejected;
             if (result is not (PortResult.Applied or PortResult.Rejected))
-                throw new InvalidOperationException("The game adapter did not settle its transfer.");
-            if (result == PortResult.Applied)
             {
-                if (transfer.Kind == PortTransferKind.Extract) _inventory.Remove(transfer.CargoId);
-                else _inventory.Add(transfer.CargoId, transfer.Manifest);
+                throw new InvalidOperationException("The game adapter did not settle its transfer.");
             }
-            _receipts.Add(key, result);
+            RecordSettlement(result);
             return result;
         }
-        finally { _applying = false; }
+        finally
+        {
+            _applying = false;
+        }
+
+        void RecordSettlement(PortResult result)
+        {
+            if (result == PortResult.Applied)
+            {
+                if (transfer.Kind == PortTransferKind.Extract)
+                {
+                    _inventory.Remove(transfer.CargoId);
+                }
+                else
+                {
+                    _inventory.Add(transfer.CargoId, transfer.Manifest);
+                }
+            }
+            _receipts.Add(key, result);
+        }
+    }
+
+    private bool CanAdmit(PortTransfer transfer)
+    {
+        if (transfer.Kind == PortTransferKind.Extract)
+        {
+            return _acceptExtractions && _inventory.GetValueOrDefault(transfer.CargoId) == transfer.Manifest;
+        }
+        return _acceptDeposits && !_inventory.ContainsKey(transfer.CargoId) && _inventory.Count < _maxCargo;
     }
 
     public PortResult ReadResult(PortTransfer transfer)

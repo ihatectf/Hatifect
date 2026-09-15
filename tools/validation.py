@@ -37,9 +37,9 @@ EXPECTED_TOOL_TEST_COUNT = 683
 EXPECTED_HOST_FREE_TEST_COUNTS = {
     "hatifect-flow-tests": 803,
     "hatifect-ui-devtools-tests": 10,
-    "hatifect-ui-planning-tests": 147,
+    "hatifect-ui-planning-tests": 149,
     "hatifect-ui-runtime-tests": 703,
-    "hatifect-ui-semantics-tests": 67,
+    "hatifect-ui-semantics-tests": 69,
     "hatifect-ui-tooling-server-tests": 16,
     "hatifect-ui-tooling-tests": 192,
 }

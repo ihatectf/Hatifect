@@ -59,46 +59,8 @@ internal sealed partial class ParcelExperience : IFlowExperience
             _projection = _publication.State(id.Child("source/projection"), initial,
                 UiSourceTypes.Scalar<ParcelPresentationSnapshot>(new("Hatifect.Flow", "data/parcel-projection"), false));
             Project(snapshot);
-            bool diagnostic = Snapshot.ProviderMode == FlowProviderMode.DiagnosticFake;
-            UiLocalizedText title = Localized("Flowline shipment" + (diagnostic ? " · diagnostic" : ""),
-                "Отправление Flowline" + (diagnostic ? " · диагностика" : ""));
-            var actions = new[]
-            {
-                Action(id, "reserve", FlowParcelAction.Reserve, Text("Dispatch", "Отправить")),
-                Action(id, "cancel", FlowParcelAction.Cancel, Text("Cancel", "Отменить")),
-                Action(id, "retry", FlowParcelAction.RetryDelivery, Text("Retry delivery", "Повторить доставку")),
-                Action(id, "reconcile", FlowParcelAction.ReconcileTransfer, Text("Check transfer", "Проверить передачу")),
-                Action(id, "return", FlowParcelAction.ReturnToSource, Text("Return cargo to source", "Вернуть груз в источник"))
-            };
-            var builder = new UiExperienceBuilder(id, title.Fallback)
-                .LocalizeDisplayName(title)
-                .Element(id.Child("element/cargo"), "Cargo", Text("Cargo", "Груз"), _cargo, textType, UiCapabilities.Inspect)
-                .Element(id.Child("element/route"), "Route", Text("Route", "Маршрут"), _route, textType, UiCapabilities.Inspect)
-                .Element(id.Child("element/state"), "State", Text("State", "Состояние"), _state, textType, UiCapabilities.Monitor)
-                .Element(id.Child("element/result"), "Result", Text("Result", "Результат"), _result, textType, UiCapabilities.Monitor)
-                .Element(id.Child("element/availability"), "Availability", Text("Availability", "Доступность"), _availability, textType, UiCapabilities.Monitor)
-                .Actions(id.Child("element/actions"), "Actions", Text("Actions", "Действия"), actions);
-            string[] aliases = { "Dispatch", "Cancel", "RetryDelivery" };
-            for (int index = 0; index < aliases.Length; index++)
-                builder.Action(actions[index], aliases[index], UiDataTypes.Action(actions[index].Id.Child("contract"),
-                    ActionRequestType.Descriptor, ActionResultType.Descriptor));
-            Present("cargo", "Cargo", "Груз");
-            Present("route", "Route", "Маршрут");
-            Present("state", "State", "Состояние");
-            Present("result", "Result", "Результат");
-            Present("availability", "Availability", "Доступность");
-            builder.LocalizeElement(id.Child("element/actions"), Localized("Actions", "Действия"))
-                .LocalizeAction(id.Child("action/reserve"), Localized("Dispatch", "Отправить"))
-                .LocalizeAction(id.Child("action/cancel"), Localized("Cancel", "Отменить"))
-                .LocalizeAction(id.Child("action/retry"), Localized("Retry delivery", "Повторить доставку"))
-                .LocalizeAction(id.Child("action/reconcile"), Localized("Check transfer", "Проверить передачу"))
-                .LocalizeAction(id.Child("action/return"), Localized("Return cargo to source", "Вернуть груз в источник"));
-            Experience = builder.Build();
+            Experience = BuildExperience(id, textType);
             if (_dirty) Pump();
-
-            void Present(string key, string english, string translated)
-                => builder.LocalizeElement(id.Child("element/" + key), Localized(english, translated))
-                    .FormatText<ParcelTextValue>(id.Child("element/" + key), static (value, locale) => value.Format(locale));
         }
         catch
         {
@@ -107,6 +69,49 @@ internal sealed partial class ParcelExperience : IFlowExperience
             finally { _publication.Dispose(); }
             throw;
         }
+    }
+
+    private UiExperienceDefinition BuildExperience(UiSymbolId id, UiSourceType<ParcelTextValue> textType)
+    {
+        bool diagnostic = Snapshot.ProviderMode == FlowProviderMode.DiagnosticFake;
+        UiLocalizedText title = Localized("Flowline shipment" + (diagnostic ? " · diagnostic" : ""),
+            "Отправление Flowline" + (diagnostic ? " · диагностика" : ""));
+        var actions = new[]
+        {
+            Action(id, "reserve", FlowParcelAction.Reserve, Text("Dispatch", "Отправить")),
+            Action(id, "cancel", FlowParcelAction.Cancel, Text("Cancel", "Отменить")),
+            Action(id, "retry", FlowParcelAction.RetryDelivery, Text("Retry delivery", "Повторить доставку")),
+            Action(id, "reconcile", FlowParcelAction.ReconcileTransfer, Text("Check transfer", "Проверить передачу")),
+            Action(id, "return", FlowParcelAction.ReturnToSource, Text("Return cargo to source", "Вернуть груз в источник"))
+        };
+        var builder = new UiExperienceBuilder(id, title.Fallback)
+            .LocalizeDisplayName(title)
+            .Element(id.Child("element/cargo"), "Cargo", Text("Cargo", "Груз"), _cargo, textType, UiCapabilities.Inspect)
+            .Element(id.Child("element/route"), "Route", Text("Route", "Маршрут"), _route, textType, UiCapabilities.Inspect)
+            .Element(id.Child("element/state"), "State", Text("State", "Состояние"), _state, textType, UiCapabilities.Monitor)
+            .Element(id.Child("element/result"), "Result", Text("Result", "Результат"), _result, textType, UiCapabilities.Monitor)
+            .Element(id.Child("element/availability"), "Availability", Text("Availability", "Доступность"), _availability, textType, UiCapabilities.Monitor)
+            .Actions(id.Child("element/actions"), "Actions", Text("Actions", "Действия"), actions);
+        string[] aliases = { "Dispatch", "Cancel", "RetryDelivery" };
+        for (int index = 0; index < aliases.Length; index++)
+            builder.Action(actions[index], aliases[index], UiDataTypes.Action(actions[index].Id.Child("contract"),
+                ActionRequestType.Descriptor, ActionResultType.Descriptor));
+        Present("cargo", "Cargo", "Груз");
+        Present("route", "Route", "Маршрут");
+        Present("state", "State", "Состояние");
+        Present("result", "Result", "Результат");
+        Present("availability", "Availability", "Доступность");
+        builder.LocalizeElement(id.Child("element/actions"), Localized("Actions", "Действия"))
+            .LocalizeAction(id.Child("action/reserve"), Localized("Dispatch", "Отправить"))
+            .LocalizeAction(id.Child("action/cancel"), Localized("Cancel", "Отменить"))
+            .LocalizeAction(id.Child("action/retry"), Localized("Retry delivery", "Повторить доставку"))
+            .LocalizeAction(id.Child("action/reconcile"), Localized("Check transfer", "Проверить передачу"))
+            .LocalizeAction(id.Child("action/return"), Localized("Return cargo to source", "Вернуть груз в источник"));
+        return builder.Build();
+
+        void Present(string key, string english, string translated)
+            => builder.LocalizeElement(id.Child("element/" + key), Localized(english, translated))
+                .FormatText<ParcelTextValue>(id.Child("element/" + key), static (value, locale) => value.Format(locale));
     }
 
     public UiExperienceDefinition Experience { get; }

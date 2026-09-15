@@ -108,6 +108,81 @@ Items
     }
 
     [Fact]
+    public void CollectionRecipeUsesActiveProfileAssignmentsBeforeDefaults()
+    {
+        UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();
+        UiExperienceDefinition experience = ExperienceBuilderTests.CreateExperience();
+        UiPresentationDefinition definition = Assert.IsType<UiPresentationDefinition>(
+            new UiCompiler(catalog).Compile(@"presentation Storage
+
+Items.itemSizing
+    default = Uniform
+    Compact = Adaptive
+
+Items.density
+    default = Comfortable
+    Compact = Compact
+", experience.CreateBindingContext(), "ProfiledRecipe#presentation").Definition);
+        var planner = new UiPresentationPlanner(catalog);
+
+        UiPlannedCollectionRecipe wide = planner
+            .Plan(experience, new UiHostContext(UiHostKind.Window, UiPresentationProfiles.Wide), definition)
+            .CollectionRecipeFor(experience.Elements[0].Id);
+        UiPlannedCollectionRecipe compact = planner
+            .Plan(experience, new UiHostContext(UiHostKind.Window, UiPresentationProfiles.Compact), definition)
+            .CollectionRecipeFor(experience.Elements[0].Id);
+
+        Assert.Equal(new UiSymbolId("Hatifect.UI", "enum/Presentation/itemSizing/Uniform"), wide.ItemSizing);
+        Assert.Equal(new UiSymbolId("Hatifect.UI", "enum/Presentation/density/Comfortable"), wide.Density);
+        Assert.Equal(new UiSymbolId("Hatifect.UI", "enum/Presentation/itemSizing/Adaptive"), compact.ItemSizing);
+        Assert.Equal(new UiSymbolId("Hatifect.UI", "enum/Presentation/density/Compact"), compact.Density);
+    }
+
+    [Fact]
+    public void CollectionRecipeReportsUnknownSizingBeforeInvalidDensity()
+    {
+        UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();
+        UiExperienceDefinition experience = ExperienceBuilderTests.CreateExperience();
+        UiPresentationDefinition compiled = Assert.IsType<UiPresentationDefinition>(
+            new UiCompiler(catalog).Compile(@"presentation Storage
+
+Items
+    itemSizing = Uniform
+    density = Compact
+", experience.CreateBindingContext(), "InvalidRecipe#presentation").Definition);
+        UiPropertyAssignmentIr sizing = Assert.Single(
+            compiled.Assignments,
+            assignment => assignment.Property.Name == "itemSizing");
+        UiPropertyAssignmentIr density = Assert.Single(
+            compiled.Assignments,
+            assignment => assignment.Property.Name == "density");
+        var unknownSizing = new UiSymbolId("Hatifect.Tests", "enum/itemSizing/Unknown");
+        var definition = new UiPresentationDefinition(
+            compiled.Id,
+            compiled.Placements.ToArray(),
+            compiled.Assignments
+                .Select(assignment => assignment == sizing
+                    ? assignment with
+                    {
+                        Value = new UiSymbolValue(unknownSizing, "Unknown", UiSemanticType.EnumValue)
+                    }
+                    : assignment == density
+                        ? assignment with { Value = new UiStringValue("Compact") }
+                        : assignment)
+                .ToArray());
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => new UiPresentationPlanner(catalog).Plan(
+                experience,
+                new UiHostContext(UiHostKind.Window, UiPresentationProfiles.Wide),
+                definition));
+
+        Assert.Equal(
+            $"Collection element '{experience.Elements[0].Id}' resolved an unknown item-sizing catalog value '{unknownSizing}'.",
+            error.Message);
+    }
+
+    [Fact]
     public void IndexedLookupsPreserveFirstMatchForDuplicateIrInputs()
     {
         UiSemanticCatalog catalog = UiSemanticCatalog.CreateFoundation();

@@ -33,23 +33,12 @@ internal static class DurableProviderCodec
         writer.Write(image.Stations.Length);
         foreach (StationCheckpoint station in image.Stations)
         {
-            writer.Write(station.Id.ToByteArray());
-            PortCheckpoint port = station.Port;
-            writer.Write(port.MaxCargoBatches); writer.Write(port.MaxReceipts);
-            writer.Write(port.AcceptDeposits); writer.Write(port.AcceptExtractions);
-            writer.Write(port.Inventory.Length);
-            foreach (InventoryCheckpoint cargo in port.Inventory)
-            {
-                writer.Write(cargo.CargoId.ToByteArray()); WriteManifest(writer, cargo.Manifest);
-            }
+            WriteStation(writer, station);
         }
         writer.Write(image.Receipts.Length);
         foreach (DurableProviderReceipt receipt in image.Receipts)
         {
-            writer.Write(receipt.Key.ParcelId.ToByteArray());
-            writer.Write(receipt.Key.Kind); writer.Write(receipt.Key.Attempt);
-            writer.Write(receipt.CargoId.ToByteArray()); writer.Write(receipt.StationId.ToByteArray());
-            WriteManifest(writer, receipt.Manifest); writer.Write(receipt.Result);
+            WriteReceipt(writer, receipt);
         }
         writer.Write(image.ConfigurationRevision);
         if (stream.Position != length) { throw new InvalidDataException("Provider image sizing disagrees with its format."); }
@@ -74,32 +63,14 @@ internal static class DurableProviderCodec
         {
             using var stream = new MemoryStream(bytes[HeaderLength..].ToArray(), writable: false);
             using var reader = new BinaryReader(stream, Utf8);
-            Guid pair = ReadGuid(reader), network = ReadGuid(reader);
+            Guid pair = ReadGuid(reader);
+            Guid network = ReadGuid(reader);
             int budget = MaxEntries;
-            var stations = new StationCheckpoint[Count(reader, ref budget, 65536)];
-            for (int i = 0; i < stations.Length; i++)
-            {
-                Guid id = ReadGuid(reader);
-                int batches = reader.ReadInt32(), receipts = reader.ReadInt32();
-                bool deposits = ReadBool(reader), extractions = ReadBool(reader);
-                var inventory = new InventoryCheckpoint[Count(reader, ref budget, 65536)];
-                for (int j = 0; j < inventory.Length; j++) { inventory[j] = new(ReadGuid(reader), ReadManifest(reader)); }
-                stations[i] = new(id, new(batches, receipts, deposits, extractions, inventory, Array.Empty<ReceiptCheckpoint>()));
-            }
-            var journal = new DurableProviderReceipt[Count(reader, ref budget, MaxEntries)];
-            for (int i = 0; i < journal.Length; i++)
-            {
-                var key = new TransferKey(ReadGuid(reader), reader.ReadInt32(), reader.ReadInt32());
-                journal[i] = new(key, ReadGuid(reader), ReadGuid(reader), ReadManifest(reader), reader.ReadInt32());
-            }
+            StationCheckpoint[] stations = ReadStations(reader, ref budget);
+            DurableProviderReceipt[] journal = ReadJournal(reader, ref budget);
             long configurationRevision = version == 2 ? reader.ReadInt64() : 0;
             Require(stream.Position == stream.Length, "trailing bytes");
-            var byStation = journal.ToLookup(r => r.StationId);
-            for (int i = 0; i < stations.Length; i++)
-            {
-                StationCheckpoint station = stations[i];
-                stations[i] = station with { Port = station.Port with { Receipts = byStation[station.Id].Select(r => new ReceiptCheckpoint(r.Key, r.Result)).ToArray() } };
-            }
+            AttachJournalReceipts(stations, journal);
             var image = new DurableProviderImage(pair, network, revision, stations, journal, configurationRevision);
             Validate(image, version);
             return image;
@@ -107,6 +78,84 @@ internal static class DurableProviderCodec
         catch (Exception error) when (error is EndOfStreamException or DecoderFallbackException or OverflowException)
         {
             throw new InvalidDataException("Provider image is malformed.", error);
+        }
+    }
+
+    private static void WriteStation(BinaryWriter writer, StationCheckpoint station)
+    {
+        writer.Write(station.Id.ToByteArray());
+        PortCheckpoint port = station.Port;
+        writer.Write(port.MaxCargoBatches);
+        writer.Write(port.MaxReceipts);
+        writer.Write(port.AcceptDeposits);
+        writer.Write(port.AcceptExtractions);
+        writer.Write(port.Inventory.Length);
+        foreach (InventoryCheckpoint cargo in port.Inventory)
+        {
+            writer.Write(cargo.CargoId.ToByteArray());
+            WriteManifest(writer, cargo.Manifest);
+        }
+    }
+
+    private static void WriteReceipt(BinaryWriter writer, DurableProviderReceipt receipt)
+    {
+        writer.Write(receipt.Key.ParcelId.ToByteArray());
+        writer.Write(receipt.Key.Kind);
+        writer.Write(receipt.Key.Attempt);
+        writer.Write(receipt.CargoId.ToByteArray());
+        writer.Write(receipt.StationId.ToByteArray());
+        WriteManifest(writer, receipt.Manifest);
+        writer.Write(receipt.Result);
+    }
+
+    private static StationCheckpoint[] ReadStations(BinaryReader reader, ref int budget)
+    {
+        var stations = new StationCheckpoint[Count(reader, ref budget, 65536)];
+        for (int index = 0; index < stations.Length; index++)
+        {
+            stations[index] = ReadStation(reader, ref budget);
+        }
+        return stations;
+    }
+
+    private static StationCheckpoint ReadStation(BinaryReader reader, ref int budget)
+    {
+        Guid id = ReadGuid(reader);
+        int maxCargoBatches = reader.ReadInt32();
+        int maxReceipts = reader.ReadInt32();
+        bool acceptDeposits = ReadBool(reader);
+        bool acceptExtractions = ReadBool(reader);
+        var inventory = new InventoryCheckpoint[Count(reader, ref budget, 65536)];
+        for (int index = 0; index < inventory.Length; index++)
+        {
+            inventory[index] = new InventoryCheckpoint(ReadGuid(reader), ReadManifest(reader));
+        }
+        return new StationCheckpoint(id, new PortCheckpoint(maxCargoBatches, maxReceipts,
+            acceptDeposits, acceptExtractions, inventory, Array.Empty<ReceiptCheckpoint>()));
+    }
+
+    private static DurableProviderReceipt[] ReadJournal(BinaryReader reader, ref int budget)
+    {
+        var journal = new DurableProviderReceipt[Count(reader, ref budget, MaxEntries)];
+        for (int index = 0; index < journal.Length; index++)
+        {
+            var key = new TransferKey(ReadGuid(reader), reader.ReadInt32(), reader.ReadInt32());
+            journal[index] = new DurableProviderReceipt(key, ReadGuid(reader), ReadGuid(reader),
+                ReadManifest(reader), reader.ReadInt32());
+        }
+        return journal;
+    }
+
+    private static void AttachJournalReceipts(StationCheckpoint[] stations, DurableProviderReceipt[] journal)
+    {
+        var receiptsByStation = journal.ToLookup(receipt => receipt.StationId);
+        for (int index = 0; index < stations.Length; index++)
+        {
+            StationCheckpoint station = stations[index];
+            ReceiptCheckpoint[] receipts = receiptsByStation[station.Id]
+                .Select(receipt => new ReceiptCheckpoint(receipt.Key, receipt.Result))
+                .ToArray();
+            stations[index] = station with { Port = station.Port with { Receipts = receipts } };
         }
     }
 
