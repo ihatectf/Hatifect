@@ -82,7 +82,13 @@ internal static class UiSourceTypeValidation
         if (descriptor.Shape == UiDataShape.Collection && binding.Source is IUiSemanticCollectionSource collection
             && descriptor.ItemType is { } itemType && declaredClrType.IsGenericType)
         {
-            Type itemClr = declaredClrType.GetGenericArguments()[0];
+            CheckCollectionItems(collection, itemType, declaredClrType.GetGenericArguments()[0]);
+        }
+        if (descriptor.Shape == UiDataShape.Form && binding.Source is not IUiSemanticFormSource)
+            Error("A form declaration requires the semantic form source contract.");
+
+        void CheckCollectionItems(IUiSemanticCollectionSource collection, UiDataType itemType, Type itemClr)
+        {
             int count = collection.Count;
             if (count < 0) Error("Collection count must be nonnegative.");
             for (int index = 0; index < count; index++)
@@ -92,29 +98,35 @@ internal static class UiSourceTypeValidation
                     Error($"Collection item {index} violates its CLR type or required nullability.");
             }
         }
-        if (descriptor.Shape == UiDataShape.Form && binding.Source is not IUiSemanticFormSource)
-            Error("A form declaration requires the semantic form source contract.");
 
         void CheckClr(UiDataType type, Type clr)
         {
             Type? underlying = Nullable.GetUnderlyingType(clr);
             if (clr.IsValueType && type.Nullable != (underlying is not null)) Error("CLR value nullability differs from the descriptor.");
             Type value = underlying ?? clr;
-            if (type.Shape == UiDataShape.Collection)
+            switch (type.Shape)
             {
-                if (!value.IsGenericType || value.GetGenericTypeDefinition() != typeof(IReadOnlyList<>))
-                    Error("Collection CLR type must be IReadOnlyList<T>.");
-                else if (type.ItemType is { } item) CheckClr(item, value.GetGenericArguments()[0]);
-                return;
+                case UiDataShape.Collection:
+                    if (!value.IsGenericType || value.GetGenericTypeDefinition() != typeof(IReadOnlyList<>))
+                        Error("Collection CLR type must be IReadOnlyList<T>.");
+                    else if (type.ItemType is { } item)
+                        CheckClr(item, value.GetGenericArguments()[0]);
+                    return;
+                case UiDataShape.Selection:
+                    if (clr != typeof(UiSymbolId?)) Error("Selection CLR payload must be UiSymbolId?.");
+                    return;
+                case UiDataShape.Action:
+                    Error("An action is declared using Action metadata, not a data source.");
+                    return;
+                case UiDataShape.Form:
+                    if (value != typeof(IReadOnlyList<UiSemanticFormField>))
+                        Error("Form CLR payload must be the semantic field list.");
+                    return;
+                case UiDataShape.Validation:
+                    if (value != typeof(UiValidationResult))
+                        Error("Validation CLR payload must be UiValidationResult.");
+                    return;
             }
-            if (type.Shape == UiDataShape.Selection)
-            {
-                if (clr != typeof(UiSymbolId?)) Error("Selection CLR payload must be UiSymbolId?.");
-                return;
-            }
-            if (type.Shape == UiDataShape.Action) { Error("An action is declared using Action metadata, not a data source."); return; }
-            if (type.Shape == UiDataShape.Form) { if (value != typeof(IReadOnlyList<UiSemanticFormField>)) Error("Form CLR payload must be the semantic field list."); return; }
-            if (type.Shape == UiDataShape.Validation) { if (value != typeof(UiValidationResult)) Error("Validation CLR payload must be UiValidationResult."); return; }
             if ((type.TypeId == UiDataTypes.StringId && value != typeof(string))
                 || (type.TypeId == UiDataTypes.BooleanId && value != typeof(bool))
                 || (type.TypeId == UiDataTypes.NumberId && value != typeof(decimal))

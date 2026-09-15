@@ -24,22 +24,7 @@ public partial class UiPublishedCollection<T>
             if (change.SelectedItemId is not null && source is not IUiSelectableCollectionSource)
                 throw new ArgumentException("This collection does not support selection.", nameof(change));
 
-            var final = new Dictionary<int, T>();
-            foreach (var operation in change.Operations)
-            {
-                if (operation is not UiCollectionUpdate<T> update)
-                    throw new ArgumentException("Prepared updates cannot change collection structure.", nameof(change));
-                if (!update.ItemId.IsValid || update.Index < 0 || update.Index >= previous.Count
-                    || previous.GetItem(update.Index).Id != update.ItemId)
-                    throw new ArgumentException($"Collection index {update.Index} does not contain the addressed item '{update.ItemId}'.");
-                // Validate every sequential operation, even when a later update replaces it again.
-                if (source.Identify(update.Value) != update.ItemId)
-                    throw new ArgumentException("Update must preserve the addressed stable item ID.");
-                final[update.Index] = update.Value;
-            }
-
-            var values = final.ToList();
-            values.Sort(static (left, right) => left.Key.CompareTo(right.Key));
+            List<KeyValuePair<int, T>> values = ValidateAndCoalesceUpdates(source, previous, change);
             var items = new List<KeyValuePair<int, UiSemanticCollectionItem>>(values.Count);
             int supportingCount = previous.SupportingItemCount;
             foreach (var update in values)
@@ -62,6 +47,30 @@ public partial class UiPublishedCollection<T>
                 previous.Indices, supportingCount, changed ? checked(previous.Revision + 1) : previous.Revision,
                 change.SelectedItemId, change.Version, source.History(previous, change));
             return new(source, previous, snapshot);
+        }
+
+        private static List<KeyValuePair<int, T>> ValidateAndCoalesceUpdates(
+            UiPublishedCollection<T> source,
+            UiPublishedCollectionSnapshot<T> previous,
+            UiCollectionChange<T> change)
+        {
+            var final = new Dictionary<int, T>();
+            foreach (var operation in change.Operations)
+            {
+                if (operation is not UiCollectionUpdate<T> update)
+                    throw new ArgumentException("Prepared updates cannot change collection structure.", nameof(change));
+                if (!update.ItemId.IsValid || update.Index < 0 || update.Index >= previous.Count
+                    || previous.GetItem(update.Index).Id != update.ItemId)
+                    throw new ArgumentException($"Collection index {update.Index} does not contain the addressed item '{update.ItemId}'.");
+                // Validate every sequential operation, even when a later update replaces it again.
+                if (source.Identify(update.Value) != update.ItemId)
+                    throw new ArgumentException("Update must preserve the addressed stable item ID.");
+                final[update.Index] = update.Value;
+            }
+
+            List<KeyValuePair<int, T>> values = final.ToList();
+            values.Sort(static (left, right) => left.Key.CompareTo(right.Key));
+            return values;
         }
     }
 }
