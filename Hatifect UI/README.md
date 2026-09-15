@@ -18,10 +18,10 @@ Consumer описывает смысл интерфейса и действия.
 
 Overloads `UiExperienceBuilder` с явным `UiSymbolId` сохраняют ID элемента независимо от локализованного имени, включая пробелы. `UiSemanticGraph` переносит отдельные IDs, aliases и fallback labels через binding и metadata; Runtime разрешает visual role по alias.
 
-[Локализованный текст на сохранённом Experience](../docs/UI_TEXT_PROJECTION.md): `UiLocalizedText`, `LocalizeDisplayName/Element/Action` и typed `FormatText<T>` позволяют повторно составить подписи и read-only значения из одного captured locale/publication snapshot. Исходные labels остаются authoring fallback, action/source identities сохраняются. Игровое переключение языка и Flow consumer integration имеют отдельную приёмку U04/F12.
+[Локализованный текст на сохранённом Experience](../docs/UI_TEXT_PROJECTION.md): `UiLocalizedText`, `LocalizeDisplayName/Element/Action` и typed `FormatText<T>` позволяют повторно составить подписи и read-only значения из одного captured locale/publication snapshot. Исходные labels остаются authoring fallback, action/source identities сохраняются. Игровое переключение языка и Flow consumer integration имеют отдельную приёмку «Адаптация интерфейса к окружению»/«Просмотр состояния Flowline».
 
 Из корня репозитория: `./tools/hatifect-test ui`, затем `./tools/hatifect-check --platform` для изменений Stardew host. Бюджеты реальных кадров находятся в `PERFORMANCE_BUDGETS.json`, требования к runtime-отчёту — в `HOST_ACCEPTANCE_REQUIREMENTS.json`. Статические тесты не заменяют измерения в игре.
 
 Общие границы: [архитектура](../ARCHITECTURE.md). Команды: [разработка](../docs/DEVELOPMENT.md).
 
-[Roadmap UI и Flowline](../docs/ROADMAP.md) описывает semantic-v2, Quick/View/Exact authoring, общие компоненты, transactional reload и editor/preview. Это план развития текущего framework; перечисленные будущие API не считаются уже опубликованными.
+[План разработки интерфейса и Flowline](../docs/ROADMAP.md) отделяет готовые возможности от оставшейся работы: простое создание экранов, точная геометрия, общие компоненты, безопасное обновление открытых окон, редактор и предпросмотр. Наличие задачи в плане не означает, что соответствующий API уже опубликован.

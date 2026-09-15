@@ -1,6 +1,8 @@
 # Fractional layout and root reachability
 
-Status: **diagnostic candidate; final affected tests PASS; native/common acceptance pending**. Source [`6fdb045`](https://github.com/ihatectf/Hatifect/commit/6fdb0454a8639a57772bb4d8c166e8b6a4a8b4a8), based on common d881782. Full U05/U06/U07/I01 and the general geometry acceptance remain open.
+Статусы и следующие шаги в этом техническом отчёте относятся к указанным сборкам. Текущая очередь — в [плане разработки](ROADMAP.md).
+
+Status: **diagnostic candidate; final affected tests PASS; native/common acceptance pending**. Source [`6fdb045`](https://github.com/ihatectf/Hatifect/commit/6fdb0454a8639a57772bb4d8c166e8b6a4a8b4a8), based on common d881782. Full «Обновление интерфейса без лишних пересчётов»/«Общие компоненты, темы и подсказки»/«Простое создание диалогов и экранов»/«Интеграция Chests Anywhere» and the general geometry acceptance remain open.
 
 ## Observed failure and owning change
 
@@ -36,6 +38,6 @@ Owner raw evidence: `artifacts/fractional-clip/post-review-candidate.json` conta
 
 Independent source review is **not a full PASS**. Its initial maximum counterexample was corrected and covered by the final test. A general, pre-existing associativity gap remains: origin993.0704345703125, allocations861.4312133789062 and348.369140625 produce child bottom2202.870849609375 versus parent bottom2202.87060546875. Baseline and candidate have the same arithmetic result; local-origin accumulation reduces cumulative drift but is not a universal containment proof.
 
-Flow Network and CA both reach generic scene arrangement through semantic slots, collections and status elements. Native line measurement uses `lineCount * typography.Size * typography.LineHeight`; RU collection sizing and constrained slack distribution also introduce fractional allocations. The exact remaining counterexample has not been derived from a real Flow/CA snapshot, so neither its production reachability nor its absence is proven. It remains relevant to complete U05/U06 geometry acceptance and must not be silently waived.
+Flow Network and CA both reach generic scene arrangement through semantic slots, collections and status elements. Native line measurement uses `lineCount * typography.Size * typography.LineHeight`; RU collection sizing and constrained slack distribution also introduce fractional allocations. The exact remaining counterexample has not been derived from a real Flow/CA snapshot, so neither its production reachability nor its absence is proven. It remains relevant to complete «Обновление интерфейса без лишних пересчётов»/«Общие компоненты, темы и подсказки» geometry acceptance and must not be silently waived.
 
 GQ authorized a bounded **diagnostic** candidate after affected tests for a fresh RU75 run, preserving the generic gap and all original acceptance criteria; final78-tested6fdb045 was handed off on that basis. Next: common exact producer/package checks, actual RU75 Result/scroll/focus/render evidence, then the remaining profile/input matrix and a concrete generic-geometry follow-up. NativeRU75, fullC/G/P and PERF for6fdb045 remain pending.

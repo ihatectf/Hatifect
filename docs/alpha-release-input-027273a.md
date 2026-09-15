@@ -1,0 +1,37 @@
+# Проверка ввода в альфе — 027273a
+
+Статусы и следующие шаги в этом техническом отчёте относятся к указанным сборкам. Текущая очередь — в [плане разработки](ROADMAP.md).
+
+Source: `027273aa1f2c9154d6f3c59eb3d7288d5e01b7cd`. Проверено 2026-09-08. Изменён один exact-harness файл наблюдения ввода; production keybind, guards, доменные правила и исходные acceptance checks сохранены.
+
+## Сборка и пакеты
+
+- Owner scoped `run-q9mwh1hk`: PASS992, два индивидуально проверенных TRX (771 Flow +221 Stardew).
+- G `run-gjjyon8c`: PASS2136 .NET +392 Python +13 metadata; проверены 10 actual TRX и 689 source SHA. Предыдущий `run-4yebxfub` завершился FAIL на restore NU1301 repository signatures в sandbox, до .NET-тестов.
+- P `hatifect-ui-ca-isolated.u5p6zow5`: PASS101, восемь packages, 47 projection files; source UI отсутствует у consumer. Предыдущий `v3xehgxd` — BLOCKED: локальный сокет VSTest недоступен в sandbox, ноль выполненных тестов.
+- Prepare `run-a2lfpu42`: PASS14 deployed-to-producer DLL; все восемь UI DLL совпали с пакетами P.
+- [CI34257864644](https://github.com/ihatectf/Hatifect/actions/runs/34257864644): SUCCESS на exact source SHA.
+
+## Обычный ввод: FAIL, причина зафиксирована
+
+Request `edb6540e-0fc0-415c-9e21-4d519ff70fad`, scenario `flow.ui.player.input`, завершился **FAIL** через 895782 мс. Все13 checks получили FAIL. Игра перешла на следующий день во время стадии `ordinary-entry-source`; SMAPI log подтверждает NewDay, нормальный SaveGame.Save и затем ошибки harness `Unexpected Saving event` / `Unexpected Saved event`. Это не успешная приёмка сохранения в заданном пользовательском пути.
+
+До последнего сохранённого observation (Update52859) GameActive=true, raw K=false, SMAPI/Binding=None, suppression=false, ButtonsChanged/K pressed/K released=0. Сохранён один исходный переход, truncation=false и telemetry failure=null; entryAttempts/openings/commands пусты. CUA перемещал указатель и менял выбранный инструмент колесом; pressKey k/K, typeText k и правый клик не открыли требуемые окна. Эти данные не устанавливают дефект production keybind или guards.
+
+Для различения ограничений автоматизации и игры был запрошен один физический K. Ответ и аппаратное событие не получены; запрос относился к уже завершённой игре и больше не применяется к открытому окну. Hardware/ordinary-input acceptance остаётся открытой. Последующие пользовательские действия требуют свежего согласованного диагностического запуска; повторять этот прогон без новой информации нецелесообразно.
+
+Процесс4069 завершился с кодом0, teardownErrors пуст. Проверены фактические SHA восстановленных настроек и отсутствие request-owned сейва. Сохранены19 raw файлов и их SHA; повторно сверены689 исходников и14 DLL. Пользовательский executor оставлен в Ready.
+
+## Архив кандидата
+
+`artifacts/f13-root-common/installable-candidate-027273a/Hatifect-clean-baseline.zip`: 21 файл/14 DLL/три модуля. SHA-256 архива: `c1d0c75897376d1bb040b62871ee921ae5df32c0854e11db76a2a7b5a4bc95b7`. Canonical assemble/make-archive и verify-package после отдельной распаковки прошли; все DLL и полный candidate fingerprint совпадают с prepare. Рядом сохранены standalone инструкция, manifest каждого файла и validation-evidence.zip с11 actual TRX и четырьмя аудитами.
+
+Runtime fingerprint: `3d8c5e800afbdda9487b4ca537d473a3a24c50e0239ca2a1468d052fed0581e3`. Candidate fingerprint: `9c961283d71624077d17fa49fa404af3f645b7fb270fa8c82f6afa38e4f225e3`. Архив остаётся кандидатом для изолированных испытаний; первая игра непосредственно из этой распаковки и целостная «Приёмка первой альфы» не приняты. Для этой операции не выставлялся флаг release.sh TestsPassed; actual G evidence хранится отдельно.
+
+## Следующий шаг и evidence
+
+UI завершил causal RED/implementation/GREEN для частичного «Обновление интерфейса без лишних пересчётов» structural reuse: run-7c6bk74n воспроизвёл два дефекта, run-zqiuuyd6 дал 1040 PASS в семи actual TRX при неизменных новых тестах. Root отдельно проверил SHA всех семи TRX, индивидуальные outcomes и четыре source SHA; evidence: artifacts/f13-root-common/u05-structural-review/green-evidence-audit.json. Изменения «Обновление интерфейса без лишних пересчётов» ещё не интегрированы в этот кандидат. Flow готовит точные восемь профилей полного Network Window EN/RU×75/100/125/150, начиная с75: существующая scale-проверка synthetic Parcel view не заменяет видимость route/send Result. Исходные11 prepared и13 ordinary checks сохраняются; новые визуальные результаты не станут доказательством физического ввода.
+
+Root audits: `artifacts/f13-root-common/input-telemetry-final/review.json`, `combined-027273a-run-gjjyon8c-audit.json`, `p-combined-027273a-hatifect-ui-ca-isolated.u5p6zow5-audit.json`, `prepare-027273a-audit.json`, `native-input-edb6540e-audit.json`. Raw native copies: `native-input-failed-edb6540e/`. Артефакты локальны и не входят в Git.
+
+[Предыдущая chest-матрица57a9bb6](alpha-release-runtime-57a9bb6.md) сохраняет свою идентичность; она не переназначается новым DLL. «Управление диагностической перевозкой»/«Настройка станций и маршрутов»/«Отправка груза и работа с ошибками» и «Приёмка первой альфы» остаются IN_PROGRESS.

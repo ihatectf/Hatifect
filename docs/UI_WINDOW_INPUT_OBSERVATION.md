@@ -1,6 +1,8 @@
 # Ordinary Window input observation
 
-Status: **implementation/scoped validation PASS; current common and native acceptance pending**. Initial owner source `c00266fd18876c8a2ca329e901e3512c1c969f58`; current local candidate `b23f54c96aee60a8a27f4ec73bb006e9d58a873a`. This is a bounded M3 prerequisite under U05/U06; full U05/U06/U07 and the input/scale/controller matrix remain open.
+Статусы и следующие шаги в этом техническом отчёте относятся к указанным сборкам. Текущая очередь — в [плане разработки](ROADMAP.md).
+
+Status: **implementation/scoped validation PASS; current common and native acceptance pending**. Initial owner source `c00266fd18876c8a2ca329e901e3512c1c969f58`; current local candidate `b23f54c96aee60a8a27f4ec73bb006e9d58a873a`. This is a bounded «Первая игровая альфа» prerequisite under «Обновление интерфейса без лишних пересчётов»/«Общие компоненты, темы и подсказки»; full «Обновление интерфейса без лишних пересчётов»/«Общие компоненты, темы и подсказки»/«Простое создание диалогов и экранов» and the input/scale/controller matrix remain open.
 
 The observer attaches only in the exact automated TestHarness environment for `flow.ui.player.input`. It observes the actual active semantic Window after its normal production trigger. It does not open a menu, dispatch an action, type text, write source state, or synchronize layout. Flow owns the trigger, intended field, commands, inventories and final domain checks. UI owns semantic geometry, focus, native input correlation and completed frame evidence.
 
@@ -36,7 +38,7 @@ Fresh exact request `a8624e82-fcdb-4fdf-9a5f-a884d231e36c` on predecessor `75636
 
 ## Exact e9cfffc runtime checkpoint
 
-The later local candidate `e9cfffc36922791c93d26457d3be5719378ecb16` includes `b23f54c` together with the F19 admission-feedback changes. Clean exact preparation `run-58sg01xm` and `save.bootstrap` request `5a3e51fd-8107-4978-a41b-6f8ccfdacea2` passed. Exact `flow.ui.player.input` request `b0e6af20-c6c4-4bdf-bf7f-58bd2c9f0092` then stopped before its first semantic step because `CGPreflightPostEventAccess()` was false; `currentStep` is null, the event list is empty, no Flow progress file exists, and isolated options and working-copy cleanup both passed. This request does not test the new `clickPoint`, raw K delivery, capture retention or any player action. Full identities and evidence limits are recorded in [Q02_RUNTIME_E9CFFFC.md](Q02_RUNTIME_E9CFFFC.md).
+The later local candidate `e9cfffc36922791c93d26457d3be5719378ecb16` includes `b23f54c` together with the «Отправка груза и работа с ошибками» admission-feedback changes. Clean exact preparation `run-58sg01xm` and `save.bootstrap` request `5a3e51fd-8107-4978-a41b-6f8ccfdacea2` passed. Exact `flow.ui.player.input` request `b0e6af20-c6c4-4bdf-bf7f-58bd2c9f0092` then stopped before its first semantic step because `CGPreflightPostEventAccess()` was false; `currentStep` is null, the event list is empty, no Flow progress file exists, and isolated options and working-copy cleanup both passed. This request does not test the new `clickPoint`, raw K delivery, capture retention or any player action. Full identities and evidence limits are recorded in [Проверка альфы в игре — e9cfffc](alpha-release-runtime-e9cfffc.md).
 
 ## Verification
 

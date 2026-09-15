@@ -2,7 +2,7 @@
 
 The Experience authoring API can attach localized labels and typed formatters to an existing semantic model. Runtime resolves them while composing a scene, using one locale and the values captured for that composition. Changing the locale does not require a new Experience, new semantic IDs or replacement action objects.
 
-This is the bounded common U04/F12 text contract. Native environment propagation and the Flow consumer migration have their own acceptance; this API alone does not establish complete U04 or F12 readiness.
+This is the bounded common «Адаптация интерфейса к окружению»/«Просмотр состояния Flowline» text contract. Native environment propagation and the Flow consumer migration have their own acceptance; this API alone does not establish complete «Адаптация интерфейса к окружению» or «Просмотр состояния Flowline» readiness.
 
 ## Authoring
 

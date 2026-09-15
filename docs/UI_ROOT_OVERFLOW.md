@@ -1,6 +1,8 @@
 # Прокрутка высокого centered overlay
 
-Статус: **implementation PASS; native acceptance IN_PROGRESS**. Source [`4a28752`](https://github.com/ihatectf/Hatifect/commit/4a28752efd7df46c7b415198e8781839635da3ce). Это исправление UI Runtime для существующего Network consumer в F13. Полные U05, U06 и F13 остаются открытыми.
+Статусы и следующие шаги в этом техническом отчёте относятся к указанным сборкам. Текущая очередь — в [плане разработки](ROADMAP.md).
+
+Статус: **implementation PASS; native acceptance IN_PROGRESS**. Source [`4a28752`](https://github.com/ihatectf/Hatifect/commit/4a28752efd7df46c7b415198e8781839635da3ce). Это исправление UI Runtime для существующего Network consumer в «Управление диагностической перевозкой». Полные «Обновление интерфейса без лишних пересчётов», «Общие компоненты, темы и подсказки» и «Управление диагностической перевозкой» остаются открытыми.
 
 ## Причина и поведение
 
