@@ -21,7 +21,21 @@ internal static class UiCollectionIndexChanges
         ArgumentNullException.ThrowIfNull(visit);
         if (afterVersion < 0 || afterVersion > version) return false;
         if (afterVersion == version) return true;
-        int start = -1;
+        if (!TryFindCompleteChain(version, history, afterVersion, out int start)) return false;
+
+        for (int index = start; index < history.Count; index++)
+            foreach (UiCollectionOperation<T> operation in history[index].Operations)
+            {
+                Project(operation, out UiCollectionIndexChange projected);
+                visit(projected);
+            }
+        return true;
+    }
+
+    private static bool TryFindCompleteChain<T>(long version, IReadOnlyList<UiCollectionChange<T>> history,
+        long afterVersion, out int start)
+    {
+        start = -1;
         for (int index = 0; index < history.Count; index++)
             if (history[index].BaseVersion == afterVersion) { start = index; break; }
         if (start < 0) return false;
@@ -37,12 +51,6 @@ internal static class UiCollectionIndexChanges
             expected = change.Version;
         }
         if (expected != version) return false;
-        for (int index = start; index < history.Count; index++)
-            foreach (UiCollectionOperation<T> operation in history[index].Operations)
-            {
-                Project(operation, out UiCollectionIndexChange projected);
-                visit(projected);
-            }
         return true;
     }
 

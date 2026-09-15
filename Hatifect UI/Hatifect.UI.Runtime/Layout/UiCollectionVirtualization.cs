@@ -334,42 +334,7 @@ internal sealed class UiCollectionVirtualizer
         AdaptiveRowHeightIndex heights = state.Heights;
 
         AnchorResolution anchor = ResolveAnchor(collection, heights, columns, viewport.Height, request);
-        float offset = ClampOffset(
-            heights.Prefix(anchor.Row) + anchor.Anchor.LocalOffset,
-            heights.TotalExtent,
-            viewport.Height);
-
-        bool converged = false;
-        for (int pass = 0; pass < 8; pass++)
-        {
-            (int firstRow, int endRow) = PixelWindow(heights, offset, viewport.Height);
-            MeasureRows(
-                state,
-                collection,
-                firstRow,
-                endRow,
-                columns,
-                scope.ItemWidth,
-                lineHeight,
-                typography,
-                measurementContext,
-                inputPrompt);
-            float refinedOffset = ClampOffset(
-                heights.Prefix(anchor.Row) + anchor.Anchor.LocalOffset,
-                heights.TotalExtent,
-                viewport.Height);
-            (int refinedFirst, int refinedEnd) = PixelWindow(heights, refinedOffset, viewport.Height);
-            offset = refinedOffset;
-            if (firstRow == refinedFirst && endRow == refinedEnd)
-            {
-                converged = true;
-                break;
-            }
-        }
-        if (!converged)
-            throw new UiLayoutException(
-                $"Adaptive collection '{collection.Id}' did not converge after bounded height refinement.");
-
+        float offset = RefineVisibleRows();
         (int arrangedFirst, int arrangedEnd) = PixelWindow(heights, offset, viewport.Height);
         UiVirtualizedItemLayout[] items = ArrangeItems(
             collection,
@@ -398,6 +363,39 @@ internal sealed class UiCollectionVirtualizer
             anchor.Anchor,
             anchor.Index,
             items);
+
+        float RefineVisibleRows()
+        {
+            float offset = ClampOffset(
+                heights.Prefix(anchor.Row) + anchor.Anchor.LocalOffset,
+                heights.TotalExtent,
+                viewport.Height);
+            for (int pass = 0; pass < 8; pass++)
+            {
+                (int firstRow, int endRow) = PixelWindow(heights, offset, viewport.Height);
+                MeasureRows(
+                    state,
+                    collection,
+                    firstRow,
+                    endRow,
+                    columns,
+                    scope.ItemWidth,
+                    lineHeight,
+                    typography,
+                    measurementContext,
+                    inputPrompt);
+                float refinedOffset = ClampOffset(
+                    heights.Prefix(anchor.Row) + anchor.Anchor.LocalOffset,
+                    heights.TotalExtent,
+                    viewport.Height);
+                (int refinedFirst, int refinedEnd) = PixelWindow(heights, refinedOffset, viewport.Height);
+                offset = refinedOffset;
+                if (firstRow == refinedFirst && endRow == refinedEnd)
+                    return offset;
+            }
+            throw new UiLayoutException(
+                $"Adaptive collection '{collection.Id}' did not converge after bounded height refinement.");
+        }
     }
 
     private void MeasureRows(
@@ -533,7 +531,7 @@ internal sealed class UiCollectionVirtualizer
                 viewport.Y + rowTop(row) - offset,
                 itemWidth,
                 height);
-            MeasuredItem content = !measureExactly
+            MeasuredItem measurement = !measureExactly
                 ? EstimateUniformItem(collection, item, lineHeight, measurementContext, inputPrompt)
                 : MeasureItem(
                     state,
@@ -544,30 +542,12 @@ internal sealed class UiCollectionVirtualizer
                     typography!,
                     measurementContext,
                     inputPrompt);
-            float iconSpace = item.Icon != null ? lineHeight + 4 : 0;
-            UiRect? iconBounds = item.Icon != null ? new UiRect(bounds.X + content.HorizontalPadding,
-                bounds.Y + content.VerticalPadding, lineHeight, lineHeight) : null;
-            var labelBounds = new UiRect(
-                bounds.X + content.HorizontalPadding + iconSpace,
-                bounds.Y + content.VerticalPadding,
-                Math.Max(0, bounds.Width - content.HorizontalPadding * 2 - iconSpace - inputPrompt.ReservedWidth),
-                Math.Min(content.LabelHeight, Math.Max(0, bounds.Height - content.VerticalPadding * 2)));
-            UiRect? supportingBounds = content.SupportingHeight > 0
-                ? new UiRect(
-                    labelBounds.X,
-                    labelBounds.Bottom + content.Gap,
-                    labelBounds.Width,
-                    Math.Min(
-                        content.SupportingHeight,
-                        Math.Max(0, bounds.Bottom - content.VerticalPadding - labelBounds.Bottom - content.Gap)))
-                : null;
-            UiRect? inputPromptBounds = inputPrompt.Width > 0 && inputPrompt.Height > 0
-                ? new UiRect(
-                    bounds.Right - content.HorizontalPadding - inputPrompt.Width,
-                    bounds.Y + Math.Max(content.VerticalPadding, (bounds.Height - inputPrompt.Height) / 2),
-                    inputPrompt.Width,
-                    inputPrompt.Height)
-                : null;
+            ItemContentBounds content = ArrangeItemContent(
+                item,
+                bounds,
+                measurement,
+                lineHeight,
+                inputPrompt);
             UiSymbolId node = state.NodeFor(collection, item.Id);
             UiTooltipLayout? tooltip = TooltipLayout(
                 state,
@@ -581,14 +561,61 @@ internal sealed class UiCollectionVirtualizer
                 index,
                 item,
                 bounds,
-                labelBounds,
-                supportingBounds,
+                content.Label,
+                content.Supporting,
                 collection.Recipe.IsAdaptive ? UiTextOverflow.Wrap : UiTextOverflow.Ellipsis,
                 UiRect.Intersect(clip, bounds),
                 collection.VisualFor(node, item.Id),
-                collection.IsSelected(item.Id), iconBounds, inputPromptBounds, tooltip);
+                collection.IsSelected(item.Id), content.Icon, content.InputPrompt, tooltip);
         }
         return items;
+    }
+
+    private static ItemContentBounds ArrangeItemContent(
+        UiSemanticCollectionItem item,
+        UiRect bounds,
+        MeasuredItem measurement,
+        float lineHeight,
+        UiCollectionPromptMetrics inputPrompt)
+    {
+        float iconSpace = item.Icon != null ? lineHeight + 4 : 0;
+        UiRect? iconBounds = item.Icon != null
+            ? new UiRect(
+                bounds.X + measurement.HorizontalPadding,
+                bounds.Y + measurement.VerticalPadding,
+                lineHeight,
+                lineHeight)
+            : null;
+        var labelBounds = new UiRect(
+            bounds.X + measurement.HorizontalPadding + iconSpace,
+            bounds.Y + measurement.VerticalPadding,
+            Math.Max(
+                0,
+                bounds.Width - measurement.HorizontalPadding * 2 - iconSpace - inputPrompt.ReservedWidth),
+            Math.Min(
+                measurement.LabelHeight,
+                Math.Max(0, bounds.Height - measurement.VerticalPadding * 2)));
+        UiRect? supportingBounds = measurement.SupportingHeight > 0
+            ? new UiRect(
+                labelBounds.X,
+                labelBounds.Bottom + measurement.Gap,
+                labelBounds.Width,
+                Math.Min(
+                    measurement.SupportingHeight,
+                    Math.Max(
+                        0,
+                        bounds.Bottom - measurement.VerticalPadding - labelBounds.Bottom - measurement.Gap)))
+            : null;
+        UiRect? inputPromptBounds = inputPrompt.Width > 0 && inputPrompt.Height > 0
+            ? new UiRect(
+                bounds.Right - measurement.HorizontalPadding - inputPrompt.Width,
+                bounds.Y + Math.Max(
+                    measurement.VerticalPadding,
+                    (bounds.Height - inputPrompt.Height) / 2),
+                inputPrompt.Width,
+                inputPrompt.Height)
+            : null;
+        return new ItemContentBounds(iconBounds, labelBounds, supportingBounds, inputPromptBounds);
     }
 
     private UiTooltipLayout? TooltipLayout(
@@ -813,6 +840,12 @@ internal sealed class UiCollectionVirtualizer
         float HorizontalPadding,
         float VerticalPadding,
         float Gap);
+
+    private readonly record struct ItemContentBounds(
+        UiRect? Icon,
+        UiRect Label,
+        UiRect? Supporting,
+        UiRect? InputPrompt);
 
     private readonly record struct AnchorResolution(
         UiCollectionScrollAnchor Anchor,
@@ -1093,23 +1126,36 @@ internal sealed class UiCollectionVirtualizer
             }
             // History is bounded, but scanning all cached rows for every retained Move is
             // needlessly multiplicative. Merge ranges once, then visit the exact cache once.
-            ranges.Sort(static (left, right) => left.First.CompareTo(right.First));
-            int mergedCount = 0;
-            for (int index = 0; index < ranges.Count; index++)
-            {
-                var range = ranges[index];
-                if (mergedCount > 0 && range.First <= ranges[mergedCount - 1].End)
-                {
-                    var previous = ranges[mergedCount - 1];
-                    ranges[mergedCount - 1] = (previous.First, Math.Max(previous.End, range.End));
-                }
-                else ranges[mergedCount++] = range;
-            }
+            int mergedCount = MergeOverlappingRanges(ranges);
             LinkedListNode<RowEntry>? current = _recency.First;
             while (current is not null)
             {
                 LinkedListNode<RowEntry>? next = current.Next;
                 int row = current.Value.Row;
+                if (ContainsRow(ranges, mergedCount, row))
+                    ForgetExact(row);
+                current = next;
+            }
+
+            static int MergeOverlappingRanges(List<(int First, int End)> ranges)
+            {
+                ranges.Sort(static (left, right) => left.First.CompareTo(right.First));
+                int mergedCount = 0;
+                for (int index = 0; index < ranges.Count; index++)
+                {
+                    var range = ranges[index];
+                    if (mergedCount > 0 && range.First <= ranges[mergedCount - 1].End)
+                    {
+                        var previous = ranges[mergedCount - 1];
+                        ranges[mergedCount - 1] = (previous.First, Math.Max(previous.End, range.End));
+                    }
+                    else ranges[mergedCount++] = range;
+                }
+                return mergedCount;
+            }
+
+            static bool ContainsRow(List<(int First, int End)> ranges, int mergedCount, int row)
+            {
                 int low = 0, high = mergedCount;
                 while (low < high)
                 {
@@ -1117,8 +1163,7 @@ internal sealed class UiCollectionVirtualizer
                     if (ranges[middle].First <= row) low = middle + 1;
                     else high = middle;
                 }
-                if (low > 0 && row < ranges[low - 1].End) ForgetExact(row);
-                current = next;
+                return low > 0 && row < ranges[low - 1].End;
             }
         }
 

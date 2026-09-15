@@ -319,34 +319,7 @@ internal sealed partial class DurableCargoProvider : IDisposable
         _operating = true;
         try
         {
-            StationCheckpoint station = _stations[port.Station];
-            PortCheckpoint state = station.Port;
-            if (state.Receipts.Length >= state.MaxReceipts) { throw new InvalidOperationException("Provider receipt capacity is exhausted."); }
-            ManifestCheckpoint manifest = CheckpointValues.Capture(transfer.Manifest);
-            InventoryCheckpoint? existing = state.Inventory.SingleOrDefault(c => c.CargoId == transfer.CargoId.Value);
-            bool accepted = transfer.Kind switch
-            {
-                PortTransferKind.Extract => state.AcceptExtractions && existing?.Manifest == manifest,
-                PortTransferKind.Deposit => state.AcceptDeposits && existing is null && state.Inventory.Length < state.MaxCargoBatches
-                    && !_inventory.ContainsKey(transfer.CargoId.Value),
-                _ => throw new InvalidOperationException("Unknown provider transfer kind.")
-            };
-            PortResult result = accepted ? PortResult.Applied : PortResult.Rejected;
-            InventoryCheckpoint[] inventory = state.Inventory;
-            if (accepted)
-            {
-                inventory = transfer.Kind == PortTransferKind.Extract
-                    ? inventory.Where(c => c.CargoId != transfer.CargoId.Value).ToArray()
-                    : inventory.Append(new InventoryCheckpoint(transfer.CargoId.Value, manifest)).OrderBy(c => c.CargoId).ToArray();
-            }
-            var receipt = new DurableProviderReceipt(key, transfer.CargoId.Value, port.Station, manifest, (int)result);
-            PortCheckpoint nextPort = state with { Inventory = inventory, Receipts = state.Receipts.Append(new ReceiptCheckpoint(key, (int)result)).ToArray() };
-            DurableProviderImage next = _image with
-            {
-                Revision = checked(_image.Revision + 1),
-                Stations = _image.Stations.Select(s => s.Id == port.Station ? s with { Port = nextPort } : s).ToArray(),
-                Receipts = _image.Receipts.Append(receipt).ToArray()
-            };
+            DurableProviderImage next = PrepareTransferImage(port, transfer, key, out PortResult result);
             byte[] bytes = DurableProviderCodec.Encode(next);
             // Reserve the index allocation before publication. No allocation or
             // callback is needed between a successful publish and state adoption.
@@ -354,15 +327,58 @@ internal sealed partial class DurableCargoProvider : IDisposable
             Dictionary<Guid, StationCheckpoint> stations = next.Stations.ToDictionary(s => s.Id);
             Dictionary<Guid, (Guid Station, ManifestCheckpoint Manifest)> inventoryIndex = BuildInventoryIndex(next);
             Publish(bytes, overwrite: true);
-            _image = next; _receipts = index; _stations = stations; _inventory = inventoryIndex;
+            _image = next;
+            _receipts = index;
+            _stations = stations;
+            _inventory = inventoryIndex;
             return result;
         }
         catch
         {
-            _faulted = true; _armed = null; _armedAdmission = null; _armedRegistration = null; _armedProvision = null; _armedCapacity = null;
+            MarkPublicationUncertain();
             throw;
         }
         finally { _operating = false; }
+    }
+
+    private DurableProviderImage PrepareTransferImage(
+        ProviderPort port, PortTransfer transfer, TransferKey key, out PortResult result)
+    {
+        StationCheckpoint station = _stations[port.Station];
+        PortCheckpoint state = station.Port;
+        if (state.Receipts.Length >= state.MaxReceipts)
+            throw new InvalidOperationException("Provider receipt capacity is exhausted.");
+
+        ManifestCheckpoint manifest = CheckpointValues.Capture(transfer.Manifest);
+        InventoryCheckpoint? existing = state.Inventory.SingleOrDefault(c => c.CargoId == transfer.CargoId.Value);
+        bool accepted = transfer.Kind switch
+        {
+            PortTransferKind.Extract => state.AcceptExtractions && existing?.Manifest == manifest,
+            PortTransferKind.Deposit => state.AcceptDeposits && existing is null && state.Inventory.Length < state.MaxCargoBatches
+                && !_inventory.ContainsKey(transfer.CargoId.Value),
+            _ => throw new InvalidOperationException("Unknown provider transfer kind.")
+        };
+        result = accepted ? PortResult.Applied : PortResult.Rejected;
+        InventoryCheckpoint[] inventory = state.Inventory;
+        if (accepted)
+        {
+            inventory = transfer.Kind == PortTransferKind.Extract
+                ? inventory.Where(c => c.CargoId != transfer.CargoId.Value).ToArray()
+                : inventory.Append(new InventoryCheckpoint(transfer.CargoId.Value, manifest)).OrderBy(c => c.CargoId).ToArray();
+        }
+
+        var receipt = new DurableProviderReceipt(key, transfer.CargoId.Value, port.Station, manifest, (int)result);
+        PortCheckpoint nextPort = state with
+        {
+            Inventory = inventory,
+            Receipts = state.Receipts.Append(new ReceiptCheckpoint(key, (int)result)).ToArray()
+        };
+        return _image with
+        {
+            Revision = checked(_image.Revision + 1),
+            Stations = _image.Stations.Select(s => s.Id == port.Station ? s with { Port = nextPort } : s).ToArray(),
+            Receipts = _image.Receipts.Append(receipt).ToArray()
+        };
     }
 
     private PortResult ReadResult(ProviderPort port, PortTransfer transfer)
@@ -405,7 +421,7 @@ internal sealed partial class DurableCargoProvider : IDisposable
             // Keep the lease until the coordinating session fences its runtime.
             // Even read/reconciliation is forbidden until a fresh Open resolves
             // whether the atomic rename actually committed.
-            _faulted = true; _armed = null; _armedAdmission = null; _armedRegistration = null; _armedProvision = null; _armedCapacity = null;
+            MarkPublicationUncertain();
             if (own)
             {
                 try { File.Delete(candidate); }
@@ -413,6 +429,16 @@ internal sealed partial class DurableCargoProvider : IDisposable
             }
             throw;
         }
+    }
+
+    private void MarkPublicationUncertain()
+    {
+        _faulted = true;
+        _armed = null;
+        _armedAdmission = null;
+        _armedRegistration = null;
+        _armedProvision = null;
+        _armedCapacity = null;
     }
 
     private static void RequirePayload(DurableProviderReceipt receipt, PortTransfer transfer)

@@ -15,11 +15,13 @@ internal static class UiTooltipPlacement
         float x = Math.Clamp(anchor.X, viewport.X, Math.Max(viewport.X, viewport.Right - width));
         float below = anchor.Bottom + gap;
         float above = anchor.Y - gap - height;
-        float y = below + height <= viewport.Bottom
-            ? below
-            : above >= viewport.Y
-                ? above
-                : Math.Clamp(below, viewport.Y, Math.Max(viewport.Y, viewport.Bottom - height));
+        float y;
+        if (below + height <= viewport.Bottom)
+            y = below;
+        else if (above >= viewport.Y)
+            y = above;
+        else
+            y = Math.Clamp(below, viewport.Y, Math.Max(viewport.Y, viewport.Bottom - height));
         return new UiRect(x, y, width, height);
     }
 }

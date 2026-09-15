@@ -69,8 +69,8 @@ public sealed class UiLexer
         }
 
         _column = indentation;
-        bool blank = _position >= _source.Length || _source[_position] is '\r' or '\n';
-        if (!blank)
+        bool isBlankLine = _position >= _source.Length || _source[_position] is '\r' or '\n';
+        if (!isBlankLine)
             EmitIndentation(indentation, lineStart);
 
         while (_position < _source.Length && _source[_position] is not '\r' and not '\n')
@@ -87,61 +87,13 @@ public sealed class UiLexer
             int column = _column;
             if (char.IsLetter(current) || current == '_')
             {
-                _position++;
-                _column++;
-                while (_position < _source.Length)
-                {
-                    char c = _source[_position];
-                    if (!char.IsLetterOrDigit(c) && c is not '_' and not '-') break;
-                    _position++;
-                    _column++;
-                }
-                string text = _source[start.._position];
-                _tokens.Add(Token(UiSyntaxKind.IdentifierToken, text, text, start, text.Length, _line, column));
+                LexIdentifier(start, column);
                 continue;
             }
 
             if (char.IsDigit(current) || (current == '-' && Peek(1) is char next && char.IsDigit(next)))
             {
-                _position++;
-                _column++;
-                bool seenDot = false;
-                while (_position < _source.Length)
-                {
-                    char c = _source[_position];
-                    if (c == '.' && !seenDot && char.IsDigit(Peek(1) ?? '\0'))
-                    {
-                        seenDot = true;
-                        _position++;
-                        _column++;
-                        continue;
-                    }
-                    if (!char.IsDigit(c)) break;
-                    _position++;
-                    _column++;
-                }
-                string text = _source[start.._position];
-                object value;
-                bool parsed;
-                if (seenDot)
-                {
-                    parsed = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double floating)
-                        && double.IsFinite(floating);
-                    value = parsed ? floating : 0d;
-                }
-                else
-                {
-                    parsed = int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int integer);
-                    value = parsed ? integer : 0;
-                }
-                if (!parsed)
-                {
-                    value = seenDot ? 0d : 0;
-                    _diagnostics.Add(new UiDiagnostic(
-                        "LUI0005", UiDiagnosticSeverity.Error, $"Numeric literal '{text}' is outside the supported range.",
-                        new UiTextSpan(start, text.Length, _line, column), _sourceName));
-                }
-                _tokens.Add(Token(UiSyntaxKind.NumberToken, text, value, start, text.Length, _line, column));
+                LexNumber(start, column);
                 continue;
             }
 
@@ -184,8 +136,8 @@ public sealed class UiLexer
 
     private void EmitIndentation(int indentation, int lineStart)
     {
-        int current = _indents[^1];
-        if (indentation > current)
+        int currentIndentation = _indents[^1];
+        if (indentation > currentIndentation)
         {
             _indents.Add(indentation);
             _tokens.Add(Token(UiSyntaxKind.IndentToken, string.Empty, indentation, lineStart, indentation, _line, 0));
@@ -206,6 +158,64 @@ public sealed class UiLexer
         }
     }
 
+    private void LexIdentifier(int start, int column)
+    {
+        _position++;
+        _column++;
+        while (_position < _source.Length)
+        {
+            char character = _source[_position];
+            if (!char.IsLetterOrDigit(character) && character is not '_' and not '-') break;
+            _position++;
+            _column++;
+        }
+        string text = _source[start.._position];
+        _tokens.Add(Token(UiSyntaxKind.IdentifierToken, text, text, start, text.Length, _line, column));
+    }
+
+    private void LexNumber(int start, int column)
+    {
+        _position++;
+        _column++;
+        bool seenDot = false;
+        while (_position < _source.Length)
+        {
+            char character = _source[_position];
+            if (character == '.' && !seenDot && char.IsDigit(Peek(1) ?? '\0'))
+            {
+                seenDot = true;
+                _position++;
+                _column++;
+                continue;
+            }
+            if (!char.IsDigit(character)) break;
+            _position++;
+            _column++;
+        }
+        string text = _source[start.._position];
+        object value;
+        bool parsed;
+        if (seenDot)
+        {
+            parsed = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double floating)
+                && double.IsFinite(floating);
+            value = parsed ? floating : 0d;
+        }
+        else
+        {
+            parsed = int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int integer);
+            value = parsed ? integer : 0;
+        }
+        if (!parsed)
+        {
+            value = seenDot ? 0d : 0;
+            _diagnostics.Add(new UiDiagnostic(
+                "LUI0005", UiDiagnosticSeverity.Error, $"Numeric literal '{text}' is outside the supported range.",
+                new UiTextSpan(start, text.Length, _line, column), _sourceName));
+        }
+        _tokens.Add(Token(UiSyntaxKind.NumberToken, text, value, start, text.Length, _line, column));
+    }
+
     private void LexString(int start, int column)
     {
         _position++;
@@ -214,20 +224,20 @@ public sealed class UiLexer
         bool terminated = false;
         while (_position < _source.Length && _source[_position] is not '\r' and not '\n')
         {
-            char c = _source[_position++];
+            char character = _source[_position++];
             _column++;
-            if (c == '"')
+            if (character == '"')
             {
                 terminated = true;
                 break;
             }
-            if (c == '\\' && _position < _source.Length)
+            if (character == '\\' && _position < _source.Length)
             {
                 char escaped = _source[_position++];
                 _column++;
                 value.Append(escaped switch { 'n' => '\n', 'r' => '\r', 't' => '\t', _ => escaped });
             }
-            else value.Append(c);
+            else value.Append(character);
         }
 
         string text = _source[start.._position];

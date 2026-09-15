@@ -81,13 +81,7 @@ public sealed class UiParser
     private UiStatementSyntax? ParseStatement()
     {
         if (Current.Kind == UiSyntaxKind.AtToken)
-        {
-            UiSyntaxToken at = NextToken();
-            UiSyntaxToken profile = Match(UiSyntaxKind.IdentifierToken, "LUI1007", "Expected a profile after '@'.");
-            UiStatementSyntax[] members = ParseRequiredBlock();
-            UiTextSpan span = members.Length == 0 ? UiTextSpan.Between(at.Span, profile.Span) : UiTextSpan.Between(at.Span, members[^1].Span);
-            return new UiBlockSyntax(null, profile, members, span);
-        }
+            return ParseProfileBlock();
 
         if (Current.Kind != UiSyntaxKind.IdentifierToken)
         {
@@ -96,40 +90,68 @@ public sealed class UiParser
             return null;
         }
 
+        return ParseNamedStatement();
+    }
+
+    private UiBlockSyntax ParseProfileBlock()
+    {
+        UiSyntaxToken at = NextToken();
+        UiSyntaxToken profile = Match(UiSyntaxKind.IdentifierToken, "LUI1007", "Expected a profile after '@'.");
+        UiStatementSyntax[] members = ParseRequiredBlock();
+        UiTextSpan span = members.Length == 0
+            ? UiTextSpan.Between(at.Span, profile.Span)
+            : UiTextSpan.Between(at.Span, members[^1].Span);
+        return new UiBlockSyntax(null, profile, members, span);
+    }
+
+    private UiStatementSyntax ParseNamedStatement()
+    {
         UiNameSyntax name = ParseName();
-        UiSyntaxToken? specialization = null;
-        if (Current.Kind == UiSyntaxKind.AtToken)
-        {
-            NextToken();
-            specialization = Match(UiSyntaxKind.IdentifierToken, "LUI1009", "Expected a state after '@'.");
-        }
+        UiSyntaxToken? specialization = ParseSpecialization();
 
         if (Current.Kind == UiSyntaxKind.ArrowToken)
-        {
-            NextToken();
-            UiNameSyntax region = ParseName();
-            ConsumeLineEnd();
-            return new UiPlacementSyntax(name, region, UiTextSpan.Between(name.Span, region.Span));
-        }
+            return ParsePlacement(name);
 
         if (Current.Kind == UiSyntaxKind.EqualsToken)
-        {
-            NextToken();
-            UiValueSyntax value = ParseValue();
-            ConsumeLineEnd();
-            return new UiAssignmentSyntax(name, value, UiTextSpan.Between(name.Span, value.Span));
-        }
+            return ParseAssignment(name);
 
         if (Current.Kind == UiSyntaxKind.NewLineToken || Current.Kind == UiSyntaxKind.IndentToken)
-        {
-            UiStatementSyntax[] members = ParseRequiredBlock();
-            UiTextSpan span = members.Length == 0 ? name.Span : UiTextSpan.Between(name.Span, members[^1].Span);
-            return new UiBlockSyntax(name, specialization, members, span);
-        }
+            return ParseBlock(name, specialization);
 
         Report("LUI1010", "Expected '=', '->', '@State', or an indented block.", Current.Span);
         SynchronizeLine();
         return new UiBlockSyntax(name, specialization, Array.Empty<UiStatementSyntax>(), name.Span);
+    }
+
+    private UiSyntaxToken? ParseSpecialization()
+    {
+        if (Current.Kind != UiSyntaxKind.AtToken) return null;
+
+        NextToken();
+        return Match(UiSyntaxKind.IdentifierToken, "LUI1009", "Expected a state after '@'.");
+    }
+
+    private UiPlacementSyntax ParsePlacement(UiNameSyntax subject)
+    {
+        NextToken();
+        UiNameSyntax region = ParseName();
+        ConsumeLineEnd();
+        return new UiPlacementSyntax(subject, region, UiTextSpan.Between(subject.Span, region.Span));
+    }
+
+    private UiAssignmentSyntax ParseAssignment(UiNameSyntax property)
+    {
+        NextToken();
+        UiValueSyntax value = ParseValue();
+        ConsumeLineEnd();
+        return new UiAssignmentSyntax(property, value, UiTextSpan.Between(property.Span, value.Span));
+    }
+
+    private UiBlockSyntax ParseBlock(UiNameSyntax name, UiSyntaxToken? specialization)
+    {
+        UiStatementSyntax[] members = ParseRequiredBlock();
+        UiTextSpan span = members.Length == 0 ? name.Span : UiTextSpan.Between(name.Span, members[^1].Span);
+        return new UiBlockSyntax(name, specialization, members, span);
     }
 
     private UiStatementSyntax[] ParseRequiredBlock()

@@ -84,14 +84,8 @@ internal sealed partial class NetworkExperience
         if (query.Length > 128) query = query[..128];
         string? filter = Selected(batch, _historyFilter);
         // The host retains at most 256 parcels; the visible collection is a detached twelve-row page.
-        FlowParcelSnapshot[] matches = projection.Snapshot.Transport.Parcels.Where(parcel =>
-            (filter != "active" || parcel.State is not (ParcelState.Delivered or ParcelState.Cancelled or ParcelState.Returned))
-            && (filter != "attention" || parcel.State is ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted
-                or ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain or ParcelState.ReturnRejected or ParcelState.ReturnFaulted or ParcelState.ReturnUncertain)
-            && (query.Length == 0 || _historyItemName(parcel.ItemKey).Contains(query, StringComparison.OrdinalIgnoreCase)
-                || StationName(parcel.Origin).Contains(query, StringComparison.OrdinalIgnoreCase)
-                || StationName(parcel.Destination).Contains(query, StringComparison.OrdinalIgnoreCase)
-                || parcel.Id.ToString("D").Contains(query, StringComparison.OrdinalIgnoreCase)))
+        FlowParcelSnapshot[] matches = projection.Snapshot.Transport.Parcels
+            .Where(parcel => MatchesHistoryFilter(parcel.State, filter) && MatchesHistoryQuery(parcel, query))
             .OrderBy(parcel => parcel.Id).ToArray();
         int page = Math.Min(projection.Page, Math.Max(0, (matches.Length - 1) / HistoryPageSize));
         FlowParcelSnapshot[] visible = matches.Skip(page * HistoryPageSize).Take(HistoryPageSize).ToArray();
@@ -110,6 +104,22 @@ internal sealed partial class NetworkExperience
                 : $"{parcel.Id} · {Describe(parcel.State)} · " + Text("attempts: ", "попыток: ") + parcel.DeliveryAttempts);
         return projection with { Page = page, HistoryCount = matches.Length };
     }
+
+    private static bool MatchesHistoryFilter(ParcelState state, string? filter) => filter switch
+    {
+        "active" => state is not (ParcelState.Delivered or ParcelState.Cancelled or ParcelState.Returned),
+        "attention" => state is ParcelState.DeliveryRejected or ParcelState.DeliveryFaulted
+            or ParcelState.ExtractionUncertain or ParcelState.DeliveryUncertain
+            or ParcelState.ReturnRejected or ParcelState.ReturnFaulted or ParcelState.ReturnUncertain,
+        _ => true
+    };
+
+    private bool MatchesHistoryQuery(FlowParcelSnapshot parcel, string query)
+        => query.Length == 0 || _historyItemName(parcel.ItemKey).Contains(query, StringComparison.OrdinalIgnoreCase)
+            || StationName(parcel.Origin).Contains(query, StringComparison.OrdinalIgnoreCase)
+            || StationName(parcel.Destination).Contains(query, StringComparison.OrdinalIgnoreCase)
+            || parcel.Id.ToString("D").Contains(query, StringComparison.OrdinalIgnoreCase);
+
     private string Describe(ParcelState state) => state switch
     {
         ParcelState.Created => Text("Ready", "Готово"), ParcelState.Reserved => Text("Scheduled", "Запланировано"),

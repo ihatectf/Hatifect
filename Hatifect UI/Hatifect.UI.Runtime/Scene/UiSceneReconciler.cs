@@ -75,26 +75,31 @@ internal sealed class UiSceneReconciler
             if (oldNode.Node is UiCollectionSceneNode oldCollection &&
                 newNode is UiCollectionSceneNode newCollection)
             {
-                if (measurementContextChanged)
-                    nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
-                if (!CollectionLayoutEquals(oldCollection, newCollection))
-                    nodeEffects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
-                else
-                {
-                    nodeEffects |= newCollection.SelectedItemVisual.InvalidationFrom(oldCollection.SelectedItemVisual);
-                    nodeEffects |= TooltipVisualInvalidation(
-                        oldCollection.ItemTooltipVisual,
-                        newCollection.ItemTooltipVisual);
-                    if (oldCollection.SelectedItemId != newCollection.SelectedItemId ||
-                        !ItemVisualsEqual(oldCollection, newCollection))
-                        nodeEffects |= UiPropertyEffects.Render;
-                }
+                nodeEffects |= CollectionInvalidation(oldCollection, newCollection, measurementContextChanged);
             }
             if (nodeEffects == UiPropertyEffects.None) continue;
             effects |= nodeEffects;
             changed.Add(id);
         }
         return new UiSceneDiff(effects, changed.AsReadOnly());
+    }
+
+    private static UiPropertyEffects CollectionInvalidation(
+        UiCollectionSceneNode previous,
+        UiCollectionSceneNode next,
+        bool measurementContextChanged)
+    {
+        UiPropertyEffects effects = UiPropertyEffects.None;
+        if (measurementContextChanged)
+            effects |= UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
+        if (!CollectionLayoutEquals(previous, next))
+            return effects | UiPropertyEffects.Measure | UiPropertyEffects.Arrange | UiPropertyEffects.Render;
+
+        effects |= next.SelectedItemVisual.InvalidationFrom(previous.SelectedItemVisual);
+        effects |= TooltipVisualInvalidation(previous.ItemTooltipVisual, next.ItemTooltipVisual);
+        if (previous.SelectedItemId != next.SelectedItemId || !ItemVisualsEqual(previous, next))
+            effects |= UiPropertyEffects.Render;
+        return effects;
     }
 
     private static UiPropertyEffects TooltipInvalidation(

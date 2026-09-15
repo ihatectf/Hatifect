@@ -44,16 +44,7 @@ internal sealed partial class UiToolingProtocolSession
     {
         RequireRequest(request, request.Method);
         JsonElement parameters = RequiredObject(request.Parameters, "workspace diagnostic params");
-        JsonElement previous = Property(parameters, "previousResultIds");
-        if (previous.ValueKind != JsonValueKind.Array || previous.GetArrayLength() > _workspace.Capacity * 2)
-            throw new InvalidDataException("previousResultIds exceeds the workspace diagnostic budget.");
-        var ids = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (JsonElement value in previous.EnumerateArray())
-        {
-            JsonElement item = RequiredObject(value, "previous result ID");
-            if (!ids.TryAdd(RequiredString(item, "uri"), RequiredString(item, "value", allowEmpty: true)))
-                throw new InvalidDataException("A previous diagnostic URI is duplicated.");
-        }
+        Dictionary<string, string> ids = ReadPreviousDiagnosticIds(parameters);
         var reports = new SortedDictionary<string, object>(StringComparer.Ordinal);
         foreach (UiEditorDocumentSnapshot document in _workspace.Snapshots())
         {
@@ -66,6 +57,21 @@ internal sealed partial class UiToolingProtocolSession
         foreach (string uri in ids.Keys)
             reports.Add(uri, new { uri, version = (long?)null, kind = "full", items = Array.Empty<object>() });
         return Success(new { items = reports.Values.ToArray() });
+    }
+
+    private Dictionary<string, string> ReadPreviousDiagnosticIds(JsonElement parameters)
+    {
+        JsonElement previous = Property(parameters, "previousResultIds");
+        if (previous.ValueKind != JsonValueKind.Array || previous.GetArrayLength() > _workspace.Capacity * 2)
+            throw new InvalidDataException("previousResultIds exceeds the workspace diagnostic budget.");
+        var ids = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (JsonElement value in previous.EnumerateArray())
+        {
+            JsonElement item = RequiredObject(value, "previous result ID");
+            if (!ids.TryAdd(RequiredString(item, "uri"), RequiredString(item, "value", allowEmpty: true)))
+                throw new InvalidDataException("A previous diagnostic URI is duplicated.");
+        }
+        return ids;
     }
 
     private static object[] DiagnosticItems(UiEditorDocumentSnapshot snapshot)
