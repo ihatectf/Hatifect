@@ -138,27 +138,15 @@ internal sealed partial class UiToolingProtocolSession
             return Error(UiJsonRpcErrorCodes.InvalidRequest, "initialize was already handled.");
         try
         {
-            JsonElement parameters = RequiredObject(request.Parameters, "initialize params");
-            JsonElement options = RequiredObject(Property(parameters, "initializationOptions"), "initializationOptions");
-            ValidateProtocolRequirements(options);
-            BindingConfiguration configuration = ReadBindingConfiguration(options);
-            int bindingRevision = OptionalProperty(options, "bindingRevision") != null
-                ? RequiredNonNegativeInt32(options, "bindingRevision") : 0;
-            bool hierarchicalSymbols = NestedProperty(parameters, "capabilities", "textDocument",
-                "documentSymbol", "hierarchicalDocumentSymbolSupport") is { ValueKind: JsonValueKind.True };
-            bool versionedCodeActions = NestedProperty(parameters, "capabilities", "workspace", "workspaceEdit",
-                "documentChanges") is { ValueKind: JsonValueKind.True }
-                && NestedProperty(parameters, "capabilities", "textDocument", "codeAction", "codeActionLiteralSupport")
-                    is { ValueKind: JsonValueKind.Object };
-
-            UiJsonRpcDispatchResult response = CreateInitializationResponse(versionedCodeActions);
+            InitializeOptions parsed = ParseInitializeOptions(request);
+            UiJsonRpcDispatchResult response = CreateInitializationResponse(parsed.VersionedCodeActions);
             if (response.IsError) return response;
-            _bindingContext = configuration.Default;
-            _documentBindings = configuration.Documents;
-            _declarations = configuration.Declarations;
-            _bindingRevision = bindingRevision;
-            _hierarchicalSymbols = hierarchicalSymbols;
-            _versionedCodeActions = versionedCodeActions;
+            _bindingContext = parsed.Configuration.Default;
+            _documentBindings = parsed.Configuration.Documents;
+            _declarations = parsed.Configuration.Declarations;
+            _bindingRevision = parsed.BindingRevision;
+            _hierarchicalSymbols = parsed.HierarchicalSymbols;
+            _versionedCodeActions = parsed.VersionedCodeActions;
             _state = UiToolingProtocolState.AwaitingInitialized;
             return response;
         }
@@ -166,6 +154,26 @@ internal sealed partial class UiToolingProtocolSession
         {
             return InvalidParams(error.Message);
         }
+    }
+
+    private sealed record InitializeOptions(BindingConfiguration Configuration, int BindingRevision,
+        bool HierarchicalSymbols, bool VersionedCodeActions);
+
+    private InitializeOptions ParseInitializeOptions(UiJsonRpcRequest request)
+    {
+        JsonElement parameters = RequiredObject(request.Parameters, "initialize params");
+        JsonElement options = RequiredObject(Property(parameters, "initializationOptions"), "initializationOptions");
+        ValidateProtocolRequirements(options);
+        BindingConfiguration configuration = ReadBindingConfiguration(options);
+        int bindingRevision = OptionalProperty(options, "bindingRevision") != null
+            ? RequiredNonNegativeInt32(options, "bindingRevision") : 0;
+        bool hierarchicalSymbols = NestedProperty(parameters, "capabilities", "textDocument",
+            "documentSymbol", "hierarchicalDocumentSymbolSupport") is { ValueKind: JsonValueKind.True };
+        bool versionedCodeActions = NestedProperty(parameters, "capabilities", "workspace", "workspaceEdit",
+            "documentChanges") is { ValueKind: JsonValueKind.True }
+            && NestedProperty(parameters, "capabilities", "textDocument", "codeAction", "codeActionLiteralSupport")
+                is { ValueKind: JsonValueKind.Object };
+        return new InitializeOptions(configuration, bindingRevision, hierarchicalSymbols, versionedCodeActions);
     }
 
     private UiJsonRpcDispatchResult CreateInitializationResponse(bool versionedCodeActions)

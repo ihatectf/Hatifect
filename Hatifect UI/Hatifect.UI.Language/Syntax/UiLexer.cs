@@ -53,6 +53,19 @@ public sealed class UiLexer
     private void LexLine()
     {
         int lineStart = _position;
+        int indentation = ScanIndentation();
+
+        _column = indentation;
+        bool isBlankLine = _position >= _source.Length || _source[_position] is '\r' or '\n';
+        if (!isBlankLine)
+            EmitIndentation(indentation, lineStart);
+
+        LexTokensUntilLineEnd();
+        ConsumeLineTerminator();
+    }
+
+    private int ScanIndentation()
+    {
         int indentation = 0;
         while (_position < _source.Length && _source[_position] is ' ' or '\t')
         {
@@ -67,12 +80,11 @@ public sealed class UiLexer
             else indentation++;
             _position++;
         }
+        return indentation;
+    }
 
-        _column = indentation;
-        bool isBlankLine = _position >= _source.Length || _source[_position] is '\r' or '\n';
-        if (!isBlankLine)
-            EmitIndentation(indentation, lineStart);
-
+    private void LexTokensUntilLineEnd()
+    {
         while (_position < _source.Length && _source[_position] is not '\r' and not '\n')
         {
             char current = _source[_position];
@@ -97,36 +109,44 @@ public sealed class UiLexer
                 continue;
             }
 
-            switch (current)
-            {
-                case '=':
-                    AdvanceAndAdd(UiSyntaxKind.EqualsToken, "=", start, column);
-                    break;
-                case '.' :
-                    AdvanceAndAdd(UiSyntaxKind.DotToken, ".", start, column);
-                    break;
-                case '@':
-                    AdvanceAndAdd(UiSyntaxKind.AtToken, "@", start, column);
-                    break;
-                case '-' when Peek(1) == '>':
-                    _position += 2;
-                    _column += 2;
-                    _tokens.Add(Token(UiSyntaxKind.ArrowToken, "->", null, start, 2, _line, column));
-                    break;
-                case '"':
-                    LexString(start, column);
-                    break;
-                default:
-                    _position++;
-                    _column++;
-                    _tokens.Add(Token(UiSyntaxKind.BadToken, current.ToString(), null, start, 1, _line, column));
-                    _diagnostics.Add(new UiDiagnostic(
-                        "LUI0002", UiDiagnosticSeverity.Error, $"Unexpected character '{current}'.",
-                        new UiTextSpan(start, 1, _line, column), _sourceName));
-                    break;
-            }
+            LexPunctuation(current, start, column);
         }
+    }
 
+    private void LexPunctuation(char current, int start, int column)
+    {
+        switch (current)
+        {
+            case '=':
+                AdvanceAndAdd(UiSyntaxKind.EqualsToken, "=", start, column);
+                break;
+            case '.' :
+                AdvanceAndAdd(UiSyntaxKind.DotToken, ".", start, column);
+                break;
+            case '@':
+                AdvanceAndAdd(UiSyntaxKind.AtToken, "@", start, column);
+                break;
+            case '-' when Peek(1) == '>':
+                _position += 2;
+                _column += 2;
+                _tokens.Add(Token(UiSyntaxKind.ArrowToken, "->", null, start, 2, _line, column));
+                break;
+            case '"':
+                LexString(start, column);
+                break;
+            default:
+                _position++;
+                _column++;
+                _tokens.Add(Token(UiSyntaxKind.BadToken, current.ToString(), null, start, 1, _line, column));
+                _diagnostics.Add(new UiDiagnostic(
+                    "LUI0002", UiDiagnosticSeverity.Error, $"Unexpected character '{current}'.",
+                    new UiTextSpan(start, 1, _line, column), _sourceName));
+                break;
+        }
+    }
+
+    private void ConsumeLineTerminator()
+    {
         if (_position < _source.Length && _source[_position] == '\r') _position++;
         if (_position < _source.Length && _source[_position] == '\n') _position++;
         _tokens.Add(Token(UiSyntaxKind.NewLineToken, "\n", null, _position, 0, _line, _column));
