@@ -104,7 +104,11 @@ internal sealed partial class UiAutomatedAcceptanceController
                 && !previousActions.Invoke(idleSibling.Definition)
                 && idleSibling.Captures == 0 && idleSibling.Operations.Count == 0;
         });
-        if (kind.StartsWith("failed-", StringComparison.Ordinal))
+        if (kind.StartsWith("failed-", StringComparison.Ordinal)) ExecuteFailedTransitionCase();
+        else ExecuteAcceptedTransitionCase();
+        _generationTicks = 0;
+
+        void ExecuteFailedTransitionCase()
         {
             _generationRejectSecond = true;
             Exception? rejection = null;
@@ -125,7 +129,8 @@ internal sealed partial class UiAutomatedAcceptanceController
             _generationPopup.Operations[0].CompleteFromWorker(22);
             _generationPhase = 1;
         }
-        else
+
+        void ExecuteAcceptedTransitionCase()
         {
             TransitionTerminalGeneration(kind == "route", GenerationId(same ? "first" : "second"));
             bool retired = _generationMetadataAtCancellation && _generationFirst.Operations[0].Token.IsCancellationRequested
@@ -140,7 +145,6 @@ internal sealed partial class UiAutomatedAcceptanceController
             StartCurrentTerminalGeneration(same ? _generationFirst : _generationSecond);
             _generationPhase = 2;
         }
-        _generationTicks = 0;
     }
 
     private bool AdvanceTerminalGeneration()

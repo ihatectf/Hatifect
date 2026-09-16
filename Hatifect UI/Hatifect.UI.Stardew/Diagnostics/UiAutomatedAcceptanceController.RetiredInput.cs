@@ -54,6 +54,7 @@ internal sealed partial class UiAutomatedAcceptanceController
         var overlay = new UiSemanticStardewOverlaySession(runtime, helper, host, viewport,
             UiSemanticStardewOverlayRenderLayer.ActiveMenu, () => closed++);
         IKeyboardSubscriber? previous = Game1.keyboardDispatcher.Subscriber;
+        bool restoredAfterInput = false;
         try
         {
             overlay.Show();
@@ -61,25 +62,11 @@ internal sealed partial class UiAutomatedAcceptanceController
             RequireAction(subscriber is UiSemanticKeyboardSubscriberLease && !ReferenceEquals(subscriber, previous),
                 "The actual overlay did not acquire the native keyboard subscriber.");
             publication.Changed += overlay.Hide;
-            loopFault.FailRemove = "UpdateTicked";
-            subscriber!.RecieveTextInput("x");
-            bool restoredAfterInput = ReferenceEquals(previous, Game1.keyboardDispatcher.Subscriber);
-            bool retainedForRetry = overlay.Visible && !host.Session.Root.IsActive &&
-                publication.LastResult.Succeeded && publication.LastResult.ObserverErrors.Count == 1 &&
-                query.Value == "x" && loopFault.ActiveHandlers == 1 && loopFault.RemovalFailures == 1 && closed == 0;
-            Record("semantic.input.retired-overlay.keyboard", retainedForRetry && restoredAfterInput,
-                $"Publication committed through failed Hide observer; retainedForRetry={retainedForRetry}, keyboardRestored={restoredAfterInput}.");
-
-            loopFault.FailRemove = null;
-            overlay.Hide();
-            subscriber.RecieveTextInput("late");
-            bool retryClean = !overlay.Visible && loopFault.ActiveHandlers == 0 && closed == 1 &&
-                ReferenceEquals(previous, Game1.keyboardDispatcher.Subscriber) && query.Value == "x";
-            Record("semantic.input.retired-overlay.retry", retryClean,
-                "Retry removed the retained handler, notified close once and kept the retired subscriber inert.");
+            bool retainedForRetry = VerifyFailedRemovalRetainsHandlerForRetry(subscriber!);
+            bool retryClean = VerifyRetryReleasesHandlerAndClosesOverlay(subscriber!);
             _retiredOverlayInput = new
             {
-                completed = true, retainedForRetry, restoredAfterInput, retryClean,
+                completed = true, retainedForRetry, restoredAfterInput = restoredAfterInput, retryClean,
                 publicationVersion = publication.Version,
                 observerErrors = publication.LastResult.ObserverErrors.Count,
                 removalFailures = loopFault.RemovalFailures, retainedHandlers = loopFault.ActiveHandlers,
@@ -92,6 +79,31 @@ internal sealed partial class UiAutomatedAcceptanceController
             publication.Changed -= overlay.Hide;
             overlay.Dispose();
             if (ReferenceEquals(Game1.activeClickableMenu, cover)) Game1.activeClickableMenu = null;
+        }
+
+        bool VerifyFailedRemovalRetainsHandlerForRetry(IKeyboardSubscriber subscriber)
+        {
+            loopFault.FailRemove = "UpdateTicked";
+            subscriber.RecieveTextInput("x");
+            restoredAfterInput = ReferenceEquals(previous, Game1.keyboardDispatcher.Subscriber);
+            bool retainedForRetry = overlay.Visible && !host.Session.Root.IsActive &&
+                publication.LastResult.Succeeded && publication.LastResult.ObserverErrors.Count == 1 &&
+                query.Value == "x" && loopFault.ActiveHandlers == 1 && loopFault.RemovalFailures == 1 && closed == 0;
+            Record("semantic.input.retired-overlay.keyboard", retainedForRetry && restoredAfterInput,
+                $"Publication committed through failed Hide observer; retainedForRetry={retainedForRetry}, keyboardRestored={restoredAfterInput}.");
+            return retainedForRetry;
+        }
+
+        bool VerifyRetryReleasesHandlerAndClosesOverlay(IKeyboardSubscriber subscriber)
+        {
+            loopFault.FailRemove = null;
+            overlay.Hide();
+            subscriber.RecieveTextInput("late");
+            bool retryClean = !overlay.Visible && loopFault.ActiveHandlers == 0 && closed == 1 &&
+                ReferenceEquals(previous, Game1.keyboardDispatcher.Subscriber) && query.Value == "x";
+            Record("semantic.input.retired-overlay.retry", retryClean,
+                "Retry removed the retained handler, notified close once and kept the retired subscriber inert.");
+            return retryClean;
         }
     }
 
