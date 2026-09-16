@@ -53,6 +53,38 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
     private const string BootstrapAcceptanceStorageItemId = "(O)388";
     private const int BootstrapAcceptanceStorageItemStack = 10;
 
+    // Flow owns these scenarios; the transport still routes every scenario name through this
+    // controller's TryStart, so the ones Flow's own harness handles must decline here.
+    private static readonly HashSet<string> FlowOwnedScenarios = new(StringComparer.Ordinal)
+    {
+        "flow.ui.actions",
+        "flow.ui.isolation",
+        "flow.ui.player",
+        "flow.ui.player.en-075",
+        "flow.ui.player.en-100",
+        "flow.ui.player.en-125",
+        "flow.ui.player.en-150",
+        "flow.ui.player.ru-075",
+        "flow.ui.player.ru-100",
+        "flow.ui.player.ru-125",
+        "flow.ui.player.ru-150",
+        "flow.ui.player.input",
+        "flow.ui.names",
+        "flow.route.basic",
+        "flow.save.isolation",
+        "flow.chest.roundtrip",
+        "flow.chest.crash-after-save",
+        "flow.chest.crash-after-delivery",
+        "flow.chest.crash-after-unsaved-extraction",
+        "flow.chest.crash-after-unsaved-delivery",
+        "flow.chest.cancellation",
+        "flow.chest.return",
+        "flow.chest.crash-after-return",
+        "flow.chest.isolation",
+        "flow.chest.performance",
+        "flow.chest.resources"
+    };
+
     private readonly IModHelper _helper;
     private readonly IMonitor _monitor;
     private readonly UiSemanticDogfoodCompositionRoot _dogfood;
@@ -113,35 +145,8 @@ internal sealed partial class UiAutomatedAcceptanceController : IDisposable
 
         string protocol = Environment.GetEnvironmentVariable("HATIFECT_TEST_PROTOCOL_VERSION") ?? string.Empty;
         string scenario = Environment.GetEnvironmentVariable("HATIFECT_TEST_SCENARIO") ?? string.Empty;
-        if (string.Equals(scenario, "flow.ui.actions", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.isolation", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.player", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.player.en-075", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.player.en-100", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.player.en-125", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.player.en-150", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.player.ru-075", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.player.ru-100", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.player.ru-125", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.player.ru-150", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.player.input", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.ui.names", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.route.basic", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.save.isolation", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.roundtrip", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.crash-after-save", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.crash-after-delivery", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.crash-after-unsaved-extraction", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.crash-after-unsaved-delivery", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.cancellation", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.return", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.crash-after-return", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.isolation", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.performance", StringComparison.Ordinal)
-            || string.Equals(scenario, "flow.chest.resources", StringComparison.Ordinal))
-        {
+        if (FlowOwnedScenarios.Contains(scenario))
             return null;
-        }
         string runId = Environment.GetEnvironmentVariable("HATIFECT_TEST_RUN_ID") ?? string.Empty;
         string artifactDirectory = Environment.GetEnvironmentVariable("HATIFECT_TEST_ARTIFACTS") ?? string.Empty;
         if (!int.TryParse(protocol, out int version) || version != ProtocolVersion)
