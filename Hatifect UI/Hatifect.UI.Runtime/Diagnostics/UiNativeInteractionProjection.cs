@@ -39,6 +39,14 @@ internal static class UiNativeInteractionProjection
         ArgumentNullException.ThrowIfNull(accessibility);
         if (scene.Experience != accessibility.Experience)
             throw new InvalidOperationException("Native observation has inconsistent experience identity.");
+        Dictionary<UiSymbolId, UiSceneNode> origins = BuildSceneOrigins(scene);
+        List<UiNativeInteractionNode> elements = BuildInteractionElements(accessibility, origins);
+        List<UiNativeCollectionGeometry> collections = BuildCollectionGeometry(layout, origins);
+        return new(elements.AsReadOnly(), collections.AsReadOnly(), layout.RootScroll);
+    }
+
+    private static Dictionary<UiSymbolId, UiSceneNode> BuildSceneOrigins(UiScene scene)
+    {
         var origins = new Dictionary<UiSymbolId, UiSceneNode>();
         var pending = new Stack<UiSceneNode>();
         pending.Push(scene.Root);
@@ -50,7 +58,13 @@ internal static class UiNativeInteractionProjection
                 throw new InvalidOperationException("Native scene exceeds its pending-node budget.");
             foreach (var child in node.Children) pending.Push(child);
         }
+        return origins;
+    }
 
+    private static List<UiNativeInteractionNode> BuildInteractionElements(
+        UiAccessibilitySnapshot accessibility,
+        IReadOnlyDictionary<UiSymbolId, UiSceneNode> origins)
+    {
         var elements = new List<UiNativeInteractionNode>();
         var ids = new HashSet<UiSymbolId>();
         var tree = new Stack<(UiAccessibilityNodeSnapshot Node, string? Parent, UiSymbolId? Collection, bool Selectable)>();
@@ -80,7 +94,13 @@ internal static class UiNativeInteractionProjection
             for (int i = node.Children.Count - 1; i >= 0; i--)
                 tree.Push((node.Children[i], node.Id.ToString(), collection, selectable));
         }
+        return elements;
+    }
 
+    private static List<UiNativeCollectionGeometry> BuildCollectionGeometry(
+        UiLayoutSnapshot layout,
+        IReadOnlyDictionary<UiSymbolId, UiSceneNode> origins)
+    {
         var collections = new List<UiNativeCollectionGeometry>();
         foreach (var window in layout.CollectionWindows)
         {
@@ -93,6 +113,6 @@ internal static class UiNativeInteractionProjection
                 entry.Bounds, entry.ContentBounds, entry.Clip, window.ScrollOffset,
                 Math.Max(0, window.TotalExtent - entry.ContentBounds.Height), window.TotalCount, source.IsSelectable));
         }
-        return new(elements.AsReadOnly(), collections.AsReadOnly(), layout.RootScroll);
+        return collections;
     }
 }

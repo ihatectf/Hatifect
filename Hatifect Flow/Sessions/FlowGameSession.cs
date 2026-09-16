@@ -380,15 +380,34 @@ internal sealed partial class FlowGameSession : IDisposable
 
     private static FlowCheckpoint ValidateSave(FlowGameSave saved, ulong saveId)
     {
+        ValidateShape(saved, saveId);
+        FlowCheckpoint checkpoint = DecodeCheckpointWithinLimits(saved);
+        ValidateStations(saved, checkpoint);
+        Dictionary<Guid, Item> payloads = ValidatePayloads(saved);
+        ValidateCargoAgainstPayloads(checkpoint, payloads);
+        return checkpoint;
+    }
+
+    private static void ValidateShape(FlowGameSave saved, ulong saveId)
+    {
         if (saved.Version is not (1 or 2) || saved.SaveId != saveId || saved.Checkpoint is null
             || saved.Stations is null || saved.Stations.Length > MaxStations || saved.Payloads is null || saved.Payloads.Length > MaxCargo)
             throw new InvalidDataException("Unsupported or foreign Flow game-save aggregate.");
+    }
+
+    private static FlowCheckpoint DecodeCheckpointWithinLimits(FlowGameSave saved)
+    {
         FlowCheckpoint checkpoint = CheckpointCodec.Decode(saved.Checkpoint).Checkpoint;
         var limits = Limits();
         var expected = new LimitsCheckpoint(limits.MaxStations, limits.MaxLinks, limits.MaxParcels, limits.MaxRouteVisits,
             limits.MaxRoutePlans, limits.MaxDeliveryAttempts, limits.MaxEvents, limits.MaxOperationsPerAdvance,
             limits.MaxCargoUnits, limits.MaxPendingOperations);
         if (checkpoint.Limits != expected) throw new InvalidDataException("Unsupported Flow game-save bounds.");
+        return checkpoint;
+    }
+
+    private static void ValidateStations(FlowGameSave saved, FlowCheckpoint checkpoint)
+    {
         var stations = new HashSet<Guid>();
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var locations = new HashSet<(string, int, int)>();
@@ -400,6 +419,10 @@ internal sealed partial class FlowGameSession : IDisposable
         }
         if (!stations.SetEquals(checkpoint.Stations.Select(station => station.Id)))
             throw new InvalidDataException("Station bindings do not match the transport checkpoint.");
+    }
+
+    private static Dictionary<Guid, Item> ValidatePayloads(FlowGameSave saved)
+    {
         var payloads = new Dictionary<Guid, Item>();
         foreach (CargoPayload payload in saved.Payloads)
         {
@@ -409,6 +432,11 @@ internal sealed partial class FlowGameSession : IDisposable
                 : payload.SourceQuantity < payloads[payload.Id].Stack || payload.SourceQuantity > 999)
                 throw new InvalidDataException("Invalid captured source quantity for the game-save version.");
         }
+        return payloads;
+    }
+
+    private static void ValidateCargoAgainstPayloads(FlowCheckpoint checkpoint, Dictionary<Guid, Item> payloads)
+    {
         if (payloads.Count != checkpoint.Cargo.Length) throw new InvalidDataException("Cargo payload set does not match the checkpoint.");
         foreach (CargoCheckpoint cargo in checkpoint.Cargo)
         {
@@ -416,6 +444,5 @@ internal sealed partial class FlowGameSession : IDisposable
                 || !item.modData.TryGetValue(ChestInventoryAccess.CargoKey, out string token) || token != cargo.Id.ToString("D"))
                 throw new InvalidDataException("Cargo payload does not match its authoritative identity and manifest.");
         }
-        return checkpoint;
     }
 }
