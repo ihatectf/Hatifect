@@ -90,14 +90,50 @@ internal sealed class UiSceneComposer
         IReadOnlyList<UiExperienceDescriptor>? terminalSections)
     {
         var reads = new UiPublicationReadScope(invocation.Experience);
-        Dictionary<UiSymbolId, UiSemanticElementDefinition> elements = invocation.Experience.Elements
-            .ToDictionary(element => element.Id);
-        Dictionary<UiSymbolId, UiProjectedElement> projections = invocation.Projection.Elements
-            .ToDictionary(projection => projection.Element);
         bool terminal = invocation.Descriptor.Host.Kind == UiHostKind.Terminal;
         Dictionary<UiSymbolId, List<UiSceneNode>> bySlot = terminal
             ? UiHostSlots.TerminalOrder.ToDictionary(slot => slot, _ => new List<UiSceneNode>())
             : new Dictionary<UiSymbolId, List<UiSceneNode>>();
+
+        PlacePlannedElements(invocation, visual, interaction, reads, capturedLocale, terminal, bySlot);
+        AddContributions(invocation, visual, interaction, bySlot, capturedLocale);
+        if (terminal)
+            AddTerminalNavigation(
+                invocation,
+                interaction,
+                terminalSections ?? SnapshotAvailableTerminalSections(),
+                bySlot);
+        else if (terminalSections != null)
+            throw new ArgumentException(
+                "A Terminal availability snapshot can be supplied only for a Terminal invocation.",
+                nameof(terminalSections));
+
+        UiSymbolId shellOwner = terminal ? TerminalShellId : invocation.Experience.Id;
+        UiHostSceneNode root = ComposeRoot(invocation, visual, interaction, terminal, shellOwner, bySlot);
+        return new UiScene(
+            invocation.Experience.Id,
+            terminal ? "Hatifect Terminal" : invocation.Experience.DisplayNameFor(capturedLocale),
+            root,
+            new UiSceneMeasurementContext(
+                invocation.Plan.Host.Profile,
+                capturedLocale,
+                _theme.Id),
+            reads.HasPublications ? nextInteraction => ComposeCaptured(invocation, visual, nextInteraction, capturedLocale, terminalSections) : null);
+    }
+
+    private void PlacePlannedElements(
+        UiInvocationResult invocation,
+        UiVisualDefinition? visual,
+        UiInteractionSnapshot? interaction,
+        UiPublicationReadScope reads,
+        string locale,
+        bool terminal,
+        IDictionary<UiSymbolId, List<UiSceneNode>> bySlot)
+    {
+        Dictionary<UiSymbolId, UiSemanticElementDefinition> elements = invocation.Experience.Elements
+            .ToDictionary(element => element.Id);
+        Dictionary<UiSymbolId, UiProjectedElement> projections = invocation.Projection.Elements
+            .ToDictionary(projection => projection.Element);
         foreach (UiPlannedElement planned in invocation.Plan.Elements)
         {
             if (!elements.TryGetValue(planned.Element, out UiSemanticElementDefinition? element))
@@ -110,21 +146,18 @@ internal sealed class UiSceneComposer
                 throw new InvalidOperationException(
                     $"Terminal section '{invocation.Experience.Id}' cannot project '{planned.Element}' into the " +
                     "shell-owned Navigation slot. Terminal navigation is derived from registered section descriptors.");
-            Add(bySlot, projection.HostSlot, CreateElement(invocation, planned, element, visual, interaction, reads, capturedLocale));
+            Add(bySlot, projection.HostSlot, CreateElement(invocation, planned, element, visual, interaction, reads, locale));
         }
+    }
 
-        AddContributions(invocation, visual, interaction, bySlot, capturedLocale);
-        if (terminal)
-            AddTerminalNavigation(
-                invocation,
-                interaction,
-                terminalSections ?? SnapshotAvailableTerminalSections(),
-                bySlot);
-        else if (terminalSections != null)
-            throw new ArgumentException(
-                "A Terminal availability snapshot can be supplied only for a Terminal invocation.",
-                nameof(terminalSections));
-        UiSymbolId shellOwner = terminal ? TerminalShellId : invocation.Experience.Id;
+    private UiHostSceneNode ComposeRoot(
+        UiInvocationResult invocation,
+        UiVisualDefinition? visual,
+        UiInteractionSnapshot? interaction,
+        bool terminal,
+        UiSymbolId shellOwner,
+        IReadOnlyDictionary<UiSymbolId, List<UiSceneNode>> bySlot)
+    {
         IEnumerable<KeyValuePair<UiSymbolId, List<UiSceneNode>>> orderedSlots = terminal
             ? UiHostSlots.TerminalOrder.Select(slot => new KeyValuePair<UiSymbolId, List<UiSceneNode>>(slot, bySlot[slot]))
             : bySlot.OrderBy(item => item.Key, UiSymbolIdOrdinalComparer.Instance);
@@ -147,7 +180,7 @@ internal sealed class UiSceneComposer
             })
             .ToArray();
         UiSymbolId rootId = shellOwner.Child("scene/host");
-        var root = new UiHostSceneNode(
+        return new UiHostSceneNode(
             rootId,
             UiSceneRoles.Host,
             Resolve(
@@ -159,15 +192,6 @@ internal sealed class UiSceneComposer
                 interaction),
             invocation.Descriptor.Host,
             slots) { SemanticId = invocation.Experience.Id };
-        return new UiScene(
-            invocation.Experience.Id,
-            terminal ? "Hatifect Terminal" : invocation.Experience.DisplayNameFor(capturedLocale),
-            root,
-            new UiSceneMeasurementContext(
-                invocation.Plan.Host.Profile,
-                capturedLocale,
-                _theme.Id),
-            reads.HasPublications ? nextInteraction => ComposeCaptured(invocation, visual, nextInteraction, capturedLocale, terminalSections) : null);
     }
 
     private static string ResolveLocale(UiInvocationResult invocation, string? locale)
