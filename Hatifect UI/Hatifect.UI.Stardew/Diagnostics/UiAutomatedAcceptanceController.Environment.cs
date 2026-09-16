@@ -75,41 +75,16 @@ internal sealed partial class UiAutomatedAcceptanceController
         _environmentAwaitingAutomatic = false;
         string kind = EnvironmentCases[_environmentCase];
         UiSymbolId id = ActionId("environment/" + kind);
-        Game1.uiViewport = new Rectangle(0, 0, 1200, 700);
-        Game1.options.baseUIScale = Game1.options.desiredUIScale = 1;
-        Game1.options.gamepadControls = false;
-        LocalizedContentManager.CurrentLanguageCode = LocalizedContentManager.LanguageCode.en;
         var source = new EnvironmentSource();
         var draft = new UiState<string>("Retained environment draft");
         UiActionDefinition action = EnvironmentAction(id.Child("run"), operation => _environmentRootOperation = operation);
         var model = new UiExperienceBuilder(id, "Environment acceptance").Monitor("Status", source)
             .Search("Name", draft).Actions("Actions", action).Build();
-        var api = new UiSemanticSurfaceService(_helper);
-        if (kind == "active-menu") Game1.activeClickableMenu = _environmentCover = new ActionPumpCoverMenu();
-        IUiSemanticSurfaceSession surface;
-        if (kind == "terminal")
-        {
-            UiSymbolId terminalId = id.Child("terminal");
-            surface = api.CreateTerminal(new UiSemanticTerminalDefinition(terminalId,
-                new[] { new UiSemanticTerminalSection(model) }), new UiSemanticSurfaceOptions(terminalId));
-        }
-        else surface = kind == "active-menu"
-            ? api.CreateActiveMenuOverlay(model, new UiSemanticSurfaceOptions(id))
-            : api.CreateSurface(model, kind == "hud" ? UiSemanticHostKind.Hud : UiSemanticHostKind.Window,
-                new UiSemanticSurfaceOptions(id));
-        _environmentSurface = (IUiSemanticReloadSession)surface;
-        ((IUiSemanticAppearanceSession)surface).SetTheme(UiSemanticTheme.Dark);
-        surface.Show();
-        UiSemanticStardewHost host = CaptureReloadHost(_environmentSurface);
-        RequireAction(host.Session.Root.Actions.Invoke(action), "Environment root did not admit its pending action.");
+        IUiSemanticSurfaceSession surface = BuildCaseSurface(kind, id, model);
+        UiSemanticStardewHost host = ShowCaseSurfaceAndAdmitRootAction(surface, action);
         var popupAction = EnvironmentAction(id.Child("popup-run"), operation => _environmentPopupOperation = operation);
-        var popupPolicy = new UiHostPolicy(UiHostKind.Popup, UiWindowChrome.Tool, UiDismissPolicy.Escape,
-            UiModalPolicy.Modeless, UiFocusScopePolicy.Contained, UiPopupPlacement.Anchor);
-        _environmentPortal = host.Present(new UiPortalRequest(id.Child("popup"),
-            new UiPortalOwner(host.Session.Root.Scene.Root.Id), ActionScene("environment-popup", popupPolicy, popupAction),
-            new UiHostPlacementContext(new UiRect(0, 0, 1200, 700), anchor: new UiRect(400, 300, 30, 30))));
-        RequireAction(host.Session.Submit().Interaction?.ActionInvoked == true && _environmentPopupOperation != null,
-            "Environment popup did not admit its pending action.");
+        PresentAndAdmitPopupAction(host, id, popupAction);
+
         var focused = host.Session.Root.Interactions.Snapshot.Focused;
         var modelIdentity = EnvironmentInvocation(surface, host).Experience;
         var transitions = new List<object>();
@@ -131,78 +106,13 @@ internal sealed partial class UiAutomatedAcceptanceController
                 decisions = invocation.Plan.Decisions.Where(decision => decision.Code == UiPlanDecisionCode.EnvironmentFacet)
                     .Select(decision => decision.Message).ToArray() });
         }
-        Observe("initial", UiSemanticTheme.Dark);
-        Game1.uiViewport = new Rectangle(0, 0, 1280, 700);
-        surface.Synchronize();
-        Observe("same-profile-viewport", UiSemanticTheme.Dark);
-        Game1.options.baseUIScale = Game1.options.desiredUIScale = 1.25f;
-        surface.Synchronize();
-        Observe("scale", UiSemanticTheme.Dark);
-        Game1.options.gamepadControls = true;
-        surface.Synchronize();
-        Observe("input", UiSemanticTheme.Dark);
-        LocalizedContentManager.CurrentLanguageCode = LocalizedContentManager.LanguageCode.ru;
-        surface.Synchronize();
-        Observe("locale", UiSemanticTheme.Dark);
-        ((IUiSemanticAppearanceSession)surface).SetTheme(UiSemanticTheme.HighContrast);
-        Observe("theme-accessibility", UiSemanticTheme.HighContrast);
-        Record("semantic.environment." + kind + ".facets", true,
-            "All environment facets reach one accepted scene without replacing the model, focus or pending root/popup work.");
 
-        var beforeEnvironment = ReloadField<UiEnvironment>(surface, "_environment");
-        var beforeInvocation = EnvironmentInvocation(surface, host);
-        var beforeScene = host.Session.Root.Scene;
-        source.Reject = true;
-        Game1.uiViewport = new Rectangle(0, 0, 700, 600);
-        Exception? rejection = null;
-        try { surface.Synchronize(); }
-        catch (InvalidOperationException error) { rejection = error; }
-        source.Reject = false;
-        bool retained = rejection?.Message == EnvironmentSource.Rejection
-            && ReferenceEquals(beforeEnvironment, ReloadField<UiEnvironment>(surface, "_environment"))
-            && ReferenceEquals(beforeInvocation, EnvironmentInvocation(surface, host))
-            && ReferenceEquals(beforeScene, host.Session.Root.Scene)
-            && !_environmentRootOperation!.Cancelled && !_environmentPopupOperation!.Cancelled;
-        RequireAction(retained, "Rejected native environment preparation did not retain its accepted frame.");
-        surface.Synchronize();
-        Observe("retry", UiSemanticTheme.HighContrast);
-        Record("semantic.environment." + kind + ".rejection", retained,
-            "A throwing source rejects the candidate before publication; retry accepts a coherent new environment.");
-
-        beforeEnvironment = ReloadField<UiEnvironment>(surface, "_environment");
-        UiScene? nested = null;
-        source.OnRead = () =>
-        {
-            source.OnRead = null;
-            host.Session.Root.RefreshInteractionVisuals();
-            nested = host.Session.Root.Scene;
-        };
-        Game1.uiViewport = new Rectangle(0, 0, 900, 600);
-        rejection = null;
-        try { surface.Synchronize(); }
-        catch (InvalidOperationException error) { rejection = error; }
-        bool nestedRetained = rejection != null && nested != null && ReferenceEquals(nested, host.Session.Root.Scene)
-            && ReferenceEquals(beforeEnvironment, ReloadField<UiEnvironment>(surface, "_environment"))
-            && nested.MeasurementContext.Locale == beforeEnvironment.Locale
-            && nested.MeasurementContext.Theme == beforeEnvironment.Theme;
-        RequireAction(nestedRetained, "An outer native environment candidate replaced the accepted nested frame.");
-        surface.Synchronize();
-        Observe("reentry-retry", UiSemanticTheme.HighContrast);
-        Record("semantic.environment." + kind + ".reentry", nestedRetained,
-            "Nested input composition uses accepted environment/theme; its accepted frame survives stale outer preparation.");
-
-        var allocations = new long[256];
-        // Warm the exact interface-dispatch call site used by measurement. A separate
-        // warmup loop leaves its first dispatch allocation inside the measured region.
-        MeasureEnvironmentIdle(surface, allocations);
-        int reads = source.Reads;
-        long version = host.Session.Root.AcceptedVersion;
-        long allocated = MeasureEnvironmentIdle(surface, allocations);
-        bool idle = source.Reads == reads && host.Session.Root.AcceptedVersion == version && allocated == 0;
-        Record("semantic.environment." + kind + ".idle", idle,
-            "256 unchanged synchronizations retain the frame without source reads or managed allocations.");
+        ObserveEachEnvironmentFacet();
+        bool retained = VerifyRejectionRetainsAcceptedFrame();
+        bool nestedRetained = VerifyReentryRetainsAcceptedFrame();
+        MeasureIdleSynchronizationAndRecord(out bool idle, out int sourceReadDelta, out long allocated, out long[] allocations);
         _environmentObservations.Add(new { kind, transitions, retained, nestedRetained, idle,
-            unchangedSynchronizations = 256, sourceReads = source.Reads - reads, allocatedBytes = allocated, allocations,
+            unchangedSynchronizations = 256, sourceReads = sourceReadDelta, allocatedBytes = allocated, allocations,
             draft = draft.Value });
 
         // Restore native options before waiting for production Update. Any further automatic
@@ -212,6 +122,133 @@ internal sealed partial class UiAutomatedAcceptanceController
         _environmentRootOperation!.CompleteFromWorker(51);
         _environmentPopupOperation!.CompleteFromWorker(52);
         _environmentTicks = 0;
+
+        void ObserveEachEnvironmentFacet()
+        {
+            Observe("initial", UiSemanticTheme.Dark);
+            Game1.uiViewport = new Rectangle(0, 0, 1280, 700);
+            surface.Synchronize();
+            Observe("same-profile-viewport", UiSemanticTheme.Dark);
+            Game1.options.baseUIScale = Game1.options.desiredUIScale = 1.25f;
+            surface.Synchronize();
+            Observe("scale", UiSemanticTheme.Dark);
+            Game1.options.gamepadControls = true;
+            surface.Synchronize();
+            Observe("input", UiSemanticTheme.Dark);
+            LocalizedContentManager.CurrentLanguageCode = LocalizedContentManager.LanguageCode.ru;
+            surface.Synchronize();
+            Observe("locale", UiSemanticTheme.Dark);
+            ((IUiSemanticAppearanceSession)surface).SetTheme(UiSemanticTheme.HighContrast);
+            Observe("theme-accessibility", UiSemanticTheme.HighContrast);
+            Record("semantic.environment." + kind + ".facets", true,
+                "All environment facets reach one accepted scene without replacing the model, focus or pending root/popup work.");
+        }
+
+        bool VerifyRejectionRetainsAcceptedFrame()
+        {
+            var beforeEnvironment = ReloadField<UiEnvironment>(surface, "_environment");
+            var beforeInvocation = EnvironmentInvocation(surface, host);
+            var beforeScene = host.Session.Root.Scene;
+            source.Reject = true;
+            Game1.uiViewport = new Rectangle(0, 0, 700, 600);
+            Exception? rejection = null;
+            try { surface.Synchronize(); }
+            catch (InvalidOperationException error) { rejection = error; }
+            source.Reject = false;
+            bool caseRetained = rejection?.Message == EnvironmentSource.Rejection
+                && ReferenceEquals(beforeEnvironment, ReloadField<UiEnvironment>(surface, "_environment"))
+                && ReferenceEquals(beforeInvocation, EnvironmentInvocation(surface, host))
+                && ReferenceEquals(beforeScene, host.Session.Root.Scene)
+                && !_environmentRootOperation!.Cancelled && !_environmentPopupOperation!.Cancelled;
+            RequireAction(caseRetained, "Rejected native environment preparation did not retain its accepted frame.");
+            surface.Synchronize();
+            Observe("retry", UiSemanticTheme.HighContrast);
+            Record("semantic.environment." + kind + ".rejection", caseRetained,
+                "A throwing source rejects the candidate before publication; retry accepts a coherent new environment.");
+            return caseRetained;
+        }
+
+        bool VerifyReentryRetainsAcceptedFrame()
+        {
+            var beforeEnvironment = ReloadField<UiEnvironment>(surface, "_environment");
+            UiScene? nested = null;
+            source.OnRead = () =>
+            {
+                source.OnRead = null;
+                host.Session.Root.RefreshInteractionVisuals();
+                nested = host.Session.Root.Scene;
+            };
+            Game1.uiViewport = new Rectangle(0, 0, 900, 600);
+            Exception? rejection = null;
+            try { surface.Synchronize(); }
+            catch (InvalidOperationException error) { rejection = error; }
+            bool caseNestedRetained = rejection != null && nested != null && ReferenceEquals(nested, host.Session.Root.Scene)
+                && ReferenceEquals(beforeEnvironment, ReloadField<UiEnvironment>(surface, "_environment"))
+                && nested.MeasurementContext.Locale == beforeEnvironment.Locale
+                && nested.MeasurementContext.Theme == beforeEnvironment.Theme;
+            RequireAction(caseNestedRetained, "An outer native environment candidate replaced the accepted nested frame.");
+            surface.Synchronize();
+            Observe("reentry-retry", UiSemanticTheme.HighContrast);
+            Record("semantic.environment." + kind + ".reentry", caseNestedRetained,
+                "Nested input composition uses accepted environment/theme; its accepted frame survives stale outer preparation.");
+            return caseNestedRetained;
+        }
+
+        void MeasureIdleSynchronizationAndRecord(out bool caseIdle, out int caseSourceReadDelta, out long caseAllocated, out long[] caseAllocations)
+        {
+            caseAllocations = new long[256];
+            // Warm the exact interface-dispatch call site used by measurement. A separate
+            // warmup loop leaves its first dispatch allocation inside the measured region.
+            MeasureEnvironmentIdle(surface, caseAllocations);
+            int reads = source.Reads;
+            long version = host.Session.Root.AcceptedVersion;
+            caseAllocated = MeasureEnvironmentIdle(surface, caseAllocations);
+            caseIdle = source.Reads == reads && host.Session.Root.AcceptedVersion == version && caseAllocated == 0;
+            caseSourceReadDelta = source.Reads - reads;
+            Record("semantic.environment." + kind + ".idle", caseIdle,
+                "256 unchanged synchronizations retain the frame without source reads or managed allocations.");
+        }
+    }
+
+    private IUiSemanticSurfaceSession BuildCaseSurface(string kind, UiSymbolId id, UiExperienceDefinition model)
+    {
+        Game1.uiViewport = new Rectangle(0, 0, 1200, 700);
+        Game1.options.baseUIScale = Game1.options.desiredUIScale = 1;
+        Game1.options.gamepadControls = false;
+        LocalizedContentManager.CurrentLanguageCode = LocalizedContentManager.LanguageCode.en;
+        var api = new UiSemanticSurfaceService(_helper);
+        if (kind == "active-menu") Game1.activeClickableMenu = _environmentCover = new ActionPumpCoverMenu();
+        if (kind == "terminal")
+        {
+            UiSymbolId terminalId = id.Child("terminal");
+            return api.CreateTerminal(new UiSemanticTerminalDefinition(terminalId,
+                new[] { new UiSemanticTerminalSection(model) }), new UiSemanticSurfaceOptions(terminalId));
+        }
+        return kind == "active-menu"
+            ? api.CreateActiveMenuOverlay(model, new UiSemanticSurfaceOptions(id))
+            : api.CreateSurface(model, kind == "hud" ? UiSemanticHostKind.Hud : UiSemanticHostKind.Window,
+                new UiSemanticSurfaceOptions(id));
+    }
+
+    private UiSemanticStardewHost ShowCaseSurfaceAndAdmitRootAction(IUiSemanticSurfaceSession surface, UiActionDefinition action)
+    {
+        _environmentSurface = (IUiSemanticReloadSession)surface;
+        ((IUiSemanticAppearanceSession)surface).SetTheme(UiSemanticTheme.Dark);
+        surface.Show();
+        UiSemanticStardewHost host = CaptureReloadHost(_environmentSurface);
+        RequireAction(host.Session.Root.Actions.Invoke(action), "Environment root did not admit its pending action.");
+        return host;
+    }
+
+    private void PresentAndAdmitPopupAction(UiSemanticStardewHost host, UiSymbolId id, UiActionDefinition popupAction)
+    {
+        var popupPolicy = new UiHostPolicy(UiHostKind.Popup, UiWindowChrome.Tool, UiDismissPolicy.Escape,
+            UiModalPolicy.Modeless, UiFocusScopePolicy.Contained, UiPopupPlacement.Anchor);
+        _environmentPortal = host.Present(new UiPortalRequest(id.Child("popup"),
+            new UiPortalOwner(host.Session.Root.Scene.Root.Id), ActionScene("environment-popup", popupPolicy, popupAction),
+            new UiHostPlacementContext(new UiRect(0, 0, 1200, 700), anchor: new UiRect(400, 300, 30, 30))));
+        RequireAction(host.Session.Submit().Interaction?.ActionInvoked == true && _environmentPopupOperation != null,
+            "Environment popup did not admit its pending action.");
     }
 
     private bool AdvanceEnvironment()

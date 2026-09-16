@@ -76,83 +76,103 @@ internal sealed partial class UiAutomatedAcceptanceController
                 case -2:
                 case -1:
                     return AdvanceActionMessageFrames();
-                case 1:
-                    if (!Delivered("menu-root") || !Delivered("menu-portal")) return true;
-                    Record("semantic.actions.pump.menu",
-                        ReferenceEquals(Game1.activeClickableMenu, _actionMenu) &&
-                        ReferenceEquals(_actionAcceptedScene, _actionHost!.Session.Root.Scene) && _actionMessageCaptures.Count == 4,
-                        "Root and popup worker results returned through native menu.update without scene recomposition.");
-                    CloseActionPresentation();
-                    ActionPumpProbe lateMenu = NewActionProbe("retired-menu");
-                    OpenActionMenu(lateMenu);
-                    CloseActionPresentation();
-                    RequireAction(lateMenu.Cancellation.IsCancellationRequested, "Menu close did not cancel pending work.");
-                    ActionPumpProbe successor = NewActionProbe("successor-menu");
-                    OpenActionMenu(successor);
-                    lateMenu.CompleteFromWorker(fault: true);
-                    successor.CompleteFromWorker();
-                    NextActionPhase();
-                    return true;
-                case 2:
-                    if (!Delivered("successor-menu") || !ObservedLateFault("retired-menu") || _actionPhaseTicks < 4) return true;
-                    Record("semantic.actions.pump.reopen", Probe("retired-menu").Callbacks == 0,
-                        "Closed menu cancelled its operation; its late fault was observed once and could not mutate the new same-ID menu.");
-                    CloseActionPresentation();
-                    ActionPumpProbe hud = NewActionProbe("hud-root");
-                    OpenActionOverlay(hud, UiSemanticStardewOverlayRenderLayer.Hud);
-                    ActionPumpProbe lateHud = NewActionProbe("retired-hud-portal");
-                    PresentActionPortal(lateHud);
-                    _actionCover = new ActionPumpCoverMenu();
-                    Game1.activeClickableMenu = _actionCover;
-                    hud.CompleteFromWorker();
-                    NextActionPhase();
-                    return true;
-                case 3:
-                    if (!Delivered("hud-root")) return true;
-                    RequireAction(ReferenceEquals(Game1.activeClickableMenu, _actionCover) && _actionOverlay!.Visible,
-                        "HUD acceptance lost its temporary native-menu occlusion.");
-                    _actionOverlay!.Hide();
-                    RequireAction(Probe("retired-hud-portal").Cancellation.IsCancellationRequested,
-                        "HUD Hide did not cancel its pending portal.");
-                    Probe("retired-hud-portal").CompleteFromWorker(fault: true);
-                    CloseActionPresentation();
-                    ActionPumpProbe nextHud = NewActionProbe("successor-hud");
-                    OpenActionOverlay(nextHud, UiSemanticStardewOverlayRenderLayer.Hud);
-                    nextHud.CompleteFromWorker();
-                    NextActionPhase();
-                    return true;
-                case 4:
-                    if (!Delivered("successor-hud") || !ObservedLateFault("retired-hud-portal") || _actionPhaseTicks < 4) return true;
-                    Record("semantic.actions.pump.hud", Probe("retired-hud-portal").Callbacks == 0,
-                        "Occluded HUD progressed through SMAPI UpdateTicked; Hide cancelled its portal and late fault left the successor unchanged.");
-                    CloseActionPresentation();
-                    ActionPumpProbe context = NewActionProbe("retired-menu-overlay", inlineCompletion: true);
-                    OpenActionOverlay(context, UiSemanticStardewOverlayRenderLayer.ActiveMenu);
-                    // Only this test source completes its configured observer inline on the worker.
-                    // Wait for SetResult to return after the framework mailbox is published, then
-                    // change context in this same game tick, before any production Update can run.
-                    context.CompleteFromWorker();
-                    context.WaitForCompletion();
-                    RequireAction(context.SourceReads == 1 && context.Callbacks == 0,
-                        "Context replacement requires a ready result that has not reached its observer.");
-                    _actionCover = new ActionPumpCoverMenu();
-                    Game1.activeClickableMenu = _actionCover;
-                    NextActionPhase();
-                    return true;
-                case 5:
-                    ActionPumpProbe retired = Probe("retired-menu-overlay");
-                    if (!retired.WorkerFinished || retired.SourceReads != 1 || _actionPhaseTicks < 4) return true;
-                    Record("semantic.actions.pump.context",
-                        retired.Callbacks == 0 && _actionContextClosed == 1 && !_actionOverlay!.Visible,
-                        "Changing the exact native menu retired its overlay before a ready result could publish through UpdateTicked.");
-                    _actionPumpCompleted = true;
-                    StopActionPump();
-                    _capturePending = true;
-                    return true;
+                case 1: return AdvanceMenuAcceptancePhase();
+                case 2: return AdvanceReopenAcceptancePhase();
+                case 3: return AdvanceHudAcceptancePhase();
+                case 4: return AdvanceHudSuccessorPhase();
+                case 5: return AdvanceContextReplacementPhase();
                 default: throw new InvalidOperationException("Unknown native action phase.");
             }
         }
         finally { _advancingActionPump = false; }
+    }
+
+    private bool AdvanceMenuAcceptancePhase()
+    {
+        if (!Delivered("menu-root") || !Delivered("menu-portal")) return true;
+        Record("semantic.actions.pump.menu",
+            ReferenceEquals(Game1.activeClickableMenu, _actionMenu) &&
+            ReferenceEquals(_actionAcceptedScene, _actionHost!.Session.Root.Scene) && _actionMessageCaptures.Count == 4,
+            "Root and popup worker results returned through native menu.update without scene recomposition.");
+        CloseActionPresentation();
+        ActionPumpProbe lateMenu = NewActionProbe("retired-menu");
+        OpenActionMenu(lateMenu);
+        CloseActionPresentation();
+        RequireAction(lateMenu.Cancellation.IsCancellationRequested, "Menu close did not cancel pending work.");
+        ActionPumpProbe successor = NewActionProbe("successor-menu");
+        OpenActionMenu(successor);
+        lateMenu.CompleteFromWorker(fault: true);
+        successor.CompleteFromWorker();
+        NextActionPhase();
+        return true;
+    }
+
+    private bool AdvanceReopenAcceptancePhase()
+    {
+        if (!Delivered("successor-menu") || !ObservedLateFault("retired-menu") || _actionPhaseTicks < 4) return true;
+        Record("semantic.actions.pump.reopen", Probe("retired-menu").Callbacks == 0,
+            "Closed menu cancelled its operation; its late fault was observed once and could not mutate the new same-ID menu.");
+        CloseActionPresentation();
+        ActionPumpProbe hud = NewActionProbe("hud-root");
+        OpenActionOverlay(hud, UiSemanticStardewOverlayRenderLayer.Hud);
+        ActionPumpProbe lateHud = NewActionProbe("retired-hud-portal");
+        PresentActionPortal(lateHud);
+        _actionCover = new ActionPumpCoverMenu();
+        Game1.activeClickableMenu = _actionCover;
+        hud.CompleteFromWorker();
+        NextActionPhase();
+        return true;
+    }
+
+    private bool AdvanceHudAcceptancePhase()
+    {
+        if (!Delivered("hud-root")) return true;
+        RequireAction(ReferenceEquals(Game1.activeClickableMenu, _actionCover) && _actionOverlay!.Visible,
+            "HUD acceptance lost its temporary native-menu occlusion.");
+        _actionOverlay!.Hide();
+        RequireAction(Probe("retired-hud-portal").Cancellation.IsCancellationRequested,
+            "HUD Hide did not cancel its pending portal.");
+        Probe("retired-hud-portal").CompleteFromWorker(fault: true);
+        CloseActionPresentation();
+        ActionPumpProbe nextHud = NewActionProbe("successor-hud");
+        OpenActionOverlay(nextHud, UiSemanticStardewOverlayRenderLayer.Hud);
+        nextHud.CompleteFromWorker();
+        NextActionPhase();
+        return true;
+    }
+
+    private bool AdvanceHudSuccessorPhase()
+    {
+        if (!Delivered("successor-hud") || !ObservedLateFault("retired-hud-portal") || _actionPhaseTicks < 4) return true;
+        Record("semantic.actions.pump.hud", Probe("retired-hud-portal").Callbacks == 0,
+            "Occluded HUD progressed through SMAPI UpdateTicked; Hide cancelled its portal and late fault left the successor unchanged.");
+        CloseActionPresentation();
+        ActionPumpProbe context = NewActionProbe("retired-menu-overlay", inlineCompletion: true);
+        OpenActionOverlay(context, UiSemanticStardewOverlayRenderLayer.ActiveMenu);
+        // Only this test source completes its configured observer inline on the worker.
+        // Wait for SetResult to return after the framework mailbox is published, then
+        // change context in this same game tick, before any production Update can run.
+        context.CompleteFromWorker();
+        context.WaitForCompletion();
+        RequireAction(context.SourceReads == 1 && context.Callbacks == 0,
+            "Context replacement requires a ready result that has not reached its observer.");
+        _actionCover = new ActionPumpCoverMenu();
+        Game1.activeClickableMenu = _actionCover;
+        NextActionPhase();
+        return true;
+    }
+
+    private bool AdvanceContextReplacementPhase()
+    {
+        ActionPumpProbe retired = Probe("retired-menu-overlay");
+        if (!retired.WorkerFinished || retired.SourceReads != 1 || _actionPhaseTicks < 4) return true;
+        Record("semantic.actions.pump.context",
+            retired.Callbacks == 0 && _actionContextClosed == 1 && !_actionOverlay!.Visible,
+            "Changing the exact native menu retired its overlay before a ready result could publish through UpdateTicked.");
+        _actionPumpCompleted = true;
+        StopActionPump();
+        _capturePending = true;
+        return true;
     }
 
     private void NextActionPhase() { _actionPhase++; _actionPhaseTicks = 0; }

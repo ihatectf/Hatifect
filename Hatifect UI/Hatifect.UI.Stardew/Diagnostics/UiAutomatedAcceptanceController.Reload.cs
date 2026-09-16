@@ -71,99 +71,114 @@ internal sealed partial class UiAutomatedAcceptanceController
         if (kind == "active-menu") Game1.activeClickableMenu = cover = new ActionPumpCoverMenu();
         try
         {
-            IUiSemanticSurfaceSession created;
-            if (kind == "terminal")
-            {
-                UiSymbolId terminalId = id.Child("terminal");
-                created = api.CreateTerminal(new UiSemanticTerminalDefinition(terminalId,
-                    new[] { new UiSemanticTerminalSection(model) }), new UiSemanticSurfaceOptions(terminalId));
-            }
-            else created = kind == "active-menu"
-                ? api.CreateActiveMenuOverlay(model, new UiSemanticSurfaceOptions(id))
-                : api.CreateSurface(model, kind == "hud" ? UiSemanticHostKind.Hud : UiSemanticHostKind.Window,
-                    new UiSemanticSurfaceOptions(id));
-            surface = (IUiSemanticReloadSession)created;
+            surface = (IUiSemanticReloadSession)CreateSurfaceForKind(api, kind, id, model);
             sourceProbe.Value = "Published before Show";
             surface.Show();
             UiSemanticStardewHost host = CaptureReloadHost(surface);
-            bool firstShowCurrent = sourceProbe.Subscribers == 1 &&
-                host.Session.Root.Frame.Primitives.OfType<UiTextPrimitive>().Any(text => text.Text == sourceProbe.Value);
-            var beforeBurst = host.Session.Root.Frame;
-            long beforeBurstVersion = host.Session.Root.AcceptedVersion;
-            int readsBeforeBurst = sourceProbe.Reads;
-            sourceProbe.Value = "Intermediate source";
-            sourceProbe.Value = "Latest source";
-            bool deferredSource = ReferenceEquals(beforeBurst, host.Session.Root.Frame) && sourceProbe.Reads == readsBeforeBurst;
-            surface.Synchronize();
-            bool burstVisible = host.Session.Root.AcceptedVersion == beforeBurstVersion + 1 &&
-                host.Session.Root.Frame.Primitives.OfType<UiTextPrimitive>().Any(text => text.Text == sourceProbe.Value);
-            var acceptedSourceFrame = host.Session.Root.Frame;
-            int readsBeforeIdle = sourceProbe.Reads;
-            for (int iteration = 0; iteration < 256; iteration++) surface.Synchronize();
-            bool idleSource = ReferenceEquals(acceptedSourceFrame, host.Session.Root.Frame) && sourceProbe.Reads == readsBeforeIdle;
-            Action retiredSourceCallback = sourceProbe.Capture();
-            UiSemanticLiveAssets assets = ReloadField<UiSemanticLiveAssets>(surface, "_assets");
-            string visual = "visual Reload\n\nName\n    surface = Surface.Hover\n";
-            var notifications = new List<UiSemanticReloadResult>();
-            surface.AssetsReloaded += notifications.Add;
-            publishDuringAvailability = true;
-            UiSemanticReloadResult first = surface.Reload(id, null, visual);
-            RequireAction(first.Accepted && first.Changed && publicationCallbacks == 1 &&
-                status.Value == "Published during reload", "The candidate must publish its source during new action availability.");
-            // Every semantic host coalesces source changes until its owning synchronization pass.
-            // Synchronize itself does not pump actions.
-            surface.Synchronize();
-            bool publicationVisible = host.Session.Root.Frame.Primitives.OfType<UiTextPrimitive>()
-                .Any(text => text.Text == status.Value);
-            Record("semantic.actions.reload." + kind + ".publication",
-                firstShowCurrent && deferredSource && burstVisible && idleSource && publicationVisible,
-                "First Show reads current state; source bursts wait for synchronization; 256 unchanged passes do not read sources; publication during reload remains pending.");
 
-            RequireAction(host.Session.Root.Actions.Invoke(definition) && operations.Count == 1,
-                "The first accepted generation did not admit pending work.");
-            RequireAction(notifications.Count == 1 && ReferenceEquals(notifications[0], first),
-                "A live surface must deliver its accepted reload result exactly once.");
-            var before = assets.For(id);
-            UiSemanticReloadResult rejected = surface.Reload(id, "invalid presentation", visual);
-            bool rejectedRetained = !rejected.Accepted && !rejected.Changed && rejected.Version == first.Version &&
-                ReferenceEquals(before, assets.For(id)) && !operations[0].Token.IsCancellationRequested;
-            UiSemanticReloadResult replacement = surface.Reload(id, null, visual.Replace("Hover", "Pressed"));
-            operations[0].Fault();
-            RequireAction(notifications.Count == 3 && ReferenceEquals(notifications[1], rejected) &&
-                ReferenceEquals(notifications[2], replacement),
-                "A live surface must deliver both rejected and replacement reload results exactly once.");
-            bool generationRetired = replacement.Accepted && replacement.Changed &&
-                replacement.Version == first.Version + 1 && operations[0].Token.IsCancellationRequested &&
-                operations[0].Reads == 1 && operations[0].FaultObserved && results.Count == 0;
-            Record("semantic.actions.reload." + kind + ".generation", rejectedRetained && generationRetired,
-                "Rejected reload retains pending work; accepted reload cancels its old generation and observes a late fault without effects.");
+            bool firstShowCurrent = false, deferredSource = false, burstVisible = false, idleSource = false, publicationVisible = false;
+            UiSemanticReloadResult? first = null;
+            Action? retiredSourceCallback = null;
+            UiSemanticLiveAssets? assets = null;
+            string? visual = null;
+            List<UiSemanticReloadResult>? notifications = null;
+            VerifyPublicationAndIdleBehavior();
 
-            RequireAction(host.Session.Root.Actions.Invoke(definition) && operations.Count == 2,
-                "The replacement generation must remain independently invocable.");
-            int liveAssetEvents = notifications.Count;
-            int closed = 0;
-            surface.Closed += () => closed++;
-            closeDuringCancellation = true;
-            UiSemanticReloadResult closing = surface.Reload(id, null, visual.Replace("Hover", "Raised"));
-            operations[1].Fault();
-            int assetEvents = notifications.Count - liveAssetEvents;
-            var retiredFrame = host.Session.Root.Frame;
-            int retiredSourceReads = sourceProbe.Reads;
-            retiredSourceCallback();
-            sourceProbe.Value = "After retirement";
-            bool sourceReleased = sourceProbe.Subscribers == 0 &&
-                ReferenceEquals(retiredFrame, host.Session.Root.Frame) && sourceProbe.Reads == retiredSourceReads;
-            bool retiredObservers = sourceReleased && closing.Accepted && closing.Changed && !surface.Visible &&
-                !host.Session.Root.IsActive && closed == 1 && assetEvents == 0 &&
-                operations[1].Token.IsCancellationRequested && operations[1].Reads == 1 && results.Count == 0;
-            Record("semantic.actions.reload." + kind + ".retirement", retiredObservers,
-                "Cancellation may dispose the accepted surface; no AssetsReloaded observer is called after its retirement.");
+            bool rejectedRetained = false, generationRetired = false;
+            VerifyGenerationLifecycle();
+
+            int liveAssetEvents = 0, assetEvents = 0, closed = 0;
+            bool sourceReleased = false, retiredObservers = false;
+            UiSemanticReloadResult? closing = null;
+            VerifyRetirementReleasesSource();
+
             _reloadObservations.Add(new { kind, firstShowCurrent, deferredSource, burstVisible, idleSource, sourceReleased,
                 publicationCallbacks, publicationVisible,
                 rejectedRetained, generationRetired, retiredObservers, liveAssetEvents, assetEvents, closed,
-                finalVersion = closing.Version, draft = draft.Value, callbacks = results.Count,
+                finalVersion = closing!.Version, draft = draft.Value, callbacks = results.Count,
                 operations = operations.Select(operation => new { cancelled = operation.Token.IsCancellationRequested,
                     reads = operation.Reads, faultObserved = operation.FaultObserved }).ToArray() });
+
+            void VerifyPublicationAndIdleBehavior()
+            {
+                firstShowCurrent = sourceProbe.Subscribers == 1 &&
+                    host.Session.Root.Frame.Primitives.OfType<UiTextPrimitive>().Any(text => text.Text == sourceProbe.Value);
+                var beforeBurst = host.Session.Root.Frame;
+                long beforeBurstVersion = host.Session.Root.AcceptedVersion;
+                int readsBeforeBurst = sourceProbe.Reads;
+                sourceProbe.Value = "Intermediate source";
+                sourceProbe.Value = "Latest source";
+                deferredSource = ReferenceEquals(beforeBurst, host.Session.Root.Frame) && sourceProbe.Reads == readsBeforeBurst;
+                surface.Synchronize();
+                burstVisible = host.Session.Root.AcceptedVersion == beforeBurstVersion + 1 &&
+                    host.Session.Root.Frame.Primitives.OfType<UiTextPrimitive>().Any(text => text.Text == sourceProbe.Value);
+                var acceptedSourceFrame = host.Session.Root.Frame;
+                int readsBeforeIdle = sourceProbe.Reads;
+                for (int iteration = 0; iteration < 256; iteration++) surface.Synchronize();
+                idleSource = ReferenceEquals(acceptedSourceFrame, host.Session.Root.Frame) && sourceProbe.Reads == readsBeforeIdle;
+                retiredSourceCallback = sourceProbe.Capture();
+                assets = ReloadField<UiSemanticLiveAssets>(surface, "_assets");
+                visual = "visual Reload\n\nName\n    surface = Surface.Hover\n";
+                notifications = new List<UiSemanticReloadResult>();
+                surface.AssetsReloaded += notifications.Add;
+                publishDuringAvailability = true;
+                first = surface.Reload(id, null, visual);
+                RequireAction(first.Accepted && first.Changed && publicationCallbacks == 1 &&
+                    status.Value == "Published during reload", "The candidate must publish its source during new action availability.");
+                // Every semantic host coalesces source changes until its owning synchronization pass.
+                // Synchronize itself does not pump actions.
+                surface.Synchronize();
+                publicationVisible = host.Session.Root.Frame.Primitives.OfType<UiTextPrimitive>()
+                    .Any(text => text.Text == status.Value);
+                Record("semantic.actions.reload." + kind + ".publication",
+                    firstShowCurrent && deferredSource && burstVisible && idleSource && publicationVisible,
+                    "First Show reads current state; source bursts wait for synchronization; 256 unchanged passes do not read sources; publication during reload remains pending.");
+            }
+
+            void VerifyGenerationLifecycle()
+            {
+                RequireAction(host.Session.Root.Actions.Invoke(definition) && operations.Count == 1,
+                    "The first accepted generation did not admit pending work.");
+                RequireAction(notifications!.Count == 1 && ReferenceEquals(notifications[0], first),
+                    "A live surface must deliver its accepted reload result exactly once.");
+                var before = assets!.For(id);
+                UiSemanticReloadResult rejected = surface.Reload(id, "invalid presentation", visual!);
+                rejectedRetained = !rejected.Accepted && !rejected.Changed && rejected.Version == first!.Version &&
+                    ReferenceEquals(before, assets.For(id)) && !operations[0].Token.IsCancellationRequested;
+                UiSemanticReloadResult replacement = surface.Reload(id, null, visual!.Replace("Hover", "Pressed"));
+                operations[0].Fault();
+                RequireAction(notifications.Count == 3 && ReferenceEquals(notifications[1], rejected) &&
+                    ReferenceEquals(notifications[2], replacement),
+                    "A live surface must deliver both rejected and replacement reload results exactly once.");
+                generationRetired = replacement.Accepted && replacement.Changed &&
+                    replacement.Version == first!.Version + 1 && operations[0].Token.IsCancellationRequested &&
+                    operations[0].Reads == 1 && operations[0].FaultObserved && results.Count == 0;
+                Record("semantic.actions.reload." + kind + ".generation", rejectedRetained && generationRetired,
+                    "Rejected reload retains pending work; accepted reload cancels its old generation and observes a late fault without effects.");
+            }
+
+            void VerifyRetirementReleasesSource()
+            {
+                RequireAction(host.Session.Root.Actions.Invoke(definition) && operations.Count == 2,
+                    "The replacement generation must remain independently invocable.");
+                liveAssetEvents = notifications!.Count;
+                surface.Closed += () => closed++;
+                closeDuringCancellation = true;
+                closing = surface.Reload(id, null, visual!.Replace("Hover", "Raised"));
+                operations[1].Fault();
+                assetEvents = notifications.Count - liveAssetEvents;
+                var retiredFrame = host.Session.Root.Frame;
+                int retiredSourceReads = sourceProbe.Reads;
+                retiredSourceCallback!();
+                sourceProbe.Value = "After retirement";
+                sourceReleased = sourceProbe.Subscribers == 0 &&
+                    ReferenceEquals(retiredFrame, host.Session.Root.Frame) && sourceProbe.Reads == retiredSourceReads;
+                retiredObservers = sourceReleased && closing.Accepted && closing.Changed && !surface.Visible &&
+                    !host.Session.Root.IsActive && closed == 1 && assetEvents == 0 &&
+                    operations[1].Token.IsCancellationRequested && operations[1].Reads == 1 && results.Count == 0;
+                Record("semantic.actions.reload." + kind + ".retirement", retiredObservers,
+                    "Cancellation may dispose the accepted surface; no AssetsReloaded observer is called after its retirement.");
+            }
         }
         finally
         {
@@ -172,6 +187,21 @@ internal sealed partial class UiAutomatedAcceptanceController
             foreach (ReloadCompletion operation in operations) operation.Fault();
             if (cover != null && ReferenceEquals(Game1.activeClickableMenu, cover)) Game1.activeClickableMenu = null;
         }
+    }
+
+    private static IUiSemanticSurfaceSession CreateSurfaceForKind(UiSemanticSurfaceService api, string kind, UiSymbolId id,
+        UiExperienceDefinition model)
+    {
+        if (kind == "terminal")
+        {
+            UiSymbolId terminalId = id.Child("terminal");
+            return api.CreateTerminal(new UiSemanticTerminalDefinition(terminalId,
+                new[] { new UiSemanticTerminalSection(model) }), new UiSemanticSurfaceOptions(terminalId));
+        }
+        return kind == "active-menu"
+            ? api.CreateActiveMenuOverlay(model, new UiSemanticSurfaceOptions(id))
+            : api.CreateSurface(model, kind == "hud" ? UiSemanticHostKind.Hud : UiSemanticHostKind.Window,
+                new UiSemanticSurfaceOptions(id));
     }
 
     private sealed class ReloadSourceProbe : IUiSemanticSource<string>, IUiVersionedSemanticSource
