@@ -1,3 +1,4 @@
+"""Behavioral regression tests for the live-harness scenario manifest and driver."""
 import datetime as dt
 import base64
 import copy
@@ -22,10 +23,28 @@ assert SPEC is not None and SPEC.loader is not None
 HARNESS = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(HARNESS)
 
+DRIVER_PATH = (
+    ROOT / "Hatifect UI" / "Hatifect.UI.Stardew" / "Diagnostics" / "UiAutomatedAcceptanceController.cs"
+)
+
 
 class LiveHarnessTests(unittest.TestCase):
+    maxDiff = None
+
     def setUp(self) -> None:
         self.scenarios = HARNESS.load_manifest()
+
+    def _read_driver_source(self) -> str:
+        """Return the current text of the automated acceptance controller the tests inspect."""
+        return DRIVER_PATH.read_text(encoding="utf-8")
+
+    def _section(self, source: str, start_marker: str, end_marker: str) -> str:
+        """Return the slice of source starting at start_marker and ending at end_marker.
+
+        Raises ValueError, same as str.index, if either marker is missing - the
+        surrounding test then reports which section it was trying to isolate.
+        """
+        return source[source.index(start_marker):source.index(end_marker)]
 
     def test_manifest_resolves_all_ui_requirements_deterministically(self) -> None:
         resolved = HARNESS.resolve_scenario(self.scenarios, "all", "ui")
@@ -50,13 +69,7 @@ class LiveHarnessTests(unittest.TestCase):
     def test_all_checks_have_exactly_one_named_owner(self) -> None:
         resolved = HARNESS.resolve_scenario(self.scenarios, "all", "ui")
         all_scenario = self.scenarios["all"]
-        driver = (
-            ROOT
-            / "Hatifect UI"
-            / "Hatifect.UI.Stardew"
-            / "Diagnostics"
-            / "UiAutomatedAcceptanceController.cs"
-        ).read_text(encoding="utf-8")
+        driver = self._read_driver_source()
 
         catalog = (
             ROOT / "Hatifect UI" / "Hatifect.UI.Stardew" / "Diagnostics"
@@ -154,13 +167,7 @@ class LiveHarnessTests(unittest.TestCase):
         resolved = HARNESS.resolve_scenario(
             self.scenarios, "semantic.locale-scale-theme", "ui"
         )
-        driver = (
-            ROOT
-            / "Hatifect UI"
-            / "Hatifect.UI.Stardew"
-            / "Diagnostics"
-            / "UiAutomatedAcceptanceController.cs"
-        ).read_text(encoding="utf-8")
+        driver = self._read_driver_source()
 
         catalog = (
             ROOT / "Hatifect UI" / "Hatifect.UI.Stardew" / "Diagnostics"
@@ -396,13 +403,7 @@ class LiveHarnessTests(unittest.TestCase):
                 }])
 
     def test_terminal_failure_is_retained_as_one_typed_diagnostic(self) -> None:
-        driver = (
-            ROOT
-            / "Hatifect UI"
-            / "Hatifect.UI.Stardew"
-            / "Diagnostics"
-            / "UiAutomatedAcceptanceController.cs"
-        ).read_text(encoding="utf-8")
+        driver = self._read_driver_source()
 
         self.assertIn("private HarnessTerminalFailure? _terminalFailure;", driver)
         self.assertIn("private bool _diagnosticsWritten;", driver)
@@ -416,21 +417,20 @@ class LiveHarnessTests(unittest.TestCase):
         self.assertNotIn("WriteDiagnostics(null)", driver)
         self.assertNotIn("error = error?.ToString()", driver)
 
-        write_diagnostics = driver[
-            driver.index("private void WriteDiagnostics()"):driver.index(
-                "private sealed class HarnessTerminalFailure"
-            )
-        ]
+        write_diagnostics = self._section(
+            driver, "private void WriteDiagnostics()", "private sealed class HarnessTerminalFailure"
+        )
         guard = write_diagnostics.index("if (_diagnosticsWritten) return;")
         move = write_diagnostics.index("File.Move(temporary, path, overwrite: true);")
         marked = write_diagnostics.index("_diagnosticsWritten = true;")
         self.assertLess(guard, move)
         self.assertLess(move, marked)
 
-        execution_failure = driver[
-            driver.index('RetainTerminalFailure("HARNESS-AUTOMATION-EXECUTION-EXCEPTION", error);'):
-            driver.index("private bool ExecuteAllNamedUiScenarios()")
-        ]
+        execution_failure = self._section(
+            driver,
+            'RetainTerminalFailure("HARNESS-AUTOMATION-EXECUTION-EXCEPTION", error);',
+            "private bool ExecuteAllNamedUiScenarios()",
+        )
         self.assertLess(
             execution_failure.index('RetainTerminalFailure("HARNESS-AUTOMATION-EXECUTION-EXCEPTION", error);'),
             execution_failure.index("WriteDiagnostics();"),
@@ -439,9 +439,7 @@ class LiveHarnessTests(unittest.TestCase):
             execution_failure.index("WriteDiagnostics();"),
             execution_failure.index("FailUnrecorded(_terminalFailure!.Reason);"),
         )
-        capture_path = driver[
-            driver.index("private void OnRendered("):driver.index("private void Execute()")
-        ]
+        capture_path = self._section(driver, "private void OnRendered(", "private void Execute()")
         self.assertLess(
             capture_path.index("_recorder.SaveAutomatedEvidence();"),
             capture_path.index("WriteDiagnostics();"),
@@ -451,37 +449,26 @@ class LiveHarnessTests(unittest.TestCase):
             capture_failure.index("WriteDiagnostics();"),
             capture_failure.index("FailUnrecorded(_terminalFailure!.Reason);"),
         )
-        lifecycle_failure = driver[
-            driver.index("private void FailAutomationLifecycle(Exception error)"):
-            driver.index("private void BeginLoadIsolatedSave()")
-        ]
+        lifecycle_failure = self._section(
+            driver,
+            "private void FailAutomationLifecycle(Exception error)",
+            "private void BeginLoadIsolatedSave()",
+        )
         self.assertLess(
             lifecycle_failure.index("WriteDiagnostics();"),
             lifecycle_failure.index("FailUnrecorded(_terminalFailure!.Reason);"),
         )
-        failed_evidence = driver[
-            driver.index("private void FailUnrecorded(string message)"):
-            driver.index("private void RetainTerminalFailure")
-        ]
+        failed_evidence = self._section(
+            driver, "private void FailUnrecorded(string message)", "private void RetainTerminalFailure"
+        )
         self.assertIn("try\n        {\n            _recorder.SaveAutomatedEvidence();", failed_evidence)
         self.assertIn(
             'RetainTerminalFailure("HARNESS-EVIDENCE-PERSISTENCE-EXCEPTION", error);',
             failed_evidence,
         )
 
-    def test_save_bootstrap_is_no_save_smoke_and_uses_stardew_save_reload(self) -> None:
-        resolved = HARNESS.resolve_scenario(self.scenarios, "save.bootstrap", "smoke")
-        driver = (
-            ROOT
-            / "Hatifect UI"
-            / "Hatifect.UI.Stardew"
-            / "Diagnostics"
-            / "UiAutomatedAcceptanceController.cs"
-        ).read_text(encoding="utf-8")
-        live_runner = (ROOT / "tools" / "hatifect-live-runner").read_text(encoding="utf-8")
-
-        self.assertFalse(resolved["requiresSave"])
-        self.assertEqual(resolved["checks"], ["save.bootstrap.reload"])
+    def _assert_bootstrap_save_reloads_instead_of_loading_a_fixture(self, driver: str) -> None:
+        """Bootstrap smoke reloads the freshly-saved game rather than loading a save fixture."""
         self.assertIn("private const int SaveFixtureSchemaVersion = 2;", driver)
         self.assertIn("SaveGame.Save()", driver)
         self.assertIn("SaveGame.Load(saveName);", driver)
@@ -496,10 +483,14 @@ class LiveHarnessTests(unittest.TestCase):
         self.assertIn("(_worldWaitTicks % 300) == 0", driver)
         self.assertIn("Game1.SetSaveName(BootstrapPlayerName);", driver)
         self.assertNotIn("Game1.SetSaveName(BootstrapSaveName);", driver)
-        bootstrap_save = driver[
-            driver.index("private void BeginBootstrapSave()"):
-            driver.index("private void CompleteBootstrapSaveAndScheduleInitialLoad()")
-        ]
+
+    def _assert_bootstrap_save_seeds_acceptance_storage(self, driver: str) -> None:
+        """BeginBootstrapSave creates the new game, seeds the acceptance chest, then saves - in that order."""
+        bootstrap_save = self._section(
+            driver,
+            "private void BeginBootstrapSave()",
+            "private void CompleteBootstrapSaveAndScheduleInitialLoad()",
+        )
         self.assertLess(
             bootstrap_save.index("Game1.game1.loadForNewGame(false);"),
             bootstrap_save.index("Game1.dayOfMonth = 1;"),
@@ -521,47 +512,55 @@ class LiveHarnessTests(unittest.TestCase):
         self.assertIn("chest.GlobalInventoryId = null;", driver)
         self.assertIn("chest.SpecialChestType = Chest.SpecialChestTypes.None;", driver)
         self.assertIn("ItemRegistry.Create(BootstrapAcceptanceStorageItemId", driver)
+
+    def _assert_return_to_title_uses_the_native_exit_action(self, driver: str) -> None:
+        """RequestReturnToTitle invokes the game's own ExitToTitle action and is shared by three lifecycles."""
         # Bootstrap reload, generic UI lifecycle, and the independent contributed CA lifecycle.
         self.assertEqual(driver.count("RequestReturnToTitle();"), 3)
-        return_to_title = driver[
-            driver.index("private static void RequestReturnToTitle()"):
-            driver.index("private static void ResetForBootstrapInitialLoad()")
-        ]
+        return_to_title = self._section(
+            driver,
+            "private static void RequestReturnToTitle()",
+            "private static void ResetForBootstrapInitialLoad()",
+        )
         self.assertIn('"ExitToTitle"', return_to_title)
         self.assertIn("types: new[] { typeof(Action) }", return_to_title)
         self.assertIn("exitToTitle.Invoke(", return_to_title)
         self.assertNotIn("CleanupReturningToTitle", return_to_title)
-        bootstrap_schedule = driver[
-            driver.index("private void CompleteBootstrapSaveAndScheduleInitialLoad()"):
-            driver.index("private void BeginBootstrapInitialLoad()")
-        ]
+
+    def _assert_bootstrap_lifecycle_reaches_initial_world_before_returning_to_title(self, driver: str) -> None:
+        """The bootstrap state machine performs its initial load and reaches a ready world before asking to return to title."""
+        bootstrap_schedule = self._section(
+            driver,
+            "private void CompleteBootstrapSaveAndScheduleInitialLoad()",
+            "private void BeginBootstrapInitialLoad()",
+        )
         schedule_state = bootstrap_schedule.index(
             "_bootstrapLifecycle = BootstrapLifecycleState.AwaitingInitialLoadStart;"
         )
         schedule_reset = bootstrap_schedule.index("ResetForBootstrapInitialLoad();")
         self.assertLess(schedule_state, schedule_reset)
         self.assertNotIn("BeginLoadSave(savePath);", bootstrap_schedule)
-        bootstrap_initial_load = driver[
-            driver.index("private void BeginBootstrapInitialLoad()"):
-            driver.index("private void CompleteBootstrapInitialLoad()")
-        ]
+
+        bootstrap_initial_load = self._section(
+            driver, "private void BeginBootstrapInitialLoad()", "private void CompleteBootstrapInitialLoad()"
+        )
         initial_state = bootstrap_initial_load.index(
             "_bootstrapLifecycle = BootstrapLifecycleState.AwaitingInitialWorld;"
         )
         initial_load = bootstrap_initial_load.index("BeginLoadSave(savePath);")
         self.assertLess(initial_state, initial_load)
-        update_loop = driver[
-            driver.index("private void OnUpdateTickedCore()"):
-            driver.index("private void OnRendered(")
-        ]
+
+        update_loop = self._section(driver, "private void OnUpdateTickedCore()", "private void OnRendered(")
         self.assertLess(
             update_loop.index("BootstrapLifecycleState.AwaitingInitialLoadStart"),
             update_loop.index("if (_saveEnumerator != null)"),
         )
-        bootstrap_world_ready = driver[
-            driver.index("private void CompleteBootstrapInitialLoad()"):
-            driver.index("private void CompleteBootstrapReloadVerification()")
-        ]
+
+        bootstrap_world_ready = self._section(
+            driver,
+            "private void CompleteBootstrapInitialLoad()",
+            "private void CompleteBootstrapReloadVerification()",
+        )
         self.assertIn("EnsureBootstrapIdentity(\"Initially loaded\");", bootstrap_world_ready)
         self.assertIn("EnsureBootstrapAcceptanceStorage(\"Initially loaded\");", bootstrap_world_ready)
         self.assertIn(
@@ -576,62 +575,84 @@ class LiveHarnessTests(unittest.TestCase):
         return_request = bootstrap_world_ready.index("RequestReturnToTitle();")
         self.assertLess(return_state, return_guard)
         self.assertLess(return_guard, return_request)
-        returned_to_title = driver[
-            driver.index("internal void OnReturnedToTitle()"):
-            driver.index("private void FailAutomationLifecycle(Exception error)")
-        ]
+
+    def _assert_returned_to_title_schedules_a_verification_reload(self, driver: str) -> None:
+        """Once the game confirms the return to title, the driver schedules a second, verification load."""
+        returned_to_title = self._section(
+            driver, "internal void OnReturnedToTitle()", "private void FailAutomationLifecycle(Exception error)"
+        )
         self.assertIn(
             "_bootstrapLifecycle = BootstrapLifecycleState.AwaitingVerificationLoadStart;",
             returned_to_title,
         )
         self.assertNotIn("BeginLoadSave(", returned_to_title)
+
+        update_loop = self._section(driver, "private void OnUpdateTickedCore()", "private void OnRendered(")
         self.assertLess(
             update_loop.index("BootstrapLifecycleState.AwaitingVerificationLoadStart"),
             update_loop.index("if (_saveEnumerator != null)"),
         )
-        verification_schedule = update_loop[
-            update_loop.index(
-                "if (_bootstrapLifecycle == BootstrapLifecycleState.AwaitingVerificationLoadStart)"
-            ):
-            update_loop.index("if (_saveEnumerator != null)")
-        ]
-        verification_schedule_call = verification_schedule.index(
-            "BeginBootstrapVerificationLoad();"
+        verification_schedule = self._section(
+            update_loop,
+            "if (_bootstrapLifecycle == BootstrapLifecycleState.AwaitingVerificationLoadStart)",
+            "if (_saveEnumerator != null)",
         )
+        verification_schedule_call = verification_schedule.index("BeginBootstrapVerificationLoad();")
         verification_schedule_return = verification_schedule.index("return;")
         self.assertLess(verification_schedule_call, verification_schedule_return)
-        verification_load = driver[
-            driver.index("private void BeginBootstrapVerificationLoad()"):
-            driver.index("private void CompleteBootstrapReloadVerification()")
-        ]
+
+    def _assert_verification_reload_confirms_state_then_resets(self, driver: str, live_runner: str) -> None:
+        """The verification reload re-checks identity and storage, then resets lifecycle state for next time."""
+        verification_load = self._section(
+            driver,
+            "private void BeginBootstrapVerificationLoad()",
+            "private void CompleteBootstrapReloadVerification()",
+        )
         verification_state = verification_load.index(
             "_bootstrapLifecycle = BootstrapLifecycleState.AwaitingVerificationWorld;"
         )
         verification_begin = verification_load.index("BeginLoadSave(savePath);")
         self.assertLess(verification_state, verification_begin)
-        bootstrap_verification = driver[
-            driver.index("private void CompleteBootstrapReloadVerification()"):
-            driver.index("private static void EnsureBootstrapIdentity(string phase)")
-        ]
+
+        bootstrap_verification = self._section(
+            driver,
+            "private void CompleteBootstrapReloadVerification()",
+            "private static void EnsureBootstrapIdentity(string phase)",
+        )
         self.assertIn("EnsureBootstrapIdentity(\"Verification-reloaded\");", bootstrap_verification)
         self.assertIn("EnsureBootstrapAcceptanceStorage(\"Verification-reloaded\");", bootstrap_verification)
         self.assertIn("acceptanceStorage = BootstrapAcceptanceStorageReceipt()", bootstrap_verification)
         self.assertIn("private static void EnsureBootstrapAcceptanceStorage(string phase)", driver)
         self.assertIn("private static object BootstrapAcceptanceStorageReceipt()", driver)
-        self.assertIn('bootstrap_preflight_result="$(python3 "$save_provisioner" bootstrap-preflight', live_runner)
+        self.assertIn(
+            'bootstrap_preflight_result="$(python3 "$save_provisioner" bootstrap-preflight', live_runner
+        )
         self.assertIn('[[ "$bootstrap_preflight_result" == "HARNESS-SAVE-FIXTURE-EXISTS" ]]', live_runner)
         self.assertIn("compatible verified fixture reuse PASS", live_runner)
         self.assertIn(
             "_bootstrapLifecycle = BootstrapLifecycleState.None;",
             bootstrap_verification,
         )
-        bootstrap_reset = driver[
-            driver.index("private static void ResetForBootstrapInitialLoad()"):
-            driver.index("private void ExecuteLifecycle()")
-        ]
+        bootstrap_reset = self._section(
+            driver, "private static void ResetForBootstrapInitialLoad()", "private void ExecuteLifecycle()"
+        )
         self.assertIn('"CleanupReturningToTitle"', bootstrap_reset)
         self.assertIn("cleanup.Invoke(", bootstrap_reset)
         self.assertIn("FailAutomationLifecycle(error);", driver)
+
+    def test_save_bootstrap_is_no_save_smoke_and_uses_stardew_save_reload(self) -> None:
+        resolved = HARNESS.resolve_scenario(self.scenarios, "save.bootstrap", "smoke")
+        driver = self._read_driver_source()
+        live_runner = (ROOT / "tools" / "hatifect-live-runner").read_text(encoding="utf-8")
+
+        self.assertFalse(resolved["requiresSave"])
+        self.assertEqual(resolved["checks"], ["save.bootstrap.reload"])
+        self._assert_bootstrap_save_reloads_instead_of_loading_a_fixture(driver)
+        self._assert_bootstrap_save_seeds_acceptance_storage(driver)
+        self._assert_return_to_title_uses_the_native_exit_action(driver)
+        self._assert_bootstrap_lifecycle_reaches_initial_world_before_returning_to_title(driver)
+        self._assert_returned_to_title_schedules_a_verification_reload(driver)
+        self._assert_verification_reload_confirms_state_then_resets(driver, live_runner)
 
     def test_wrong_runner_kind_fails_closed(self) -> None:
         with self.assertRaises(HARNESS.HarnessError):
