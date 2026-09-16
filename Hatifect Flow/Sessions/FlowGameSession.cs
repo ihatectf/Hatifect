@@ -142,24 +142,51 @@ internal sealed partial class FlowGameSession : IDisposable
         using HostOperation operation = EnterHostMutation();
         StationBinding from = FindStation(source), to = FindStation(destination);
         if (_payloads.Count >= MaxCargo) throw RejectResource(FlowAdmissionResource.RetainedCargo, _payloads.Count, MaxCargo);
-        RouteStatus route = from.Id == to.Id ? RouteStatus.NoRoute
-            : _runtime.PlanRoute(new StationId(from.Id), new StationId(to.Id)).Status;
-        if (route != RouteStatus.Found)
-            throw new CommandAdmissionFailure(route == RouteStatus.SearchLimitExceeded
-                ? FlowRejectionCode.RouteSearchLimit : FlowRejectionCode.RouteUnavailable);
+        ValidateRouteExists(from, to);
         using IDisposable access = EnterSource(from.Id);
         Item item = ReadSelectedSource(from.Id, slot);
         if (expectedFingerprint is not null
             && !MatchesSelectedFingerprint(item, expectedFingerprint))
             return null;
+        (int sourceQuantity, int units) = ValidateAndResolveQuantity(item, quantity);
+        EnsureNoConflictingPendingOperation(item);
+        Guid cargo = Guid.NewGuid(), shipment = Guid.NewGuid(), parcel = Guid.NewGuid();
+        (string payload, string taggedSourceXml) = BuildRoundTrippedCargoPayload(item, units, sourceQuantity, cargo);
+        var manifest = new CargoManifest(item.QualifiedItemId, units);
+        RegisterCargoShipmentAndParcel(from.Id, to.Id, cargo, shipment, parcel, manifest, payload, sourceQuantity);
+        TagSourceWithCargoOrFault(from.Id, slot, item, cargo, taggedSourceXml);
+        Application.Refresh();
+        return parcel;
+    }
+
+    private void ValidateRouteExists(StationBinding from, StationBinding to)
+    {
+        RouteStatus route = from.Id == to.Id ? RouteStatus.NoRoute
+            : _runtime.PlanRoute(new StationId(from.Id), new StationId(to.Id)).Status;
+        if (route != RouteStatus.Found)
+            throw new CommandAdmissionFailure(route == RouteStatus.SearchLimitExceeded
+                ? FlowRejectionCode.RouteSearchLimit : FlowRejectionCode.RouteUnavailable);
+    }
+
+    private static (int SourceQuantity, int Units) ValidateAndResolveQuantity(Item item, int? quantity)
+    {
         if (item.Stack > 999) throw new CommandAdmissionFailure(FlowRejectionCode.StateChanged);
         int sourceQuantity = item.Stack, units = quantity ?? sourceQuantity;
-        if (units <= 0 || units > sourceQuantity) throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be between one and the complete source stack.");
+        if (units <= 0 || units > sourceQuantity)
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be between one and the complete source stack.");
+        return (sourceQuantity, units);
+    }
+
+    private void EnsureNoConflictingPendingOperation(Item item)
+    {
         item.modData.TryGetValue(ChestInventoryAccess.CargoKey, out string oldToken);
         if (Guid.TryParse(oldToken, out Guid previous) && Application.ReadSnapshot().Parcels.Any(parcel => parcel.CargoId == previous
             && parcel.State is not (ParcelState.Cancelled or ParcelState.Delivered or ParcelState.Returned)))
             throw new CommandAdmissionFailure(FlowRejectionCode.OperationPending);
-        Guid cargo = Guid.NewGuid(), shipment = Guid.NewGuid(), parcel = Guid.NewGuid();
+    }
+
+    private static (string Payload, string TaggedSourceXml) BuildRoundTrippedCargoPayload(Item item, int units, int sourceQuantity, Guid cargo)
+    {
         string sourceXml = FlowItemCodec.Encode(item);
         Item captured = FlowItemCodec.Decode(sourceXml);
         if (FlowItemCodec.Encode(captured) != sourceXml)
@@ -174,18 +201,27 @@ internal sealed partial class FlowGameSession : IDisposable
         restored.Stack = sourceQuantity;
         if (FlowItemCodec.Encode(restored) != taggedSourceXml)
             throw new InvalidOperationException("The selected cargo cannot prove the complete source representation.");
-        var manifest = new CargoManifest(item.QualifiedItemId, units);
+        return (payload, taggedSourceXml);
+    }
+
+    private void RegisterCargoShipmentAndParcel(Guid fromId, Guid toId, Guid cargo, Guid shipment, Guid parcel,
+        CargoManifest manifest, string payload, int sourceQuantity)
+    {
         _payloads.Add(cargo, new CargoPayload(cargo, payload) { SourceQuantity = sourceQuantity });
-        _ports[from.Id].Register(new CargoId(cargo), manifest);
-        _runtime.RegisterCargo(new CargoId(cargo), new StationId(from.Id), manifest);
-        _runtime.CreateShipment(new ShipmentId(shipment), new StationId(from.Id), new StationId(to.Id), manifest,
+        _ports[fromId].Register(new CargoId(cargo), manifest);
+        _runtime.RegisterCargo(new CargoId(cargo), new StationId(fromId), manifest);
+        _runtime.CreateShipment(new ShipmentId(shipment), new StationId(fromId), new StationId(toId), manifest,
             new ServicePolicy(ServiceClass.Standard, DeliveryGuarantee.Reserved));
         _runtime.SplitShipment(new ShipmentId(shipment), new ParcelId(parcel), new CargoId(cargo));
         _runtime.TryReserve(new ParcelId(parcel));
+    }
+
+    private void TagSourceWithCargoOrFault(Guid fromId, int slot, Item item, Guid cargo, string taggedSourceXml)
+    {
         try
         {
             item.modData[ChestInventoryAccess.CargoKey] = cargo.ToString("D");
-            if (!ReferenceEquals(_inventory.ReadSource(from.Id, slot), item) || FlowItemCodec.Encode(item) != taggedSourceXml)
+            if (!ReferenceEquals(_inventory.ReadSource(fromId, slot), item) || FlowItemCodec.Encode(item) != taggedSourceXml)
                 throw new InvalidOperationException("Source admission was changed by an inventory observer.");
         }
         catch
@@ -196,8 +232,6 @@ internal sealed partial class FlowGameSession : IDisposable
             UpdateAvailability();
             throw;
         }
-        Application.Refresh();
-        return parcel;
     }
 
     private IDisposable EnterSource(Guid station)

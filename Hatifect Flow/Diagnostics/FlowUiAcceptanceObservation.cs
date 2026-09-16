@@ -161,49 +161,61 @@ internal sealed class FlowUiAcceptanceObservation : IDisposable
             UiEnvironment environment = actual.Environment ?? throw new InvalidOperationException("The accepted scene has no environment.");
             if (environment.Locale != expected.Locale || environment.Scale != expected.Scale
                 || environment.InputMode != (expected.Controller ? UiInputMode.Controller : UiInputMode.MouseKeyboard)) return;
-            Require(expected.CurrentPublication() == expected.PublicationVersion,
-                "The Flow publication changed before completed-frame capture.");
-            Require(actual.InstanceId != Guid.Empty && actual.Visible && !actual.Retired && !actual.Truncated
-                && !actual.HasUnmappedContent && actual.UnobservedPortalCount == 0
-                && actual.SurfaceId == expected.Experience.Id
-                && actual.ExperienceId == expected.Experience.Id && actual.CompletedRenderPass > 0,
-                "Flow UI capture has incomplete identity, content or lifecycle evidence.");
-            Captured? prior = _captures.LastOrDefault(value => ReferenceEquals(value.Surface, expected.Surface));
-            if (prior is not null)
-                Require(actual.InstanceId == prior.Snapshot.InstanceId
-                    && actual.CompletedRenderPass > prior.Snapshot.CompletedRenderPass,
-                    "The retained surface did not complete a fresh native draw.");
-            else
-                Require(_captures.All(value => value.Snapshot.InstanceId != actual.InstanceId),
-                    "A new native surface reused an earlier instance identity.");
-            expected.VerifyContents(actual);
-            VerifyRetained();
-            Require(_captures.Count < 24 && _captures.All(value => value.Name != expected.Name),
-                "Flow frame evidence repeated a name or exceeded its fixed matrix.");
-            (string screenshot, string layer) = CapturePixels(expected.Name);
-            _captures.Add(new(expected.Surface, expected.Name, expected.PublicationVersion, actual,
-                JsonSerializer.Serialize(actual), screenshot, HashFile(screenshot), layer, HashFile(layer), native,
-                expected.RevealTarget));
-            WriteEvidence();
-            _pending = null;
-            _ready = expected.Name;
+            VerifyAcceptedFrameMatchesExpectation(expected, actual);
+            RecordCapture(expected, actual, native);
         }
         catch (Exception error)
         {
             _failure = error;
-            if (observed is not null)
-            {
-                _failedFrame = new(expected.Name, observed, null, null);
-                try
-                {
-                    (string screenshot, string layer) = CapturePixels("failed-" + expected.Name);
-                    _failedFrame = _failedFrame with { Screenshot = screenshot, UiLayer = layer };
-                }
-                catch (Exception capture) { _failure = new AggregateException(error, capture); }
-            }
+            if (observed is not null) RecordFailureEvidence(expected, observed);
             try { WriteEvidence(); }
             catch (Exception write) { _failure = new AggregateException(_failure ?? error, write); }
         }
+    }
+
+    private void VerifyAcceptedFrameMatchesExpectation(Frame expected, UiSemanticSurfaceSnapshot actual)
+    {
+        Require(expected.CurrentPublication() == expected.PublicationVersion,
+            "The Flow publication changed before completed-frame capture.");
+        Require(actual.InstanceId != Guid.Empty && actual.Visible && !actual.Retired && !actual.Truncated
+            && !actual.HasUnmappedContent && actual.UnobservedPortalCount == 0
+            && actual.SurfaceId == expected.Experience.Id
+            && actual.ExperienceId == expected.Experience.Id && actual.CompletedRenderPass > 0,
+            "Flow UI capture has incomplete identity, content or lifecycle evidence.");
+        Captured? prior = _captures.LastOrDefault(value => ReferenceEquals(value.Surface, expected.Surface));
+        if (prior is not null)
+            Require(actual.InstanceId == prior.Snapshot.InstanceId
+                && actual.CompletedRenderPass > prior.Snapshot.CompletedRenderPass,
+                "The retained surface did not complete a fresh native draw.");
+        else
+            Require(_captures.All(value => value.Snapshot.InstanceId != actual.InstanceId),
+                "A new native surface reused an earlier instance identity.");
+        expected.VerifyContents(actual);
+        VerifyRetained();
+        Require(_captures.Count < 24 && _captures.All(value => value.Name != expected.Name),
+            "Flow frame evidence repeated a name or exceeded its fixed matrix.");
+    }
+
+    private void RecordCapture(Frame expected, UiSemanticSurfaceSnapshot actual, FlowUiNativeFrame native)
+    {
+        (string screenshot, string layer) = CapturePixels(expected.Name);
+        _captures.Add(new(expected.Surface, expected.Name, expected.PublicationVersion, actual,
+            JsonSerializer.Serialize(actual), screenshot, HashFile(screenshot), layer, HashFile(layer), native,
+            expected.RevealTarget));
+        WriteEvidence();
+        _pending = null;
+        _ready = expected.Name;
+    }
+
+    private void RecordFailureEvidence(Frame expected, UiSemanticSurfaceSnapshot observed)
+    {
+        _failedFrame = new(expected.Name, observed, null, null);
+        try
+        {
+            (string screenshot, string layer) = CapturePixels("failed-" + expected.Name);
+            _failedFrame = _failedFrame with { Screenshot = screenshot, UiLayer = layer };
+        }
+        catch (Exception capture) { _failure = new AggregateException(_failure!, capture); }
     }
 
     private static void VerifyContents(FlowUiAcceptance.Frame expected, UiSemanticSurfaceSnapshot actual)

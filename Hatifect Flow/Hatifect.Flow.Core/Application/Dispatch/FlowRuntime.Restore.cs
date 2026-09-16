@@ -470,6 +470,13 @@ internal sealed partial class FlowRuntime
             ScheduledOperation? pending = parcel.PendingOperation;
             IReadOnlyList<Link>? route = execution.Plan?.Links;
             bool final = route is not null && execution.Hop == route.Count - 1;
+            ValidatePendingOperationTicket(parcel, pending, final);
+            ValidateRouteCursorPosition(execution, parcel, pending, route, final);
+            ValidatePendingTicketTimeline(execution, parcel, pending, route);
+        }
+
+        private static void ValidatePendingOperationTicket(Parcel parcel, ScheduledOperation? pending, bool final)
+        {
             OperationKind? expected = parcel.State switch
             {
                 ParcelState.Reserved => OperationKind.Departure,
@@ -484,6 +491,11 @@ internal sealed partial class FlowRuntime
                 "missing or incompatible execution ticket.");
             Require(parcel.State != ParcelState.Reserved || pending!.DueTick >= 1,
                 "departure precedes its admission boundary.");
+        }
+
+        private void ValidateRouteCursorPosition(Execution execution, Parcel parcel, ScheduledOperation? pending,
+            IReadOnlyList<Link>? route, bool final)
+        {
             if (parcel.State == ParcelState.InTransit)
             {
                 Require(parcel.CurrentStation == route![execution.Hop].Origin, "transit cursor mismatch.");
@@ -504,29 +516,31 @@ internal sealed partial class FlowRuntime
                 Require(pending is null || pending.DueTick > execution.TransferTick,
                     "retry must occur after the previous delivery attempt.");
             }
-            if (route is not null && (pending is not null || parcel.State == ParcelState.ExtractionUncertain))
+        }
+
+        private void ValidatePendingTicketTimeline(Execution execution, Parcel parcel, ScheduledOperation? pending, IReadOnlyList<Link>? route)
+        {
+            if (route is null || (pending is null && parcel.State != ParcelState.ExtractionUncertain)) return;
+            long time = pending?.DueTick ?? execution.TransferTick;
+            Require(time >= execution.TransferTick, "ticket precedes admitted transfer.");
+            int first = parcel.State is ParcelState.Reserved or ParcelState.ExtractionUncertain
+                ? 0 : execution.Hop + 1;
+            for (int index = first; index < route.Count; index++)
             {
-                long time = pending?.DueTick ?? execution.TransferTick;
-                Require(time >= execution.TransferTick, "ticket precedes admitted transfer.");
-                int first = parcel.State is ParcelState.Reserved or ParcelState.ExtractionUncertain
-                    ? 0 : execution.Hop + 1;
-                for (int index = first; index < route.Count; index++)
+                time = checked(time + route[index].TransitTicks);
+            }
+            if (parcel.State is ParcelState.InTransit or ParcelState.Arrived)
+            {
+                long arrival = execution.TransferTick;
+                for (int index = 0; index <= execution.Hop; index++)
                 {
-                    time = checked(time + route[index].TransitTicks);
-                }
-                if (parcel.State is ParcelState.InTransit or ParcelState.Arrived)
-                {
-                    long arrival = execution.TransferTick;
-                    for (int index = 0; index <= execution.Hop; index++)
+                    arrival = checked(arrival + route[index].TransitTicks);
+                    if (index < execution.Hop || parcel.State == ParcelState.Arrived)
                     {
-                        arrival = checked(arrival + route[index].TransitTicks);
-                        if (index < execution.Hop || parcel.State == ParcelState.Arrived)
-                        {
-                            Require(arrival <= _data.Now, "route cursor passed an arrival that has not occurred.");
-                        }
+                        Require(arrival <= _data.Now, "route cursor passed an arrival that has not occurred.");
                     }
-                    Require(pending!.DueTick == arrival, "arrival changed its original admitted timeline.");
                 }
+                Require(pending!.DueTick == arrival, "arrival changed its original admitted timeline.");
             }
         }
 
