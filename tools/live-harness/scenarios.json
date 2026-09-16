@@ -917,28 +917,6 @@
       }
     },
     {
-      "id": "flow.ui.player.input",
-      "kind": "smoke",
-      "requiresSave": true,
-      "includeInAll": false,
-      "timeoutSeconds": 1200,
-      "requiredMods": ["Hatifect.UI", "Hatifect.Flow"],
-      "capabilities": [
-        {"id": "semantic-workflow", "required": true},
-        {"id": "user-session-gui", "required": true},
-        {"id": "quartz-post-events", "required": true}
-      ],
-      "checks": [
-        "flow.ui.player.input.loaded", "flow.ui.player.input.custody", "flow.ui.player.input.saving",
-        "flow.ui.player.input.saved", "flow.ui.player.input.delivery", "flow.ui.player.input.lifecycle",
-        "flow.ui.player.input.reload", "flow.ui.player.input.no-duplication",
-        "flow.ui.player.input.ordinary-entry", "flow.ui.player.input.native-input",
-        "flow.ui.player.input.window-actions", "flow.ui.player.input.visible-results",
-        "flow.ui.player.input.window-reopen"
-      ],
-      "automation": {"protocolVersion": 1, "driver": "Hatifect.TestHarness"}
-    },
-    {
       "id": "flow.ui.player.en-075",
       "kind": "smoke",
       "requiresSave": true,

@@ -748,19 +748,6 @@ class LiveHarnessTests(unittest.TestCase):
         for unknown in ("flow.ui.player.en-075.extra", "flow.ui.player.EN-075", "flow.ui.player.en-200"):
             self.assertNotIn(unknown, self.scenarios)
 
-    def test_flow_ui_player_input_preserves_chest_lifecycle_and_requires_exact_input_checks(self) -> None:
-        resolved = HARNESS.resolve_scenario(self.scenarios, "flow.ui.player.input", "smoke")
-        self.assertTrue(resolved["requiresSave"])
-        self.assertEqual(resolved["requiredMods"], ["Hatifect.UI", "Hatifect.Flow"])
-        self.assertEqual(resolved["timeoutSeconds"], 1200)
-        self.assertFalse(self.scenarios["flow.ui.player.input"]["includeInAll"])
-        self.assertNotIn("flow.ui.player.input", self.scenarios["all"]["includes"])
-        original = [check.replace("flow.chest.roundtrip.", "flow.ui.player.input.")
-                    for check in self.scenarios["flow.chest.roundtrip"]["checks"]]
-        self.assertEqual(resolved["checks"], original + ["flow.ui.player.input." + suffix
-                         for suffix in ("ordinary-entry", "native-input", "window-actions", "visible-results", "window-reopen")])
-        self._verify_each_flow_check_is_required(resolved)
-
     def test_save_isolation_preserves_lifecycle_checks_and_requires_separate_save_check(self) -> None:
         resolved = HARNESS.resolve_scenario(self.scenarios, "flow.save.isolation", "smoke")
         self.assertTrue(resolved["requiresSave"])
@@ -1139,10 +1126,6 @@ class LiveHarnessTests(unittest.TestCase):
             runner.index('python3 "$user_session_runtime" preflight'),
             runner.index('"$save_provisioner" plan'),
         )
-        self.assertLess(
-            runner.index('python3 "$user_session_runtime" preflight'),
-            runner.index('semantic_validator record-event'),
-        )
         self.assertNotIn('HATIFECT_SMAPI_TEST_SAVE', runner)
         self.assertIn('submit', runner)
         self.assertIn('exec python3 "$user_session_runtime"', runner)
@@ -1187,8 +1170,6 @@ class LiveHarnessTests(unittest.TestCase):
                 "validate.py",
                 "user_session_runtime.py",
                 "save_provisioning.py",
-                "semantic-test-agent.py",
-                "macos_native_input_driver.py",
             ):
                 (live_harness / name).write_text("", encoding="utf-8")
             fake_bin = Path(directory) / "bin"
@@ -1235,7 +1216,7 @@ class LiveHarnessTests(unittest.TestCase):
                 [
                     str(tools / "hatifect-live-runner"),
                     "smoke",
-                    "flow.ui.player.input",
+                    "flow.ui.player",
                     str(result),
                     str(artifact),
                 ],
@@ -1258,7 +1239,6 @@ class LiveHarnessTests(unittest.TestCase):
         self.assertFalse(
             any(
                 "save_provisioning.py" in call
-                or "semantic-test-agent.py" in call
                 or "user_session_runtime.py submit" in call
                 for call in observed
             )

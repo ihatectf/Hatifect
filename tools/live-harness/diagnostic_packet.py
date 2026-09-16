@@ -78,7 +78,6 @@ PACKET_FILE_ORDER = (
 
 RAW_LOG_NAMES = {
     "harness.log",
-    "semantic-test-agent.log",
     "smapi-console.log",
     "smapi.log",
     "transport.log",

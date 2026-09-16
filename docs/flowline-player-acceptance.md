@@ -62,9 +62,10 @@ installation now pass on that candidate.
 
 ## Next dependency-ready work
 
-1. After macOS grants Accessibility to the Python runtime, run `flow.ui.player.input` on the
-   unchanged fixed composition and require the complete phase/action-result capture set through
-   final `Delivered`.
+1. The automated `flow.ui.player.input` scenario and its macOS Quartz native-input driver have
+   been removed from the live harness; this checked-in-workflow path is no longer runnable. Any
+   future physical-input acceptance for this scenario needs a new, separately scoped decision, not
+   a resumption of the removed driver.
 2. When NuGet DNS is available, repeat the single-command `release.sh` gate. The deterministic
    assemble/archive/deploy stages and exact install bytes already pass; failed restores
    `run-6tt9wtlk` and `run-2vsbdv4c` must not be reported as PASS.

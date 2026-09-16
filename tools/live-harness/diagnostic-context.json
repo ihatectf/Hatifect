@@ -96,20 +96,6 @@
       ],
       "secondaryExpansionCandidates": []
     },
-    "native-input-driver": {
-      "directDependencies": [
-        "semantic-test-agent"
-      ],
-      "primarySourceFiles": [
-        "tools/live-harness/macos_native_input_driver.py"
-      ],
-      "scenarioTestFiles": [
-        "tools/tests/test_macos_native_input_driver.py"
-      ],
-      "secondaryExpansionCandidates": [
-        "tools/live-harness/SEMANTIC_TESTS.md"
-      ]
-    },
     "reproduction-planner": {
       "directDependencies": [
         "harness-validator"
@@ -247,23 +233,7 @@
       "scenarioTestFiles": [
         "tools/tests/test_live_harness.py"
       ],
-      "secondaryExpansionCandidates": [
-        "tools/live-harness/SEMANTIC_TESTS.md"
-      ]
-    },
-    "semantic-test-agent": {
-      "directDependencies": [
-        "scenario-manifest"
-      ],
-      "primarySourceFiles": [
-        "tools/live-harness/semantic_test_agent.py"
-      ],
-      "scenarioTestFiles": [
-        "tools/tests/test_semantic_test_agent.py"
-      ],
-      "secondaryExpansionCandidates": [
-        "tools/live-harness/SEMANTIC_TESTS.md"
-      ]
+      "secondaryExpansionCandidates": []
     },
     "semantic-ui": {
       "directDependencies": [

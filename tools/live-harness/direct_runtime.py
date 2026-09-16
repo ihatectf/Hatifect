@@ -1764,8 +1764,7 @@ def direct(args: argparse.Namespace) -> int:
                 Path(metadata["validatorExecutable"]),
             )
             result_status = validator.validate_result(_read_json(result_path), args.scenario)
-            if not (artifact / "semantic-test-agent.log").exists():
-                validator.complete_scenario(result_path)
+            validator.complete_scenario(result_path)
             if result_status != status or _exit_code(result_status) != exit_code:
                 raise DirectRuntimeError(
                     "Direct transport response conflicts with authoritative result.json."
@@ -1797,8 +1796,7 @@ def direct(args: argparse.Namespace) -> int:
                     "hatifect_direct_client_error_tail",
                     Path(metadata["validatorExecutable"]),
                 )
-                if not (artifact / "semantic-test-agent.log").exists():
-                    validator.complete_scenario(result_path)
+                validator.complete_scenario(result_path)
                 response = _response(
                     request,
                     state,
