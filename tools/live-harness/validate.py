@@ -57,10 +57,8 @@ PREFLIGHT_REASON_CODES = {
     "SAVE_FIXTURE_UNAVAILABLE",
     "SAVE_FIXTURE_INVALID",
     "EXECUTOR_UNAVAILABLE",
-    "SEMANTIC_WORKFLOW_INVALID",
     "PLATFORM_UNSUPPORTED",
     "GUI_SESSION_UNAVAILABLE",
-    "QUARTZ_ACCESSIBILITY_DENIED",
     "USER_SESSION_PROBE_FAILED",
 }
 CAPABILITY_DEFINITIONS = {
@@ -99,20 +97,10 @@ CAPABILITY_DEFINITIONS = {
         "probeLayer": "executor-state",
         "assertionId": "HARNESS-PREFLIGHT-USER-SESSION-EXECUTOR",
     },
-    "semantic-workflow": {
-        "owner": "semantic-test-agent",
-        "probeLayer": "checked-in-workflow",
-        "assertionId": "HARNESS-PREFLIGHT-SEMANTIC-WORKFLOW",
-    },
     "user-session-gui": {
         "owner": "user-session-runtime",
         "probeLayer": "macos-window-server",
         "assertionId": "HARNESS-PREFLIGHT-USER-SESSION-GUI",
-    },
-    "quartz-post-events": {
-        "owner": "native-input-driver",
-        "probeLayer": "macos-quartz",
-        "assertionId": "HARNESS-PREFLIGHT-QUARTZ-POST-EVENTS",
     },
 }
 PREFLIGHT_FAILURE_CLASSES = {
@@ -1559,8 +1547,6 @@ def _failure_context(
     upper = assertion_id.upper()
     if assertion_id in HARNESS_CLEANUP_ASSERTION_IDS:
         defaults = ("cleanup", "CLEANUP_FAILURE", "runtime-cleanup")
-    elif upper == "HARNESS-SEMANTIC-TEST-AGENT":
-        defaults = ("runtime", "AUTOMATION_DRIVER_FAILURE", "semantic-test-agent")
     elif upper == "HARNESS-PREPARE":
         defaults = ("prepare", "PREPARATION_FAILURE", "deployment-preparer")
     elif upper == "HARNESS-REPRODUCTION-CHECKPOINT":
@@ -1680,13 +1666,11 @@ def _relevant_artifacts(
         SEMANTIC_EVENT_ERROR_PATH: 4,
         "host-acceptance-report.json": 5,
         "diagnostics/runtime.json": 6,
-        "diagnostics/semantic-test-agent.json": 7,
-        "diagnostics/executor-failure.json": 8,
-        "diagnostics/worker-failure.json": 9,
-        "diagnostics/transport-result.json": 10,
-        "semantic-test-agent.log": 11,
-        "smapi.log": 12,
-        "harness.log": 13,
+        "diagnostics/executor-failure.json": 7,
+        "diagnostics/worker-failure.json": 8,
+        "diagnostics/transport-result.json": 9,
+        "smapi.log": 10,
+        "harness.log": 11,
     }
     contained: list[str] = []
     for relative in candidates:
@@ -2740,9 +2724,7 @@ def record_cleanup_failure(
     validate_failure_envelope(envelope)
     _atomic_write_json(result_path.parent / "failure.json", envelope)
     _atomic_write_text(result_path.parent / "failure-summary.txt", _failure_summary(envelope))
-    if not (result_path.parent / "direct-process-state.json").exists() and not (
-        result_path.parent / "semantic-test-agent.log"
-    ).exists():
+    if not (result_path.parent / "direct-process-state.json").exists():
         completed = complete_scenario(result_path, timestamp=cleanup["timestamp"])
         if isinstance(completed, dict) and "semantic_event_tail" in completed:
             envelope = completed
@@ -2860,9 +2842,7 @@ def write_result(
         causal_component=causal_component,
         cascade_dependencies=cascade_dependencies,
     )
-    if not (path.parent / "direct-process-state.json").exists() and not (
-        path.parent / "semantic-test-agent.log"
-    ).exists():
+    if not (path.parent / "direct-process-state.json").exists():
         complete_scenario(path, timestamp=failure_timestamp)
 
 

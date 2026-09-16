@@ -55,7 +55,6 @@ class FailureEnvelopeTests(unittest.TestCase):
             ("HARNESS-REPRODUCTION-CHECKPOINT", "preflight"),
             ("HARNESS-PREPARE", "prepare"),
             ("HARNESS-SAVE-BOOTSTRAP-INVALID", "prepare"),
-            ("HARNESS-SEMANTIC-TEST-AGENT", "runtime"),
             ("HARNESS-PROCESS-BOOT", "runtime"),
             ("HARNESS-REPORT-VALIDATION", "validation"),
             ("HARNESS-OPTIONS-RESTORE", "cleanup"),

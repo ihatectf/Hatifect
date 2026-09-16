@@ -66,9 +66,6 @@ class CapabilityPreflightTests(unittest.TestCase):
         player = HARNESS.resolve_scenario(
             self.scenarios, "flow.ui.player", "smoke"
         )
-        physical_input = HARNESS.resolve_scenario(
-            self.scenarios, "flow.ui.player.input", "smoke"
-        )
 
         self.assertEqual(
             [item["id"] for item in lifecycle["capabilities"]],
@@ -88,14 +85,6 @@ class CapabilityPreflightTests(unittest.TestCase):
             {"id": "isolated-save-fixture", "requirement": "required"},
             player["capabilities"],
         )
-        self.assertEqual(
-            [item["id"] for item in physical_input["capabilities"]][-3:],
-            [
-                "semantic-workflow",
-                "user-session-gui",
-                "quartz-post-events",
-            ],
-        )
 
     def test_aggregate_capabilities_are_unioned_deduplicated_and_stably_ordered(self) -> None:
         scenarios = {
@@ -103,15 +92,14 @@ class CapabilityPreflightTests(unittest.TestCase):
                 "semantic.one",
                 required_mods=["Author.Mod"],
                 capabilities=[
-                    {"id": "quartz-post-events", "required": False},
+                    {"id": "user-session-gui", "required": False},
                 ],
             ),
             "semantic.two": self._scenario(
                 "semantic.two",
                 requires_save=True,
                 capabilities=[
-                    {"id": "quartz-post-events", "required": True},
-                    {"id": "user-session-gui", "required": False},
+                    {"id": "user-session-gui", "required": True},
                 ],
             ),
             "all": self._scenario(
@@ -132,8 +120,7 @@ class CapabilityPreflightTests(unittest.TestCase):
                 {"id": "required-mods", "requirement": "required"},
                 {"id": "isolated-save-fixture", "requirement": "required"},
                 {"id": "user-session-executor", "requirement": "required"},
-                {"id": "user-session-gui", "requirement": "optional"},
-                {"id": "quartz-post-events", "requirement": "required"},
+                {"id": "user-session-gui", "requirement": "required"},
             ],
         )
 
@@ -187,14 +174,14 @@ class CapabilityPreflightTests(unittest.TestCase):
             HARNESS.resolve_scenario(self.scenarios, "semantic.lifecycle", "ui")
         )
         resolved["capabilities"].append(
-            {"id": "quartz-post-events", "requirement": "optional"}
+            {"id": "user-session-gui", "requirement": "optional"}
         )
         outcomes = self._available_outcomes(resolved)
-        outcomes["quartz-post-events"] = {
+        outcomes["user-session-gui"] = {
             "status": "missing",
             "classification": "environment-failure",
-            "reasonCode": "QUARTZ_ACCESSIBILITY_DENIED",
-            "explanation": "Quartz post-event access is not granted.",
+            "reasonCode": "GUI_SESSION_UNAVAILABLE",
+            "explanation": "The macOS WindowServer GUI session is unavailable.",
         }
 
         report = HARNESS.build_preflight_report(
@@ -259,9 +246,13 @@ class CapabilityPreflightTests(unittest.TestCase):
             )
 
     def test_mixed_missing_required_preserve_typed_context_for_root_and_additional_failures(self) -> None:
-        resolved = HARNESS.resolve_scenario(
-            self.scenarios, "flow.ui.player.input", "smoke"
-        )
+        scenarios = {
+            "mixed.failure": self._scenario(
+                "mixed.failure",
+                capabilities=[{"id": "user-session-gui", "required": True}],
+            ),
+        }
+        resolved = HARNESS.resolve_scenario(scenarios, "mixed.failure", "ui")
         outcomes = self._available_outcomes(resolved)
         for capability_id, status, classification, reason in (
             (
@@ -271,10 +262,10 @@ class CapabilityPreflightTests(unittest.TestCase):
                 "SMAPI_UNAVAILABLE",
             ),
             (
-                "semantic-workflow",
+                "isolated-deployment",
                 "error",
                 "misconfiguration",
-                "SEMANTIC_WORKFLOW_INVALID",
+                "DEPLOYMENT_INVALID",
             ),
             (
                 "user-session-gui",
@@ -315,7 +306,7 @@ class CapabilityPreflightTests(unittest.TestCase):
         self.assertEqual(
             [item["id"] for item in failure["additional_failures"]],
             [
-                "HARNESS-PREFLIGHT-SEMANTIC-WORKFLOW",
+                "HARNESS-PREFLIGHT-ISOLATED-DEPLOYMENT",
                 "HARNESS-PREFLIGHT-USER-SESSION-GUI",
             ],
         )
@@ -338,7 +329,7 @@ class CapabilityPreflightTests(unittest.TestCase):
                 (
                     "preflight",
                     "PREFLIGHT_MISCONFIGURATION",
-                    "semantic-test-agent",
+                    "deployment-preparer",
                 ),
                 (
                     "preflight",
@@ -351,12 +342,12 @@ class CapabilityPreflightTests(unittest.TestCase):
             records,
             (
                 "smapi-runtime",
-                "semantic-workflow",
+                "isolated-deployment",
                 "user-session-gui",
             ),
             (
                 "SMAPI_UNAVAILABLE",
-                "SEMANTIC_WORKFLOW_INVALID",
+                "DEPLOYMENT_INVALID",
                 "PLATFORM_UNSUPPORTED",
             ),
             strict=True,
@@ -367,7 +358,7 @@ class CapabilityPreflightTests(unittest.TestCase):
 
     def test_report_serialization_and_order_are_deterministic_and_bounded(self) -> None:
         resolved = HARNESS.resolve_scenario(
-            self.scenarios, "flow.ui.player.input", "smoke"
+            self.scenarios, "flow.ui.player", "smoke"
         )
         outcomes = self._available_outcomes(resolved)
 
@@ -391,7 +382,7 @@ class CapabilityPreflightTests(unittest.TestCase):
 
     def test_failure_validation_rejects_lost_additional_preflight_context(self) -> None:
         resolved = HARNESS.resolve_scenario(
-            self.scenarios, "flow.ui.player.input", "smoke"
+            self.scenarios, "flow.ui.player", "smoke"
         )
         outcomes = self._available_outcomes(resolved)
         for capability_id, status, classification, reason in (
@@ -402,10 +393,10 @@ class CapabilityPreflightTests(unittest.TestCase):
                 "SMAPI_UNAVAILABLE",
             ),
             (
-                "semantic-workflow",
+                "isolated-deployment",
                 "error",
                 "misconfiguration",
-                "SEMANTIC_WORKFLOW_INVALID",
+                "DEPLOYMENT_INVALID",
             ),
         ):
             outcomes[capability_id] = {
@@ -439,7 +430,7 @@ class CapabilityPreflightTests(unittest.TestCase):
 
     def test_failure_validation_rejects_omitted_or_replaced_preflight_failure(self) -> None:
         resolved = HARNESS.resolve_scenario(
-            self.scenarios, "flow.ui.player.input", "smoke"
+            self.scenarios, "flow.ui.player", "smoke"
         )
         outcomes = self._available_outcomes(resolved)
         for capability_id, classification, reason in (
@@ -449,9 +440,9 @@ class CapabilityPreflightTests(unittest.TestCase):
                 "SMAPI_UNAVAILABLE",
             ),
             (
-                "semantic-workflow",
+                "isolated-deployment",
                 "misconfiguration",
-                "SEMANTIC_WORKFLOW_INVALID",
+                "DEPLOYMENT_INVALID",
             ),
         ):
             outcomes[capability_id] = {
@@ -525,7 +516,7 @@ class CapabilityPreflightTests(unittest.TestCase):
 
     def test_report_contains_only_bounded_scalar_allowlisted_evidence(self) -> None:
         resolved = HARNESS.resolve_scenario(
-            self.scenarios, "flow.ui.player.input", "smoke"
+            self.scenarios, "flow.ui.player", "smoke"
         )
         report = HARNESS.build_preflight_report(
             resolved,

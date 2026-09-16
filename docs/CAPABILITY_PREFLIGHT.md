@@ -14,10 +14,9 @@ owns environment probes because it is the existing boundary that verifies the cu
 executor before a request is submitted. `save_provisioning.py` owns the read-only save-fixture
 probe. The shell runner only preserves ordering:
 
-`scenario validation → capability preflight → save bootstrap/plan → semantic companion → executor submit → direct runtime → game`
+`scenario validation → capability preflight → save bootstrap/plan → executor submit → direct runtime → game`
 
-A failed required capability therefore cannot start save provisioning, semantic interaction or the
-SMAPI process. The preflight does not launch an executor, stop another executor or acquire the
+A failed required capability therefore cannot start save provisioning or the SMAPI process. The preflight does not launch an executor, stop another executor or acquire the
 direct-run lock. It accepts only the existing matching worktree executor in `Ready`.
 
 The artifact-writability check creates one private request-owned temporary file in the selected run
@@ -43,24 +42,12 @@ vocabulary below. Required wins over optional.
 | `required-mods` | non-empty `requiredMods` | scenario manifest / isolated Mods |
 | `isolated-save-fixture` | `requiresSave=true` | save provisioning / isolated save fixture |
 | `user-session-executor` | every scenario | user-session runtime / executor state |
-| `semantic-workflow` | explicit semantic workflow | semantic test agent / canonical checked-in workflow loader |
 | `user-session-gui` | explicit native workflow | user-session runtime / macOS WindowServer |
-| `quartz-post-events` | explicit native workflow | native input driver / macOS Quartz |
 
-`flow.ui.player.input` declares the last three requirements because its checked-in semantic workflow
-uses physical Quartz input. The GUI probe calls the real WindowServer-facing CoreGraphics API and
-the input probe calls `CGPreflightPostEventAccess()` in the current user session. Non-macOS hosts
-report these capabilities as unsupported rather than simulating them.
-
-The semantic-workflow probe calls the same canonical loader used again by the semantic companion.
-It accepts only the exact scenario-named regular file below `semantic-tests/`, rejects symlinks and
-files above 256 KiB, parses JSON, checks scenario identity and validates the complete workflow
-schema, operations and selectors. Validation also models the three built-in variables and processes
-steps in execution order: `capture`/`discover` names are bounded to 96 characters, the shared
-128-name budget counts unique names, and every recursively resolved `${name}` reference must name
-an initial or previously defined variable. This preflight load is read-only and does not construct
-the Quartz backend, post GUI events or start a process. Runtime boundary validation remains
-mandatory so source or workflow changes after preflight still fail closed.
+No current scenario declares `user-session-gui`; it remains available for a future scenario that
+needs a live macOS GUI session without also needing scripted input. The GUI probe calls the real
+WindowServer-facing CoreGraphics API. Non-macOS hosts report this capability as unsupported rather
+than simulating it.
 
 ## `preflight.json` format v1
 

@@ -1072,16 +1072,6 @@ def _macos_gui_available() -> bool:
     return application_services.CGMainDisplayID() != 0
 
 
-def _quartz_post_events_available() -> bool:
-    application_services = ctypes.CDLL(
-        "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
-    )
-    if not hasattr(application_services, "CGPreflightPostEventAccess"):
-        return False
-    application_services.CGPreflightPostEventAccess.restype = ctypes.c_bool
-    return bool(application_services.CGPreflightPostEventAccess())
-
-
 def _probe_capabilities(
     repository: Path,
     resolved: dict[str, Any],
@@ -1278,53 +1268,12 @@ def _probe_capabilities(
                 "No matching Ready user-session executor is available for this worktree.",
             )
 
-    if "semantic-workflow" in capability_ids:
-        try:
-            agent = _load_module(
-                "hatifect_capability_semantic_workflow",
-                repository / "tools" / "live-harness" / "semantic-test-agent.py",
-            )
-            agent.load_spec(
-                repository
-                / "tools"
-                / "live-harness"
-                / "semantic-tests"
-                / f"{resolved['id']}.json",
-                resolved["id"],
-            )
-            outcomes["semantic-workflow"] = _available(
-                "The exact checked-in semantic workflow passed its canonical bounded validation."
-            )
-        except (
-            FileNotFoundError,
-            ImportError,
-            OSError,
-            RuntimeError,
-            SyntaxError,
-            TypeError,
-            UnicodeError,
-            ValueError,
-            json.JSONDecodeError,
-        ):
-            outcomes["semantic-workflow"] = _preflight_outcome(
-                "error",
-                "misconfiguration",
-                "SEMANTIC_WORKFLOW_INVALID",
-                "The exact checked-in semantic workflow failed canonical bounded validation.",
-            )
-
     for capability_id, probe, denied_reason, explanation in (
         (
             "user-session-gui",
             _macos_gui_available,
             "GUI_SESSION_UNAVAILABLE",
             "The macOS WindowServer GUI session is unavailable.",
-        ),
-        (
-            "quartz-post-events",
-            _quartz_post_events_available,
-            "QUARTZ_ACCESSIBILITY_DENIED",
-            "macOS has not granted Quartz post-event Accessibility permission.",
         ),
     ):
         if capability_id not in capability_ids:

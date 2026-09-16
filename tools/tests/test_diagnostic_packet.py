@@ -352,7 +352,6 @@ class DiagnosticPacketTests(unittest.TestCase):
             "deployment-preparer",
             "harness-preflight",
             "harness-validator",
-            "native-input-driver",
             "reproduction-planner",
             "runtime-cleanup",
             "runtime-executor",
@@ -362,7 +361,6 @@ class DiagnosticPacketTests(unittest.TestCase):
             "save-provisioner",
             "save-provisioning",
             "scenario-manifest",
-            "semantic-test-agent",
             "user-session-runtime",
         }
         self.assertEqual(emitted - set(mapping["components"]), set())

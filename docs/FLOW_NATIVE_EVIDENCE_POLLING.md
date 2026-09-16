@@ -1,5 +1,10 @@
 # Bounded polling of native Flow evidence
 
+The `flow.ui.player.input` scenario and its macOS Quartz native-input driver have since been
+removed from the live harness, so the verification command below no longer runs. This report is
+retained as the historical record of the polling defect it found and fixed in
+`FlowPlayerNativeSequence.Admit`, which remains in the shipped source.
+
 ## Observed request
 
 Request `256dcac6-8947-4709-86d9-bc6953c64fde` ran source

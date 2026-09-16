@@ -1,4 +1,3 @@
-import copy
 import contextlib
 import datetime as dt
 import fcntl
@@ -6,7 +5,6 @@ import importlib.util
 import io
 import json
 import os
-import shutil
 import tempfile
 import threading
 import unittest
@@ -26,15 +24,6 @@ REAL_LOAD_MODULE = RUNTIME._load_module
 VALIDATOR = REAL_LOAD_MODULE(
     "hatifect_user_session_test_validator",
     ROOT / "tools" / "live-harness" / "validate.py",
-)
-SEMANTIC_SOURCE_ROOT = ROOT / "tools" / "live-harness"
-SEMANTIC_SOURCE_FILES = (
-    "semantic-test-agent.py",
-    "semantic_agent_ui.py",
-    "semantic_test_agent.py",
-    "semantic_interactions.py",
-    "native_button_lease.py",
-    "macos_native_input_driver.py",
 )
 
 
@@ -146,73 +135,6 @@ class UserSessionRuntimeTests(unittest.TestCase):
         self.direct_patch.stop()
         self.temporary.cleanup()
 
-    def _install_semantic_workflow(
-        self,
-        *,
-        document: dict | None = None,
-        encoded: bytes | None = None,
-        symlink: bool = False,
-    ) -> Path:
-        target_root = self.repository / "tools" / "live-harness"
-        for name in SEMANTIC_SOURCE_FILES:
-            shutil.copy2(SEMANTIC_SOURCE_ROOT / name, target_root / name)
-        workflow_root = target_root / "semantic-tests"
-        workflow_root.mkdir(exist_ok=True)
-        workflow = workflow_root / "flow.ui.player.input.json"
-        if encoded is None:
-            value = document
-            if value is None:
-                value = json.loads(
-                    (
-                        SEMANTIC_SOURCE_ROOT
-                        / "semantic-tests"
-                        / "flow.ui.player.input.json"
-                    ).read_text(encoding="utf-8")
-                )
-            encoded = json.dumps(value).encode("utf-8")
-        if symlink:
-            external = self.repository / "foreign-workflow.json"
-            external.write_bytes(encoded)
-            workflow.symlink_to(external)
-        else:
-            workflow.write_bytes(encoded)
-        return workflow
-
-    def _semantic_workflow(self, steps: list[dict]) -> dict:
-        document = json.loads(
-            (
-                SEMANTIC_SOURCE_ROOT
-                / "semantic-tests"
-                / "flow.ui.player.input.json"
-            ).read_text(encoding="utf-8")
-        )
-        document["steps"] = steps
-        return document
-
-    def _probe_semantic_workflow(self) -> dict[str, str]:
-        def load(name: str, path: Path):
-            if path.name == "validate.py":
-                return self.validator
-            return REAL_LOAD_MODULE(name, path)
-
-        resolved = {
-            "id": "flow.ui.player.input",
-            "timeoutSeconds": 1200,
-            "capabilities": [
-                {"id": "semantic-workflow", "requirement": "required"},
-            ],
-        }
-        with mock.patch.object(RUNTIME, "_load_module", side_effect=load):
-            return RUNTIME._probe_capabilities(
-                self.repository,
-                resolved,
-                self.isolated,
-                self.artifact,
-                "",
-                "1200",
-                "0",
-            )["semantic-workflow"]
-
     def test_typed_request_accepts_exact_workspace_identity(self) -> None:
         validated = RUNTIME._validate_request(
             self.request, self.repository, now=RUNTIME._parse_timestamp(self.request["createdAtUtc"])
@@ -226,338 +148,6 @@ class UserSessionRuntimeTests(unittest.TestCase):
         self.assertTrue(RUNTIME._artifact_writable(self.artifact))
         self.assertEqual(list(self.artifact.glob(".preflight-write-probe-*.tmp")), [])
 
-    def test_valid_semantic_workflow_is_available_without_runtime_side_effects(self) -> None:
-        self._install_semantic_workflow()
-        with (
-            mock.patch.object(
-                RUNTIME, "_macos_gui_available", side_effect=AssertionError
-            ),
-            mock.patch.object(
-                RUNTIME, "_quartz_post_events_available", side_effect=AssertionError
-            ),
-            mock.patch("subprocess.Popen", side_effect=AssertionError),
-            mock.patch("subprocess.run", side_effect=AssertionError),
-            mock.patch.object(RUNTIME.ctypes, "CDLL", side_effect=AssertionError),
-        ):
-            outcome = self._probe_semantic_workflow()
-
-        self.assertEqual(outcome["status"], "available")
-        self.assertEqual(outcome["classification"], "available")
-
-    def test_malformed_semantic_workflow_is_a_misconfiguration(self) -> None:
-        self._install_semantic_workflow(encoded=b"{")
-
-        outcome = self._probe_semantic_workflow()
-
-        self.assertEqual(
-            (outcome["status"], outcome["classification"], outcome["reasonCode"]),
-            ("error", "misconfiguration", "SEMANTIC_WORKFLOW_INVALID"),
-        )
-
-    def test_invalid_semantic_workflow_publishes_canonical_blocked_result(self) -> None:
-        self._install_semantic_workflow(encoded=b"{")
-        resolved = {
-            "id": "flow.ui.player.input",
-            "capabilities": [
-                {"id": "semantic-workflow", "requirement": "required"},
-            ],
-        }
-
-        report = VALIDATOR.publish_preflight(
-            self.artifact,
-            self.artifact / "result.json",
-            resolved,
-            self.request_id,
-            {"semantic-workflow": self._probe_semantic_workflow()},
-            timestamp=self.request["createdAtUtc"],
-        )
-        result = json.loads(
-            (self.artifact / "result.json").read_text(encoding="utf-8")
-        )
-        failure = json.loads(
-            (self.artifact / "failure.json").read_text(encoding="utf-8")
-        )
-
-        self.assertEqual(report["status"], "BLOCKED")
-        self.assertEqual(result["status"], "BLOCKED")
-        self.assertEqual(
-            result["assertions"][0]["id"],
-            "HARNESS-PREFLIGHT-SEMANTIC-WORKFLOW",
-        )
-        self.assertIn(
-            "SEMANTIC_WORKFLOW_INVALID",
-            result["assertions"][0]["actual"],
-        )
-        self.assertEqual(failure["phase"], "preflight")
-        self.assertEqual(
-            failure["failure_class"], "PREFLIGHT_MISCONFIGURATION"
-        )
-        self.assertEqual(
-            failure["causal_component"], "semantic-test-agent"
-        )
-
-    def test_oversized_semantic_workflow_is_a_misconfiguration(self) -> None:
-        self._install_semantic_workflow(encoded=b" " * (256 * 1024 + 1))
-
-        outcome = self._probe_semantic_workflow()
-
-        self.assertEqual(
-            (outcome["status"], outcome["classification"], outcome["reasonCode"]),
-            ("error", "misconfiguration", "SEMANTIC_WORKFLOW_INVALID"),
-        )
-
-    def test_foreign_semantic_workflow_identity_is_a_misconfiguration(self) -> None:
-        document = json.loads(
-            (
-                SEMANTIC_SOURCE_ROOT
-                / "semantic-tests"
-                / "flow.ui.player.input.json"
-            ).read_text(encoding="utf-8")
-        )
-        document["id"] = "foreign.scenario"
-        self._install_semantic_workflow(document=document)
-
-        outcome = self._probe_semantic_workflow()
-
-        self.assertEqual(
-            (outcome["status"], outcome["classification"], outcome["reasonCode"]),
-            ("error", "misconfiguration", "SEMANTIC_WORKFLOW_INVALID"),
-        )
-
-    def test_invalid_semantic_workflow_schema_operation_and_selector_are_rejected(self) -> None:
-        source = json.loads(
-            (
-                SEMANTIC_SOURCE_ROOT
-                / "semantic-tests"
-                / "flow.ui.player.input.json"
-            ).read_text(encoding="utf-8")
-        )
-        invalid_documents = []
-        invalid_schema = copy.deepcopy(source)
-        invalid_schema["unexpected"] = True
-        invalid_documents.append(invalid_schema)
-        invalid_operation = copy.deepcopy(source)
-        invalid_operation["steps"][0]["op"] = "execute"
-        invalid_documents.append(invalid_operation)
-        invalid_selector = copy.deepcopy(source)
-        selector_step = next(
-            step for step in invalid_selector["steps"] if "selector" in step
-        )
-        selector_step["selector"]["coordinate"] = "1,1"
-        invalid_documents.append(invalid_selector)
-
-        for document in invalid_documents:
-            with self.subTest(step=document["steps"][0]["op"]):
-                self._install_semantic_workflow(document=document)
-                outcome = self._probe_semantic_workflow()
-                self.assertEqual(
-                    (
-                        outcome["status"],
-                        outcome["classification"],
-                        outcome["reasonCode"],
-                    ),
-                    ("error", "misconfiguration", "SEMANTIC_WORKFLOW_INVALID"),
-                )
-
-    def test_semantic_workflow_rejects_missing_operation_operands(self) -> None:
-        source = json.loads(
-            (
-                SEMANTIC_SOURCE_ROOT
-                / "semantic-tests"
-                / "flow.ui.player.input.json"
-            ).read_text(encoding="utf-8")
-        )
-        cases = (
-            ("key", "key"),
-            ("text", "value"),
-            ("move", "source"),
-        )
-        for operation, field in cases:
-            with self.subTest(operation=operation, field=field):
-                document = copy.deepcopy(source)
-                step = next(
-                    item
-                    for item in document["steps"]
-                    if item["op"] == operation
-                )
-                del step[field]
-                self._install_semantic_workflow(document=document)
-
-                outcome = self._probe_semantic_workflow()
-
-                self.assertEqual(
-                    (
-                        outcome["status"],
-                        outcome["classification"],
-                        outcome["reasonCode"],
-                    ),
-                    ("error", "misconfiguration", "SEMANTIC_WORKFLOW_INVALID"),
-                )
-
-    def test_semantic_workflow_rejects_invalid_operation_condition_payloads(self) -> None:
-        source = json.loads(
-            (
-                SEMANTIC_SOURCE_ROOT
-                / "semantic-tests"
-                / "flow.ui.player.input.json"
-            ).read_text(encoding="utf-8")
-        )
-        invalid_documents = []
-        missing_wait_conditions = copy.deepcopy(source)
-        wait = next(
-            item
-            for item in missing_wait_conditions["steps"]
-            if item["op"] == "wait"
-        )
-        del wait["conditions"]
-        invalid_documents.append(
-            ("missing wait conditions", missing_wait_conditions)
-        )
-        foreign_element_source = copy.deepcopy(source)
-        wait_element = next(
-            item
-            for item in foreign_element_source["steps"]
-            if item["op"] == "waitElement"
-        )
-        wait_element["conditions"][0]["source"] = "domain"
-        invalid_documents.append(
-            ("foreign element condition source", foreign_element_source)
-        )
-        invalid_after_count = copy.deepcopy(source)
-        wait_capture = next(
-            item
-            for item in invalid_after_count["steps"]
-            if item["op"] == "waitCapture"
-        )
-        wait_capture["afterCount"] = {"nested": "count"}
-        invalid_documents.append(("nested afterCount", invalid_after_count))
-
-        for label, document in invalid_documents:
-            with self.subTest(case=label):
-                self._install_semantic_workflow(document=document)
-
-                outcome = self._probe_semantic_workflow()
-
-                self.assertEqual(
-                    (
-                        outcome["status"],
-                        outcome["classification"],
-                        outcome["reasonCode"],
-                    ),
-                    ("error", "misconfiguration", "SEMANTIC_WORKFLOW_INVALID"),
-                )
-
-    def test_variable_contract_failures_block_probe_without_side_effects(self) -> None:
-        capture_overflow = [
-            {
-                "id": f"capture-{index}",
-                "op": "capture",
-                "source": "domain",
-                "variable": f"captured{index}",
-            }
-            for index in range(126)
-        ]
-        mixed_overflow = capture_overflow[:124] + [
-            {
-                "id": f"discover-{index}",
-                "op": "discover",
-                "variable": f"discovered{index}",
-            }
-            for index in range(2)
-        ]
-        invalid_workflows = (
-            (
-                "capture overflow",
-                self._semantic_workflow(capture_overflow),
-            ),
-            (
-                "mixed overflow",
-                self._semantic_workflow(mixed_overflow),
-            ),
-            (
-                "unbounded capture name",
-                self._semantic_workflow(
-                    [
-                        {
-                            "id": "capture-long",
-                            "op": "capture",
-                            "source": "domain",
-                            "variable": "v" * 97,
-                        }
-                    ]
-                ),
-            ),
-            (
-                "unknown template",
-                self._semantic_workflow(
-                    [
-                        {
-                            "id": "unknown-template",
-                            "op": "text",
-                            "value": "${missing}",
-                        }
-                    ]
-                ),
-            ),
-            (
-                "forward template",
-                self._semantic_workflow(
-                    [
-                        {
-                            "id": "forward-template",
-                            "op": "text",
-                            "value": "${later}",
-                        },
-                        {
-                            "id": "capture-later",
-                            "op": "capture",
-                            "source": "domain",
-                            "variable": "later",
-                        },
-                    ]
-                ),
-            ),
-        )
-        with (
-            mock.patch.object(
-                RUNTIME, "_macos_gui_available", side_effect=AssertionError
-            ),
-            mock.patch.object(
-                RUNTIME, "_quartz_post_events_available", side_effect=AssertionError
-            ),
-            mock.patch("subprocess.Popen", side_effect=AssertionError),
-            mock.patch("subprocess.run", side_effect=AssertionError),
-            mock.patch.object(RUNTIME.ctypes, "CDLL", side_effect=AssertionError),
-        ):
-            for label, document in invalid_workflows:
-                with self.subTest(case=label):
-                    self._install_semantic_workflow(document=document)
-
-                    outcome = self._probe_semantic_workflow()
-
-                    self.assertEqual(
-                        (
-                            outcome["status"],
-                            outcome["classification"],
-                            outcome["reasonCode"],
-                        ),
-                        (
-                            "error",
-                            "misconfiguration",
-                            "SEMANTIC_WORKFLOW_INVALID",
-                        ),
-                    )
-
-    def test_symlinked_semantic_workflow_is_a_misconfiguration(self) -> None:
-        self._install_semantic_workflow(symlink=True)
-
-        outcome = self._probe_semantic_workflow()
-
-        self.assertEqual(
-            (outcome["status"], outcome["classification"], outcome["reasonCode"]),
-            ("error", "misconfiguration", "SEMANTIC_WORKFLOW_INVALID"),
-        )
-
     def test_all_capability_probes_have_an_actual_available_path(self) -> None:
         capability_ids = (
             "artifact-writable",
@@ -567,12 +157,10 @@ class UserSessionRuntimeTests(unittest.TestCase):
             "required-mods",
             "isolated-save-fixture",
             "user-session-executor",
-            "semantic-workflow",
             "user-session-gui",
-            "quartz-post-events",
         )
         resolved = {
-            "id": "flow.ui.player.input",
+            "id": "flow.ui.player",
             "timeoutSeconds": 1200,
             "requiredMods": ["Required.Mod"],
             "capabilities": [
@@ -597,14 +185,12 @@ class UserSessionRuntimeTests(unittest.TestCase):
         validator.validate_required_mods.return_value = []
         deployment = mock.Mock()
         provisioner = mock.Mock()
-        semantic = mock.Mock()
 
         def load(_name: str, path: Path):
             return {
                 "validate.py": validator,
                 "deployment_identity.py": deployment,
                 "save_provisioning.py": provisioner,
-                "semantic-test-agent.py": semantic,
             }[path.name]
 
         with (
@@ -612,9 +198,6 @@ class UserSessionRuntimeTests(unittest.TestCase):
             mock.patch.object(RUNTIME, "_ready_state", return_value={}),
             mock.patch.object(RUNTIME.sys, "platform", "darwin"),
             mock.patch.object(RUNTIME, "_macos_gui_available", return_value=True),
-            mock.patch.object(
-                RUNTIME, "_quartz_post_events_available", return_value=True
-            ),
         ):
             outcomes = RUNTIME._probe_capabilities(
                 self.repository,
@@ -646,7 +229,6 @@ class UserSessionRuntimeTests(unittest.TestCase):
         validator.validate_required_mods.assert_called_once()
         deployment.validate_identity.assert_called_once()
         provisioner.probe_fixture.assert_called_once_with(self.isolated, smapi)
-        semantic.load_spec.assert_called_once()
 
     def test_owner_probe_failures_have_representative_typed_outcomes(self) -> None:
         cases = (
@@ -789,21 +371,17 @@ class UserSessionRuntimeTests(unittest.TestCase):
         deployment.validate_identity.assert_called_once()
         provisioner.probe_fixture.assert_called_once_with(self.isolated, smapi)
 
-    def test_non_macos_gui_and_quartz_are_deterministically_unsupported(self) -> None:
+    def test_non_macos_gui_is_deterministically_unsupported(self) -> None:
         resolved = {
             "id": "flow.ui.player.input",
             "capabilities": [
                 {"id": "user-session-gui", "requirement": "required"},
-                {"id": "quartz-post-events", "requirement": "required"},
             ],
         }
         with (
             mock.patch.object(RUNTIME.sys, "platform", "linux"),
             mock.patch.object(
                 RUNTIME, "_macos_gui_available", side_effect=AssertionError
-            ),
-            mock.patch.object(
-                RUNTIME, "_quartz_post_events_available", side_effect=AssertionError
             ),
         ):
             outcomes = RUNTIME._probe_capabilities(
@@ -816,26 +394,24 @@ class UserSessionRuntimeTests(unittest.TestCase):
                 "0",
             )
 
-        for capability_id in ("user-session-gui", "quartz-post-events"):
-            self.assertEqual(
-                (
-                    outcomes[capability_id]["status"],
-                    outcomes[capability_id]["classification"],
-                    outcomes[capability_id]["reasonCode"],
-                ),
-                (
-                    "unsupported",
-                    "unsupported-capability",
-                    "PLATFORM_UNSUPPORTED",
-                ),
-            )
+        self.assertEqual(
+            (
+                outcomes["user-session-gui"]["status"],
+                outcomes["user-session-gui"]["classification"],
+                outcomes["user-session-gui"]["reasonCode"],
+            ),
+            (
+                "unsupported",
+                "unsupported-capability",
+                "PLATFORM_UNSUPPORTED",
+            ),
+        )
 
-    def test_macos_gui_and_quartz_probes_run_at_user_session_boundary(self) -> None:
+    def test_macos_gui_probe_runs_at_user_session_boundary(self) -> None:
         resolved = {
             "id": "flow.ui.player.input",
             "capabilities": [
                 {"id": "user-session-gui", "requirement": "required"},
-                {"id": "quartz-post-events", "requirement": "required"},
             ],
         }
         with (
@@ -843,9 +419,6 @@ class UserSessionRuntimeTests(unittest.TestCase):
             mock.patch.object(
                 RUNTIME, "_macos_gui_available", return_value=False
             ) as gui_probe,
-            mock.patch.object(
-                RUNTIME, "_quartz_post_events_available", return_value=False
-            ) as quartz_probe,
         ):
             outcomes = RUNTIME._probe_capabilities(
                 self.repository,
@@ -858,12 +431,7 @@ class UserSessionRuntimeTests(unittest.TestCase):
             )
 
         gui_probe.assert_called_once_with()
-        quartz_probe.assert_called_once_with()
         self.assertEqual(outcomes["user-session-gui"]["status"], "missing")
-        self.assertEqual(
-            outcomes["quartz-post-events"]["reasonCode"],
-            "QUARTZ_ACCESSIBILITY_DENIED",
-        )
 
     def test_blocked_gui_preflight_never_enters_direct_runtime(self) -> None:
         self.validator.read_preflight_report.return_value = {
