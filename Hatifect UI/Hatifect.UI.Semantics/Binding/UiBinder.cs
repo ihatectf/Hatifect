@@ -244,69 +244,95 @@ internal sealed class UiBinder
         return BindAtomicValue(property, tokens, syntax.Span);
     }
 
-    private UiBoundValue BindAtomicValue(UiPropertySymbol property, UiSyntaxToken[] tokens, UiTextSpan span)
+        private UiBoundValue BindAtomicValue(UiPropertySymbol property, UiSyntaxToken[] tokens, UiTextSpan span)
     {
         if (tokens.Length == 0 || tokens.Any(token => token.IsMissing)) return ErrorValue.Instance;
         UiSemanticType expected = property.Type;
 
-        if (_catalog.HasPropertyValues(property))
-        {
-            string enumName = string.Concat(tokens.Select(token => token.Text));
-            if (tokens.Length == 1 &&
-                _catalog.TryGetPropertyValue(property, enumName, out UiEnumValueSymbol? enumValue) &&
-                enumValue != null)
-                return new UiSymbolValue(enumValue.Id, enumValue.Name, property.Type);
-            Report("LUI2018",
-                $"Value '{string.Join(" ", tokens.Select(token => token.Text))}' is not a catalog value for property '{property.Name}'.",
-                span);
-            return ErrorValue.Instance;
-        }
+        if (_catalog.HasPropertyValues(property)) return BindCatalogValue(property, tokens, span);
 
-        if (expected == UiSemanticType.Bool && tokens.Length == 1 && tokens[0].Kind == UiSyntaxKind.IdentifierToken &&
-            bool.TryParse(tokens[0].Text, out bool boolean))
-            return new UiBooleanValue(boolean);
-        if (expected == UiSemanticType.Int && TrySingleInt(tokens, out int integer)) return new UiIntegerValue(integer);
-        if (expected == UiSemanticType.Float && TrySingleNumber(tokens, out double number)) return new UiFloatValue(number);
-        if (expected == UiSemanticType.Length && TrySingleInt(tokens, out int length)) return new UiLengthValue(length);
-        if (expected == UiSemanticType.Opacity && TrySingleNumber(tokens, out double opacity))
-        {
-            if (opacity is >= 0 and <= 1) return new UiOpacityValue(opacity);
-            Report("LUI2017", "Opacity must be between 0 and 1.", span);
-            return ErrorValue.Instance;
-        }
-        if (expected == UiSemanticType.String && tokens.Length == 1)
-            return new UiStringValue(tokens[0].Value?.ToString() ?? tokens[0].Text);
+        if (TryBindPrimitiveScalar(expected, tokens, span, out UiBoundValue? primitive)) return primitive!;
 
         string compact = string.Concat(tokens.Select(token => token.Text));
-        if (expected == UiSemanticType.PresentationPattern && _catalog.TryGetPattern(compact, out UiSymbolId pattern))
-            return new UiSymbolValue(pattern, compact, UiSemanticType.PresentationPattern);
-        if (expected == UiSemanticType.Presentation && _catalog.TryGetPresentation(compact, out UiPresentationSymbol? presentation) && presentation != null)
-            return new UiSymbolValue(presentation.Id, presentation.Name, UiSemanticType.Presentation);
-        if (expected == UiSemanticType.Region && _catalog.TryGetRegion(compact, out UiSymbolId region))
-            return new UiSymbolValue(region, compact, UiSemanticType.Region);
-
-        if (expected.Kind is UiSemanticTypeKind.SurfaceToken or UiSemanticTypeKind.ColorToken or
-            UiSemanticTypeKind.SpaceToken or UiSemanticTypeKind.RadiusToken or UiSemanticTypeKind.MotionToken or
-            UiSemanticTypeKind.TypographyToken or UiSemanticTypeKind.ElevationToken or UiSemanticTypeKind.TransformToken or
-            UiSemanticTypeKind.Opacity or UiSemanticTypeKind.Border)
-        {
-            if (_catalog.TryGetToken(compact, out UiTokenSymbol? token) && token != null)
-            {
-                if (token.Type == expected) return new UiSymbolValue(token.Id, token.Name, token.Type);
-                Report("LUI2012", $"Token '{compact}' has type {token.Type}, expected {expected}.", span);
-                return ErrorValue.Instance;
-            }
-        }
-
-        if (expected == UiSemanticType.Border && tokens.Length >= 2 && TrySingleInt(new[] { tokens[^1] }, out int width))
-        {
-            string colorName = string.Concat(tokens[..^1].Select(token => token.Text));
-            if (_catalog.TryGetToken(colorName, out UiTokenSymbol? color) && color?.Type == UiSemanticType.ColorToken)
-                return new UiBorderValue(new UiSymbolValue(color.Id, color.Name, color.Type), width);
-        }
+        if (TryBindSymbolReference(expected, compact, out UiBoundValue? symbol)) return symbol!;
+        if (TryBindToken(expected, compact, span, out UiBoundValue? token)) return token!;
+        if (TryBindBorderShorthand(expected, tokens, out UiBoundValue? border)) return border!;
 
         Report("LUI2013", $"Value '{string.Join(" ", tokens.Select(token => token.Text))}' is not assignable to {expected}.", span);
         return ErrorValue.Instance;
+    }
+
+    private UiBoundValue BindCatalogValue(UiPropertySymbol property, UiSyntaxToken[] tokens, UiTextSpan span)
+    {
+        string enumName = string.Concat(tokens.Select(token => token.Text));
+        if (tokens.Length == 1 &&
+            _catalog.TryGetPropertyValue(property, enumName, out UiEnumValueSymbol? enumValue) &&
+            enumValue != null)
+            return new UiSymbolValue(enumValue.Id, enumValue.Name, property.Type);
+        Report("LUI2018",
+            $"Value '{string.Join(" ", tokens.Select(token => token.Text))}' is not a catalog value for property '{property.Name}'.",
+            span);
+        return ErrorValue.Instance;
+    }
+
+    private bool TryBindPrimitiveScalar(UiSemanticType expected, UiSyntaxToken[] tokens, UiTextSpan span, out UiBoundValue? value)
+    {
+        if (expected == UiSemanticType.Bool && tokens.Length == 1 && tokens[0].Kind == UiSyntaxKind.IdentifierToken &&
+            bool.TryParse(tokens[0].Text, out bool boolean))
+        { value = new UiBooleanValue(boolean); return true; }
+        if (expected == UiSemanticType.Int && TrySingleInt(tokens, out int integer)) { value = new UiIntegerValue(integer); return true; }
+        if (expected == UiSemanticType.Float && TrySingleNumber(tokens, out double number)) { value = new UiFloatValue(number); return true; }
+        if (expected == UiSemanticType.Length && TrySingleInt(tokens, out int length)) { value = new UiLengthValue(length); return true; }
+        if (expected == UiSemanticType.Opacity && TrySingleNumber(tokens, out double opacity))
+        {
+            if (opacity is >= 0 and <= 1) { value = new UiOpacityValue(opacity); return true; }
+            Report("LUI2017", "Opacity must be between 0 and 1.", span);
+            value = ErrorValue.Instance;
+            return true;
+        }
+        if (expected == UiSemanticType.String && tokens.Length == 1)
+        { value = new UiStringValue(tokens[0].Value?.ToString() ?? tokens[0].Text); return true; }
+        value = null;
+        return false;
+    }
+
+    private bool TryBindSymbolReference(UiSemanticType expected, string compact, out UiBoundValue? value)
+    {
+        if (expected == UiSemanticType.PresentationPattern && _catalog.TryGetPattern(compact, out UiSymbolId pattern))
+        { value = new UiSymbolValue(pattern, compact, UiSemanticType.PresentationPattern); return true; }
+        if (expected == UiSemanticType.Presentation && _catalog.TryGetPresentation(compact, out UiPresentationSymbol? presentation) && presentation != null)
+        { value = new UiSymbolValue(presentation.Id, presentation.Name, UiSemanticType.Presentation); return true; }
+        if (expected == UiSemanticType.Region && _catalog.TryGetRegion(compact, out UiSymbolId region))
+        { value = new UiSymbolValue(region, compact, UiSemanticType.Region); return true; }
+        value = null;
+        return false;
+    }
+
+    private bool TryBindToken(UiSemanticType expected, string compact, UiTextSpan span, out UiBoundValue? value)
+    {
+        value = null;
+        if (expected.Kind is not (UiSemanticTypeKind.SurfaceToken or UiSemanticTypeKind.ColorToken or
+            UiSemanticTypeKind.SpaceToken or UiSemanticTypeKind.RadiusToken or UiSemanticTypeKind.MotionToken or
+            UiSemanticTypeKind.TypographyToken or UiSemanticTypeKind.ElevationToken or UiSemanticTypeKind.TransformToken or
+            UiSemanticTypeKind.Opacity or UiSemanticTypeKind.Border))
+            return false;
+        if (!_catalog.TryGetToken(compact, out UiTokenSymbol? token) || token == null) return false;
+        if (token.Type == expected) { value = new UiSymbolValue(token.Id, token.Name, token.Type); return true; }
+        Report("LUI2012", $"Token '{compact}' has type {token.Type}, expected {expected}.", span);
+        value = ErrorValue.Instance;
+        return true;
+    }
+
+    private bool TryBindBorderShorthand(UiSemanticType expected, UiSyntaxToken[] tokens, out UiBoundValue? value)
+    {
+        value = null;
+        if (expected != UiSemanticType.Border || tokens.Length < 2 || !TrySingleInt(new[] { tokens[^1] }, out int width))
+            return false;
+        string colorName = string.Concat(tokens[..^1].Select(token => token.Text));
+        if (!_catalog.TryGetToken(colorName, out UiTokenSymbol? color) || color?.Type != UiSemanticType.ColorToken)
+            return false;
+        value = new UiBorderValue(new UiSymbolValue(color.Id, color.Name, color.Type), width);
+        return true;
     }
 
     private void ValidatePresentationContracts()

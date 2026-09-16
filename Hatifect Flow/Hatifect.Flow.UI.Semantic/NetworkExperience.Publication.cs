@@ -15,53 +15,21 @@ internal sealed partial class NetworkExperience
         long epoch = _notificationEpoch;
         try
         {
-            Projection projection = (settings ?? _projection.Value) with { Snapshot = snapshot };
-            if (resetPage) projection = projection with { Page = 0 };
-            else if (_pendingPage is { } page) projection = projection with { Page = page };
-            foreach (var edit in _pendingEdits) batch.Set(edit.Key, edit.Value);
-            batch.Replace(_sources.Source, snapshot.Stations).Replace(_destinations.Source, snapshot.Stations)
-                .Replace(_links.Source, snapshot.Transport.Links);
-            IReadOnlyList<FlowRecoveryIssue> recovery = _application.ReadRecovery();
-            if (Retired) return false;
-            batch.Replace(_recovery.Source, recovery);
-            FlowStationDetails? source = Selected(batch, _sources);
-            FlowStationDetails? destination = Selected(batch, _destinations);
-            if (refreshInventory)
-            {
-                FlowInventorySlot? selectedInventory = Selected(batch, _inventory);
-                IReadOnlyList<FlowInventorySlot> inventory = source is null ? Array.Empty<FlowInventorySlot>() : _application.ReadInventory(source.Id);
-                if (Retired) return false;
-                batch.Replace(_inventory.Source, inventory);
-                if (selectedInventory is not null && !inventory.Any(slot => slot.Index == selectedInventory.Index
-                    && string.Equals(slot.Fingerprint, selectedInventory.Fingerprint, StringComparison.Ordinal)))
-                    batch.Select(_inventory.Source, null);
-                if (Retired) return false;
-                projection = projection with { InventorySource = source?.Id };
-            }
-            else if (source?.Id != projection.InventorySource)
-            {
-                // An ordinary domain notification never serializes physical inventories.
-                batch.Replace(_inventory.Source, Array.Empty<FlowInventorySlot>());
-                projection = projection with { InventorySource = null };
-            }
+            if (!TryPrepareProjection(snapshot, batch, settings, resetPage, out Projection projection, out IReadOnlyList<FlowRecoveryIssue> recovery,
+                out FlowStationDetails? source, out FlowStationDetails? destination))
+                return false;
+            if (!TryProjectInventory(batch, ref projection, source, refreshInventory)) return false;
             FlowRoutePreview route = _application.PreviewRoute(source?.Id ?? Guid.Empty, destination?.Id ?? Guid.Empty);
             if (Retired) return false;
             projection = ProjectHistory(batch, projection);
             if (Retired) return false;
             ValidateStationInputs(batch, snapshot, source);
             ValidateQuantity(batch);
-            batch.Set(_target, snapshot.TargetDescription.Length > 0 ? snapshot.TargetDescription
-                    : Text("Close this window, point at a chest, then open Flowline again", "Закройте окно, укажите на сундук и снова откройте Flowline"))
-                .Set(_status, TransportStatus(snapshot.Transport.State, recovery.Count))
-                .Set(_route, route.Found ? $"{route.LinkCount} " + Text("links", "связей") + $" · {route.TransitTicks} " + Text("ticks", "тиков")
-                    + $" · {route.AvailableUnits} " + Text("units available", "ед. свободно") : Text("No route selected", "Маршрут не выбран или недоступен"))
-                .Set(_result, _pendingResult ?? _result.Value).Set(_projection, projection);
+            SetSummaryFields(batch, snapshot, route, recovery.Count, projection);
             // Supplementary owner reads have no independent revision envelope. Fence their complete candidate.
             FlowSnapshot current = _application.ReadSnapshot();
             if (Retired) return false;
-            if (epoch != _notificationEpoch || current.SessionId != snapshot.Transport.SessionId || current.Revision != snapshot.Transport.Revision
-                || current.State != snapshot.Transport.State)
-            { _dirty = true; return false; }
+            if (IsStale(snapshot, current, epoch)) { _dirty = true; return false; }
             _preparingSnapshot = null;
             UiPublicationResult result = batch.Commit();
             if (!result.Succeeded) throw new InvalidOperationException("Flow network publication failed: " + result.Status
@@ -75,6 +43,60 @@ internal sealed partial class NetworkExperience
         catch (ObjectDisposedException) when (Retired) { return false; }
         finally { _preparingSnapshot = null; _projecting = false; }
     }
+
+    private bool TryPrepareProjection(FlowNetworkSnapshot snapshot, UiPublicationBatch batch, Projection? settings, bool resetPage,
+        out Projection projection, out IReadOnlyList<FlowRecoveryIssue> recovery, out FlowStationDetails? source, out FlowStationDetails? destination)
+    {
+        projection = (settings ?? _projection.Value) with { Snapshot = snapshot };
+        if (resetPage) projection = projection with { Page = 0 };
+        else if (_pendingPage is { } page) projection = projection with { Page = page };
+        foreach (var edit in _pendingEdits) batch.Set(edit.Key, edit.Value);
+        batch.Replace(_sources.Source, snapshot.Stations).Replace(_destinations.Source, snapshot.Stations)
+            .Replace(_links.Source, snapshot.Transport.Links);
+        recovery = _application.ReadRecovery();
+        if (Retired) { source = null; destination = null; return false; }
+        batch.Replace(_recovery.Source, recovery);
+        source = Selected(batch, _sources);
+        destination = Selected(batch, _destinations);
+        return true;
+    }
+
+    private bool TryProjectInventory(UiPublicationBatch batch, ref Projection projection, FlowStationDetails? source, bool refreshInventory)
+    {
+        if (refreshInventory)
+        {
+            FlowInventorySlot? selectedInventory = Selected(batch, _inventory);
+            IReadOnlyList<FlowInventorySlot> inventory = source is null ? Array.Empty<FlowInventorySlot>() : _application.ReadInventory(source.Id);
+            if (Retired) return false;
+            batch.Replace(_inventory.Source, inventory);
+            if (selectedInventory is not null && !inventory.Any(slot => slot.Index == selectedInventory.Index
+                && string.Equals(slot.Fingerprint, selectedInventory.Fingerprint, StringComparison.Ordinal)))
+                batch.Select(_inventory.Source, null);
+            if (Retired) return false;
+            projection = projection with { InventorySource = source?.Id };
+        }
+        else if (source?.Id != projection.InventorySource)
+        {
+            // An ordinary domain notification never serializes physical inventories.
+            batch.Replace(_inventory.Source, Array.Empty<FlowInventorySlot>());
+            projection = projection with { InventorySource = null };
+        }
+        return true;
+    }
+
+    private void SetSummaryFields(UiPublicationBatch batch, FlowNetworkSnapshot snapshot, FlowRoutePreview route, int recoveryCount, Projection projection)
+    {
+        batch.Set(_target, snapshot.TargetDescription.Length > 0 ? snapshot.TargetDescription
+                : Text("Close this window, point at a chest, then open Flowline again", "Закройте окно, укажите на сундук и снова откройте Flowline"))
+            .Set(_status, TransportStatus(snapshot.Transport.State, recoveryCount))
+            .Set(_route, route.Found ? $"{route.LinkCount} " + Text("links", "связей") + $" · {route.TransitTicks} " + Text("ticks", "тиков")
+                + $" · {route.AvailableUnits} " + Text("units available", "ед. свободно") : Text("No route selected", "Маршрут не выбран или недоступен"))
+            .Set(_result, _pendingResult ?? _result.Value).Set(_projection, projection);
+    }
+
+    private bool IsStale(FlowNetworkSnapshot snapshot, FlowSnapshot current, long epoch)
+        => epoch != _notificationEpoch || current.SessionId != snapshot.Transport.SessionId || current.Revision != snapshot.Transport.Revision
+            || current.State != snapshot.Transport.State;
 
     private void ValidateStationInputs(UiPublicationBatch batch, FlowNetworkSnapshot snapshot, FlowStationDetails? source)
     {
