@@ -165,97 +165,112 @@ internal sealed partial class UiAutomatedAcceptanceController
         _observationCaptures.Add(new { phase = _observationStage.ToString(), snapshot });
         switch (_observationStage)
         {
-            case ObservationStage.Initial:
-                Record("semantic.observation.initial", true, "Five semantic fields and actions are tied to an actual completed native surface pass.");
-                int reads = _observationSources.Sum(source => source.Reads);
-                int availability = _observationAvailabilityReads;
-                foreach (var source in _observationSources) source.Reject = true;
-                _observationRejectAvailability = true;
-                try
-                {
-                    UiSemanticSurfaceSnapshot inert = _observationApi.Observation.Capture(_observedSurface!);
-                    RequireAction(inert.AcceptedFrame == snapshot.AcceptedFrame && inert.RenderedFrame == snapshot.RenderedFrame
-                        && inert.CompletedRenderPass == snapshot.CompletedRenderPass
-                        && inert.Elements.SequenceEqual(snapshot.Elements) && inert.Texts.SequenceEqual(snapshot.Texts)
-                        && _observationSources.Sum(source => source.Reads) == reads && _observationAvailabilityReads == availability,
-                        "Observation reread sources or advanced the accepted frame.");
-                }
-                finally
-                {
-                    foreach (var source in _observationSources) source.Reject = false;
-                    _observationRejectAvailability = false;
-                }
-                Record("semantic.observation.inert", true, "Poisoned sources and availability delegates are never read by capture.");
-                _observationVersion = 2;
-                _observationAlternatingAvailability = true;
-                _observedSurface!.Refresh();
-                _observationStage = ObservationStage.Updated;
-                break;
-            case ObservationStage.Updated:
-                Record("semantic.observation.updated", true, "Changed values and mixed action availability appear in the next actual rendered frame.");
-                _observationReenterNext = true;
-                _observationStage = ObservationStage.Reentrant;
-                break;
-            case ObservationStage.Settled:
-                _observationRussian = true;
-                LocalizedContentManager.CurrentLanguageCode = LocalizedContentManager.LanguageCode.ru;
-                Game1.options.desiredUIScale = 1.25f;
-                BeginObservationNativeTransition(1.25f, "ru-RU", true, Options.GamepadModes.ForceOn);
-                _observationStage = ObservationStage.Environment;
-                break;
-            case ObservationStage.Environment:
-                RequireAction(snapshot.Environment!.Locale == "ru-RU" && snapshot.Environment.Scale == 1.25f
-                    && snapshot.Environment.InputMode == Semantics.UiInputMode.Controller,
-                    "Observed environment did not match the accepted native facets.");
-                Record("semantic.observation.environment", true,
-                    "Automatic native locale/scale/controller-profile change reaches accepted Russian text and a completed pass.");
-                _observationOld = snapshot;
-                IUiSemanticSurfaceSession retiring = _observedSurface!;
-                _retiredObservedSurface = retiring;
-                retiring.Hide();
-                retiring.Dispose();
-                UiSemanticSurfaceSnapshot retired = _observationApi.Observation.Capture(retiring);
-                RequireAction(retired.InstanceId == snapshot.InstanceId && retired.Retired && !retired.Visible
-                    && retired.Environment is null && retired.AcceptedFrame is null && retired.RenderedFrame is null
-                    && retired.Elements.Count == 0 && retired.Texts.Count == 0 && _observationClosed == 1
-                    && _observationSources.All(source => source.Subscribers == 0),
-                    "Retired observation retained content, native ownership or subscriptions.");
-                _observationCaptures.Add(new { phase = "retired", snapshot = retired });
-                Record("semantic.observation.retirement", true, "Terminally retired handle returns only stable identity/lifecycle after real teardown.");
-                _observationVersion = 4;
-                CreateObservedSurface();
-                _observationStage = ObservationStage.Reopened;
-                break;
-            case ObservationStage.Reopened:
-                RequireAction(snapshot.InstanceId != _observationOld!.InstanceId && snapshot.SurfaceId == _observationOld.SurfaceId
-                    && _observationApi.Observation.Capture(_retiredObservedSurface!).Retired,
-                    "Reopening reused the retired instance or revived its old handle.");
-                Record("semantic.observation.reopen", true, "Same semantic IDs reopen as a distinct instance while old snapshots/handles remain inert.");
-                int ownerLossReads = _observationSources.Sum(source => source.Reads);
-                int ownerLossAvailability = _observationAvailabilityReads;
-                int ownerLossSubscribers = _observationSources.Sum(source => source.Subscribers);
-                Game1.activeClickableMenu = _observationCover = new ActionPumpCoverMenu();
-                Exception? lostOwner = null;
-                try { _observationApi.Observation.Capture(_observedSurface!); }
-                catch (InvalidOperationException error) { lostOwner = error; }
-                RequireAction(lostOwner is not null && _observationClosed == 1 && _observedSurface!.Visible
-                    && _observationSources.Sum(source => source.Reads) == ownerLossReads
-                    && _observationAvailabilityReads == ownerLossAvailability
-                    && _observationSources.Sum(source => source.Subscribers) == ownerLossSubscribers,
-                    "Capture must reject a lost native menu owner immediately without reading or retiring the surface.");
-                Record("semantic.observation.native-owner", true,
-                    "Replacing the native menu rejects capture before the next Update, without callbacks or source reads.");
-                StopObservation(awaitNativeRestoration: true);
-                if (_terminalFailure is not null) throw new InvalidOperationException("Observation cleanup failed before restoration acceptance.");
-                _observationStage = ObservationStage.Restoring;
-                BeginObservationNativeTransition(_observationOriginalDesiredScale,
-                    UiSemanticStardewEnvironmentCapture.ResolveLocale(_observationOriginalLanguage),
-                    _observationOriginalGamepad, _observationOriginalGamepadMode);
-                _observationActive = true;
-                break;
+            case ObservationStage.Initial: AdvanceInitialObservation(snapshot); break;
+            case ObservationStage.Updated: AdvanceUpdatedObservation(); break;
+            case ObservationStage.Settled: AdvanceSettledObservation(); break;
+            case ObservationStage.Environment: AdvanceEnvironmentObservation(snapshot); break;
+            case ObservationStage.Reopened: AdvanceReopenedObservation(snapshot); break;
         }
         _observationTicks = 0;
         return true;
+    }
+
+    private void AdvanceInitialObservation(UiSemanticSurfaceSnapshot snapshot)
+    {
+        Record("semantic.observation.initial", true, "Five semantic fields and actions are tied to an actual completed native surface pass.");
+        int reads = _observationSources.Sum(source => source.Reads);
+        int availability = _observationAvailabilityReads;
+        foreach (var source in _observationSources) source.Reject = true;
+        _observationRejectAvailability = true;
+        try
+        {
+            UiSemanticSurfaceSnapshot inert = _observationApi!.Observation.Capture(_observedSurface!);
+            RequireAction(inert.AcceptedFrame == snapshot.AcceptedFrame && inert.RenderedFrame == snapshot.RenderedFrame
+                && inert.CompletedRenderPass == snapshot.CompletedRenderPass
+                && inert.Elements.SequenceEqual(snapshot.Elements) && inert.Texts.SequenceEqual(snapshot.Texts)
+                && _observationSources.Sum(source => source.Reads) == reads && _observationAvailabilityReads == availability,
+                "Observation reread sources or advanced the accepted frame.");
+        }
+        finally
+        {
+            foreach (var source in _observationSources) source.Reject = false;
+            _observationRejectAvailability = false;
+        }
+        Record("semantic.observation.inert", true, "Poisoned sources and availability delegates are never read by capture.");
+        _observationVersion = 2;
+        _observationAlternatingAvailability = true;
+        _observedSurface!.Refresh();
+        _observationStage = ObservationStage.Updated;
+    }
+
+    private void AdvanceUpdatedObservation()
+    {
+        Record("semantic.observation.updated", true, "Changed values and mixed action availability appear in the next actual rendered frame.");
+        _observationReenterNext = true;
+        _observationStage = ObservationStage.Reentrant;
+    }
+
+    private void AdvanceSettledObservation()
+    {
+        _observationRussian = true;
+        LocalizedContentManager.CurrentLanguageCode = LocalizedContentManager.LanguageCode.ru;
+        Game1.options.desiredUIScale = 1.25f;
+        BeginObservationNativeTransition(1.25f, "ru-RU", true, Options.GamepadModes.ForceOn);
+        _observationStage = ObservationStage.Environment;
+    }
+
+    private void AdvanceEnvironmentObservation(UiSemanticSurfaceSnapshot snapshot)
+    {
+        RequireAction(snapshot.Environment!.Locale == "ru-RU" && snapshot.Environment.Scale == 1.25f
+            && snapshot.Environment.InputMode == Semantics.UiInputMode.Controller,
+            "Observed environment did not match the accepted native facets.");
+        Record("semantic.observation.environment", true,
+            "Automatic native locale/scale/controller-profile change reaches accepted Russian text and a completed pass.");
+        _observationOld = snapshot;
+        IUiSemanticSurfaceSession retiring = _observedSurface!;
+        _retiredObservedSurface = retiring;
+        retiring.Hide();
+        retiring.Dispose();
+        UiSemanticSurfaceSnapshot retired = _observationApi!.Observation.Capture(retiring);
+        RequireAction(retired.InstanceId == snapshot.InstanceId && retired.Retired && !retired.Visible
+            && retired.Environment is null && retired.AcceptedFrame is null && retired.RenderedFrame is null
+            && retired.Elements.Count == 0 && retired.Texts.Count == 0 && _observationClosed == 1
+            && _observationSources.All(source => source.Subscribers == 0),
+            "Retired observation retained content, native ownership or subscriptions.");
+        _observationCaptures.Add(new { phase = "retired", snapshot = retired });
+        Record("semantic.observation.retirement", true, "Terminally retired handle returns only stable identity/lifecycle after real teardown.");
+        _observationVersion = 4;
+        CreateObservedSurface();
+        _observationStage = ObservationStage.Reopened;
+    }
+
+    private void AdvanceReopenedObservation(UiSemanticSurfaceSnapshot snapshot)
+    {
+        RequireAction(snapshot.InstanceId != _observationOld!.InstanceId && snapshot.SurfaceId == _observationOld.SurfaceId
+            && _observationApi!.Observation.Capture(_retiredObservedSurface!).Retired,
+            "Reopening reused the retired instance or revived its old handle.");
+        Record("semantic.observation.reopen", true, "Same semantic IDs reopen as a distinct instance while old snapshots/handles remain inert.");
+        int ownerLossReads = _observationSources.Sum(source => source.Reads);
+        int ownerLossAvailability = _observationAvailabilityReads;
+        int ownerLossSubscribers = _observationSources.Sum(source => source.Subscribers);
+        Game1.activeClickableMenu = _observationCover = new ActionPumpCoverMenu();
+        Exception? lostOwner = null;
+        try { _observationApi!.Observation.Capture(_observedSurface!); }
+        catch (InvalidOperationException error) { lostOwner = error; }
+        RequireAction(lostOwner is not null && _observationClosed == 1 && _observedSurface!.Visible
+            && _observationSources.Sum(source => source.Reads) == ownerLossReads
+            && _observationAvailabilityReads == ownerLossAvailability
+            && _observationSources.Sum(source => source.Subscribers) == ownerLossSubscribers,
+            "Capture must reject a lost native menu owner immediately without reading or retiring the surface.");
+        Record("semantic.observation.native-owner", true,
+            "Replacing the native menu rejects capture before the next Update, without callbacks or source reads.");
+        StopObservation(awaitNativeRestoration: true);
+        if (_terminalFailure is not null) throw new InvalidOperationException("Observation cleanup failed before restoration acceptance.");
+        _observationStage = ObservationStage.Restoring;
+        BeginObservationNativeTransition(_observationOriginalDesiredScale,
+            UiSemanticStardewEnvironmentCapture.ResolveLocale(_observationOriginalLanguage),
+            _observationOriginalGamepad, _observationOriginalGamepadMode);
+        _observationActive = true;
     }
 
     private void BeginObservationNativeTransition(float scale, string locale, bool controls, Options.GamepadModes mode)

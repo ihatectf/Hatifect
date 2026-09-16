@@ -30,26 +30,53 @@ internal sealed class ChestsAnywhereNativeSelectorLease
     internal bool Suppress(IChestsAnywhereNativeSelectorAccess access)
     {
         ArgumentNullException.ThrowIfNull(access);
-        if (_access != null
-            && ReferenceEquals(_access.Overlay, access.Overlay)
-            && ReferenceEquals(access.EditButton, _originalEditButton)
-            && access.ChestSelector == null
+        if (IsAlreadySuppressed(access)) return true;
+        RestorePreviousLeaseBeforeReacquiring();
+        (object chestSelector, object? categorySelector, object editButton, object editBounds, object hiddenBounds) =
+            ReadValidatedNativeSelectorState(access);
+
+        // Publish the complete lease before the first mutation so a partial write failure can
+        // restore every value that Hatifect actually acquired.
+        _access = access;
+        _originalChestSelector = chestSelector;
+        _originalCategorySelector = categorySelector;
+        _originalEditButton = editButton;
+        _originalEditBounds = editBounds;
+        access.ChestSelector = null;
+        access.CategorySelector = null;
+        access.EditBounds = hiddenBounds;
+        if (access.ChestSelector == null
             && access.CategorySelector == null
-            && Equals(access.EditBounds, access.HiddenEditBounds))
+            && Equals(access.EditBounds, hiddenBounds))
         {
             return true;
         }
 
-        if (_access != null)
-        {
-            if (!TryRestore(out Exception? restorationFailure))
-            {
-                throw new InvalidOperationException(
-                    "The previous Chests Anywhere selector lease could not be restored before reacquisition.",
-                    restorationFailure);
-            }
-        }
+        throw new InvalidOperationException("The exact native selector lease did not reach its suppressed state.");
+    }
 
+    private bool IsAlreadySuppressed(IChestsAnywhereNativeSelectorAccess access)
+        => _access != null
+            && ReferenceEquals(_access.Overlay, access.Overlay)
+            && ReferenceEquals(access.EditButton, _originalEditButton)
+            && access.ChestSelector == null
+            && access.CategorySelector == null
+            && Equals(access.EditBounds, access.HiddenEditBounds);
+
+    private void RestorePreviousLeaseBeforeReacquiring()
+    {
+        if (_access == null) return;
+        if (!TryRestore(out Exception? restorationFailure))
+        {
+            throw new InvalidOperationException(
+                "The previous Chests Anywhere selector lease could not be restored before reacquisition.",
+                restorationFailure);
+        }
+    }
+
+    private static (object ChestSelector, object? CategorySelector, object EditButton, object EditBounds, object HiddenBounds)
+        ReadValidatedNativeSelectorState(IChestsAnywhereNativeSelectorAccess access)
+    {
         object chestSelector = access.ChestSelector
             ?? throw new InvalidOperationException(
                 "Chests Anywhere's chest selector was already absent before Hatifect acquired it.");
@@ -71,25 +98,7 @@ internal sealed class ChestsAnywhereNativeSelectorLease
         object hiddenBounds = access.HiddenEditBounds
             ?? throw new InvalidOperationException(
                 "Chests Anywhere's hidden edit-button bounds are unavailable.");
-
-        // Publish the complete lease before the first mutation so a partial write failure can
-        // restore every value that Hatifect actually acquired.
-        _access = access;
-        _originalChestSelector = chestSelector;
-        _originalCategorySelector = categorySelector;
-        _originalEditButton = editButton;
-        _originalEditBounds = editBounds;
-        access.ChestSelector = null;
-        access.CategorySelector = null;
-        access.EditBounds = hiddenBounds;
-        if (access.ChestSelector == null
-            && access.CategorySelector == null
-            && Equals(access.EditBounds, hiddenBounds))
-        {
-            return true;
-        }
-
-        throw new InvalidOperationException("The exact native selector lease did not reach its suppressed state.");
+        return (chestSelector, categorySelector, editButton, editBounds, hiddenBounds);
     }
 
     internal bool TryRestore(out Exception? error)
