@@ -139,25 +139,14 @@ internal sealed class UiWindowInputObserver : IDisposable
                 return;
             }
             var runtime = menu.CaptureRuntimeContext();
-            if (_observedScene >= 0 && _observedScene != runtime.AcceptedVersion)
-                _pendingStableScene = runtime.AcceptedVersion;
-            _observedScene = runtime.AcceptedVersion;
+            TrackAcceptedSceneVersion(runtime.AcceptedVersion);
             var projection = UiNativeInteractionProjection.Capture(runtime.Scene, runtime.Layout, runtime.Accessibility);
             var elements = projection.Elements;
             UiNativeInteractionNode? focused = elements.SingleOrDefault(element => element.Focused);
             var rendered = runtime.LastCompletedRender;
-            bool freshRender = rendered.Sequence > _lastRenderSequence;
-            _lastRenderSequence = rendered.Sequence;
-            bool visible = !menu.HasActiveInputPortal && freshRender && rendered.SceneVersion == runtime.AcceptedVersion
-                && rendered.FrameVersion == runtime.FrameVersion && Game1.game1.IsActive && Game1.fadeToBlackAlpha <= 0f
-                && UiNativeInputGate.IsVisible(runtime.Accessibility.Root)
-                && Game1.graphics.GraphicsDevice.RenderTargetCount == 0;
+            bool visible = ComputeVisible(menu, runtime, rendered);
             bool focusedVisible = focused is not null && focused.Enabled && FullyVisible(focused.Bounds, focused.Clip);
-            if (focusedVisible && IsObservedAction(focused!.ActionId) && focused.ActionId != _pendingActionId)
-            {
-                _pendingActionId = focused.ActionId;
-                _pendingActionScene = runtime.AcceptedVersion;
-            }
+            TrackPendingResultAction(focused, focusedVisible, runtime.AcceptedVersion);
             bool pointerInside = focusedVisible && _pressPoint is { } press && _releasePoint is { } release
                 && focused!.Bounds.Contains(press) && focused.Clip.Contains(press)
                 && focused.Bounds.Contains(release) && focused.Clip.Contains(release);
@@ -167,15 +156,7 @@ internal sealed class UiWindowInputObserver : IDisposable
                 _pressed, _released, _tab, _back, _text, runtime.AcceptedVersion, runtime.FrameVersion);
             UiWindowInputPhase? completed = _gate.Observe(_frame, observation);
             var stamp = (_epoch, runtime.AcceptedVersion, runtime.FrameVersion);
-            _latest = new
-            {
-                visible, completedFrame = _frame, surfaceEpoch = _epoch, experience = runtime.Scene.Experience.ToString(),
-                acceptedSceneVersion = runtime.AcceptedVersion, frameVersion = runtime.FrameVersion,
-                renderedSceneVersion = rendered.SceneVersion, renderedFrameVersion = rendered.FrameVersion, renderSequence = rendered.Sequence,
-                viewport = Viewport(), window = WindowGeometry(), pointer = Pointer(),
-                interactionModelVersion = 1, rootScroll = projection.RootScroll, collections = projection.Collections,
-                focused, observation, elements
-            };
+            _latest = CaptureLatestSnapshot(visible, runtime, rendered, projection, focused, observation, elements);
             bool stable = _previousStamp == stamp;
             _previousStamp = stamp;
             if (visible && (completed is not null || stable && _capturedStamp != stamp))
@@ -184,6 +165,44 @@ internal sealed class UiWindowInputObserver : IDisposable
         }
         catch (Exception error) { Fail(error); }
     }
+
+    private void TrackAcceptedSceneVersion(long acceptedVersion)
+    {
+        if (_observedScene >= 0 && _observedScene != acceptedVersion)
+            _pendingStableScene = acceptedVersion;
+        _observedScene = acceptedVersion;
+    }
+
+    private bool ComputeVisible(UiSemanticStardewMenu menu, UiHostRuntimeSession runtime, UiSurfaceRenderStamp rendered)
+    {
+        bool freshRender = rendered.Sequence > _lastRenderSequence;
+        _lastRenderSequence = rendered.Sequence;
+        return !menu.HasActiveInputPortal && freshRender && rendered.SceneVersion == runtime.AcceptedVersion
+            && rendered.FrameVersion == runtime.FrameVersion && Game1.game1.IsActive && Game1.fadeToBlackAlpha <= 0f
+            && UiNativeInputGate.IsVisible(runtime.Accessibility.Root)
+            && Game1.graphics.GraphicsDevice.RenderTargetCount == 0;
+    }
+
+    private void TrackPendingResultAction(UiNativeInteractionNode? focused, bool focusedVisible, long acceptedVersion)
+    {
+        if (focusedVisible && IsObservedAction(focused!.ActionId) && focused.ActionId != _pendingActionId)
+        {
+            _pendingActionId = focused.ActionId;
+            _pendingActionScene = acceptedVersion;
+        }
+    }
+
+    private object CaptureLatestSnapshot(bool visible, UiHostRuntimeSession runtime, UiSurfaceRenderStamp rendered,
+        UiNativeInteractionSnapshot projection, UiNativeInteractionNode? focused, UiWindowInputObservation observation,
+        System.Collections.Generic.IReadOnlyList<UiNativeInteractionNode> elements) => new
+    {
+        visible, completedFrame = _frame, surfaceEpoch = _epoch, experience = runtime.Scene.Experience.ToString(),
+        acceptedSceneVersion = runtime.AcceptedVersion, frameVersion = runtime.FrameVersion,
+        renderedSceneVersion = rendered.SceneVersion, renderedFrameVersion = rendered.FrameVersion, renderSequence = rendered.Sequence,
+        viewport = Viewport(), window = WindowGeometry(), pointer = Pointer(),
+        interactionModelVersion = 1, rootScroll = projection.RootScroll, collections = projection.Collections,
+        focused, observation, elements
+    };
 
     private void ObserveEmptyFrame()
     {

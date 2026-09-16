@@ -209,45 +209,51 @@ internal sealed class FlowHostAcceptance : IDisposable
             "SaveLoaded did not create a fresh active Flow host.");
         _loads++;
         _lastLogicalTick = host.LogicalTick;
-        if (_loads == 1)
-        {
-            RequireFresh(host);
-            _firstPairId = DurableProviderCodec.Decode(File.ReadAllBytes(ProviderFile)).PairId;
-            _firstHost = host;
-            _firstRuntime = host.Runtime;
-            host.Execute(runtime => Require(runtime.TryReserve(Parcel), "The fixture route could not reserve."));
-            Require(host.Runtime.GetParcel(Parcel).State == ParcelState.Reserved, "The reserved parcel state was not retained.");
-            _checks["loaded"] = true;
-            _stage = Stage.AwaitTransit;
-        }
-        else if (IsIsolation && _loads == 2)
-        {
-            Require(!ReferenceEquals(host, _oldHost) && !ReferenceEquals(host.Runtime, _oldRuntime),
-                "Save B reused the disposed save A host or runtime.");
-            _saveASnapshot!.RequireUnchanged();
-            RequireFresh(host);
-            Require(DurableProviderCodec.Decode(File.ReadAllBytes(ProviderFile)).PairId != _firstPairId,
-                "Different stable save identities reused the same durable pair identity.");
-            _stage = Stage.SecondSave;
-        }
-        else
-        {
-            Require(_loads == (IsIsolation ? 3 : 2)
-                && !ReferenceEquals(host, _oldHost) && !ReferenceEquals(host.Runtime, _oldRuntime)
-                && !ReferenceEquals(host, _firstHost) && !ReferenceEquals(host.Runtime, _firstRuntime),
-                "Reload reused a fenced host or runtime.");
-            _saveASnapshot!.RequireUnchanged();
-            RequireDelivered(host);
-            if (IsIsolation)
-            {
-                _saveBSnapshot!.RequireUnchanged();
-                _checks["save-isolation"] = true;
-            }
-            _checks["reload"] = true;
-            WriteReport();
-            _stage = Stage.Done;
-        }
+        if (_loads == 1) AcceptFirstLoad(host);
+        else if (IsIsolation && _loads == 2) AcceptSecondSaveLoad(host);
+        else AcceptFinalReload(host);
         _frames = 0;
+    }
+
+    private void AcceptFirstLoad(DurableFlowHost host)
+    {
+        RequireFresh(host);
+        _firstPairId = DurableProviderCodec.Decode(File.ReadAllBytes(ProviderFile)).PairId;
+        _firstHost = host;
+        _firstRuntime = host.Runtime;
+        host.Execute(runtime => Require(runtime.TryReserve(Parcel), "The fixture route could not reserve."));
+        Require(host.Runtime.GetParcel(Parcel).State == ParcelState.Reserved, "The reserved parcel state was not retained.");
+        _checks["loaded"] = true;
+        _stage = Stage.AwaitTransit;
+    }
+
+    private void AcceptSecondSaveLoad(DurableFlowHost host)
+    {
+        Require(!ReferenceEquals(host, _oldHost) && !ReferenceEquals(host.Runtime, _oldRuntime),
+            "Save B reused the disposed save A host or runtime.");
+        _saveASnapshot!.RequireUnchanged();
+        RequireFresh(host);
+        Require(DurableProviderCodec.Decode(File.ReadAllBytes(ProviderFile)).PairId != _firstPairId,
+            "Different stable save identities reused the same durable pair identity.");
+        _stage = Stage.SecondSave;
+    }
+
+    private void AcceptFinalReload(DurableFlowHost host)
+    {
+        Require(_loads == (IsIsolation ? 3 : 2)
+            && !ReferenceEquals(host, _oldHost) && !ReferenceEquals(host.Runtime, _oldRuntime)
+            && !ReferenceEquals(host, _firstHost) && !ReferenceEquals(host.Runtime, _firstRuntime),
+            "Reload reused a fenced host or runtime.");
+        _saveASnapshot!.RequireUnchanged();
+        RequireDelivered(host);
+        if (IsIsolation)
+        {
+            _saveBSnapshot!.RequireUnchanged();
+            _checks["save-isolation"] = true;
+        }
+        _checks["reload"] = true;
+        WriteReport();
+        _stage = Stage.Done;
     }
 
     public void OnReturnedToTitle()
@@ -306,9 +312,7 @@ internal sealed class FlowHostAcceptance : IDisposable
                     _baselineTick = host.LogicalTick;
                     _lastReceipts = 1;
                     CapturePair();
-                    _priorPause = Game1.paused;
-                    _ownsPause = true;
-                    Game1.paused = true;
+                    BeginPause();
                     _frames = 0;
                     _stage = Stage.Paused;
                 }
@@ -428,6 +432,7 @@ internal sealed class FlowHostAcceptance : IDisposable
             && _coreBytes.AsSpan().SequenceEqual(File.ReadAllBytes(CoreFile))
             && _providerBytes.AsSpan().SequenceEqual(File.ReadAllBytes(ProviderFile)), "The durable pair changed unexpectedly.");
     }
+    private void BeginPause() { _priorPause = Game1.paused; _ownsPause = true; Game1.paused = true; }
     private void RestorePause() { if (_ownsPause) { Game1.paused = _priorPause; _ownsPause = false; } }
 
     private void WriteReport()

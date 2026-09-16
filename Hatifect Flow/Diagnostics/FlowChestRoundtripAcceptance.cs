@@ -95,90 +95,96 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             if (_crashPhase == "resume" && _loads == CrashSavedEvents) _passed.Add("process-restart");
             _sessionId = session.ReadSnapshot().SessionId;
             _loads++;
-            if (_loads == 1)
-            {
-                Require(session.ReadSnapshot().Stations.Count == 0, "Acceptance copy already contains Flow stations.");
-                Chest source, destination;
-                Vector2 standing = default;
-                if (_scenario == InputScenario)
-                    (source, destination, _sourceTile, _destinationTile, standing) = FlowPlayerNativeSequence.CreateFixture();
-                else
-                {
-                    source = CreateChest(out _sourceTile);
-                    destination = CreateChest(out _destinationTile);
-                }
-                var wine = (StardewValley.Object)ItemRegistry.Create("(O)348", 8, 4);
-                wine.preserve.Value = StardewValley.Object.PreserveType.Wine;
-                wine.preservedParentSheetIndex.Value = "613";
-                wine.modData["Hatifect.Flow/Acceptance"] = _request.RunId;
-                source.GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Add(wine);
-                var partial = (StardewValley.Object)FlowItemCodec.Decode(FlowItemCodec.Encode(wine));
-                partial.Stack = 13;
-                partial.modData["Hatifect.Flow/PartialAcceptance"] = "true";
-                source.GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Add(partial);
-                Item expectedRemainder = FlowItemCodec.Decode(FlowItemCodec.Encode(partial));
-                expectedRemainder.Stack = 8;
-                _remainderXml = FlowItemCodec.Encode(expectedRemainder);
-                if (_scenario == InputScenario)
-                {
-                    _nativeSequence = new(_helper, _request, session, _sourceTile, _destinationTile, standing);
-                    _stage = Stage.NativeAdmission;
-                    return;
-                }
-                if (IsPreparedPlayer)
-                {
-                    Require(_openPlayer is not null && _closePlayer is not null, "Player acceptance requires the production Window factory.");
-                    _stage = Stage.PlayerAdmission;
-                    return;
-                }
-                session.RegisterStation("accept_source", "Farm", (int)_sourceTile.X, (int)_sourceTile.Y, source);
-                session.RegisterStation("accept_destination", "Farm", (int)_destinationTile.X, (int)_destinationTile.Y, destination);
-                session.Link("accept_source", "accept_destination", transitTicks: 180);
-                _parcel = session.Send("accept_source", "accept_destination", 0);
-                FlowSnapshot snapshot = session.ReadSnapshot();
-                FlowLinkSnapshot link = snapshot.Links.Single();
-                FlowInventorySlot selected = session.ReadInventory(link.Origin).Single(slot => slot.Index == 1);
-                Require(session.Execute(new FlowSendCommand(snapshot.SessionId, snapshot.Revision, link.Origin, link.Destination,
-                    selected.Index, selected.Fingerprint) { Quantity = 5 }).Status == FlowCommandStatus.Applied,
-                    "Typed partial-stack admission failed.");
-                _partialParcel = session.ReadSnapshot().Parcels.Single(parcel => parcel.Id != _parcel).Id;
-                Require(partial.Stack == 13, "Partial admission extracted units before the scheduled effect.");
-                _passed.Add("loaded");
-                _stage = Stage.Transit;
-                if (CrashAfterUnsavedExtraction)
-                {
-                    VerifyReservedSource();
-                    // Freeze before returning from SaveLoaded: the production tick precedes this driver's next Tick.
-                    session.BeginSave();
-                    BeginGameSave(Stage.SavingTransit);
-                }
-            }
-            else if (_loads == 2)
-            {
-                _nativeSequence?.OnSaveLoaded(session);
-                if (CrashAfterUnsavedExtraction)
-                {
-                    VerifyReservedSource();
-                }
-                else
-                {
-                    Require(BothAt(ParcelState.InTransit), "In-flight parcels did not survive the actual game save.");
-                    VerifyRemainder();
-                    Require(Items(_destinationTile).Length == 0, "In-flight cargo appeared in the destination chest.");
-                }
-                if (CrashAfterUnsavedEffect) _passed.Add("unsaved-rollback");
-                _passed.Add("reload");
-                _stage = Stage.Delivery;
-            }
-            else
-            {
-                _nativeSequence?.OnSaveLoaded(session);
-                Require(_loads == 3 && BothAt(ParcelState.Delivered), "Delivered states did not survive the second actual save.");
-                VerifyDelivery();
-                _stage = Stage.Verify;
-            }
+            if (_loads == 1) AcceptFixtureLoad(session);
+            else if (_loads == 2) AcceptTransitReload(session);
+            else AcceptDeliveryReload(session);
         }
         catch (Exception error) { Fail(error); }
+    }
+
+    private void AcceptFixtureLoad(FlowGameSession session)
+    {
+        Require(session.ReadSnapshot().Stations.Count == 0, "Acceptance copy already contains Flow stations.");
+        Chest source, destination;
+        Vector2 standing = default;
+        if (_scenario == InputScenario)
+            (source, destination, _sourceTile, _destinationTile, standing) = FlowPlayerNativeSequence.CreateFixture();
+        else
+        {
+            source = CreateChest(out _sourceTile);
+            destination = CreateChest(out _destinationTile);
+        }
+        var wine = (StardewValley.Object)ItemRegistry.Create("(O)348", 8, 4);
+        wine.preserve.Value = StardewValley.Object.PreserveType.Wine;
+        wine.preservedParentSheetIndex.Value = "613";
+        wine.modData["Hatifect.Flow/Acceptance"] = _request.RunId;
+        source.GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Add(wine);
+        var partial = (StardewValley.Object)FlowItemCodec.Decode(FlowItemCodec.Encode(wine));
+        partial.Stack = 13;
+        partial.modData["Hatifect.Flow/PartialAcceptance"] = "true";
+        source.GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Add(partial);
+        Item expectedRemainder = FlowItemCodec.Decode(FlowItemCodec.Encode(partial));
+        expectedRemainder.Stack = 8;
+        _remainderXml = FlowItemCodec.Encode(expectedRemainder);
+        if (_scenario == InputScenario)
+        {
+            _nativeSequence = new(_helper, _request, session, _sourceTile, _destinationTile, standing);
+            _stage = Stage.NativeAdmission;
+            return;
+        }
+        if (IsPreparedPlayer)
+        {
+            Require(_openPlayer is not null && _closePlayer is not null, "Player acceptance requires the production Window factory.");
+            _stage = Stage.PlayerAdmission;
+            return;
+        }
+        session.RegisterStation("accept_source", "Farm", (int)_sourceTile.X, (int)_sourceTile.Y, source);
+        session.RegisterStation("accept_destination", "Farm", (int)_destinationTile.X, (int)_destinationTile.Y, destination);
+        session.Link("accept_source", "accept_destination", transitTicks: 180);
+        _parcel = session.Send("accept_source", "accept_destination", 0);
+        FlowSnapshot snapshot = session.ReadSnapshot();
+        FlowLinkSnapshot link = snapshot.Links.Single();
+        FlowInventorySlot selected = session.ReadInventory(link.Origin).Single(slot => slot.Index == 1);
+        Require(session.Execute(new FlowSendCommand(snapshot.SessionId, snapshot.Revision, link.Origin, link.Destination,
+            selected.Index, selected.Fingerprint) { Quantity = 5 }).Status == FlowCommandStatus.Applied,
+            "Typed partial-stack admission failed.");
+        _partialParcel = session.ReadSnapshot().Parcels.Single(parcel => parcel.Id != _parcel).Id;
+        Require(partial.Stack == 13, "Partial admission extracted units before the scheduled effect.");
+        _passed.Add("loaded");
+        _stage = Stage.Transit;
+        if (CrashAfterUnsavedExtraction)
+        {
+            VerifyReservedSource();
+            // Freeze before returning from SaveLoaded: the production tick precedes this driver's next Tick.
+            session.BeginSave();
+            BeginGameSave(Stage.SavingTransit);
+        }
+    }
+
+    private void AcceptTransitReload(FlowGameSession session)
+    {
+        _nativeSequence?.OnSaveLoaded(session);
+        if (CrashAfterUnsavedExtraction)
+        {
+            VerifyReservedSource();
+        }
+        else
+        {
+            Require(BothAt(ParcelState.InTransit), "In-flight parcels did not survive the actual game save.");
+            VerifyRemainder();
+            Require(Items(_destinationTile).Length == 0, "In-flight cargo appeared in the destination chest.");
+        }
+        if (CrashAfterUnsavedEffect) _passed.Add("unsaved-rollback");
+        _passed.Add("reload");
+        _stage = Stage.Delivery;
+    }
+
+    private void AcceptDeliveryReload(FlowGameSession session)
+    {
+        _nativeSequence?.OnSaveLoaded(session);
+        Require(_loads == 3 && BothAt(ParcelState.Delivered), "Delivered states did not survive the second actual save.");
+        VerifyDelivery();
+        _stage = Stage.Verify;
     }
 
     internal void Tick()
@@ -243,32 +249,9 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
                     break;
                 case Stage.Verify:
                     VerifyDelivery();
-                    if (_scenario == InputScenario && !_playerReopened)
-                    {
-                        if (!_nativeSequence!.ObserveDelivered()) break;
-                        _playerReopened = true; _passed.Add("window-reopen");
-                    }
-                    if (IsPreparedPlayer && !_playerReopened)
-                    {
-                        if (!_playerSequence!.ObserveDelivered(Session())) break;
-                        _playerReopened = true; _passed.Add("window-reopen");
-                        if (FlowPlayerVisualProfile.IsScenario(_scenario))
-                        {
-                            Require(_playerSequence.ProfilesCompleted, "Both exact player profile leases must be verified.");
-                            _passed.Add("profile-applied"); _passed.Add("profile-restored");
-                        }
-                    }
+                    if (!TryObserveWindowReopen()) break;
                     if (++_verificationFrames < 120) break;
-                    FlowSnapshot snapshot = Session().ReadSnapshot();
-                    Require(Session().Execute(new FlowParcelCommand(snapshot.SessionId, snapshot.Revision, _parcel, FlowParcelAction.RetryDelivery)).Status == FlowCommandStatus.Rejected,
-                        "A delivered parcel accepted another delivery.");
-                    Require(Session().Execute(new FlowParcelCommand(snapshot.SessionId, snapshot.Revision, _partialParcel, FlowParcelAction.RetryDelivery)).Status == FlowCommandStatus.Rejected,
-                        "A delivered partial parcel accepted another delivery.");
-                    VerifyDelivery();
-                    Require(_savings == 2 && _saves == 2 && _loads == 3, "The required real lifecycle events did not occur exactly twice.");
-                    _passed.Add("no-duplication");
-                    WriteReport();
-                    _stage = Stage.Exit;
+                    CompleteVerification();
                     break;
                 case Stage.AwaitCrash:
                     Require(Session().IsSaving && BothAt(CrashParcelState), "The saved crash boundary advanced before termination.");
@@ -277,6 +260,41 @@ internal sealed partial class FlowChestRoundtripAcceptance : IDisposable
             }
         }
         catch (Exception error) { Fail(error); }
+    }
+
+    /// <summary>False while the native or player window has not yet observed the delivered result.</summary>
+    private bool TryObserveWindowReopen()
+    {
+        if (_scenario == InputScenario && !_playerReopened)
+        {
+            if (!_nativeSequence!.ObserveDelivered()) return false;
+            _playerReopened = true; _passed.Add("window-reopen");
+        }
+        if (IsPreparedPlayer && !_playerReopened)
+        {
+            if (!_playerSequence!.ObserveDelivered(Session())) return false;
+            _playerReopened = true; _passed.Add("window-reopen");
+            if (FlowPlayerVisualProfile.IsScenario(_scenario))
+            {
+                Require(_playerSequence.ProfilesCompleted, "Both exact player profile leases must be verified.");
+                _passed.Add("profile-applied"); _passed.Add("profile-restored");
+            }
+        }
+        return true;
+    }
+
+    private void CompleteVerification()
+    {
+        FlowSnapshot snapshot = Session().ReadSnapshot();
+        Require(Session().Execute(new FlowParcelCommand(snapshot.SessionId, snapshot.Revision, _parcel, FlowParcelAction.RetryDelivery)).Status == FlowCommandStatus.Rejected,
+            "A delivered parcel accepted another delivery.");
+        Require(Session().Execute(new FlowParcelCommand(snapshot.SessionId, snapshot.Revision, _partialParcel, FlowParcelAction.RetryDelivery)).Status == FlowCommandStatus.Rejected,
+            "A delivered partial parcel accepted another delivery.");
+        VerifyDelivery();
+        Require(_savings == 2 && _saves == 2 && _loads == 3, "The required real lifecycle events did not occur exactly twice.");
+        _passed.Add("no-duplication");
+        WriteReport();
+        _stage = Stage.Exit;
     }
 
     internal void OnReturnedToTitle()

@@ -109,6 +109,15 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
         _themeVersion++;
     }
 
+    private (UiTheme CandidateTheme, string? Locale, long Version, long ThemeVersion) ResolveRecompositionContext(
+        UiPresentationProfile profile, UiHostPlacementContext placement, string? locale, UiEnvironment? environment,
+        UiTheme? theme)
+    {
+        UiTheme candidateTheme = theme ?? _theme;
+        string? validatedLocale = ValidateEnvironment(profile, placement, locale, environment, candidateTheme);
+        return (candidateTheme, validatedLocale, Host.Root.AcceptedVersion, _themeVersion);
+    }
+
     public UiHostUpdate Recompose(
         UiPresentationProfile profile,
         UiHostPlacementContext placement,
@@ -121,10 +130,8 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
         EnsureActive();
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(placement);
-        UiTheme candidateTheme = theme ?? _theme;
-        locale = ValidateEnvironment(profile, placement, locale, environment, candidateTheme);
-        long version = Host.Root.AcceptedVersion;
-        long themeVersion = _themeVersion;
+        (UiTheme candidateTheme, locale, long version, long themeVersion) =
+            ResolveRecompositionContext(profile, placement, locale, environment, theme);
         UiTerminalFrame frame = _shell.Recompose(profile, locale, Host.Root.Interactions.Snapshot, environment, candidateTheme);
         ValidateOwner();
         ValidatePreparedScene(frame.Scene, version, themeVersion);
@@ -156,10 +163,8 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(placement);
         ArgumentNullException.ThrowIfNull(acceptAssets);
-        UiTheme candidateTheme = theme ?? _theme;
-        locale = ValidateEnvironment(profile, placement, locale, environment, candidateTheme);
-        long version = Host.Root.AcceptedVersion;
-        long themeVersion = _themeVersion;
+        (UiTheme candidateTheme, locale, long version, long themeVersion) =
+            ResolveRecompositionContext(profile, placement, locale, environment, theme);
         UiTerminalFrame frame = _shell.RecomposeWithAssets(profile, assets, locale, Host.Root.Interactions.Snapshot,
             environment, candidateTheme);
         ValidateOwner();
@@ -284,37 +289,40 @@ internal sealed class UiTerminalHostSession : IUiPlatformInputSession, IDisposab
 
         long version = Host.Root.AcceptedVersion;
         long themeVersion = _themeVersion;
+        UiTerminalFrame? frame = ComposeFollowedFrame(route, interaction, version, themeVersion);
+        if (frame is null) return dispatch;
+
+        ValidatePreparedScene(frame.Scene, version, themeVersion);
+        AcceptOpen(frame);
+        return dispatch;
+    }
+
+    /// <summary>Requests the route, then composes its follow-up frame; a pending/rejected section activation yields no frame.</summary>
+    private UiTerminalFrame? ComposeFollowedFrame(UiSymbolId route, UiInteractionUpdate interaction, long version, long themeVersion)
+    {
         _onRouteRequested?.Invoke(route);
-        if (_disposed) return dispatch;
+        if (_disposed) return null;
         EnsureCurrentFrame(version, themeVersion);
-        UiTerminalFrame? frame;
         try
         {
-            if (!_shell.TryComposeFollow(
-                    interaction,
-                    _profile,
-                    out frame,
-                    _locale,
-                    Host.Root.Interactions.Snapshot,
-                    _environment) ||
-                frame == null)
-                return dispatch;
+            return _shell.TryComposeFollow(
+                interaction,
+                _profile,
+                out UiTerminalFrame? frame,
+                _locale,
+                Host.Root.Interactions.Snapshot,
+                _environment)
+                ? frame
+                : null;
         }
         catch (UiTerminalSectionActivationPendingException pending) when (pending.Section == route)
         {
-            return dispatch;
+            return null;
         }
         catch (UiTerminalSectionActivationRejectedException rejected) when (rejected.Section == route)
         {
-            return dispatch;
+            return null;
         }
-
-        if (frame != null)
-        {
-            ValidatePreparedScene(frame.Scene, version, themeVersion);
-            AcceptOpen(frame);
-        }
-        return dispatch;
     }
 
     private UiHostUpdate AcceptOpen(UiTerminalFrame frame)
