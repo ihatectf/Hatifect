@@ -21,6 +21,14 @@ internal sealed partial class FlowGameResourceAcceptance
 
     private void CreateFixtureAndProfileRoutes()
     {
+        PlaceFixtureChestsAndAdjacentRoutes();
+        ProfileRouteMatrix();
+        SeedCargoWine();
+        SeedOverflowAndFillerCargo();
+    }
+
+    private void PlaceFixtureChestsAndAdjacentRoutes()
+    {
         var farm = Game1.getFarm();
         for (int index = 0; index < 32; index++)
         {
@@ -44,6 +52,10 @@ internal sealed partial class FlowGameResourceAcceptance
                 ProfileRoute("hit", 0, index, index, 0);
             }
         }
+    }
+
+    private void ProfileRouteMatrix()
+    {
         int churn = 0;
         for (int origin = 0; origin < 32 && churn < 65; origin++)
         for (int destination = origin + 1; destination < 32 && churn < 65; destination++)
@@ -60,6 +72,10 @@ internal sealed partial class FlowGameResourceAcceptance
         Require(_routes.Count == 75, "The fixed route profile was incomplete."); _passed.Add("routing");
         // Finish every topology change before reserving cargo: route revisions are part of departure authority.
         for (int group = 1; group < 8; group++) Session().Link(Name(Source(group)), Name(1), transitTicks: 1);
+    }
+
+    private void SeedCargoWine()
+    {
         for (int group = 0; group < 8; group++)
         {
             _cargoXml[group] = new string[32];
@@ -73,6 +89,10 @@ internal sealed partial class FlowGameResourceAcceptance
                 _cargoXml[group][index] = FlowItemCodec.Encode(wine);
             }
         }
+    }
+
+    private void SeedOverflowAndFillerCargo()
+    {
         Item overflow = ItemRegistry.Create("(O)388", 1);
         overflow.modData["Hatifect.Flow/ResourceOverflow"] = _request.RunId;
         _chests[0].GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Add(overflow);

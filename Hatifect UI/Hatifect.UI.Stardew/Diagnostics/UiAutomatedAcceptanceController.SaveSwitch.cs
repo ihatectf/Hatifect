@@ -76,82 +76,91 @@ internal sealed partial class UiAutomatedAcceptanceController
             RequireAction(++_saveSwitchTicks <= 3600,
                 "Native save-switch phase exceeded its update bound: " + _saveSwitchStage);
             if (_saveSwitchStage == SaveSwitchStage.AwaitTitle) return true;
-            if (_saveSwitchStage == SaveSwitchStage.LoadNext)
-            {
-                // This is a later native Update, after every ReturnedToTitle subscriber ran.
-                RequireAction(!Context.IsWorldReady, "The native title event did not retire the old world.");
-                RequireSaveSwitchRetired(_saveSwitchOld!);
-                Record(SaveSwitchCheck("retirement"), true,
-                    "Native title/menu lifecycle cancels old work and releases its source and SMAPI subscriptions.");
-                _saveSwitchWorld = 1 - _saveSwitchWorld;
-                ValidateSaveSwitchCopy(_saveSwitchWorld);
-                _saveSwitchStage = SaveSwitchStage.AwaitWorld;
-                _saveSwitchTicks = 0;
-                BeginLoadSave(_saveSwitchPaths[_saveSwitchWorld]);
-                return true;
-            }
-            if (_saveSwitchStage == SaveSwitchStage.AwaitWorld)
-            {
-                if (!Context.IsWorldReady || Game1.fadeToBlackAlpha > 0f) return true;
-                _awaitingWorld = false;
-                _worldWaitTicks = 0;
-                ValidateSaveSwitchWorld();
-                _saveSwitchLoads++;
-                RequireSaveSwitchRetired(_saveSwitchOld!);
-                _saveSwitchCurrent = OpenSaveSwitchSurface();
-                RequireAction(!ReferenceEquals(_saveSwitchOld!.Host, _saveSwitchCurrent.Host)
-                    && _saveSwitchOld.Id == _saveSwitchCurrent.Id
-                    && _saveSwitchOld.World != _saveSwitchCurrent.World,
-                    "The successor must use stable semantic IDs in a distinct native world and host.");
-                // Neither operation is released until the successor in the other world is active.
-                for (int index = 0; index < 2; index++)
-                {
-                    _saveSwitchOld.Operations[index].CompleteFromWorker(61 + index,
-                        fault: index == (_saveSwitchCase % 2));
-                    _saveSwitchCurrent.Operations[index].CompleteFromWorker(71 + index);
-                }
-                _saveSwitchStage = SaveSwitchStage.Delivery;
-                _saveSwitchTicks = 0;
-                _saveSwitchSettleTicks = 0;
-                return true;
-            }
-            if (!SaveSwitchResultsReady()) return true;
-            // Observe additional real Updates to catch repeated delivery or retained subscriptions.
-            if (++_saveSwitchSettleTicks < 30) return true;
-            RequireSaveSwitchRetired(_saveSwitchOld!);
-            int oldReads = _saveSwitchOld!.Source.Reads;
-            _saveSwitchOld.Source.Publish();
-            RequireAction(_saveSwitchOld.Source.Reads == oldReads && _saveSwitchOld.CommittedEffects == 2
-                && _saveSwitchCurrent!.CommittedEffects == 2,
-                "Retirement must release publication observers without undoing pre-await effects.");
-            Record(SaveSwitchCheck("late"), true,
-                "Old success and fault are consumed once after the switch; neither calls an observer in the new session.");
-            Record(SaveSwitchCheck("delivery"), true,
-                "Native Update delivers both fresh results exactly once on the owner thread with captured requests.");
-            _saveSwitchObservations.Add(new { kind = SaveSwitchKinds[_saveSwitchCase],
-                fromWorld = _saveSwitchOld.World, toWorld = _saveSwitchCurrent!.World,
-                oldClosed = _saveSwitchOld.Closed, oldEventHandlers = _saveSwitchOld.ActiveHandlers,
-                oldSourceHandlers = _saveSwitchOld.Source.ActiveHandlers,
-                oldCommittedEffects = _saveSwitchOld.CommittedEffects, newCommittedEffects = _saveSwitchCurrent.CommittedEffects,
-                oldOperations = _saveSwitchOld.Operations.ToArray(), newOperations = _saveSwitchCurrent.Operations.ToArray(),
-                oldSourceReadsAfterPublication = _saveSwitchOld.Source.Reads - oldReads, settlingUpdates = _saveSwitchSettleTicks });
-            CloseSaveSwitchSurface(_saveSwitchOld);
-            CloseSaveSwitchSurface(_saveSwitchCurrent);
-            if (++_saveSwitchCase < SaveSwitchKinds.Length) BeginSaveSwitchCase();
-            else
-            {
-                RequireAction(_saveSwitchTitles == 4 && _saveSwitchLoads == 5 && _saveSwitchEffects.Count == 8
-                    && _saveSwitchSurfaces.All(surface => surface.ActiveHandlers == 0 && surface.Source.ActiveHandlers == 0),
-                    "The save-switch matrix did not complete every real lifecycle and release every owner.");
-                _saveSwitchCompleted = true;
-                Record("semantic.actions.save-switch.lifecycle", true,
-                    "Four real title transitions and five native loads completed with eight fresh callbacks and all owners released.");
-                StopSaveSwitch();
-                _capturePending = true;
-            }
-            return true;
+            if (_saveSwitchStage == SaveSwitchStage.LoadNext) return AdvanceLoadNextStage();
+            if (_saveSwitchStage == SaveSwitchStage.AwaitWorld) return AdvanceAwaitWorldStage();
+            return AdvanceDeliverySettlementStage();
         }
         finally { _advancingSaveSwitch = false; }
+    }
+
+    private bool AdvanceLoadNextStage()
+    {
+        // This is a later native Update, after every ReturnedToTitle subscriber ran.
+        RequireAction(!Context.IsWorldReady, "The native title event did not retire the old world.");
+        RequireSaveSwitchRetired(_saveSwitchOld!);
+        Record(SaveSwitchCheck("retirement"), true,
+            "Native title/menu lifecycle cancels old work and releases its source and SMAPI subscriptions.");
+        _saveSwitchWorld = 1 - _saveSwitchWorld;
+        ValidateSaveSwitchCopy(_saveSwitchWorld);
+        _saveSwitchStage = SaveSwitchStage.AwaitWorld;
+        _saveSwitchTicks = 0;
+        BeginLoadSave(_saveSwitchPaths[_saveSwitchWorld]);
+        return true;
+    }
+
+    private bool AdvanceAwaitWorldStage()
+    {
+        if (!Context.IsWorldReady || Game1.fadeToBlackAlpha > 0f) return true;
+        _awaitingWorld = false;
+        _worldWaitTicks = 0;
+        ValidateSaveSwitchWorld();
+        _saveSwitchLoads++;
+        RequireSaveSwitchRetired(_saveSwitchOld!);
+        _saveSwitchCurrent = OpenSaveSwitchSurface();
+        RequireAction(!ReferenceEquals(_saveSwitchOld!.Host, _saveSwitchCurrent.Host)
+            && _saveSwitchOld.Id == _saveSwitchCurrent.Id
+            && _saveSwitchOld.World != _saveSwitchCurrent.World,
+            "The successor must use stable semantic IDs in a distinct native world and host.");
+        // Neither operation is released until the successor in the other world is active.
+        for (int index = 0; index < 2; index++)
+        {
+            _saveSwitchOld.Operations[index].CompleteFromWorker(61 + index,
+                fault: index == (_saveSwitchCase % 2));
+            _saveSwitchCurrent.Operations[index].CompleteFromWorker(71 + index);
+        }
+        _saveSwitchStage = SaveSwitchStage.Delivery;
+        _saveSwitchTicks = 0;
+        _saveSwitchSettleTicks = 0;
+        return true;
+    }
+
+    private bool AdvanceDeliverySettlementStage()
+    {
+        if (!SaveSwitchResultsReady()) return true;
+        // Observe additional real Updates to catch repeated delivery or retained subscriptions.
+        if (++_saveSwitchSettleTicks < 30) return true;
+        RequireSaveSwitchRetired(_saveSwitchOld!);
+        int oldReads = _saveSwitchOld!.Source.Reads;
+        _saveSwitchOld.Source.Publish();
+        RequireAction(_saveSwitchOld.Source.Reads == oldReads && _saveSwitchOld.CommittedEffects == 2
+            && _saveSwitchCurrent!.CommittedEffects == 2,
+            "Retirement must release publication observers without undoing pre-await effects.");
+        Record(SaveSwitchCheck("late"), true,
+            "Old success and fault are consumed once after the switch; neither calls an observer in the new session.");
+        Record(SaveSwitchCheck("delivery"), true,
+            "Native Update delivers both fresh results exactly once on the owner thread with captured requests.");
+        _saveSwitchObservations.Add(new { kind = SaveSwitchKinds[_saveSwitchCase],
+            fromWorld = _saveSwitchOld.World, toWorld = _saveSwitchCurrent!.World,
+            oldClosed = _saveSwitchOld.Closed, oldEventHandlers = _saveSwitchOld.ActiveHandlers,
+            oldSourceHandlers = _saveSwitchOld.Source.ActiveHandlers,
+            oldCommittedEffects = _saveSwitchOld.CommittedEffects, newCommittedEffects = _saveSwitchCurrent.CommittedEffects,
+            oldOperations = _saveSwitchOld.Operations.ToArray(), newOperations = _saveSwitchCurrent.Operations.ToArray(),
+            oldSourceReadsAfterPublication = _saveSwitchOld.Source.Reads - oldReads, settlingUpdates = _saveSwitchSettleTicks });
+        CloseSaveSwitchSurface(_saveSwitchOld);
+        CloseSaveSwitchSurface(_saveSwitchCurrent);
+        if (++_saveSwitchCase < SaveSwitchKinds.Length) BeginSaveSwitchCase();
+        else
+        {
+            RequireAction(_saveSwitchTitles == 4 && _saveSwitchLoads == 5 && _saveSwitchEffects.Count == 8
+                && _saveSwitchSurfaces.All(surface => surface.ActiveHandlers == 0 && surface.Source.ActiveHandlers == 0),
+                "The save-switch matrix did not complete every real lifecycle and release every owner.");
+            _saveSwitchCompleted = true;
+            Record("semantic.actions.save-switch.lifecycle", true,
+                "Four real title transitions and five native loads completed with eight fresh callbacks and all owners released.");
+            StopSaveSwitch();
+            _capturePending = true;
+        }
+        return true;
     }
 
     private bool SaveSwitchResultsReady()
