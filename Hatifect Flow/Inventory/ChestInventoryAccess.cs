@@ -94,39 +94,10 @@ internal sealed class ChestInventoryAccess : IDisposable
     private static PortResult ApplyExtract(PortTransfer transfer, string payload, int sourceQuantity, IInventory inventory)
     {
         string cargo = transfer.CargoId.Value.ToString("D");
-        int match = -1;
-        for (int index = 0; index < inventory.Count; index++)
-        {
-            Item? item = inventory[index];
-            if (item is null || !item.modData.TryGetValue(CargoKey, out string token) || token != cargo) continue;
-            if (match >= 0) return PortResult.Rejected;
-            match = index;
-        }
-        if (match < 0) return PortResult.Rejected;
-        Item original = inventory[match];
-        Item? remainder = null;
-        string? remainderXml = null;
-        try
-        {
-            int expectedQuantity = sourceQuantity == 0 ? transfer.Manifest.Quantity : sourceQuantity;
-            Item captured = FlowItemCodec.Decode(payload);
-            if (expectedQuantity < transfer.Manifest.Quantity || expectedQuantity > 999
-                || captured.Stack != transfer.Manifest.Quantity || captured.QualifiedItemId != transfer.Manifest.ItemKey
-                || original.Stack != expectedQuantity || original.QualifiedItemId != transfer.Manifest.ItemKey)
-                return PortResult.Rejected;
-            captured.Stack = expectedQuantity;
-            if (!string.Equals(FlowItemCodec.Encode(original), FlowItemCodec.Encode(captured), StringComparison.Ordinal))
-                return PortResult.Rejected;
-            if (expectedQuantity > transfer.Manifest.Quantity)
-            {
-                // Prepare the entire remainder before one physical slot write. A later shipment gets its own cargo ID.
-                captured.Stack = expectedQuantity - transfer.Manifest.Quantity;
-                captured.modData.Remove(CargoKey);
-                remainder = captured;
-                remainderXml = FlowItemCodec.Encode(remainder);
-            }
-        }
-        catch (InvalidOperationException) { return PortResult.Rejected; }
+        if (!TryFindCargoSlot(inventory, cargo, out int match))
+            return PortResult.Rejected;
+        if (!TryPlanRemainder(transfer, payload, sourceQuantity, inventory, match, out Item? remainder, out string? remainderXml))
+            return PortResult.Rejected;
         try { inventory[match] = remainder; }
         catch
         {
@@ -138,6 +109,50 @@ internal sealed class ChestInventoryAccess : IDisposable
         if (!MatchesRemainder(inventory, match, remainder, remainderXml))
             throw new InvalidOperationException("The extracted source remainder was changed by an inventory observer.");
         return PortResult.Applied;
+    }
+
+    private static bool TryFindCargoSlot(IInventory inventory, string cargo, out int match)
+    {
+        match = -1;
+        for (int index = 0; index < inventory.Count; index++)
+        {
+            Item? item = inventory[index];
+            if (item is null || !item.modData.TryGetValue(CargoKey, out string token) || token != cargo) continue;
+            if (match >= 0) return false;
+            match = index;
+        }
+        return match >= 0;
+    }
+
+    private static bool TryPlanRemainder(
+        PortTransfer transfer, string payload, int sourceQuantity, IInventory inventory, int match,
+        out Item? remainder, out string? remainderXml)
+    {
+        remainder = null;
+        remainderXml = null;
+        Item original = inventory[match];
+        try
+        {
+            int expectedQuantity = sourceQuantity == 0 ? transfer.Manifest.Quantity : sourceQuantity;
+            Item captured = FlowItemCodec.Decode(payload);
+            if (expectedQuantity < transfer.Manifest.Quantity || expectedQuantity > 999
+                || captured.Stack != transfer.Manifest.Quantity || captured.QualifiedItemId != transfer.Manifest.ItemKey
+                || original.Stack != expectedQuantity || original.QualifiedItemId != transfer.Manifest.ItemKey)
+                return false;
+            captured.Stack = expectedQuantity;
+            if (!string.Equals(FlowItemCodec.Encode(original), FlowItemCodec.Encode(captured), StringComparison.Ordinal))
+                return false;
+            if (expectedQuantity > transfer.Manifest.Quantity)
+            {
+                // Prepare the entire remainder before one physical slot write. A later shipment gets its own cargo ID.
+                captured.Stack = expectedQuantity - transfer.Manifest.Quantity;
+                captured.modData.Remove(CargoKey);
+                remainder = captured;
+                remainderXml = FlowItemCodec.Encode(remainder);
+            }
+            return true;
+        }
+        catch (InvalidOperationException) { return false; }
     }
 
     private static PortResult ApplyDeliver(PortTransfer transfer, string payload, Chest chest, IInventory inventory)
