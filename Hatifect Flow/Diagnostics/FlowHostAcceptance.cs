@@ -102,11 +102,26 @@ internal sealed class FlowHostAcceptance : IDisposable
 
     internal static AcceptanceRequest ReadAcceptanceRequest(IModHelper helper, string scenarioId)
     {
+        (string runId, Guid parsed) = ValidateScenarioAndProtocol(scenarioId);
+        (string isolated, string artifact, string save) = ResolvePaths(helper, scenarioId, runId, parsed);
+        string runtimeId = ValidateRequestPayload(scenarioId, runId, isolated, artifact, save);
+        string? secondSave = ResolveSecondSave(scenarioId, runId, save, runtimeId);
+        return new AcceptanceRequest(runId, save, secondSave, artifact, runtimeId);
+    }
+
+    private static (string RunId, Guid Parsed) ValidateScenarioAndProtocol(string scenarioId)
+    {
         Require(scenarioId is "flow.ui.player.en-075" or "flow.ui.player.ru-075" or "flow.ui.player.en-100" or "flow.ui.player.ru-100" or "flow.ui.player.en-125" or "flow.ui.player.ru-125" or "flow.ui.player.en-150" or "flow.ui.player.ru-150" or "flow.ui.player.input" or "flow.ui.player" or "flow.ui.actions" or "flow.ui.isolation" or "flow.ui.names" or "flow.route.basic" or "flow.save.isolation" or "flow.chest.roundtrip" or "flow.chest.crash-after-save" or "flow.chest.crash-after-delivery" or "flow.chest.crash-after-unsaved-extraction" or "flow.chest.crash-after-unsaved-delivery" or "flow.chest.cancellation" or "flow.chest.return" or "flow.chest.crash-after-return" or "flow.chest.isolation" or "flow.chest.performance" or "flow.chest.resources", "Unknown Flow acceptance scenario.");
         Require(Required("HATIFECT_TEST_PROTOCOL_VERSION") == "1", "Unsupported harness protocol.");
         string runId = Required("HATIFECT_TEST_RUN_ID");
         Require(Guid.TryParseExact(runId, "D", out Guid parsed) && parsed.ToString("D") == runId,
             "The harness run ID must be a canonical UUID.");
+        return (runId, parsed);
+    }
+
+    private static (string Isolated, string Artifact, string Save) ResolvePaths(
+        IModHelper helper, string scenarioId, string runId, Guid parsed)
+    {
         string isolated = Full(Required("HATIFECT_TEST_ISOLATED_ROOT"));
         string artifact = Full(Required("HATIFECT_TEST_ARTIFACTS"));
         string save = Full(Required("HATIFECT_SMAPI_TEST_SAVE"));
@@ -118,6 +133,12 @@ internal sealed class FlowHostAcceptance : IDisposable
         Require(Path.GetFileName(artifact) == runId && Directory.Exists(artifact), "Artifact directory identity mismatch.");
         RejectLinks(isolated); RejectLinks(helper.DirectoryPath); RejectLinks(save); RejectLinks(artifact);
         ValidateSaveTree(save);
+        return (isolated, artifact, save);
+    }
+
+    private static string ValidateRequestPayload(
+        string scenarioId, string runId, string isolated, string artifact, string save)
+    {
         using JsonDocument request = ReadBoundedJson(Path.Combine(artifact, "request.json"));
         JsonElement r = request.RootElement;
         Require(r.GetProperty("protocolVersion").GetInt32() == 2
@@ -131,21 +152,24 @@ internal sealed class FlowHostAcceptance : IDisposable
         string runtimeId = HashText(HashFile(typeof(Game1).Assembly.Location) + "\n"
             + HashFile(typeof(IModHelper).Assembly.Location) + "\n")[..24];
         ValidateSaveOwner(save, runId, runtimeId);
-        string? secondSave = null;
-        if (scenarioId is "flow.save.isolation" or "flow.chest.isolation" or "flow.ui.isolation")
-        {
-            string secondRunId = CompanionRunId(runId);
-            secondSave = Path.Combine(Path.GetDirectoryName(save)!, scenarioId is "flow.chest.isolation" or "flow.ui.isolation"
-                ? "HatifectHarness" + Guid.Parse(secondRunId).ToString("N") + "_4242424243"
-                : "HatifectHarness_" + Guid.Parse(secondRunId).ToString("N"));
-            ValidateSaveTree(secondSave);
-            ValidateSaveOwner(secondSave, secondRunId, runtimeId);
-            if (scenarioId == "flow.ui.isolation")
-                Require(Full(Required("HATIFECT_SMAPI_TEST_SECONDARY_SAVE")) == secondSave
-                    && Required("HATIFECT_TEST_SECONDARY_RUN_ID") == secondRunId,
-                    "Flow UI companion environment does not match its derived copy identity.");
-        }
-        return new AcceptanceRequest(runId, save, secondSave, artifact, runtimeId);
+        return runtimeId;
+    }
+
+    private static string? ResolveSecondSave(string scenarioId, string runId, string save, string runtimeId)
+    {
+        if (scenarioId is not ("flow.save.isolation" or "flow.chest.isolation" or "flow.ui.isolation"))
+            return null;
+        string secondRunId = CompanionRunId(runId);
+        string secondSave = Path.Combine(Path.GetDirectoryName(save)!, scenarioId is "flow.chest.isolation" or "flow.ui.isolation"
+            ? "HatifectHarness" + Guid.Parse(secondRunId).ToString("N") + "_4242424243"
+            : "HatifectHarness_" + Guid.Parse(secondRunId).ToString("N"));
+        ValidateSaveTree(secondSave);
+        ValidateSaveOwner(secondSave, secondRunId, runtimeId);
+        if (scenarioId == "flow.ui.isolation")
+            Require(Full(Required("HATIFECT_SMAPI_TEST_SECONDARY_SAVE")) == secondSave
+                && Required("HATIFECT_TEST_SECONDARY_RUN_ID") == secondRunId,
+                "Flow UI companion environment does not match its derived copy identity.");
+        return secondSave;
     }
 
     internal static void ValidateSaveOwner(string save, string runId, string runtimeId)
